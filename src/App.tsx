@@ -1,10 +1,11 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import RepCounterPage from './pages/RepCounterPage';
-import BottomNavigation from './components/BottomNavigation';
+
 import AuthPage from './pages/AuthPage';
 import NewTrainPage from './pages/NewTrainPage';
 import GymCardPage from './pages/GymCardPage';
+import SettingsPage from './pages/SettingsPage';
 import { useAuth } from './context/AuthContext';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -23,14 +24,6 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-const PlaceholderPage = ({ title }: { title: string }) => (
-  <div className="min-h-screen flex flex-col bg-brand-dark">
-    <div className="flex-1 flex items-center justify-center text-brand-grey text-2xl text-center px-4">
-      {title} Page<br/><span className="text-sm mt-2 block">(Work in progress)</span>
-    </div>
-    <BottomNavigation />
-  </div>
-);
 
 function App() {
   return (
@@ -58,7 +51,7 @@ function App() {
         } />
         <Route path="/settings" element={
           <ProtectedRoute>
-            <PlaceholderPage title="Settings" />
+            <SettingsPage />
           </ProtectedRoute>
         } />
       </Routes>

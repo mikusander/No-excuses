@@ -9,29 +9,29 @@ const BottomNavigation = () => {
 
   return (
     <div className="fixed bottom-6 left-0 w-full flex justify-center items-center px-4 z-50 pointer-events-none">
-      
+
       {/* Container della Tab Bar stile Apple (Blur & Glassmorphism) */}
       <div className="flex items-center space-x-3 pointer-events-auto">
-        
+
         {/* Main Pill Menu */}
         <div className="bg-white/80 backdrop-blur-xl border border-white shadow-[0_8px_32px_rgba(0,0,0,0.3)] rounded-full flex items-center px-4 py-2 space-x-6">
-          <NavItem 
-            icon={<Home size={26} strokeWidth={isActive('/') ? 2.5 : 2} />} 
-            label="Inizio" 
-            active={isActive('/')} 
-            onClick={() => navigate('/')} 
+          <NavItem
+            icon={<Home size={26} strokeWidth={isActive('/') ? 2.5 : 2} />}
+            label="Home"
+            active={isActive('/')}
+            onClick={() => navigate('/')}
           />
-          <NavItem 
-            icon={<Folder size={26} strokeWidth={isActive('/gym-card') ? 2.5 : 2} />} 
-            label="Schede" 
-            active={isActive('/gym-card')} 
-            onClick={() => navigate('/gym-card')} 
+          <NavItem
+            icon={<Folder size={26} strokeWidth={isActive('/gym-card') ? 2.5 : 2} />}
+            label="Gym Card"
+            active={isActive('/gym-card')}
+            onClick={() => navigate('/gym-card')}
           />
-          <NavItem 
-            icon={<Settings size={26} strokeWidth={isActive('/settings') ? 2.5 : 2} />} 
-            label="Opzioni" 
-            active={isActive('/settings')} 
-            onClick={() => navigate('/settings')} 
+          <NavItem
+            icon={<Settings size={26} strokeWidth={isActive('/settings') ? 2.5 : 2} />}
+            label="Settings"
+            active={isActive('/settings')}
+            onClick={() => navigate('/settings')}
           />
         </div>
       </div>
@@ -48,7 +48,7 @@ interface NavItemProps {
 
 const NavItem = ({ icon, label, active, onClick }: NavItemProps) => {
   return (
-    <button 
+    <button
       onClick={onClick}
       className="flex flex-col items-center justify-center w-[60px] h-[52px] transition-all hover:scale-105 active:scale-95"
     >
