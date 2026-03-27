@@ -1,4 +1,4 @@
-import { Home, Folder, Settings, Search } from 'lucide-react';
+import { Home, Folder, Settings } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const BottomNavigation = () => {
@@ -34,11 +34,6 @@ const BottomNavigation = () => {
             onClick={() => navigate('/settings')} 
           />
         </div>
-
-        {/* Cerca (Pulsante circolare separato tipico del nuovo iOS) */}
-        <button className="bg-white/80 backdrop-blur-xl border border-white shadow-[0_8px_32px_rgba(0,0,0,0.3)] h-[60px] w-[60px] rounded-full flex items-center justify-center text-neutral-800 hover:scale-105 active:scale-95 transition-transform">
-          <Search size={26} strokeWidth={2.5} />
-        </button>
       </div>
     </div>
   );
