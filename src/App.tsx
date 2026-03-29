@@ -46,6 +46,11 @@ function App() {
             <NewTrainPage />
           </ProtectedRoute>
         } />
+        <Route path="/edit-train/:id" element={
+          <ProtectedRoute>
+            <NewTrainPage />
+          </ProtectedRoute>
+        } />
         <Route path="/gym-card" element={
           <ProtectedRoute>
             <GymCardPage />

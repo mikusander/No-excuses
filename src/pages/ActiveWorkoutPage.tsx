@@ -6,13 +6,14 @@ import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry';
+  type: 'reps' | 'isometry' | 'superset';
   name: string;
   sets: number;
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
   order_index: number;
+  subExercises?: any[];
 }
 
 interface Workout {
@@ -32,6 +33,7 @@ const ActiveWorkoutPage: React.FC = () => {
   // App State
   const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
   const [currentSetIdx, setCurrentSetIdx] = useState(0);
+  const [currentSubExerciseIdx, setCurrentSubExerciseIdx] = useState(0);
 
   // Timer State for Rest
   const [isResting, setIsResting] = useState(false);
@@ -62,16 +64,36 @@ const ActiveWorkoutPage: React.FC = () => {
       if (error) throw error;
 
       if (data) {
-        const sortedExercises = [...(data.exercises || [])].sort((a, b) => a.order_index - b.order_index);
+        let sortedExercises = [...(data.exercises || [])].sort((a: any, b: any) => a.order_index - b.order_index) as Exercise[];
+        
+        // Parsing superset JSON
+        sortedExercises = sortedExercises.map(ex => {
+          let parsedName = ex.name;
+          let subExercises = undefined;
+          if (ex.type === 'superset') {
+            try {
+              subExercises = JSON.parse(ex.name);
+              parsedName = 'Circuito Superset'; 
+            } catch(e) {}
+          }
+          return { ...ex, name: parsedName, subExercises };
+        });
+
         setWorkout({ ...data, exercises: sortedExercises });
         
         // Reset states just in case
         setCurrentExerciseIdx(0);
         setCurrentSetIdx(0);
+        setCurrentSubExerciseIdx(0);
         setIsResting(false);
         
-        if (sortedExercises.length > 0 && sortedExercises[0].type === 'isometry') {
-            setIsometryRemaining(sortedExercises[0].duration_seconds);
+        const firstEx = sortedExercises[0];
+        if (firstEx) {
+          if (firstEx.type === 'isometry') {
+              setIsometryRemaining(firstEx.duration_seconds);
+          } else if (firstEx.type === 'superset' && firstEx.subExercises?.[0]?.type === 'isometry') {
+              setIsometryRemaining(firstEx.subExercises[0].duration_seconds);
+          }
         }
       }
     } catch (error) {
@@ -134,17 +156,26 @@ const ActiveWorkoutPage: React.FC = () => {
   const currentExercise = workout.exercises[currentExerciseIdx];
   const isLastExercise = currentExerciseIdx === workout.exercises.length - 1;
   const isLastSet = currentSetIdx === currentExercise.sets - 1;
+  
+  const isSuperset = currentExercise.type === 'superset';
+  const subExercise = isSuperset && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
+
+  const getTargetIsometry = (ex: Exercise, subEx: any) => {
+    if (ex.type === 'superset' && subEx?.type === 'isometry') return subEx.duration_seconds;
+    if (ex.type === 'isometry') return ex.duration_seconds;
+    return 0;
+  };
 
   const handleNextExercise = () => {
     if (!isLastExercise) {
       const nextIdx = currentExerciseIdx + 1;
+      const nextEx = workout.exercises[nextIdx];
       setCurrentExerciseIdx(nextIdx);
       setCurrentSetIdx(0);
+      setCurrentSubExerciseIdx(0);
       setIsResting(false);
       setIsometryActive(false);
-      if (workout.exercises[nextIdx].type === 'isometry') {
-        setIsometryRemaining(workout.exercises[nextIdx].duration_seconds);
-      }
+      setIsometryRemaining(getTargetIsometry(nextEx, nextEx.subExercises?.[0]));
     } else {
       // Workout Complete!
       if (window.confirm("Allenamento completato! Vuoi tornare alla home?")) {
@@ -156,23 +187,34 @@ const ActiveWorkoutPage: React.FC = () => {
   const handlePrevExercise = () => {
     if (currentExerciseIdx > 0) {
       const prevIdx = currentExerciseIdx - 1;
+      const prevEx = workout.exercises[prevIdx];
       setCurrentExerciseIdx(prevIdx);
       setCurrentSetIdx(0);
+      setCurrentSubExerciseIdx(0);
       setIsResting(false);
       setIsometryActive(false);
-      if (workout.exercises[prevIdx].type === 'isometry') {
-        setIsometryRemaining(workout.exercises[prevIdx].duration_seconds);
-      }
+      setIsometryRemaining(getTargetIsometry(prevEx, prevEx.subExercises?.[0]));
     }
   };
 
   const completeSet = () => {
+    // Se siamo dentro a un superset e non abbiamo finito i sub-esercizi
+    if (isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1) {
+       const nextSubIdx = currentSubExerciseIdx + 1;
+       setCurrentSubExerciseIdx(nextSubIdx);
+       setIsometryActive(false);
+       const nextSubEx = currentExercise.subExercises[nextSubIdx];
+       if (nextSubEx.type === 'isometry') {
+          setIsometryRemaining(nextSubEx.duration_seconds);
+       }
+       return;
+    }
+
+    // Altrimenti, abbiamo finito l'esercizio (o l'intero giro del superset)
     if (isLastSet) {
-      // Skip rest on the very last set of the exercise (optional, but usually preferred)
       handleNextExercise();
     } else {
-      // Start rest
-      setIsometryActive(false); // Stop isometry if it was running
+      setIsometryActive(false);
       setRestRemaining(currentExercise.rest_seconds);
       setIsResting(true);
     }
@@ -184,11 +226,10 @@ const ActiveWorkoutPage: React.FC = () => {
     // Increment set
     const nextSetIdx = currentSetIdx + 1;
     setCurrentSetIdx(nextSetIdx);
+    setCurrentSubExerciseIdx(0);
     
     // Reset isometry timer if needed
-    if (currentExercise.type === 'isometry') {
-      setIsometryRemaining(currentExercise.duration_seconds);
-    }
+    setIsometryRemaining(getTargetIsometry(currentExercise, currentExercise.subExercises?.[0]));
   };
 
   const skipRest = () => {
@@ -200,13 +241,6 @@ const ActiveWorkoutPage: React.FC = () => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const toggleIsometry = () => {
-    if (isometryRemaining <= 0) {
-      setIsometryRemaining(currentExercise.duration_seconds);
-    }
-    setIsometryActive(!isometryActive);
   };
 
   // ----------------------------------------------------------------------
@@ -238,8 +272,11 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="text-center space-y-2 mb-12">
           <p className="text-brand-grey text-sm">Prossima Serie:</p>
           <p className="text-white text-xl font-bold">{currentExercise.name}</p>
+          {isSuperset && currentExercise.subExercises && (
+            <p className="text-brand-orange/80 text-sm font-semibold">{currentExercise.subExercises.map((s:any) => s.name).join(' + ')}</p>
+          )}
           <p className="text-brand-orange font-bold font-mono">
-            Serie {currentSetIdx + 2} di {currentExercise.sets}
+            {isSuperset ? 'Round' : 'Serie'} {currentSetIdx + 2} di {currentExercise.sets}
           </p>
         </div>
 
@@ -292,8 +329,13 @@ const ActiveWorkoutPage: React.FC = () => {
                ESERCIZIO {currentExerciseIdx + 1} DI {workout.exercises.length}
              </span>
              <h2 className="text-3xl font-black text-white leading-tight drop-shadow-md">
-               {currentExercise.name}
+               {isSuperset && subExercise ? subExercise.name : currentExercise.name}
              </h2>
+             {isSuperset && (
+               <span className="text-[10px] text-brand-orange/60 uppercase font-black tracking-widest block mt-1">
+                 Superset (Esercizio {currentSubExerciseIdx + 1} di {currentExercise.subExercises?.length})
+               </span>
+             )}
           </div>
 
           <button 
@@ -320,8 +362,13 @@ const ActiveWorkoutPage: React.FC = () => {
 
         {/* Focus Area (Reps / Timer) */}
         <div className="flex-1 flex flex-col items-center justify-center">
-          {currentExercise.type === 'isometry' ? (
-            <div className="text-center w-full max-w-xs relative group cursor-pointer" onClick={toggleIsometry}>
+          {(isSuperset ? subExercise?.type : currentExercise.type) === 'isometry' ? (
+            <div className="text-center w-full max-w-xs relative group cursor-pointer" onClick={() => {
+              if (isometryRemaining <= 0) {
+                 setIsometryRemaining(getTargetIsometry(currentExercise, subExercise));
+              }
+              setIsometryActive(!isometryActive);
+            }}>
               <div className={`w-64 h-64 mx-auto rounded-full border-[12px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl ${isometryActive ? 'border-brand-orange shadow-[0_0_40px_rgba(255,107,0,0.3)]' : 'border-brand-darkGrey'}`}>
                  <span className={`text-[80px] font-mono tracking-tighter ${isometryActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
                    {isometryRemaining}
@@ -339,7 +386,7 @@ const ActiveWorkoutPage: React.FC = () => {
           ) : (
             <div className="text-center">
               <span className="block text-[120px] font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_30px_rgba(255,107,0,0.2)]">
-                {currentExercise.reps}
+                {isSuperset && subExercise ? subExercise.reps : currentExercise.reps}
               </span>
               <span className="text-brand-grey font-bold uppercase tracking-widest text-lg">Ripetizioni</span>
             </div>
@@ -351,20 +398,22 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             onClick={completeSet}
             className={`w-full py-5 rounded-2xl font-black text-xl flex items-center justify-center transition-all active:scale-95 shadow-xl ${
-              isLastExercise && isLastSet 
+              isLastExercise && isLastSet && (!isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1)
                 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20' 
                 : 'bg-brand-orange hover:bg-brand-lightOrange text-black shadow-brand-orange/20'
             }`}
           >
-             {isLastExercise && isLastSet ? (
+             {isLastExercise && isLastSet && (!isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1) ? (
                <>
                  <CheckCircle2 size={28} className="mr-2" strokeWidth={3} />
                  COMPLETA SCHEDA
                </>
+             ) : isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1 ? (
+               <>PROSSIMO NEL SUPERSET <ArrowRight size={24} className="ml-2" /></>
              ) : isLastSet ? (
                <>PROSSIMO ESERCIZIO <ArrowRight size={24} className="ml-2" /></>
              ) : (
-               <>FINISH SET</>
+               <>FINISH {isSuperset ? 'ROUND' : 'SET'}</>
              )}
           </button>
         </div>

@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Calendar, Trash2, ArrowLeft, Clock, Timer, Repeat } from 'lucide-react';
+import { Dumbbell, Calendar, Trash2, ArrowLeft, Clock, Timer, Repeat, Pencil, Plus } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { useNavigate } from 'react-router-dom';
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry';
+  type: 'reps' | 'isometry' | 'superset';
   name: string;
   sets: number;
   reps: number;
@@ -20,7 +20,7 @@ interface Workout {
   id: string;
   name: string;
   created_at: string;
-  exercises: Exercise[];
+  exercises: (Exercise & { subExercises?: any[] })[];
 }
 
 const GymCardPage: React.FC = () => {
@@ -49,7 +49,17 @@ const GymCardPage: React.FC = () => {
       const parsedWorkouts = (data as unknown as Workout[]).map(w => ({
         ...w,
         // Riordiniamo gli esercizi caricati nella card per l'order_index corretto
-        exercises: w.exercises?.sort((a, b) => (a.order_index || 0) - (b.order_index || 0)) || []
+        exercises: w.exercises?.sort((a, b) => (a.order_index || 0) - (b.order_index || 0)).map((ex: any) => {
+          let parsedName = ex.name;
+          let subExercises = [];
+          if (ex.type === 'superset') {
+            try {
+              subExercises = JSON.parse(ex.name);
+              parsedName = 'Circuito Superset';
+            } catch(e) {}
+          }
+          return { ...ex, name: parsedName, subExercises };
+        }) || []
       }));
       
       setWorkouts(parsedWorkouts);
@@ -80,14 +90,23 @@ const GymCardPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
-      <header className="p-4 flex items-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
-        <button 
-          onClick={() => navigate('/')} 
-          className="p-2 text-white hover:text-brand-orange transition-colors"
+      <header className="p-4 flex items-center justify-between bg-black/50 sticky top-0 z-20 backdrop-blur-md">
+        <div className="flex items-center">
+          <button 
+            onClick={() => navigate('/')} 
+            className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors"
+          >
+            <ArrowLeft size={28} />
+          </button>
+          <h1 className="text-xl font-bold ml-2">Le Tue Schede</h1>
+        </div>
+        <button
+          onClick={() => navigate('/new-train')}
+          className="p-2 text-brand-orange hover:text-brand-lightOrange transition-colors bg-brand-orange/10 rounded-full shadow-lg"
+          title="Crea Nuova Scheda"
         >
-          <ArrowLeft size={28} />
+          <Plus size={24} />
         </button>
-        <h1 className="text-xl font-bold ml-2">Le Tue Schede</h1>
       </header>
 
       <main className="flex-1 p-6 w-full max-w-2xl mx-auto space-y-6">
@@ -110,20 +129,29 @@ const GymCardPage: React.FC = () => {
         ) : (
           workouts.map((workout) => (
             <div key={workout.id} className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
-              <button 
-                onClick={() => deleteWorkout(workout.id)}
-                className="absolute top-4 right-4 text-brand-grey/40 hover:text-red-500 transition-colors z-10"
-                title="Elimina Scheda"
-              >
-                <Trash2 size={22} />
-              </button>
+              <div className="absolute top-4 right-4 flex items-center space-x-3 z-10">
+                <button 
+                  onClick={() => navigate(`/edit-train/${workout.id}`)}
+                  className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
+                  title="Modifica Scheda"
+                >
+                  <Pencil size={20} />
+                </button>
+                <button 
+                  onClick={() => deleteWorkout(workout.id)}
+                  className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg"
+                  title="Elimina Scheda"
+                >
+                  <Trash2 size={20} />
+                </button>
+              </div>
 
-              <div className="flex items-center mb-6 pr-8 border-b border-white/5 pb-4">
+              <div className="flex items-center mb-6 pr-20 border-b border-white/5 pb-4 pt-2">
                 <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4">
                   <Calendar className="text-brand-orange" size={28} />
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white leading-tight">{workout.name}</h2>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
                   <p className="text-xs text-brand-grey/60 font-semibold mt-1">
                     {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </p>
@@ -133,29 +161,49 @@ const GymCardPage: React.FC = () => {
               <div className="space-y-4">
                 {workout.exercises && workout.exercises.map((ex, i) => (
                   <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
-                    <div className="flex justify-between items-center mb-2">
-                       <span className="font-bold text-lg text-white truncate max-w-[70%] drop-shadow-md flex items-center">
-                          <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i+1}.</span>
-                          {ex.name}
-                       </span>
-                       <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
-                          {ex.type === 'isometry' ? <Timer size={12} className="mr-1 text-brand-orange"/> : <Repeat size={12} className="mr-1 text-brand-orange"/>}
-                          {ex.type === 'isometry' ? 'ISOMETRIA' : 'REPS'}
-                       </div>
-                    </div>
+                    {ex.type === 'superset' ? (
+                      <div className="mb-3">
+                         <span className="font-bold text-lg text-white drop-shadow-md flex items-center mb-2">
+                           <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i+1}.</span>
+                           <Repeat size={16} className="mr-1 text-brand-orange"/> {ex.name}
+                         </span>
+                         <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
+                           {ex.subExercises?.map((sub, sIdx) => (
+                             <div key={sIdx} className="text-sm font-semibold text-white/80">
+                               • {sub.name} <span className="text-brand-orange ml-1 text-xs">({sub.type === 'reps' ? sub.reps + ' reps' : sub.duration_seconds + ' s'})</span>
+                             </div>
+                           ))}
+                         </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-center mb-2">
+                         <span className="font-bold text-lg text-white truncate max-w-[70%] drop-shadow-md flex items-center">
+                            <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i+1}.</span>
+                            {ex.name}
+                         </span>
+                         <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
+                            {ex.type === 'isometry' ? <Timer size={12} className="mr-1 text-brand-orange"/> : <Repeat size={12} className="mr-1 text-brand-orange"/>}
+                            {ex.type === 'isometry' ? 'ISOMETRIA' : 'REPS'}
+                         </div>
+                      </div>
+                    )}
                     
                     <div className="flex items-center space-x-2 text-xs text-brand-grey font-bold w-full mt-2">
                       <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Serie</span>
+                        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
+                          {ex.type === 'superset' ? 'Round' : 'Serie'}
+                        </span>
                         <span className="text-sm text-white">{ex.sets}</span>
                       </div>
                       
-                      <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
-                        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                          {ex.type === 'isometry' ? 'Durata' : 'Ripetizioni'}
-                        </span>
-                        <span className="text-sm text-brand-orange">{ex.type === 'isometry' ? formatSecs(ex.duration_seconds) : ex.reps}</span>
-                      </div>
+                      {ex.type !== 'superset' && (
+                        <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
+                          <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
+                            {ex.type === 'isometry' ? 'Durata' : 'Ripetizioni'}
+                          </span>
+                          <span className="text-sm text-brand-orange">{ex.type === 'isometry' ? formatSecs(ex.duration_seconds) : ex.reps}</span>
+                        </div>
+                      )}
 
                       <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                          <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center"><Clock size={9} className="mr-1"/> Rest</span>

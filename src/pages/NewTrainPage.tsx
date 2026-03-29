@@ -1,17 +1,23 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move } from 'lucide-react';
 
 interface ExerciseDraft {
   id: string; // Temporaneo per la UI
-  type: 'reps' | 'isometry';
+  type: 'reps' | 'isometry' | 'superset';
   name: string;
   sets: number;
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  subExercises?: {
+    name: string;
+    type: 'reps' | 'isometry';
+    reps: number;
+    duration_seconds: number;
+  }[];
 }
 
 const NewTrainPage: React.FC = () => {
@@ -22,11 +28,76 @@ const NewTrainPage: React.FC = () => {
   const [exercises, setExercises] = useState<ExerciseDraft[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const { id } = useParams<{ id: string }>();
+
+  // Carica i dati della scheda se siamo in modalità modifica
+  React.useEffect(() => {
+    if (id) {
+      loadWorkout(id);
+    }
+  }, [id]);
+
+  const loadWorkout = async (workoutId: string) => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('workouts')
+        .select(`
+          name,
+          exercises ( id, type, name, sets, reps, duration_seconds, rest_seconds, order_index )
+        `)
+        .eq('id', workoutId)
+        .single();
+
+      if (error) throw error;
+      
+      if (data) {
+        setWorkoutName(data.name);
+        const sorted = data.exercises.sort((a: any, b: any) => a.order_index - b.order_index);
+        setExercises(sorted.map((ex: any) => {
+          let parsedName = ex.name;
+          let subExercises = [];
+          
+          if (ex.type === 'superset') {
+            try {
+              subExercises = JSON.parse(ex.name);
+              parsedName = ''; // Non ci serve il nome base per i superset
+            } catch (e) {
+              console.error('Error parsing superset JSON:', e);
+            }
+          }
+          
+          return {
+            ...ex,
+            name: parsedName,
+            subExercises,
+            id: crypto.randomUUID(), // Generiamo un nuovo ID temporaneo per la UI
+          };
+        }));
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Errore di caricamento scheda');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const addExercise = () => {
     setExercises([
       ...exercises, 
       { id: crypto.randomUUID(), type: 'reps', name: '', sets: 3, reps: 10, duration_seconds: 30, rest_seconds: 60 }
+    ]);
+  };
+
+  const addSuperset = () => {
+    setExercises([
+      ...exercises, 
+      { id: crypto.randomUUID(), type: 'superset', name: '', sets: 3, reps: 0, duration_seconds: 0, rest_seconds: 90, subExercises: [
+        { name: '', type: 'reps', reps: 10, duration_seconds: 0 },
+        { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
+      ]}
     ]);
   };
 
@@ -49,10 +120,39 @@ const NewTrainPage: React.FC = () => {
     setExercises(newExercises);
   };
 
-  const updateExercise = (id: string, field: keyof ExerciseDraft, value: string | number) => {
+  const updateExercise = (id: string, field: keyof ExerciseDraft, value: any) => {
     setExercises(exercises.map(ex => 
       ex.id === id ? { ...ex, [field]: value } : ex
     ));
+  };
+
+  const updateSubExercise = (supersetId: string, subIndex: number, field: string, value: any) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === supersetId && ex.subExercises) {
+        const newSubs = [...ex.subExercises];
+        newSubs[subIndex] = { ...newSubs[subIndex], [field]: value };
+        return { ...ex, subExercises: newSubs };
+      }
+      return ex;
+    }));
+  };
+
+  const addSubExercise = (supersetId: string) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === supersetId && ex.subExercises) {
+        return { ...ex, subExercises: [...ex.subExercises, { name: '', type: 'reps', reps: 10, duration_seconds: 0 }] };
+      }
+      return ex;
+    }));
+  };
+
+  const removeSubExercise = (supersetId: string, subIndex: number) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === supersetId && ex.subExercises) {
+        return { ...ex, subExercises: ex.subExercises.filter((_, idx) => idx !== subIndex) };
+      }
+      return ex;
+    }));
   };
 
   // Funzioni helper per input tempo (minuti:secondi visivi -> secondi interi salvati)
@@ -82,9 +182,18 @@ const NewTrainPage: React.FC = () => {
       return;
     }
     for (const ex of exercises) {
-      if (!ex.name.trim()) {
-        setError('Tutti gli esercizi devono avere un nome');
-        return;
+      if (ex.type === 'superset') {
+        if (!ex.subExercises || ex.subExercises.length < 2) {
+          setError('I Superset devono avere almeno 2 esercizi'); return;
+        }
+        for (const sub of ex.subExercises) {
+          if (!sub.name.trim()) { setError('Tutti gli esercizi del Superset devono avere un nome'); return; }
+        }
+      } else {
+        if (!ex.name.trim()) {
+          setError('Tutti gli esercizi devono avere un nome');
+          return;
+        }
       }
     }
 
@@ -92,21 +201,41 @@ const NewTrainPage: React.FC = () => {
     setError(null);
 
     try {
-      // 1. Inserisci la scheda (Workout)
-      const { data: workoutData, error: workoutError } = await supabase
-        .from('workouts')
-        .insert([{ name: workoutName, user_id: user?.id }])
-        .select()
-        .single();
+      let workoutIdToUse = id;
 
-      if (workoutError) throw workoutError;
+      if (id) {
+        // UPDATE scheda esistente
+        const { error: updateError } = await supabase
+          .from('workouts')
+          .update({ name: workoutName })
+          .eq('id', id);
+        if (updateError) throw updateError;
+        
+        // Rimuove i vecchi esercizi
+        const { error: deleteError } = await supabase
+          .from('exercises')
+          .delete()
+          .eq('workout_id', id);
+        if (deleteError) throw deleteError;
+        
+      } else {
+        // INSERT nuova scheda
+        const { data: workoutData, error: workoutError } = await supabase
+          .from('workouts')
+          .insert([{ name: workoutName, user_id: user?.id }])
+          .select()
+          .single();
+
+        if (workoutError) throw workoutError;
+        workoutIdToUse = workoutData.id;
+      }
 
       // 2. Prepara gli esercizi preservando l'ordine
       const exercisesToInsert = exercises.map((ex, idx) => ({
-        workout_id: workoutData.id,
+        workout_id: workoutIdToUse,
         order_index: idx,
         type: ex.type,
-        name: ex.name,
+        name: ex.type === 'superset' ? JSON.stringify(ex.subExercises) : ex.name,
         sets: ex.sets,
         reps: ex.type === 'reps' ? ex.reps : 0,
         duration_seconds: ex.type === 'isometry' ? ex.duration_seconds : 0,
@@ -138,7 +267,7 @@ const NewTrainPage: React.FC = () => {
         >
           <ArrowLeft size={28} />
         </button>
-        <h1 className="text-xl font-bold ml-2">Nuova Scheda</h1>
+        <h1 className="text-xl font-bold ml-2">{id ? 'Modifica Scheda' : 'Nuova Scheda'}</h1>
       </header>
 
       <main className="flex-1 p-6 flex flex-col max-w-lg mx-auto w-full">
@@ -161,17 +290,26 @@ const NewTrainPage: React.FC = () => {
 
         <div className="space-y-4 mb-8">
           <div className="flex justify-between items-center mb-2">
-            <h2 className="text-brand-grey font-semibold ml-1 flex items-center">
+            <h2 className="text-brand-grey font-semibold ml-1 flex items-center mb-2 sm:mb-0">
               <Move size={16} className="mr-2 opacity-50"/> 
               Ordina e Aggiungi
             </h2>
-            <button 
-              onClick={addExercise}
-              className="text-brand-orange hover:text-brand-lightOrange flex items-center text-sm font-bold bg-brand-orange/10 px-3 py-1.5 rounded-lg transition-colors border border-brand-orange/20"
-            >
-              <Plus size={18} className="mr-1" />
-              Aggiungi
-            </button>
+            <div className="flex space-x-2">
+              <button 
+                onClick={addSuperset}
+                className="text-white hover:text-brand-lightOrange flex items-center text-xs font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors border border-white/5"
+                title="Aggiungi una sequenza di esercizi con un unico recupero finale"
+              >
+                SUPERSET
+              </button>
+              <button 
+                onClick={addExercise}
+                className="text-brand-orange hover:text-brand-lightOrange flex items-center text-xs font-bold bg-brand-orange/10 px-3 py-1.5 rounded-lg transition-colors border border-brand-orange/20"
+              >
+                <Plus size={16} className="mr-1" />
+                ESERCIZIO
+              </button>
+            </div>
           </div>
 
           {exercises.length === 0 ? (
@@ -209,37 +347,88 @@ const NewTrainPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Tipo Esercizio */}
-                <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                  <button
-                    onClick={() => updateExercise(ex.id, 'type', 'reps')}
-                    className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                  >
-                    RIPETIZIONI
-                  </button>
-                  <button
-                    onClick={() => updateExercise(ex.id, 'type', 'isometry')}
-                    className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                  >
-                    ISOMETRIA
-                  </button>
-                </div>
-                
-                {/* Nome */}
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Nome Esercizio (es: Panca Piana)"
-                    value={ex.name}
-                    onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
-                    className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white font-semibold focus:border-brand-orange focus:outline-none transition-colors"
-                  />
-                </div>
+                {/* Specific UI for SUPERSET vs SINGLE */}
+                {ex.type === 'superset' ? (
+                  <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
+                    <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex items-center justify-center">
+                      🔁 Circuito Superset
+                    </p>
+                    {ex.subExercises?.map((sub, sIdx) => (
+                      <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
+                        <input
+                          type="text"
+                          placeholder={`Nome Esercizio ${sIdx + 1}`}
+                          value={sub.name}
+                          onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
+                          className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
+                        />
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', sub.type === 'reps' ? 'isometry' : 'reps')}
+                            className="bg-brand-grey/20 px-2 py-2 rounded-lg text-xs font-bold text-brand-grey min-w-[50px]"
+                          >
+                            {sub.type === 'reps' ? 'RPS' : 'SEC'}
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            value={sub.type === 'reps' ? sub.reps : sub.duration_seconds}
+                            onChange={(e) => updateSubExercise(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', parseInt(e.target.value) || 0)}
+                            className="flex-1 bg-black/40 border border-brand-grey/10 rounded-lg px-2 text-white text-center focus:border-brand-orange outline-none"
+                            placeholder={sub.type === 'reps' ? 'Reps' : 'Sec'}
+                          />
+                        </div>
+                        {ex.subExercises && ex.subExercises.length > 2 && (
+                          <button 
+                            onClick={() => removeSubExercise(ex.id, sIdx)}
+                            className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button 
+                      onClick={() => addSubExercise(ex.id)}
+                      className="w-full mt-2 py-2 border border-dashed border-brand-grey/30 text-brand-grey/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                    >
+                      <Plus size={14} className="mr-1"/> AGGIUNGI AL SUPERSET
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                      <button
+                        onClick={() => updateExercise(ex.id, 'type', 'reps')}
+                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                      >
+                        RIPETIZIONI
+                      </button>
+                      <button
+                        onClick={() => updateExercise(ex.id, 'type', 'isometry')}
+                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                      >
+                        ISOMETRIA
+                      </button>
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Nome Esercizio (es: Panca Piana)"
+                        value={ex.name}
+                        onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
+                        className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white font-semibold focus:border-brand-orange focus:outline-none transition-colors"
+                      />
+                    </div>
+                  </>
+                )}
 
-                {/* Dati (Serie, Reps/Tempo, Recupero) */}
-                <div className="grid grid-cols-3 gap-3">
+                {/* Dati Generici (Serie e Recupero) */}
+                <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
                   <div className="flex flex-col">
-                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">Serie</label>
+                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
+                      {ex.type === 'superset' ? 'Round Totali' : 'Serie'}
+                    </label>
                     <input
                       type="number"
                       min="1"
@@ -249,18 +438,20 @@ const NewTrainPage: React.FC = () => {
                     />
                   </div>
                   
-                  <div className="flex flex-col">
-                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-center">
-                      {ex.type === 'reps' ? 'Reps' : 'Tempo (sec)'}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={ex.type === 'reps' ? ex.reps : ex.duration_seconds}
-                      onChange={(e) => updateExercise(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', parseInt(e.target.value) || 0)}
-                      className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
-                    />
-                  </div>
+                  {ex.type !== 'superset' && (
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-center">
+                        {ex.type === 'reps' ? 'Reps' : 'Tempo (sec)'}
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={ex.type === 'reps' ? ex.reps : ex.duration_seconds}
+                        onChange={(e) => updateExercise(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', parseInt(e.target.value) || 0)}
+                        className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
+                      />
+                    </div>
+                  )}
 
                   <div className="flex flex-col relative">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-right flex items-center justify-end">
