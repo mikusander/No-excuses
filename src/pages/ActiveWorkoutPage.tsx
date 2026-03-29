@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff } from 'lucide-react';
 
 interface Exercise {
   id: string;
@@ -44,6 +44,68 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isometryRemaining, setIsometryRemaining] = useState(0);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Voice Command State
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const handleVoiceNextRef = useRef<(() => void) | null>(null);
+
+  handleVoiceNextRef.current = () => {
+    if (isResting) skipRest();
+    else completeSet();
+  };
+
+  // Voice Recognition logic
+  useEffect(() => {
+    let recognition: any = null;
+
+    if (isVoiceEnabled) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.lang = 'it-IT'; // Support sia accento italiano che inglese se la parola è semplice
+
+        recognition.onresult = (event: any) => {
+          const current = event.resultIndex;
+          const transcript = event.results[current][0].transcript.toLowerCase();
+          
+          if (transcript.includes('next') || transcript.includes('avanti')) {
+            if (handleVoiceNextRef.current) {
+               handleVoiceNextRef.current();
+            }
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error("Speech recognition error", event.error);
+        };
+
+        recognition.onend = () => {
+          // Restart automatically if still enabled
+          if (isVoiceEnabled && recognition) {
+            try {
+              recognition.start();
+            } catch (e) {}
+          }
+        };
+
+        try {
+          recognition.start();
+        } catch (e) {}
+      } else {
+        alert("Your browser does not support Speech Recognition.");
+        setIsVoiceEnabled(false);
+      }
+    }
+
+    return () => {
+      if (recognition) {
+        recognition.onend = null; // Prevent restart
+        recognition.stop();
+      }
+    };
+  }, [isVoiceEnabled]);
 
   useEffect(() => {
     fetchWorkout();
@@ -249,9 +311,15 @@ const ActiveWorkoutPage: React.FC = () => {
   if (isResting) {
     return (
       <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center p-6 relative">
-        <div className="absolute top-4 left-4">
-          <button onClick={() => navigate(-1)} className="p-2 text-white/50 hover:text-white">
+        <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-10 p-2">
+          <button onClick={() => navigate(-1)} className="text-white/50 hover:text-white transition-colors">
             <ArrowLeft size={28} />
+          </button>
+          <button 
+            onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} 
+            className={`p-2 rounded-full transition-colors ${isVoiceEnabled ? 'bg-brand-orange text-black' : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
+          >
+            {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
           </button>
         </div>
         
@@ -299,10 +367,16 @@ const ActiveWorkoutPage: React.FC = () => {
         <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors">
           <ArrowLeft size={28} />
         </button>
-        <div className="text-center flex-1 pr-6"> {/* offset to center text */}
+        <div className="text-center flex-1">
           <h1 className="text-xs text-brand-grey uppercase tracking-widest font-black opacity-60">Active Workout</h1>
           <h2 className="text-sm font-bold text-white truncate px-4">{workout.name}</h2>
         </div>
+        <button 
+          onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} 
+          className={`p-2 -mr-2 rounded-full transition-colors ${isVoiceEnabled ? 'bg-brand-orange text-black' : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
+        >
+          {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
+        </button>
       </header>
 
       {/* Progress Bar */}

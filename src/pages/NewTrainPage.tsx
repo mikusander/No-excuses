@@ -28,7 +28,7 @@ const NewTrainPage: React.FC = () => {
   const [exercises, setExercises] = useState<ExerciseDraft[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const { id } = useParams<{ id: string }>();
 
   // Carica i dati della scheda se siamo in modalità modifica
@@ -51,14 +51,14 @@ const NewTrainPage: React.FC = () => {
         .single();
 
       if (error) throw error;
-      
+
       if (data) {
         setWorkoutName(data.name);
         const sorted = data.exercises.sort((a: any, b: any) => a.order_index - b.order_index);
         setExercises(sorted.map((ex: any) => {
           let parsedName = ex.name;
           let subExercises = [];
-          
+
           if (ex.type === 'superset') {
             try {
               subExercises = JSON.parse(ex.name);
@@ -67,7 +67,7 @@ const NewTrainPage: React.FC = () => {
               console.error('Error parsing superset JSON:', e);
             }
           }
-          
+
           return {
             ...ex,
             name: parsedName,
@@ -86,18 +86,20 @@ const NewTrainPage: React.FC = () => {
 
   const addExercise = () => {
     setExercises([
-      ...exercises, 
+      ...exercises,
       { id: crypto.randomUUID(), type: 'reps', name: '', sets: 3, reps: 10, duration_seconds: 30, rest_seconds: 60 }
     ]);
   };
 
   const addSuperset = () => {
     setExercises([
-      ...exercises, 
-      { id: crypto.randomUUID(), type: 'superset', name: '', sets: 3, reps: 0, duration_seconds: 0, rest_seconds: 90, subExercises: [
-        { name: '', type: 'reps', reps: 10, duration_seconds: 0 },
-        { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
-      ]}
+      ...exercises,
+      {
+        id: crypto.randomUUID(), type: 'superset', name: '', sets: 3, reps: 0, duration_seconds: 0, rest_seconds: 90, subExercises: [
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0 },
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
+        ]
+      }
     ]);
   };
 
@@ -111,17 +113,17 @@ const NewTrainPage: React.FC = () => {
 
     const newExercises = [...exercises];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    
+
     // Scambia gli elementi
     const temp = newExercises[index];
     newExercises[index] = newExercises[targetIndex];
     newExercises[targetIndex] = temp;
-    
+
     setExercises(newExercises);
   };
 
   const updateExercise = (id: string, field: keyof ExerciseDraft, value: any) => {
-    setExercises(exercises.map(ex => 
+    setExercises(exercises.map(ex =>
       ex.id === id ? { ...ex, [field]: value } : ex
     ));
   };
@@ -210,14 +212,14 @@ const NewTrainPage: React.FC = () => {
           .update({ name: workoutName })
           .eq('id', id);
         if (updateError) throw updateError;
-        
+
         // Rimuove i vecchi esercizi
         const { error: deleteError } = await supabase
           .from('exercises')
           .delete()
           .eq('workout_id', id);
         if (deleteError) throw deleteError;
-        
+
       } else {
         // INSERT nuova scheda
         const { data: workoutData, error: workoutError } = await supabase
@@ -261,8 +263,8 @@ const NewTrainPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24">
       <header className="p-4 flex items-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
-        <button 
-          onClick={() => navigate('/')} 
+        <button
+          onClick={() => navigate('/')}
           className="p-2 text-white hover:text-brand-orange transition-colors"
         >
           <ArrowLeft size={28} />
@@ -291,18 +293,19 @@ const NewTrainPage: React.FC = () => {
         <div className="space-y-4 mb-8">
           <div className="flex justify-between items-center mb-2">
             <h2 className="text-brand-grey font-semibold ml-1 flex items-center mb-2 sm:mb-0">
-              <Move size={16} className="mr-2 opacity-50"/> 
+              <Move size={16} className="mr-2 opacity-50" />
               Order and Add
             </h2>
             <div className="flex space-x-2">
-              <button 
+              <button
                 onClick={addSuperset}
                 className="text-white hover:text-brand-lightOrange flex items-center text-xs font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors border border-white/5"
                 title="Add a sequence of exercises with a single rest period"
               >
+                <Plus size={16} className="mr-1" />
                 SUPERSET
               </button>
-              <button 
+              <button
                 onClick={addExercise}
                 className="text-brand-orange hover:text-brand-lightOrange flex items-center text-xs font-bold bg-brand-orange/10 px-3 py-1.5 rounded-lg transition-colors border border-brand-orange/20"
               >
@@ -319,18 +322,18 @@ const NewTrainPage: React.FC = () => {
           ) : (
             exercises.map((ex, index) => (
               <div key={ex.id} className="bg-brand-darkGrey/40 border border-brand-grey/20 p-4 rounded-3xl flex flex-col space-y-4 relative shadow-lg">
-                
+
                 {/* Header Esercizio: Frecce Ordine e Bottone Elimina */}
                 <div className="flex justify-between items-center bg-black/30 -mx-4 -mt-4 p-3 rounded-t-3xl border-b border-white/5">
                   <div className="flex space-x-1">
-                    <button 
+                    <button
                       onClick={() => moveExercise(index, 'up')}
                       disabled={index === 0}
                       className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
                     >
                       <ChevronUp size={20} />
                     </button>
-                    <button 
+                    <button
                       onClick={() => moveExercise(index, 'down')}
                       disabled={index === exercises.length - 1}
                       className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
@@ -339,7 +342,7 @@ const NewTrainPage: React.FC = () => {
                     </button>
                   </div>
                   <span className="text-xs font-bold text-brand-grey/40">EXERCISE {index + 1}</span>
-                  <button 
+                  <button
                     onClick={() => removeExercise(ex.id)}
                     className="p-1.5 text-brand-grey/60 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
                   >
@@ -362,24 +365,32 @@ const NewTrainPage: React.FC = () => {
                           onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
                           className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
                         />
-                        <div className="flex space-x-2">
+                        <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                           <button
-                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', sub.type === 'reps' ? 'isometry' : 'reps')}
-                            className="bg-brand-grey/20 px-2 py-2 rounded-lg text-xs font-bold text-brand-grey min-w-[50px]"
+                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
+                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
-                            {sub.type === 'reps' ? 'RPS' : 'SEC'}
+                            REPS
                           </button>
+                          <button
+                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
+                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                          >
+                            ISOMETRIC
+                          </button>
+                        </div>
+                        <div>
                           <input
                             type="number"
                             min="1"
                             value={sub.type === 'reps' ? sub.reps : sub.duration_seconds}
                             onChange={(e) => updateSubExercise(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', parseInt(e.target.value) || 0)}
-                            className="flex-1 bg-black/40 border border-brand-grey/10 rounded-lg px-2 text-white text-center focus:border-brand-orange outline-none"
-                            placeholder={sub.type === 'reps' ? 'Reps' : 'Sec'}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
+                            placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           />
                         </div>
                         {ex.subExercises && ex.subExercises.length > 2 && (
-                          <button 
+                          <button
                             onClick={() => removeSubExercise(ex.id, sIdx)}
                             className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
                           >
@@ -388,11 +399,11 @@ const NewTrainPage: React.FC = () => {
                         )}
                       </div>
                     ))}
-                    <button 
+                    <button
                       onClick={() => addSubExercise(ex.id)}
                       className="w-full mt-2 py-2 border border-dashed border-brand-grey/30 text-brand-grey/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                     >
-                      <Plus size={14} className="mr-1"/> ADD TO SUPERSET
+                      <Plus size={14} className="mr-1" /> ADD TO SUPERSET
                     </button>
                   </div>
                 ) : (
@@ -437,7 +448,7 @@ const NewTrainPage: React.FC = () => {
                       className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
                     />
                   </div>
-                  
+
                   {ex.type !== 'superset' && (
                     <div className="flex flex-col">
                       <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-center">
@@ -465,12 +476,12 @@ const NewTrainPage: React.FC = () => {
                       value={formatSecondsToMinutes(ex.rest_seconds)}
                       onFocus={(e) => {
                         // All'apertura finta selezione o svuotamento
-                        if(ex.rest_seconds === 60) e.target.select();
+                        if (ex.rest_seconds === 60) e.target.select();
                       }}
                       onChange={(e) => {
                         // Lasciamo scrivere l'utente stringhe, ma salviamo al blur o a caldo
                         // In questo caso se è digitato senza i 2 punti (es 90) è ok.
-                         updateExercise(ex.id, 'rest_seconds', parseMinutesToSeconds(e.target.value));
+                        updateExercise(ex.id, 'rest_seconds', parseMinutesToSeconds(e.target.value));
                       }}
                       className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-brand-orange font-bold focus:border-brand-orange focus:outline-none transition-colors"
                     />
