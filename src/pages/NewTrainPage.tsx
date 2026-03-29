@@ -78,7 +78,7 @@ const NewTrainPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setError('Errore di caricamento scheda');
+      setError('Error loading workout');
     } finally {
       setLoading(false);
     }
@@ -174,24 +174,24 @@ const NewTrainPage: React.FC = () => {
 
   const saveWorkout = async () => {
     if (!workoutName.trim()) {
-      setError('Inserisci il nome della scheda');
+      setError('Enter a name for the workout');
       return;
     }
     if (exercises.length === 0) {
-      setError('Aggiungi almeno un esercizio alla scheda');
+      setError('Add at least one exercise to the workout');
       return;
     }
     for (const ex of exercises) {
       if (ex.type === 'superset') {
         if (!ex.subExercises || ex.subExercises.length < 2) {
-          setError('I Superset devono avere almeno 2 esercizi'); return;
+          setError('Supersets must contain at least 2 exercises'); return;
         }
         for (const sub of ex.subExercises) {
-          if (!sub.name.trim()) { setError('Tutti gli esercizi del Superset devono avere un nome'); return; }
+          if (!sub.name.trim()) { setError('All exercises in a Superset must have a name'); return; }
         }
       } else {
         if (!ex.name.trim()) {
-          setError('Tutti gli esercizi devono avere un nome');
+          setError('All exercises must have a name');
           return;
         }
       }
@@ -252,7 +252,7 @@ const NewTrainPage: React.FC = () => {
       navigate('/gym-card');
 
     } catch (err: any) {
-      setError(err.message || 'Errore durante il salvataggio');
+      setError(err.message || 'Error occurred while saving');
     } finally {
       setLoading(false);
     }
@@ -267,7 +267,7 @@ const NewTrainPage: React.FC = () => {
         >
           <ArrowLeft size={28} />
         </button>
-        <h1 className="text-xl font-bold ml-2">{id ? 'Modifica Scheda' : 'Nuova Scheda'}</h1>
+        <h1 className="text-xl font-bold ml-2">{id ? 'Edit Workout' : 'New Workout'}</h1>
       </header>
 
       <main className="flex-1 p-6 flex flex-col max-w-lg mx-auto w-full">
@@ -278,10 +278,10 @@ const NewTrainPage: React.FC = () => {
         )}
 
         <div className="mb-8">
-          <label className="block text-brand-grey font-semibold mb-2 ml-1">Nome Scheda</label>
+          <label className="block text-brand-grey font-semibold mb-2 ml-1">Workout Name</label>
           <input
             type="text"
-            placeholder="Es: Petto e Bicipiti"
+            placeholder="E.g. Chest and Biceps"
             value={workoutName}
             onChange={(e) => setWorkoutName(e.target.value)}
             className="w-full bg-brand-darkGrey/40 border-2 border-brand-grey/20 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors text-lg shadow-inner shadow-black/50"
@@ -292,13 +292,13 @@ const NewTrainPage: React.FC = () => {
           <div className="flex justify-between items-center mb-2">
             <h2 className="text-brand-grey font-semibold ml-1 flex items-center mb-2 sm:mb-0">
               <Move size={16} className="mr-2 opacity-50"/> 
-              Ordina e Aggiungi
+              Order and Add
             </h2>
             <div className="flex space-x-2">
               <button 
                 onClick={addSuperset}
                 className="text-white hover:text-brand-lightOrange flex items-center text-xs font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors border border-white/5"
-                title="Aggiungi una sequenza di esercizi con un unico recupero finale"
+                title="Add a sequence of exercises with a single rest period"
               >
                 SUPERSET
               </button>
@@ -307,14 +307,14 @@ const NewTrainPage: React.FC = () => {
                 className="text-brand-orange hover:text-brand-lightOrange flex items-center text-xs font-bold bg-brand-orange/10 px-3 py-1.5 rounded-lg transition-colors border border-brand-orange/20"
               >
                 <Plus size={16} className="mr-1" />
-                ESERCIZIO
+                EXERCISE
               </button>
             </div>
           </div>
 
           {exercises.length === 0 ? (
             <div className="text-center p-8 bg-brand-darkGrey/20 rounded-3xl border border-dashed border-brand-grey/30">
-              <p className="text-brand-grey/60">Nessun esercizio aggiunto.</p>
+              <p className="text-brand-grey/60">No exercises added.</p>
             </div>
           ) : (
             exercises.map((ex, index) => (
@@ -338,7 +338,7 @@ const NewTrainPage: React.FC = () => {
                       <ChevronDown size={20} />
                     </button>
                   </div>
-                  <span className="text-xs font-bold text-brand-grey/40">ESERCIZIO {index + 1}</span>
+                  <span className="text-xs font-bold text-brand-grey/40">EXERCISE {index + 1}</span>
                   <button 
                     onClick={() => removeExercise(ex.id)}
                     className="p-1.5 text-brand-grey/60 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
@@ -351,13 +351,13 @@ const NewTrainPage: React.FC = () => {
                 {ex.type === 'superset' ? (
                   <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
                     <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex items-center justify-center">
-                      🔁 Circuito Superset
+                      🔁 Superset Circuit
                     </p>
                     {ex.subExercises?.map((sub, sIdx) => (
                       <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
                         <input
                           type="text"
-                          placeholder={`Nome Esercizio ${sIdx + 1}`}
+                          placeholder={`Exercise Name ${sIdx + 1}`}
                           value={sub.name}
                           onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
                           className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
@@ -392,7 +392,7 @@ const NewTrainPage: React.FC = () => {
                       onClick={() => addSubExercise(ex.id)}
                       className="w-full mt-2 py-2 border border-dashed border-brand-grey/30 text-brand-grey/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                     >
-                      <Plus size={14} className="mr-1"/> AGGIUNGI AL SUPERSET
+                      <Plus size={14} className="mr-1"/> ADD TO SUPERSET
                     </button>
                   </div>
                 ) : (
@@ -402,19 +402,19 @@ const NewTrainPage: React.FC = () => {
                         onClick={() => updateExercise(ex.id, 'type', 'reps')}
                         className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                       >
-                        RIPETIZIONI
+                        REPS
                       </button>
                       <button
                         onClick={() => updateExercise(ex.id, 'type', 'isometry')}
                         className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                       >
-                        ISOMETRIA
+                        ISOMETRIC
                       </button>
                     </div>
                     <div>
                       <input
                         type="text"
-                        placeholder="Nome Esercizio (es: Panca Piana)"
+                        placeholder="Exercise Name (e.g. Bench Press)"
                         value={ex.name}
                         onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
                         className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white font-semibold focus:border-brand-orange focus:outline-none transition-colors"
@@ -427,7 +427,7 @@ const NewTrainPage: React.FC = () => {
                 <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
                   <div className="flex flex-col">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                      {ex.type === 'superset' ? 'Round Totali' : 'Serie'}
+                      {ex.type === 'superset' ? 'Total Rounds' : 'Sets'}
                     </label>
                     <input
                       type="number"
@@ -441,7 +441,7 @@ const NewTrainPage: React.FC = () => {
                   {ex.type !== 'superset' && (
                     <div className="flex flex-col">
                       <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-center">
-                        {ex.type === 'reps' ? 'Reps' : 'Tempo (sec)'}
+                        {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
                       </label>
                       <input
                         type="number"
@@ -456,7 +456,7 @@ const NewTrainPage: React.FC = () => {
                   <div className="flex flex-col relative">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-right flex items-center justify-end">
                       <Clock size={10} className="mr-1" />
-                      Riposo
+                      Rest
                     </label>
                     {/* Visualizziamo il campo rovesciato così supporta i ":" in mobilità se vogliamo, oppure input testuale formattato MM:SS */}
                     <input
@@ -486,10 +486,10 @@ const NewTrainPage: React.FC = () => {
           disabled={loading || exercises.length === 0}
           className="w-full bg-brand-orange hover:bg-brand-lightOrange text-black font-bold text-lg py-4 rounded-xl flex items-center justify-center transition-colors disabled:opacity-50 mt-auto shadow-lg shadow-brand-orange/20"
         >
-          {loading ? 'Salvataggio in corso...' : (
+          {loading ? 'Saving...' : (
             <>
               <Save size={24} className="mr-2" />
-              SALVA LA SCHEDA
+              SAVE WORKOUT
             </>
           )}
         </button>

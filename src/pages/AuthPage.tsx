@@ -28,7 +28,7 @@ const AuthPage: React.FC = () => {
       }
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Errore durante l\'autenticazione');
+      setError(err.message || 'Error during authentication');
     } finally {
       setLoading(false);
     }
@@ -42,7 +42,7 @@ const AuthPage: React.FC = () => {
         </div>
         
         <h2 className="text-2xl font-bold text-center mb-6">
-          {isLogin ? 'Bentornato!' : 'Crea un Account'}
+          {isLogin ? 'Welcome back!' : 'Create an Account'}
         </h2>
 
         {error && (
@@ -74,18 +74,18 @@ const AuthPage: React.FC = () => {
             disabled={loading}
             className="bg-brand-orange hover:bg-brand-lightOrange text-black font-bold text-lg py-3 rounded-xl mt-4 transition-colors disabled:opacity-50"
           >
-            {loading ? 'Attendi...' : isLogin ? 'ACCEDI' : 'REGISTRATI'}
+            {loading ? 'Please wait...' : isLogin ? 'LOG IN' : 'SIGN UP'}
           </button>
         </form>
 
         <p className="mt-6 text-center text-sm text-brand-grey">
-          {isLogin ? 'Non hai un account?' : 'Hai già un account?'}
+          {isLogin ? 'Don\'t have an account?' : 'Already have an account?'}
           <button 
             type="button" 
             onClick={() => setIsLogin(!isLogin)} 
             className="text-brand-orange font-bold ml-2 hover:underline"
           >
-            {isLogin ? 'Registrati' : 'Accedi'}
+            {isLogin ? 'Sign up' : 'Log in'}
           </button>
         </p>
       </div>

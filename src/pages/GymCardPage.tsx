@@ -55,7 +55,7 @@ const GymCardPage: React.FC = () => {
           if (ex.type === 'superset') {
             try {
               subExercises = JSON.parse(ex.name);
-              parsedName = 'Circuito Superset';
+              parsedName = 'Superset Circuit';
             } catch(e) {}
           }
           return { ...ex, name: parsedName, subExercises };
@@ -71,7 +71,7 @@ const GymCardPage: React.FC = () => {
   };
 
   const deleteWorkout = async (id: string) => {
-    if (!window.confirm('Vuoi davvero eliminare questa scheda?')) return;
+    if (!window.confirm('Are you sure you want to delete this workout?')) return;
     try {
       const { error } = await supabase.from('workouts').delete().eq('id', id);
       if (error) throw error;
@@ -98,12 +98,12 @@ const GymCardPage: React.FC = () => {
           >
             <ArrowLeft size={28} />
           </button>
-          <h1 className="text-xl font-bold ml-2">Le Tue Schede</h1>
+          <h1 className="text-xl font-bold ml-2">Your Workouts</h1>
         </div>
         <button
           onClick={() => navigate('/new-train')}
           className="p-2 text-brand-orange hover:text-brand-lightOrange transition-colors bg-brand-orange/10 rounded-full shadow-lg"
-          title="Crea Nuova Scheda"
+          title="Create New Workout"
         >
           <Plus size={24} />
         </button>
@@ -117,13 +117,13 @@ const GymCardPage: React.FC = () => {
         ) : workouts.length === 0 ? (
           <div className="text-center bg-brand-darkGrey/20 border border-dashed border-brand-grey/30 rounded-3xl p-8 mt-12">
             <Dumbbell size={48} className="mx-auto text-brand-grey/50 mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">Nessuna Scheda</h2>
-            <p className="text-brand-grey text-sm mb-6">Non hai ancora creato nessuna scheda di allenamento.</p>
+            <h2 className="text-xl font-bold text-white mb-2">No Workouts</h2>
+            <p className="text-brand-grey text-sm mb-6">You haven't created any training programs yet.</p>
             <button 
               onClick={() => navigate('/new-train')}
               className="bg-brand-orange hover:bg-brand-lightOrange text-black font-bold py-3 px-6 rounded-full transition-colors"
             >
-              CREANE UNA ORA
+              CREATE ONE NOW
             </button>
           </div>
         ) : (
@@ -133,14 +133,14 @@ const GymCardPage: React.FC = () => {
                 <button 
                   onClick={() => navigate(`/edit-train/${workout.id}`)}
                   className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
-                  title="Modifica Scheda"
+                  title="Edit Workout"
                 >
                   <Pencil size={20} />
                 </button>
                 <button 
                   onClick={() => deleteWorkout(workout.id)}
                   className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg"
-                  title="Elimina Scheda"
+                  title="Delete Workout"
                 >
                   <Trash2 size={20} />
                 </button>
@@ -153,7 +153,7 @@ const GymCardPage: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <h2 className="text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
                   <p className="text-xs text-brand-grey/60 font-semibold mt-1">
-                    {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </p>
                 </div>
               </div>
@@ -183,7 +183,7 @@ const GymCardPage: React.FC = () => {
                          </span>
                          <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
                             {ex.type === 'isometry' ? <Timer size={12} className="mr-1 text-brand-orange"/> : <Repeat size={12} className="mr-1 text-brand-orange"/>}
-                            {ex.type === 'isometry' ? 'ISOMETRIA' : 'REPS'}
+                            {ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
                          </div>
                       </div>
                     )}
@@ -191,7 +191,7 @@ const GymCardPage: React.FC = () => {
                     <div className="flex items-center space-x-2 text-xs text-brand-grey font-bold w-full mt-2">
                       <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                          {ex.type === 'superset' ? 'Round' : 'Serie'}
+                          {ex.type === 'superset' ? 'Round' : 'Sets'}
                         </span>
                         <span className="text-sm text-white">{ex.sets}</span>
                       </div>
@@ -199,7 +199,7 @@ const GymCardPage: React.FC = () => {
                       {ex.type !== 'superset' && (
                         <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
                           <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                            {ex.type === 'isometry' ? 'Durata' : 'Ripetizioni'}
+                            {ex.type === 'isometry' ? 'Duration' : 'Reps'}
                           </span>
                           <span className="text-sm text-brand-orange">{ex.type === 'isometry' ? formatSecs(ex.duration_seconds) : ex.reps}</span>
                         </div>
@@ -213,7 +213,7 @@ const GymCardPage: React.FC = () => {
                   </div>
                 ))}
                 {(!workout.exercises || workout.exercises.length === 0) && (
-                  <p className="text-sm text-brand-grey/50 italic text-center py-4 bg-black/20 rounded-2xl">Nessun esercizio nella scheda.</p>
+                  <p className="text-sm text-brand-grey/50 italic text-center py-4 bg-black/20 rounded-2xl">No exercises in this workout.</p>
                 )}
               </div>
             </div>

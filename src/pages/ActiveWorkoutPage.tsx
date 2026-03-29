@@ -73,7 +73,7 @@ const ActiveWorkoutPage: React.FC = () => {
           if (ex.type === 'superset') {
             try {
               subExercises = JSON.parse(ex.name);
-              parsedName = 'Circuito Superset'; 
+              parsedName = 'Superset Circuit'; 
             } catch(e) {}
           }
           return { ...ex, name: parsedName, subExercises };
@@ -147,8 +147,8 @@ const ActiveWorkoutPage: React.FC = () => {
   if (!workout || workout.exercises.length === 0) {
     return (
       <div className="min-h-screen bg-brand-dark flex flex-col p-6 items-center justify-center">
-        <h2 className="text-xl font-bold text-white mb-4">Nessun esercizio trovato.</h2>
-        <button onClick={() => navigate(-1)} className="text-brand-orange">Torna indietro</button>
+        <h2 className="text-xl font-bold text-white mb-4">No exercises found.</h2>
+        <button onClick={() => navigate(-1)} className="text-brand-orange">Go Back</button>
       </div>
     );
   }
@@ -178,7 +178,7 @@ const ActiveWorkoutPage: React.FC = () => {
       setIsometryRemaining(getTargetIsometry(nextEx, nextEx.subExercises?.[0]));
     } else {
       // Workout Complete!
-      if (window.confirm("Allenamento completato! Vuoi tornare alla home?")) {
+      if (window.confirm("Workout completed! Do you want to return to home?")) {
         navigate('/');
       }
     }
@@ -270,13 +270,13 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
 
         <div className="text-center space-y-2 mb-12">
-          <p className="text-brand-grey text-sm">Prossima Serie:</p>
+          <p className="text-brand-grey text-sm">Next Set:</p>
           <p className="text-white text-xl font-bold">{currentExercise.name}</p>
           {isSuperset && currentExercise.subExercises && (
             <p className="text-brand-orange/80 text-sm font-semibold">{currentExercise.subExercises.map((s:any) => s.name).join(' + ')}</p>
           )}
           <p className="text-brand-orange font-bold font-mono">
-            {isSuperset ? 'Round' : 'Serie'} {currentSetIdx + 2} di {currentExercise.sets}
+            {isSuperset ? 'Round' : 'Set'} {currentSetIdx + 2} of {currentExercise.sets}
           </p>
         </div>
 
@@ -300,7 +300,7 @@ const ActiveWorkoutPage: React.FC = () => {
           <ArrowLeft size={28} />
         </button>
         <div className="text-center flex-1 pr-6"> {/* offset to center text */}
-          <h1 className="text-xs text-brand-grey uppercase tracking-widest font-black opacity-60">Allenamento in Corso</h1>
+          <h1 className="text-xs text-brand-grey uppercase tracking-widest font-black opacity-60">Active Workout</h1>
           <h2 className="text-sm font-bold text-white truncate px-4">{workout.name}</h2>
         </div>
       </header>
@@ -326,14 +326,14 @@ const ActiveWorkoutPage: React.FC = () => {
 
           <div className="flex-1 text-center px-4">
              <span className="text-brand-orange font-black text-xs tracking-widest mb-1 block">
-               ESERCIZIO {currentExerciseIdx + 1} DI {workout.exercises.length}
+               EXERCISE {currentExerciseIdx + 1} OF {workout.exercises.length}
              </span>
              <h2 className="text-3xl font-black text-white leading-tight drop-shadow-md">
                {isSuperset && subExercise ? subExercise.name : currentExercise.name}
              </h2>
              {isSuperset && (
                <span className="text-[10px] text-brand-orange/60 uppercase font-black tracking-widest block mt-1">
-                 Superset (Esercizio {currentSubExerciseIdx + 1} di {currentExercise.subExercises?.length})
+                 Superset (Exercise {currentSubExerciseIdx + 1} of {currentExercise.subExercises?.length})
                </span>
              )}
           </div>
@@ -380,7 +380,7 @@ const ActiveWorkoutPage: React.FC = () => {
                  </div>
               </div>
               <p className="text-center text-xs text-brand-grey mt-6 uppercase tracking-wider font-bold">
-                 Tocca il timer per {isometryActive ? 'mettere in pausa' : 'avviarlo'}
+                 Tap timer to {isometryActive ? 'pause' : 'start'}
               </p>
             </div>
           ) : (
@@ -388,7 +388,7 @@ const ActiveWorkoutPage: React.FC = () => {
               <span className="block text-[120px] font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_30px_rgba(255,107,0,0.2)]">
                 {isSuperset && subExercise ? subExercise.reps : currentExercise.reps}
               </span>
-              <span className="text-brand-grey font-bold uppercase tracking-widest text-lg">Ripetizioni</span>
+              <span className="text-brand-grey font-bold uppercase tracking-widest text-lg">Reps</span>
             </div>
           )}
         </div>
@@ -406,12 +406,12 @@ const ActiveWorkoutPage: React.FC = () => {
              {isLastExercise && isLastSet && (!isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1) ? (
                <>
                  <CheckCircle2 size={28} className="mr-2" strokeWidth={3} />
-                 COMPLETA SCHEDA
+                 COMPLETE WORKOUT
                </>
              ) : isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1 ? (
-               <>PROSSIMO NEL SUPERSET <ArrowRight size={24} className="ml-2" /></>
+               <>NEXT IN SUPERSET <ArrowRight size={24} className="ml-2" /></>
              ) : isLastSet ? (
-               <>PROSSIMO ESERCIZIO <ArrowRight size={24} className="ml-2" /></>
+               <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
              ) : (
                <>FINISH {isSuperset ? 'ROUND' : 'SET'}</>
              )}

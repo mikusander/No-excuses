@@ -47,7 +47,7 @@ const SelectWorkoutPage: React.FC = () => {
         >
           <ArrowLeft size={28} />
         </button>
-        <h1 className="text-xl font-bold ml-2">Seleziona Scheda</h1>
+        <h1 className="text-xl font-bold ml-2">Select Workout</h1>
       </header>
 
       <main className="flex-1 p-6 w-full max-w-2xl mx-auto space-y-6">
@@ -58,13 +58,13 @@ const SelectWorkoutPage: React.FC = () => {
         ) : workouts.length === 0 ? (
           <div className="text-center bg-brand-darkGrey/20 border border-dashed border-brand-grey/30 rounded-3xl p-8 mt-12">
             <Dumbbell size={48} className="mx-auto text-brand-grey/50 mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">Nessuna Scheda</h2>
-            <p className="text-brand-grey text-sm mb-6">Non hai ancora creato nessuna scheda di allenamento.</p>
+            <h2 className="text-xl font-bold text-white mb-2">No Workouts Found</h2>
+            <p className="text-brand-grey text-sm mb-6">You haven't created any workouts yet.</p>
             <button 
               onClick={() => navigate('/new-train')}
               className="bg-brand-orange hover:bg-brand-lightOrange text-black font-bold py-3 px-6 rounded-full transition-colors"
             >
-              CREANE UNA ORA
+              CREATE ONE NOW
             </button>
           </div>
         ) : (
@@ -82,7 +82,7 @@ const SelectWorkoutPage: React.FC = () => {
                   <div>
                     <h2 className="text-xl font-bold text-white leading-tight">{workout.name}</h2>
                     <p className="text-xs text-brand-grey/60 font-semibold mt-1">
-                      {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
                     </p>
                   </div>
                 </div>
