@@ -6,6 +6,8 @@ import AuthPage from './pages/AuthPage';
 import NewTrainPage from './pages/NewTrainPage';
 import GymCardPage from './pages/GymCardPage';
 import SettingsPage from './pages/SettingsPage';
+import SelectWorkoutPage from './pages/SelectWorkoutPage';
+import ActiveWorkoutPage from './pages/ActiveWorkoutPage';
 import { useAuth } from './context/AuthContext';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -47,6 +49,16 @@ function App() {
         <Route path="/gym-card" element={
           <ProtectedRoute>
             <GymCardPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/select-workout" element={
+          <ProtectedRoute>
+            <SelectWorkoutPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/active-workout/:id" element={
+          <ProtectedRoute>
+            <ActiveWorkoutPage />
           </ProtectedRoute>
         } />
         <Route path="/settings" element={

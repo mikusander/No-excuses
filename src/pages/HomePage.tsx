@@ -11,7 +11,7 @@ const HomePage = () => {
         <WorkoutCard
           imageSrc="/images/download.jpeg"
           buttonText="START NEW TRAIN"
-          to="/new-train"
+          to="/select-workout"
         />
 
         <WorkoutCard
