@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import HomePage from './pages/HomePage';
 import RepCounterPage from './pages/RepCounterPage';
 
@@ -28,6 +29,39 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 
 function App() {
+  const [isLogoLoaded, setIsLogoLoaded] = useState(false);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = '/images/logoApp.jpeg';
+    
+    // Safety timeout just in case the image fails or hangs
+    const timer = setTimeout(() => setIsLogoLoaded(true), 3000);
+
+    const markLoaded = () => {
+      clearTimeout(timer);
+      setIsLogoLoaded(true);
+    };
+
+    if (img.complete) {
+      markLoaded();
+    } else {
+      img.onload = markLoaded;
+      img.onerror = markLoaded;
+    }
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!isLogoLoaded) {
+    // Show a blank dark screen or a simple spinner while preloading the initial assets
+    return (
+      <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey"></div>
+      </div>
+    );
+  }
+
   return (
     <Router>
       <Routes>

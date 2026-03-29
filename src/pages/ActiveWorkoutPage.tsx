@@ -57,6 +57,39 @@ const ActiveWorkoutPage: React.FC = () => {
   };
   
   handleVoicePrevRef.current = () => {
+    // Granular 'back' functionality perfectly mirroring 'next'
+    if (!workout) return;
+    const currentEx = workout.exercises[currentExerciseIdx];
+
+    if (isResting) {
+      setIsResting(false);
+      setIsometryRemaining(getTargetIsometry(currentEx, currentEx.subExercises?.[currentSubExerciseIdx]));
+      return;
+    }
+    
+    if (currentEx.type === 'superset' && currentSubExerciseIdx > 0) {
+      const prevSubIdx = currentSubExerciseIdx - 1;
+      setCurrentSubExerciseIdx(prevSubIdx);
+      const prevSubEx = currentEx.subExercises![prevSubIdx];
+      setIsometryRemaining(prevSubEx.type === 'isometry' ? prevSubEx.duration_seconds : 0);
+      return;
+    }
+
+    if (currentSetIdx > 0) {
+      const prevSetIdx = currentSetIdx - 1;
+      setCurrentSetIdx(prevSetIdx);
+      const ex = workout?.exercises[currentExerciseIdx];
+      if (ex && ex.type === 'superset' && ex.subExercises) {
+        const lastSubIdx = ex.subExercises.length - 1;
+        setCurrentSubExerciseIdx(lastSubIdx);
+        const lastSubEx = ex.subExercises[lastSubIdx];
+        setIsometryRemaining(lastSubEx.type === 'isometry' ? lastSubEx.duration_seconds : 0);
+      } else if (ex) {
+        setIsometryRemaining(getTargetIsometry(ex, null));
+      }
+      return;
+    }
+
     handlePrevExercise();
   };
 
