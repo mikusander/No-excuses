@@ -54,7 +54,7 @@ const NavItem = ({ icon, label, active, onClick }: NavItemProps) => {
   return (
     <button
       onClick={onClick}
-      className={`relative flex flex-col items-center justify-center w-[68px] h-[60px] rounded-full transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] z-10 overflow-hidden ${active ? 'bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)]' : 'hover:bg-white/5'}`}
+      className={`relative flex flex-col items-center justify-center w-[84px] h-[64px] rounded-3xl transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] z-10 overflow-hidden ${active ? 'bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)]' : 'hover:bg-white/5'}`}
     >
       {/* Animated Glow Behind Icon */}
       <div
@@ -62,12 +62,12 @@ const NavItem = ({ icon, label, active, onClick }: NavItemProps) => {
         ${active ? 'opacity-100 scale-150' : 'opacity-0 scale-50'}`}
       />
 
-      <div className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${active ? 'text-brand-orange -translate-y-2 scale-110 drop-shadow-[0_0_12px_rgba(255,107,0,0.6)]' : 'text-brand-grey/60 hover:text-white/90'}`}>
+      <div className={`relative z-10 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${active ? 'text-brand-orange -translate-y-2.5 scale-110 drop-shadow-[0_0_12px_rgba(255,107,0,0.6)]' : 'text-brand-grey/60 hover:text-white/90'}`}>
         {icon}
       </div>
 
       <span
-        className={`absolute bottom-1.5 text-[9px] font-black uppercase tracking-wider transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] 
+        className={`absolute bottom-2 text-[9px] font-black uppercase tracking-wide whitespace-nowrap transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] 
         ${active ? 'text-brand-orange opacity-100 translate-y-0 drop-shadow-[0_0_8px_rgba(255,107,0,0.4)]' : 'text-brand-grey/40 opacity-0 translate-y-4'}`}
       >
         {label}
@@ -75,7 +75,7 @@ const NavItem = ({ icon, label, active, onClick }: NavItemProps) => {
 
       {/* Liquid Dot Indicator */}
       <div
-        className={`absolute bottom-[-2px] w-6 h-1 rounded-t-full bg-brand-orange transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] shadow-[0_0_10px_rgba(255,107,0,1)] 
+        className={`absolute bottom-0 w-6 h-1 rounded-t-full bg-brand-orange transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] shadow-[0_0_10px_rgba(255,107,0,1)] 
         ${active ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
       />
     </button>
