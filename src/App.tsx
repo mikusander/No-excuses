@@ -1,5 +1,4 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { useEffect, useState } from 'react';
 import HomePage from './pages/HomePage';
 import RepCounterPage from './pages/RepCounterPage';
 
@@ -10,6 +9,7 @@ import SettingsPage from './pages/SettingsPage';
 import SelectWorkoutPage from './pages/SelectWorkoutPage';
 import ActiveWorkoutPage from './pages/ActiveWorkoutPage';
 import { useAuth } from './context/AuthContext';
+import ResetPasswordModal from './components/ResetPasswordModal';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -27,43 +27,13 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-
 function App() {
-  const [isLogoLoaded, setIsLogoLoaded] = useState(false);
-
-  useEffect(() => {
-    const img = new Image();
-    img.src = '/images/logoApp.jpeg';
-    
-    // Safety timeout just in case the image fails or hangs
-    const timer = setTimeout(() => setIsLogoLoaded(true), 3000);
-
-    const markLoaded = () => {
-      clearTimeout(timer);
-      setIsLogoLoaded(true);
-    };
-
-    if (img.complete) {
-      markLoaded();
-    } else {
-      img.onload = markLoaded;
-      img.onerror = markLoaded;
-    }
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (!isLogoLoaded) {
-    // Show a blank dark screen or a simple spinner while preloading the initial assets
-    return (
-      <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey"></div>
-      </div>
-    );
-  }
+  const { isPasswordRecovery } = useAuth();
 
   return (
-    <Router>
+    <>
+      {isPasswordRecovery && <ResetPasswordModal />}
+      <Router>
       <Routes>
         {/* Public Routes */}
         <Route path="/auth" element={<AuthPage />} />
@@ -107,6 +77,7 @@ function App() {
         } />
       </Routes>
     </Router>
+    </>
   );
 }
 

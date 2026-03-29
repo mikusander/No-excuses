@@ -1,4 +1,5 @@
-
+import React from 'react';
+import { logoBase64 } from '../assets/logoBase64';
 
 const HeaderLogo: React.FC = () => {
   return (
@@ -6,7 +7,7 @@ const HeaderLogo: React.FC = () => {
       <div className="relative">
         {/* We use the logo image directly since it matches the mockup perfectly */}
         <img 
-          src="/images/logoApp.jpeg" 
+          src={logoBase64} 
           alt="No Excuses Logo" 
           className="h-20 md:h-24 rounded-2xl border-2 border-white object-contain"
         />
