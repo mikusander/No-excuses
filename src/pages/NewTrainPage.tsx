@@ -291,28 +291,11 @@ const NewTrainPage: React.FC = () => {
         </div>
 
         <div className="space-y-4 mb-8">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-brand-grey font-semibold ml-1 flex items-center mb-2 sm:mb-0">
+          <div className="flex items-center mb-2">
+            <h2 className="text-brand-grey font-semibold ml-1 flex items-center">
               <Move size={16} className="mr-2 opacity-50" />
-              Order and Add
+              Exercises
             </h2>
-            <div className="flex space-x-2">
-              <button
-                onClick={addSuperset}
-                className="text-white hover:text-brand-lightOrange flex items-center text-xs font-bold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors border border-white/5"
-                title="Add a sequence of exercises with a single rest period"
-              >
-                <Plus size={16} className="mr-1" />
-                SUPERSET
-              </button>
-              <button
-                onClick={addExercise}
-                className="text-brand-orange hover:text-brand-lightOrange flex items-center text-xs font-bold bg-brand-orange/10 px-3 py-1.5 rounded-lg transition-colors border border-brand-orange/20"
-              >
-                <Plus size={16} className="mr-1" />
-                EXERCISE
-              </button>
-            </div>
           </div>
 
           {exercises.length === 0 ? (
@@ -490,6 +473,24 @@ const NewTrainPage: React.FC = () => {
               </div>
             ))
           )}
+
+          <div className="flex space-x-3 pt-2">
+            <button
+              onClick={addSuperset}
+              className="flex-1 text-white hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-white/10 hover:bg-white/20 px-4 py-3 rounded-xl transition-colors border border-white/5 border-dashed"
+              title="Add a sequence of exercises with a single rest period"
+            >
+              <Plus size={20} className="mr-1" />
+              SUPERSET
+            </button>
+            <button
+              onClick={addExercise}
+              className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
+            >
+              <Plus size={20} className="mr-1" />
+              EXERCISE
+            </button>
+          </div>
         </div>
 
         <button

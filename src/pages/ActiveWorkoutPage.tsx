@@ -47,11 +47,17 @@ const ActiveWorkoutPage: React.FC = () => {
 
   // Voice Command State
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const handleVoiceNextRef = useRef<(() => void) | null>(null);
+  const handleVoicePrevRef = useRef<(() => void) | null>(null);
 
   handleVoiceNextRef.current = () => {
     if (isResting) skipRest();
     else completeSet();
+  };
+  
+  handleVoicePrevRef.current = () => {
+    handlePrevExercise();
   };
 
   // Voice Recognition logic
@@ -71,9 +77,21 @@ const ActiveWorkoutPage: React.FC = () => {
           const transcript = event.results[current][0].transcript.toLowerCase();
           
           if (transcript.includes('next') || transcript.includes('avanti')) {
+            setVoiceStatus('success');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
             if (handleVoiceNextRef.current) {
                handleVoiceNextRef.current();
             }
+          } else if (transcript.includes('back') || transcript.includes('indietro')) {
+            setVoiceStatus('success');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
+            if (handleVoicePrevRef.current) {
+               handleVoicePrevRef.current();
+            }
+          } else {
+            // Se ho sentito parole ma non sono comandi supportati:
+            setVoiceStatus('error');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
           }
         };
 
@@ -315,12 +333,16 @@ const ActiveWorkoutPage: React.FC = () => {
           <button onClick={() => navigate(-1)} className="text-white/50 hover:text-white transition-colors">
             <ArrowLeft size={28} />
           </button>
-          <button 
-            onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} 
-            className={`p-2 rounded-full transition-colors ${isVoiceEnabled ? 'bg-brand-orange text-black' : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
-          >
-            {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
-          </button>
+          <div className="relative">
+            {voiceStatus === 'success' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
+            {voiceStatus === 'error' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
+            <button 
+              onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} 
+              className={`p-2 rounded-full transition-all duration-300 ${isVoiceEnabled ? (voiceStatus === 'success' ? 'bg-green-500 text-white scale-110' : voiceStatus === 'error' ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-orange text-black') : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
+            >
+              {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
+            </button>
+          </div>
         </div>
         
         <div className="w-64 h-64 rounded-full border-8 border-brand-darkGrey flex flex-col justify-center items-center shadow-[0_0_50px_rgba(255,107,0,0.1)] mb-12 relative overflow-hidden">
@@ -371,12 +393,16 @@ const ActiveWorkoutPage: React.FC = () => {
           <h1 className="text-xs text-brand-grey uppercase tracking-widest font-black opacity-60">Active Workout</h1>
           <h2 className="text-sm font-bold text-white truncate px-4">{workout.name}</h2>
         </div>
-        <button 
-          onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} 
-          className={`p-2 -mr-2 rounded-full transition-colors ${isVoiceEnabled ? 'bg-brand-orange text-black' : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
-        >
-          {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
-        </button>
+        <div className="relative">
+          {voiceStatus === 'success' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
+          {voiceStatus === 'error' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
+          <button 
+            onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} 
+            className={`p-2 -mr-2 rounded-full transition-all duration-300 ${isVoiceEnabled ? (voiceStatus === 'success' ? 'bg-green-500 text-white scale-110' : voiceStatus === 'error' ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-orange text-black') : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
+          >
+            {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
+          </button>
+        </div>
       </header>
 
       {/* Progress Bar */}
