@@ -41,7 +41,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isometryActive, setIsometryActive] = useState(false);
   const [isometryRemaining, setIsometryRemaining] = useState(0);
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetchWorkout();
