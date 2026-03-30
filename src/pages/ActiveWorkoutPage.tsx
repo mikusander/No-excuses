@@ -46,6 +46,7 @@ const ActiveWorkoutPage: React.FC = () => {
   // Timer State for EMOM
   const [emomActive, setEmomActive] = useState(false);
   const [emomRoundRemaining, setEmomRoundRemaining] = useState(0);
+    const [currentEmomRoundIdx, setCurrentEmomRoundIdx] = useState(0);
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -81,14 +82,14 @@ const ActiveWorkoutPage: React.FC = () => {
     const currentEx = workout.exercises[currentExerciseIdx];
 
     if (currentEx.type === 'emom') {
-        if (currentSetIdx > 0) {
-          setCurrentSetIdx(prev => prev - 1);
-          setEmomRoundRemaining(currentEx.duration_seconds || 60);
-      } else {
-        handlePrevExercise();
+        if (currentEmomRoundIdx > 0) {
+          setCurrentEmomRoundIdx(prev => prev - 1);
+          setEmomRoundRemaining(currentEx.emom_round_duration || 60);
+        } else {
+          handlePrevExercise();
+        }
+        return;
       }
-      return;
-    }
 
     if (isResting) {
       setIsResting(false);
@@ -228,14 +229,14 @@ const ActiveWorkoutPage: React.FC = () => {
               parsedName = 'Superset Circuit'; 
             } catch(e) {}
           } else if (ex.type === 'emom') {
-            try {
-              const parsed = JSON.parse(ex.name);
+              try {
+                const parsed = JSON.parse(ex.name);
                 if (Array.isArray(parsed)) {
                   subExercises = parsed;
                 } else if (parsed && parsed.subExercises) {
                   subExercises = parsed.subExercises;
-                  ex.sets = parsed.emom_rounds || ex.sets;
-                  ex.duration_seconds = parsed.emom_round_duration || ex.duration_seconds;
+                  ex.emom_rounds = parsed.emom_rounds;
+                  ex.emom_round_duration = parsed.emom_round_duration;
                 }
               parsedName = 'EMOM Circuit';
             } catch(e) {}
@@ -295,19 +296,19 @@ const ActiveWorkoutPage: React.FC = () => {
     } else if (emomActive && emomRoundRemaining <= 0) {
       const ex = workout?.exercises[currentExerciseIdx];
       if (ex && ex.type === 'emom') {
-        if (currentSetIdx < (ex.sets || 1) - 1) {
-          setCurrentSetIdx(prev => prev + 1);
-          setEmomRoundRemaining(ex.duration_seconds || 60);
-        } else {
-          setEmomActive(false);
-          const isLSet = currentSetIdx === ex.sets - 1;
-          if (isLSet) {
-             handleNextExercise();
+          if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
+            setCurrentEmomRoundIdx(prev => prev + 1);
+            setEmomRoundRemaining(ex.emom_round_duration || 60);
           } else {
-             setRestRemaining(ex.rest_seconds);
-             setIsResting(true);
+            setEmomActive(false);
+            const isLSet = currentSetIdx === ex.sets - 1;
+            if (isLSet) {
+               handleNextExercise();
+            } else {
+               setRestRemaining(ex.rest_seconds);
+               setIsResting(true);
+            }
           }
-        }
       }
     }
     return () => {
@@ -398,17 +399,17 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const completeSet = () => {
     if (currentExercise.type === 'emom') {
-      // Skipping round manually via button
-      if (currentSetIdx < (currentExercise.sets || 1) - 1) {
-          setCurrentSetIdx(prev => prev + 1);
-          setEmomRoundRemaining(currentExercise.duration_seconds || 60);
-      } else {
-        setEmomActive(false);
-        if (isLastSet) handleNextExercise();
-        else { setRestRemaining(currentExercise.rest_seconds); setIsResting(true); }
+        // Skipping round manually via button
+        if (currentEmomRoundIdx < (currentExercise.emom_rounds || 1) - 1) {
+          setCurrentEmomRoundIdx(prev => prev + 1);
+          setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
+        } else {
+          setEmomActive(false);
+          if (isLastSet) handleNextExercise();
+          else { setRestRemaining(currentExercise.rest_seconds); setIsResting(true); }
+        }
+        return;
       }
-      return;
-    }
 
     // Se siamo dentro a un superset e non abbiamo finito i sub-esercizi
     if (isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1) {

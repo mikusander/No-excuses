@@ -254,10 +254,10 @@ const NewTrainPage: React.FC = () => {
         workout_id: workoutIdToUse,
         order_index: idx,
         type: ex.type,
-        name: (ex.type === 'superset' || ex.type === 'emom') ? JSON.stringify(ex.subExercises) : ex.name,
+        name: ex.type === 'superset' ? JSON.stringify(ex.subExercises) : (ex.type === 'emom' ? JSON.stringify({ subExercises: ex.subExercises, emom_rounds: ex.emom_rounds || 1, emom_round_duration: ex.emom_round_duration || 60 }) : ex.name),
         sets: ex.sets,
         reps: ex.type === 'reps' ? ex.reps : 0,
-        duration_seconds: (ex.type === 'isometry' || ex.type === 'emom') ? ex.duration_seconds : 0,
+        duration_seconds: ex.type === 'isometry' ? ex.duration_seconds : 0,
         rest_seconds: ex.rest_seconds
       }));
 
@@ -362,8 +362,8 @@ const NewTrainPage: React.FC = () => {
                         <input
                           type="number"
                           min="1"
-                          value={ex.sets}
-                          onChange={(e) => updateExercise(ex.id, 'sets', parseInt(e.target.value) || 1)}
+                          value={ex.emom_rounds || 1}
+                          onChange={(e) => updateExercise(ex.id, 'emom_rounds', parseInt(e.target.value) || 1)}
                           className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
                         />
                       </div>
@@ -372,8 +372,8 @@ const NewTrainPage: React.FC = () => {
                         <input
                           type="number"
                           min="0"
-                          value={ex.duration_seconds}
-                          onChange={(e) => updateExercise(ex.id, 'duration_seconds', parseInt(e.target.value) || 0)}
+                          value={ex.emom_round_duration || 60}
+                          onChange={(e) => updateExercise(ex.id, 'emom_round_duration', parseInt(e.target.value) || 0)}
                           className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
                         />
                       </div>
@@ -513,7 +513,7 @@ const NewTrainPage: React.FC = () => {
                 )}
 
                 {/* Dati Generici (Serie e Recupero) */}
-                {ex.type !== 'emom' && (
+                {
                   <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
                   <div className="flex flex-col">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
@@ -528,7 +528,7 @@ const NewTrainPage: React.FC = () => {
                     />
                   </div>
 
-                  {ex.type !== 'superset' && (
+                  {ex.type !== 'superset' && ex.type !== 'emom' && (
                     <div className="flex flex-col">
                       <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-center">
                         {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
@@ -581,7 +581,6 @@ const NewTrainPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                )}
               </div>
             ))
           )}
