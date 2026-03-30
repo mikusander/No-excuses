@@ -216,7 +216,10 @@ const GymCardPage: React.FC = () => {
                               {ex.type === 'isometry' ? 'Duration' : (ex.type === 'emom' ? 'Time/Rnd' : 'Reps')}
                             </span>
                             <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'emom' ? formatSecs(ex.duration_seconds) : ex.reps}</span>
-                      <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                          </div>
+                        )}
+
+                        <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                          <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center"><Clock size={9} className="mr-1"/> Rest</span>
                          <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>
                       </div>
