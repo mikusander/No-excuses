@@ -249,15 +249,20 @@ const NewTrainPage: React.FC = () => {
         workoutIdToUse = workoutData.id;
       }
 
-      // 2. Prepara gli esercizi preservando l'ordine
+      // 2. Prepara gli esercizi preservando l\'ordine
       const exercisesToInsert = exercises.map((ex, idx) => ({
         workout_id: workoutIdToUse,
         order_index: idx,
         type: ex.type,
-          name: (ex.type === 'superset' || ex.type === 'emom') ? JSON.stringify(ex.subExercises) : ex.name,
-          sets: ex.sets,
-          reps: ex.type === 'reps' ? ex.reps : 0,
-          duration_seconds: (ex.type === 'isometry' || ex.type === 'emom') ? ex.duration_seconds : 0,
+        name: (ex.type === 'superset' || ex.type === 'emom') ? JSON.stringify(ex.subExercises) : ex.name,
+        sets: ex.sets,
+        reps: ex.type === 'reps' ? ex.reps : 0,
+        duration_seconds: (ex.type === 'isometry' || ex.type === 'emom') ? ex.duration_seconds : 0,
+        rest_seconds: ex.rest_seconds
+      }));
+
+      // 3. Inserisci gli esercizi
+      const { error: exercisesError } = await supabase
         .from('exercises')
         .insert(exercisesToInsert);
 
