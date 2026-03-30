@@ -105,16 +105,38 @@ const NewTrainPage: React.FC = () => {
     ]);
   };
 
-  const addSuperset = () => {
-    setExercises([
-      ...exercises,
-      {
-        id: crypto.randomUUID(), type: 'superset', name: '', sets: 3, reps: 0, duration_seconds: 0, rest_seconds: 90, subExercises: [
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0 },
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
-        ]
+  
+
+  const convertToSuperset = (id: string) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === id) {
+        return {
+          ...ex,
+          type: 'superset',
+          subExercises: [
+            { name: ex.name, type: ex.type as 'reps' | 'isometry', reps: ex.reps, duration_seconds: ex.duration_seconds },
+            { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
+          ]
+        };
       }
-    ]);
+      return ex;
+    }));
+  };
+
+  const convertToSuperset = (id: string) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === id) {
+        return {
+          ...ex,
+          type: 'superset',
+          subExercises: [
+            { name: ex.name, type: ex.type as 'reps' | 'isometry', reps: ex.reps, duration_seconds: ex.duration_seconds },
+            { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
+          ]
+        };
+      }
+      return ex;
+    }));
   };
 
   const addEmom = () => {
@@ -581,6 +603,24 @@ const NewTrainPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {ex.type !== \'superset\' && ex.type !== \'emom\' && (
+                  <button
+                    onClick={() => convertToSuperset(ex.id)}
+                    className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                  >
+                    <Plus size={14} className="mr-1" /> AGGIUNGI ESERCIZIO E CREA SUPERSET
+                  </button>
+                )}
+
+                {ex.type !== \'superset\' && ex.type !== \'emom\' && (
+                  <button
+                    onClick={() => convertToSuperset(ex.id)}
+                    className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                  >
+                    <Plus size={14} className="mr-1" /> AGGIUNGI ESERCIZIO E CREA SUPERSET
+                  </button>
+                )}
               </div>
             ))
           )}
@@ -588,28 +628,20 @@ const NewTrainPage: React.FC = () => {
           <div className="flex flex-col space-y-3 pt-2">
             <div className="flex space-x-3">
               <button
-                onClick={addSuperset}
-                className="flex-1 text-white hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-white/10 hover:bg-white/20 px-4 py-3 rounded-xl transition-colors border border-white/5 border-dashed"
-                title="Add a sequence of exercises with a single rest period"
-              >
-                <Plus size={20} className="mr-1" />
-                SUPERSET
-              </button>
-              <button
                 onClick={addExercise}
                 className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
               >
                 <Plus size={20} className="mr-1" />
                 EXERCISE
               </button>
+              <button
+                onClick={addEmom}
+                className="flex-1 text-blue-400 hover:text-blue-300 flex items-center justify-center text-sm font-bold bg-blue-500/10 hover:bg-blue-500/20 px-4 py-3 rounded-xl transition-colors border border-blue-500/20 border-dashed"
+              >
+                <Plus size={20} className="mr-1" />
+                EMOM
+              </button>
             </div>
-            <button
-              onClick={addEmom}
-              className="w-full text-blue-400 hover:text-blue-300 flex items-center justify-center text-sm font-bold bg-blue-500/10 hover:bg-blue-500/20 px-4 py-3 rounded-xl transition-colors border border-blue-500/20 border-dashed"
-            >
-              <Plus size={20} className="mr-1" />
-              EMOM
-            </button>
           </div>
         </div>
 
