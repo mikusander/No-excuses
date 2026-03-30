@@ -161,7 +161,7 @@ const GymCardPage: React.FC = () => {
               <div className="space-y-4">
                 {workout.exercises && workout.exercises.map((ex, i) => (
                   <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
-                    {ex.type === 'superset' ? (
+                    {ex.type === 'superset' || ex.type === 'emom' ? (
                       <div className="mb-3">
                          <span className="font-bold text-lg text-white drop-shadow-md flex items-center mb-2">
                            <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i+1}.</span>

@@ -6,12 +6,14 @@ import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move } fr
 
 interface ExerciseDraft {
   id: string; // Temporaneo per la UI
-  type: 'reps' | 'isometry' | 'superset';
+  type: 'reps' | 'isometry' | 'superset' | 'emom';
   name: string;
   sets: number;
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  emom_rounds?: number;
+  emom_round_duration?: number;
   subExercises?: {
     name: string;
     type: 'reps' | 'isometry';
@@ -68,6 +70,18 @@ const NewTrainPage: React.FC = () => {
             }
           }
 
+          if (ex.type === 'emom') {
+            try {
+              const parsed = JSON.parse(ex.name);
+              if (parsed.subExercises) subExercises = parsed.subExercises;
+              ex.emom_rounds = parsed.emom_rounds || 1;
+              ex.emom_round_duration = parsed.emom_round_duration || 60;
+              parsedName = ''; 
+            } catch (e) {
+              console.error('Error parsing emom JSON:', e);
+            }
+          }
+
           return {
             ...ex,
             name: parsedName,
@@ -97,6 +111,17 @@ const NewTrainPage: React.FC = () => {
       {
         id: crypto.randomUUID(), type: 'superset', name: '', sets: 3, reps: 0, duration_seconds: 0, rest_seconds: 90, subExercises: [
           { name: '', type: 'reps', reps: 10, duration_seconds: 0 },
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
+        ]
+      }
+    ]);
+  };
+
+  const addEmom = () => {
+    setExercises([
+      ...exercises,
+      {
+        id: crypto.randomUUID(), type: 'emom', name: '', sets: 1, reps: 0, duration_seconds: 0, rest_seconds: 60, emom_rounds: 10, emom_round_duration: 60, subExercises: [
           { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
         ]
       }
@@ -157,22 +182,7 @@ const NewTrainPage: React.FC = () => {
     }));
   };
 
-  // Funzioni helper per input tempo (minuti:secondi visivi -> secondi interi salvati)
-  const formatSecondsToMinutes = (totalSeconds: number) => {
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const parseMinutesToSeconds = (timeStr: string) => {
-    const parts = timeStr.split(':');
-    if (parts.length === 2) {
-      const m = parseInt(parts[0]) || 0;
-      const s = parseInt(parts[1]) || 0;
-      return m * 60 + s;
-    }
-    return parseInt(timeStr) || 0;
-  };
+  // Esercizi state builder helper functions
 
   const saveWorkout = async () => {
     if (!workoutName.trim()) {
@@ -190,6 +200,13 @@ const NewTrainPage: React.FC = () => {
         }
         for (const sub of ex.subExercises) {
           if (!sub.name.trim()) { setError('All exercises in a Superset must have a name'); return; }
+        }
+      } else if (ex.type === 'emom') {
+        if (!ex.subExercises || ex.subExercises.length === 0) {
+          setError('EMOM must contain at least 1 exercise'); return;
+        }
+        for (const sub of ex.subExercises) {
+          if (!sub.name.trim()) { setError('All exercises in an EMOM must have a name'); return; }
         }
       } else {
         if (!ex.name.trim()) {
@@ -237,7 +254,7 @@ const NewTrainPage: React.FC = () => {
         workout_id: workoutIdToUse,
         order_index: idx,
         type: ex.type,
-        name: ex.type === 'superset' ? JSON.stringify(ex.subExercises) : ex.name,
+        name: ex.type === 'superset' ? JSON.stringify(ex.subExercises) : (ex.type === 'emom' ? JSON.stringify({ subExercises: ex.subExercises, emom_rounds: ex.emom_rounds, emom_round_duration: ex.emom_round_duration }) : ex.name),
         sets: ex.sets,
         reps: ex.type === 'reps' ? ex.reps : 0,
         duration_seconds: ex.type === 'isometry' ? ex.duration_seconds : 0,
@@ -334,7 +351,105 @@ const NewTrainPage: React.FC = () => {
                 </div>
 
                 {/* Specific UI for SUPERSET vs SINGLE */}
-                {ex.type === 'superset' ? (
+                {ex.type === 'emom' ? (
+                  <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-blue-500/20">
+                    <p className="text-xs font-bold text-blue-400 uppercase tracking-wider text-center mb-2 flex flex-col items-center justify-center">
+                      ⏱️ EMOM Circuit
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <div className="flex flex-col">
+                        <label className="text-xs text-brand-grey mb-1">Total Sets</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={ex.sets}
+                          onChange={(e) => updateExercise(ex.id, 'sets', parseInt(e.target.value) || 1)}
+                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-xs text-brand-grey mb-1">Rest Btw Sets (sec)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={ex.rest_seconds}
+                          onChange={(e) => updateExercise(ex.id, 'rest_seconds', parseInt(e.target.value) || 0)}
+                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-xs text-brand-grey mb-1">Total Rounds</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={ex.emom_rounds || 1}
+                          onChange={(e) => updateExercise(ex.id, 'emom_rounds', parseInt(e.target.value) || 1)}
+                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-xs text-brand-grey mb-1">Round Time (sec)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={ex.emom_round_duration || 60}
+                          onChange={(e) => updateExercise(ex.id, 'emom_round_duration', parseInt(e.target.value) || 0)}
+                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                        />
+                      </div>
+                    </div>
+                    
+                    {ex.subExercises?.map((sub, sIdx) => (
+                      <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
+                        <input
+                          type="text"
+                          placeholder={`Exercise Name ${sIdx + 1}`}
+                          value={sub.name}
+                          onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
+                          className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-400 outline-none"
+                        />
+                        <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                          <button
+                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
+                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-blue-400 text-black' : 'text-brand-grey hover:text-white'}`}
+                          >
+                            REPS
+                          </button>
+                          <button
+                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
+                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-blue-400 text-black' : 'text-brand-grey hover:text-white'}`}
+                          >
+                            ISOMETRIC
+                          </button>
+                        </div>
+                        <div>
+                          <input
+                            type="number"
+                            min="1"
+                            value={sub.type === 'reps' ? sub.reps : sub.duration_seconds}
+                            onChange={(e) => updateSubExercise(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', parseInt(e.target.value) || 0)}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
+                            placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                          />
+                        </div>
+                        {ex.subExercises && ex.subExercises.length > 1 && (
+                          <button
+                            onClick={() => removeSubExercise(ex.id, sIdx)}
+                            className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => addSubExercise(ex.id)}
+                      className="w-full mt-2 py-2 border border-dashed border-brand-grey/30 text-brand-grey/70 text-xs font-bold rounded-lg hover:border-blue-400/50 hover:text-blue-400 transition-colors flex justify-center items-center"
+                    >
+                      <Plus size={14} className="mr-1" /> ADD TO EMOM
+                    </button>
+                  </div>
+                ) : ex.type === 'superset' ? (
                   <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
                     <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex items-center justify-center">
                       🔁 Superset Circuit
@@ -448,26 +563,41 @@ const NewTrainPage: React.FC = () => {
                   )}
 
                   <div className="flex flex-col relative">
-                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-right flex items-center justify-end">
+                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-center justify-center flex items-center">
                       <Clock size={10} className="mr-1" />
                       Rest
                     </label>
-                    {/* Visualizziamo il campo rovesciato così supporta i ":" in mobilità se vogliamo, oppure input testuale formattato MM:SS */}
-                    <input
-                      type="text"
-                      placeholder="Mm:Ss"
-                      value={formatSecondsToMinutes(ex.rest_seconds)}
-                      onFocus={(e) => {
-                        // All'apertura finta selezione o svuotamento
-                        if (ex.rest_seconds === 60) e.target.select();
-                      }}
-                      onChange={(e) => {
-                        // Lasciamo scrivere l'utente stringhe, ma salviamo al blur o a caldo
-                        // In questo caso se è digitato senza i 2 punti (es 90) è ok.
-                        updateExercise(ex.id, 'rest_seconds', parseMinutesToSeconds(e.target.value));
-                      }}
-                      className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-brand-orange font-bold focus:border-brand-orange focus:outline-none transition-colors"
-                    />
+                    <div className="flex bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[46px]">
+                      <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
+                        <input
+                          type="number"
+                          min="0"
+                          value={Math.floor(ex.rest_seconds / 60)}
+                          onChange={(e) => {
+                            const m = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value) || 0);
+                            updateExercise(ex.id, 'rest_seconds', (m * 60) + (ex.rest_seconds % 60));
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
+                        />
+                        <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center w-1/2 relative">
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={ex.rest_seconds % 60}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : Math.max(0, Math.min(59, parseInt(e.target.value) || 0));
+                            updateExercise(ex.id, 'rest_seconds', (Math.floor(ex.rest_seconds / 60) * 60) + val);
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
+                        />
+                        <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
