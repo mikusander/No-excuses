@@ -12,6 +12,8 @@ interface Exercise {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  emom_rounds?: number;
+  emom_round_duration?: number;
   order_index: number;
   subExercises?: any[];
 }

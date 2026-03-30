@@ -123,22 +123,6 @@ const NewTrainPage: React.FC = () => {
     }));
   };
 
-  const convertToSuperset = (id: string) => {
-    setExercises(exercises.map(ex => {
-      if (ex.id === id) {
-        return {
-          ...ex,
-          type: 'superset',
-          subExercises: [
-            { name: ex.name, type: ex.type as 'reps' | 'isometry', reps: ex.reps, duration_seconds: ex.duration_seconds },
-            { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
-          ]
-        };
-      }
-      return ex;
-    }));
-  };
-
   const addEmom = () => {
     setExercises([
       ...exercises,
@@ -535,8 +519,7 @@ const NewTrainPage: React.FC = () => {
                 )}
 
                 {/* Dati Generici (Serie e Recupero) */}
-                {
-                  <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
+                <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
                   <div className="flex flex-col">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
                       {ex.type === 'superset' ? 'Total Rounds' : 'Sets'}
@@ -604,16 +587,7 @@ const NewTrainPage: React.FC = () => {
                   </div>
                 </div>
 
-                {ex.type !== \'superset\' && ex.type !== \'emom\' && (
-                  <button
-                    onClick={() => convertToSuperset(ex.id)}
-                    className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                  >
-                    <Plus size={14} className="mr-1" /> AGGIUNGI ESERCIZIO E CREA SUPERSET
-                  </button>
-                )}
-
-                {ex.type !== \'superset\' && ex.type !== \'emom\' && (
+                {ex.type !== 'superset' && ex.type !== 'emom' && (
                   <button
                     onClick={() => convertToSuperset(ex.id)}
                     className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
