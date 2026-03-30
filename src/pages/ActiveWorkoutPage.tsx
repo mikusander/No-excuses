@@ -62,9 +62,9 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isResting) skipRest();
     else if (workout?.exercises[currentExerciseIdx]?.type === 'emom') {
       const ex = workout.exercises[currentExerciseIdx];
-      if (currentSetIdx < (ex.sets || 1) - 1) {
-          setCurrentSetIdx(prev => prev + 1);
-          setEmomRoundRemaining(ex.duration_seconds || 60);
+      if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
+          setCurrentEmomRoundIdx(prev => prev + 1);
+          setEmomRoundRemaining(ex.emom_round_duration || 60);
       } else {
         setEmomActive(false);
         if (currentSetIdx === ex.sets - 1) {
@@ -252,6 +252,7 @@ const ActiveWorkoutPage: React.FC = () => {
         setCurrentExerciseIdx(0);
         setCurrentSetIdx(0);
         setCurrentSubExerciseIdx(0);
+        setCurrentEmomRoundIdx(0);
         setIsResting(false);
         
         const firstEx = sortedExercises[0];
@@ -261,7 +262,7 @@ const ActiveWorkoutPage: React.FC = () => {
           } else if (firstEx.type === 'superset' && firstEx.subExercises?.[0]?.type === 'isometry') {
               setIsometryRemaining(firstEx.subExercises[0].duration_seconds);
           } else if (firstEx.type === 'emom') {
-              setEmomRoundRemaining(firstEx.duration_seconds || 60);
+              setEmomRoundRemaining(firstEx.emom_round_duration || 60);
           }
         }
       }
@@ -316,7 +317,7 @@ const ActiveWorkoutPage: React.FC = () => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [emomActive, emomRoundRemaining, currentSetIdx, workout, currentExerciseIdx, currentSetIdx]);
+  }, [emomActive, emomRoundRemaining, currentSetIdx, currentEmomRoundIdx, workout, currentExerciseIdx]);
 
   // Timer logic for ISOMETRY
   useEffect(() => {
@@ -371,11 +372,12 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentExerciseIdx(nextIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
-            setEmomActive(false);
+      setCurrentEmomRoundIdx(0);
+      setEmomActive(false);
       setIsResting(false);
       setIsometryActive(false);
       setIsometryRemaining(getTargetIsometry(nextEx, nextEx.subExercises?.[0]));
-      if (nextEx.type === 'emom') setEmomRoundRemaining(nextEx.duration_seconds || 60);
+      if (nextEx.type === 'emom') setEmomRoundRemaining(nextEx.emom_round_duration || 60);
     } else {
       // Workout Complete!
       if (window.confirm("Workout completed! Do you want to return to home?")) {
@@ -391,11 +393,12 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentExerciseIdx(prevIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
-            setEmomActive(false);
+      setCurrentEmomRoundIdx(0);
+      setEmomActive(false);
       setIsResting(false);
       setIsometryActive(false);
       setIsometryRemaining(getTargetIsometry(prevEx, prevEx.subExercises?.[0]));
-      if (prevEx.type === 'emom') setEmomRoundRemaining(prevEx.duration_seconds || 60);
+      if (prevEx.type === 'emom') setEmomRoundRemaining(prevEx.emom_round_duration || 60);
     }
   };
 
@@ -442,7 +445,10 @@ const ActiveWorkoutPage: React.FC = () => {
     const nextSetIdx = currentSetIdx + 1;
     setCurrentSetIdx(nextSetIdx);
     setCurrentSubExerciseIdx(0);
-        if (currentExercise.type === 'emom') setEmomRoundRemaining(currentExercise.duration_seconds || 60);
+    if (currentExercise.type === 'emom') {
+      setCurrentEmomRoundIdx(0);
+      setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
+    }
     
     // Reset isometry timer if needed
     setIsometryRemaining(getTargetIsometry(currentExercise, currentExercise.subExercises?.[0]));
@@ -573,9 +579,14 @@ const ActiveWorkoutPage: React.FC = () => {
                </span>
              )}
              {currentExercise.type === 'emom' && (
-               <span className="text-[10px] text-blue-400 uppercase font-black tracking-widest block mt-1">
-                 Round {currentSetIdx + 1} of {currentExercise.sets}
-               </span>
+               <div className="text-[10px] uppercase font-black tracking-widest block mt-1 space-y-1">
+                 <span className="block text-brand-orange/90">
+                   Set {currentSetIdx + 1} of {currentExercise.sets || 1}
+                 </span>
+                 <span className="block text-brand-orange/70">
+                   Round {currentEmomRoundIdx + 1} of {currentExercise.emom_rounds || 1}
+                 </span>
+               </div>
              )}
           </div>
 
@@ -618,6 +629,17 @@ const ActiveWorkoutPage: React.FC = () => {
               <p className="text-center text-[10px] text-brand-grey mt-2 uppercase tracking-wider font-bold mb-4">
                 Tap timer or say '{emomActive ? 'stop' : 'vai'}'
               </p>
+
+              <div className="w-full max-w-xs mb-4 grid grid-cols-2 gap-2">
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Set</span>
+                  <span className="text-brand-orange font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
+                </div>
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Round</span>
+                  <span className="text-brand-orange font-black">{currentEmomRoundIdx + 1} / {currentExercise.emom_rounds || 1}</span>
+                </div>
+              </div>
               
               {/* EMOM Tasks */}
               <div className="w-full flex-1 max-h-[25vh] overflow-y-auto space-y-2 px-2">

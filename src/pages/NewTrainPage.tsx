@@ -30,6 +30,7 @@ const NewTrainPage: React.FC = () => {
   const [exercises, setExercises] = useState<ExerciseDraft[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [numberDrafts, setNumberDrafts] = useState<Record<string, string>>({});
 
   const { id } = useParams<{ id: string }>();
 
@@ -168,6 +169,82 @@ const NewTrainPage: React.FC = () => {
       }
       return ex;
     }));
+  };
+
+  const getDraftOrValue = (key: string, value: number) => {
+    if (Object.prototype.hasOwnProperty.call(numberDrafts, key)) return numberDrafts[key];
+    return Number.isFinite(value) ? String(value) : '';
+  };
+
+  const onNumberFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.select();
+  };
+
+  const setDraftValue = (key: string, value: string) => {
+    setNumberDrafts(prev => ({ ...prev, [key]: value }));
+  };
+
+  const clearDraftValue = (key: string) => {
+    setNumberDrafts(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const commitExerciseNumber = (
+    id: string,
+    field: keyof ExerciseDraft,
+    key: string,
+    defaultValue: number,
+    min = 0,
+    max?: number
+  ) => {
+    const raw = (numberDrafts[key] ?? '').trim();
+    let parsed = raw === '' ? defaultValue : parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = defaultValue;
+    if (parsed < min) parsed = min;
+    if (typeof max === 'number' && parsed > max) parsed = max;
+    updateExercise(id, field, parsed);
+    clearDraftValue(key);
+  };
+
+  const commitSubExerciseNumber = (
+    supersetId: string,
+    subIndex: number,
+    field: 'reps' | 'duration_seconds',
+    key: string,
+    defaultValue: number,
+    min = 0,
+    max?: number
+  ) => {
+    const raw = (numberDrafts[key] ?? '').trim();
+    let parsed = raw === '' ? defaultValue : parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = defaultValue;
+    if (parsed < min) parsed = min;
+    if (typeof max === 'number' && parsed > max) parsed = max;
+    updateSubExercise(supersetId, subIndex, field, parsed);
+    clearDraftValue(key);
+  };
+
+  const commitRestPart = (
+    id: string,
+    part: 'min' | 'sec',
+    key: string,
+    currentRestSeconds: number
+  ) => {
+    const raw = (numberDrafts[key] ?? '').trim();
+    let parsed = raw === '' ? (part === 'min' ? 0 : 0) : parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = 0;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
+    const safeCurrent = Number.isFinite(currentRestSeconds) ? currentRestSeconds : 0;
+    const minutes = Math.floor(safeCurrent / 60);
+    const seconds = safeCurrent % 60;
+    const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
+    updateExercise(id, 'rest_seconds', next);
+    clearDraftValue(key);
   };
 
   const addSubExercise = (supersetId: string) => {
@@ -382,8 +459,10 @@ const NewTrainPage: React.FC = () => {
                         <input
                           type="number"
                           min="1"
-                          value={ex.emom_rounds || 1}
-                          onChange={(e) => updateExercise(ex.id, 'emom_rounds', parseInt(e.target.value) || 1)}
+                          value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
+                          onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
+                          onBlur={() => commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1)}
+                          onFocus={onNumberFocus}
                           className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
                         />
                       </div>
@@ -392,8 +471,10 @@ const NewTrainPage: React.FC = () => {
                         <input
                           type="number"
                           min="0"
-                          value={ex.emom_round_duration || 60}
-                          onChange={(e) => updateExercise(ex.id, 'emom_round_duration', parseInt(e.target.value) || 0)}
+                          value={getDraftOrValue(`${ex.id}:emom_round_duration`, ex.emom_round_duration || 60)}
+                          onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration`, e.target.value)}
+                          onBlur={() => commitExerciseNumber(ex.id, 'emom_round_duration', `${ex.id}:emom_round_duration`, 60, 0)}
+                          onFocus={onNumberFocus}
                           className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
                         />
                       </div>
@@ -411,13 +492,13 @@ const NewTrainPage: React.FC = () => {
                         <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                           <button
                             onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
-                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-blue-400 text-black' : 'text-brand-grey hover:text-white'}`}
+                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
                             REPS
                           </button>
                           <button
                             onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
-                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-blue-400 text-black' : 'text-brand-grey hover:text-white'}`}
+                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
                             ISOMETRIC
                           </button>
@@ -426,8 +507,10 @@ const NewTrainPage: React.FC = () => {
                           <input
                             type="number"
                             min="1"
-                            value={sub.type === 'reps' ? sub.reps : sub.duration_seconds}
-                            onChange={(e) => updateSubExercise(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', parseInt(e.target.value) || 0)}
+                            value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds)}
+                            onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
+                            onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? 10 : 30, 1)}
+                            onFocus={onNumberFocus}
                             className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
                             placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           />
@@ -481,8 +564,10 @@ const NewTrainPage: React.FC = () => {
                           <input
                             type="number"
                             min="1"
-                            value={sub.type === 'reps' ? sub.reps : sub.duration_seconds}
-                            onChange={(e) => updateSubExercise(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', parseInt(e.target.value) || 0)}
+                            value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds)}
+                            onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
+                            onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? 10 : 30, 1)}
+                            onFocus={onNumberFocus}
                             className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
                             placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           />
@@ -541,8 +626,10 @@ const NewTrainPage: React.FC = () => {
                     <input
                       type="number"
                       min="1"
-                      value={ex.sets}
-                      onChange={(e) => updateExercise(ex.id, 'sets', parseInt(e.target.value) || 0)}
+                      value={getDraftOrValue(`${ex.id}:sets`, ex.sets)}
+                      onChange={(e) => setDraftValue(`${ex.id}:sets`, e.target.value)}
+                      onBlur={() => commitExerciseNumber(ex.id, 'sets', `${ex.id}:sets`, 1, 1)}
+                      onFocus={onNumberFocus}
                       className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
                     />
                   </div>
@@ -555,8 +642,10 @@ const NewTrainPage: React.FC = () => {
                       <input
                         type="number"
                         min="1"
-                        value={ex.type === 'reps' ? ex.reps : ex.duration_seconds}
-                        onChange={(e) => updateExercise(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', parseInt(e.target.value) || 0)}
+                        value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds)}
+                        onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
+                        onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? 10 : 30, 1)}
+                        onFocus={onNumberFocus}
                         className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
                       />
                     </div>
@@ -572,12 +661,10 @@ const NewTrainPage: React.FC = () => {
                         <input
                           type="number"
                           min="0"
-                          value={Math.floor(ex.rest_seconds / 60)}
-                          onChange={(e) => {
-                            const m = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value) || 0);
-                            updateExercise(ex.id, 'rest_seconds', (m * 60) + (ex.rest_seconds % 60));
-                          }}
-                          onFocus={(e) => e.target.select()}
+                          value={getDraftOrValue(`${ex.id}:rest:min`, Math.floor(ex.rest_seconds / 60))}
+                          onChange={(e) => setDraftValue(`${ex.id}:rest:min`, e.target.value)}
+                          onBlur={() => commitRestPart(ex.id, 'min', `${ex.id}:rest:min`, ex.rest_seconds)}
+                          onFocus={onNumberFocus}
                           className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
                         />
                         <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
@@ -587,12 +674,10 @@ const NewTrainPage: React.FC = () => {
                           type="number"
                           min="0"
                           max="59"
-                          value={ex.rest_seconds % 60}
-                          onChange={(e) => {
-                            const val = e.target.value === '' ? 0 : Math.max(0, Math.min(59, parseInt(e.target.value) || 0));
-                            updateExercise(ex.id, 'rest_seconds', (Math.floor(ex.rest_seconds / 60) * 60) + val);
-                          }}
-                          onFocus={(e) => e.target.select()}
+                          value={getDraftOrValue(`${ex.id}:rest:sec`, ex.rest_seconds % 60)}
+                          onChange={(e) => setDraftValue(`${ex.id}:rest:sec`, e.target.value)}
+                          onBlur={() => commitRestPart(ex.id, 'sec', `${ex.id}:rest:sec`, ex.rest_seconds)}
+                          onFocus={onNumberFocus}
                           className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
                         />
                         <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
