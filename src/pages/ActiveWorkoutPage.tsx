@@ -469,6 +469,43 @@ const ActiveWorkoutPage: React.FC = () => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const completeWorkoutNow = () => {
+    setEmomActive(false);
+    setIsometryActive(false);
+    setIsResting(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    navigate('/');
+  };
+
+  const handlePrimaryAction = () => {
+    if (isEmom) {
+      // COMPLETE WORKOUT on final EMOM state must end workout immediately.
+      if (isFinalCompletionAction) {
+        completeWorkoutNow();
+        return;
+      }
+
+      // NEXT ROUND must advance even if timer is still running.
+      if (!isLastEmomRound) {
+        setCurrentEmomRoundIdx(prev => prev + 1);
+        setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
+        return;
+      }
+
+      // FINISH SET must close the current set even if timer is still running.
+      setEmomActive(false);
+      if (isLastSet) {
+        handleNextExercise();
+      } else {
+        setRestRemaining(currentExercise.rest_seconds);
+        setIsResting(true);
+      }
+      return;
+    }
+
+    completeSet();
+  };
+
   // ----------------------------------------------------------------------
   // RENDER REST VIEW
   // ----------------------------------------------------------------------
@@ -622,7 +659,7 @@ const ActiveWorkoutPage: React.FC = () => {
                  </div>
               </div>
               <p className="text-center text-[10px] text-brand-grey mt-2 uppercase tracking-wider font-bold mb-4">
-                Tap timer or say '{emomActive ? 'stop' : 'vai'}'
+                Tap timer or say '{emomActive ? 'stop' : 'go'}'
               </p>
 
               <div className="w-full max-w-xs mb-4 grid grid-cols-2 gap-2">
@@ -682,7 +719,7 @@ const ActiveWorkoutPage: React.FC = () => {
         {/* Primary Action Button */}
         <div className="mt-auto pt-8">
           <button
-            onClick={completeSet}
+            onClick={handlePrimaryAction}
             className={`w-full py-5 rounded-2xl font-black text-xl flex items-center justify-center transition-all active:scale-95 shadow-xl ${
               isFinalCompletionAction
                 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20' 

@@ -261,7 +261,7 @@ emom_render_new = """        {/* Focus Area (Reps / Timer / EMOM) */}
                  </div>
               </div>
               <p className="text-center text-[10px] text-brand-grey mt-2 uppercase tracking-wider font-bold mb-4">
-                Tap timer or say '{emomActive ? 'stop' : 'vai'}'
+                Tap timer or say '{emomActive ? 'stop' : 'go'}'
               </p>
               
               {/* EMOM Tasks */}
