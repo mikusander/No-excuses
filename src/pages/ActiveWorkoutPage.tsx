@@ -355,9 +355,13 @@ const ActiveWorkoutPage: React.FC = () => {
   const currentExercise = workout.exercises[currentExerciseIdx];
   const isLastExercise = currentExerciseIdx === workout.exercises.length - 1;
   const isLastSet = currentSetIdx === currentExercise.sets - 1;
+  const isEmom = currentExercise.type === 'emom';
+  const isLastEmomRound = currentEmomRoundIdx === (currentExercise.emom_rounds || 1) - 1;
   
   const isSuperset = currentExercise.type === 'superset';
   const subExercise = isSuperset && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
+  const isLastSupersetSub = !isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1;
+  const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : (isLastSet && isLastSupersetSub));
 
   const getTargetIsometry = (ex: Exercise, subEx: any) => {
     if (ex.type === 'superset' && subEx?.type === 'isometry') return subEx.duration_seconds;
@@ -578,16 +582,7 @@ const ActiveWorkoutPage: React.FC = () => {
                  Superset (Exercise {currentSubExerciseIdx + 1} of {currentExercise.subExercises?.length})
                </span>
              )}
-             {currentExercise.type === 'emom' && (
-               <div className="text-[10px] uppercase font-black tracking-widest block mt-1 space-y-1">
-                 <span className="block text-brand-orange/90">
-                   Set {currentSetIdx + 1} of {currentExercise.sets || 1}
-                 </span>
-                 <span className="block text-brand-orange/70">
-                   Round {currentEmomRoundIdx + 1} of {currentExercise.emom_rounds || 1}
-                 </span>
-               </div>
-             )}
+             
           </div>
 
           <button 
@@ -689,20 +684,22 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             onClick={completeSet}
             className={`w-full py-5 rounded-2xl font-black text-xl flex items-center justify-center transition-all active:scale-95 shadow-xl ${
-              isLastExercise && isLastSet && (!isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1)
+              isFinalCompletionAction
                 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20' 
                 : 'bg-brand-orange hover:bg-brand-lightOrange text-black shadow-brand-orange/20'
             }`}
           >
-             {isLastExercise && isLastSet && (!isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1) ? (
+             {isFinalCompletionAction ? (
                <>
                  <CheckCircle2 size={28} className="mr-2" strokeWidth={3} />
                  COMPLETE WORKOUT
                </>
              ) : isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1 ? (
                <>NEXT IN SUPERSET <ArrowRight size={24} className="ml-2" /></>
-             ) : currentExercise.type === 'emom' ? (
-               <>SKIP TO NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
+             ) : isEmom && !isLastEmomRound ? (
+               <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
+             ) : isEmom && isLastEmomRound ? (
+               <>FINISH SET</>
              ) : isLastSet ? (
                <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
              ) : (
