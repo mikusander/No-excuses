@@ -59,6 +59,18 @@ const GymCardPage: React.FC = () => {
               subExercises = JSON.parse(ex.name);
               parsedName = 'Superset Circuit';
             } catch(e) {}
+          } else if (ex.type === 'emom') {
+            try {
+              const parsed = JSON.parse(ex.name);
+              if (Array.isArray(parsed)) {
+                subExercises = parsed;
+              } else if (parsed && parsed.subExercises) {
+                subExercises = parsed.subExercises;
+                ex.sets = parsed.emom_rounds || ex.sets;
+                ex.duration_seconds = parsed.emom_round_duration || ex.duration_seconds;
+              }
+              parsedName = 'EMOM Circuit';
+            } catch(e) {}
           }
           return { ...ex, name: parsedName, subExercises };
         }) || []
@@ -193,20 +205,17 @@ const GymCardPage: React.FC = () => {
                     <div className="flex items-center space-x-2 text-xs text-brand-grey font-bold w-full mt-2">
                       <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                          {ex.type === 'superset' ? 'Round' : 'Sets'}
-                        </span>
-                        <span className="text-sm text-white">{ex.sets}</span>
-                      </div>
-                      
-                      {ex.type !== 'superset' && (
-                        <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
-                          <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                            {ex.type === 'isometry' ? 'Duration' : 'Reps'}
+                            {ex.type === 'superset' ? 'Round' : (ex.type === 'emom' ? 'Rounds' : 'Sets')}
                           </span>
-                          <span className="text-sm text-brand-orange">{ex.type === 'isometry' ? formatSecs(ex.duration_seconds) : ex.reps}</span>
+                          <span className="text-sm text-white">{ex.sets}</span>
                         </div>
-                      )}
 
+                        {ex.type !== 'superset' && (
+                          <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
+                            <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
+                              {ex.type === 'isometry' ? 'Duration' : (ex.type === 'emom' ? 'Time/Rnd' : 'Reps')}
+                            </span>
+                            <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'emom' ? formatSecs(ex.duration_seconds) : ex.reps}</span>
                       <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                          <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center"><Clock size={9} className="mr-1"/> Rest</span>
                          <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>

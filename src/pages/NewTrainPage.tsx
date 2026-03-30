@@ -254,15 +254,10 @@ const NewTrainPage: React.FC = () => {
         workout_id: workoutIdToUse,
         order_index: idx,
         type: ex.type,
-        name: ex.type === 'superset' ? JSON.stringify(ex.subExercises) : (ex.type === 'emom' ? JSON.stringify({ subExercises: ex.subExercises, emom_rounds: ex.emom_rounds, emom_round_duration: ex.emom_round_duration }) : ex.name),
-        sets: ex.sets,
-        reps: ex.type === 'reps' ? ex.reps : 0,
-        duration_seconds: ex.type === 'isometry' ? ex.duration_seconds : 0,
-        rest_seconds: ex.rest_seconds
-      }));
-
-      // 3. Inserisci gli esercizi
-      const { error: exercisesError } = await supabase
+          name: (ex.type === 'superset' || ex.type === 'emom') ? JSON.stringify(ex.subExercises) : ex.name,
+          sets: ex.sets,
+          reps: ex.type === 'reps' ? ex.reps : 0,
+          duration_seconds: (ex.type === 'isometry' || ex.type === 'emom') ? ex.duration_seconds : 0,
         .from('exercises')
         .insert(exercisesToInsert);
 
@@ -356,49 +351,7 @@ const NewTrainPage: React.FC = () => {
                     <p className="text-xs font-bold text-blue-400 uppercase tracking-wider text-center mb-2 flex flex-col items-center justify-center">
                       ⏱️ EMOM Circuit
                     </p>
-                    <div className="grid grid-cols-2 gap-2 mb-4">
-                      <div className="flex flex-col">
-                        <label className="text-xs text-brand-grey mb-1">Total Sets</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={ex.sets}
-                          onChange={(e) => updateExercise(ex.id, 'sets', parseInt(e.target.value) || 1)}
-                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
-                        />
-                      </div>
-                      <div className="flex flex-col">
-                        <label className="text-xs text-brand-grey mb-1">Rest Btw Sets (sec)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={ex.rest_seconds}
-                          onChange={(e) => updateExercise(ex.id, 'rest_seconds', parseInt(e.target.value) || 0)}
-                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
-                        />
-                      </div>
-                      <div className="flex flex-col">
-                        <label className="text-xs text-brand-grey mb-1">Total Rounds</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={ex.emom_rounds || 1}
-                          onChange={(e) => updateExercise(ex.id, 'emom_rounds', parseInt(e.target.value) || 1)}
-                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
-                        />
-                      </div>
-                      <div className="flex flex-col">
-                        <label className="text-xs text-brand-grey mb-1">Round Time (sec)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={ex.emom_round_duration || 60}
-                          onChange={(e) => updateExercise(ex.id, 'emom_round_duration', parseInt(e.target.value) || 0)}
-                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
-                        />
-                      </div>
-                    </div>
-                    
+
                     {ex.subExercises?.map((sub, sIdx) => (
                       <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
                         <input

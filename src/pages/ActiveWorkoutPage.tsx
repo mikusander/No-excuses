@@ -7,8 +7,6 @@ import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev
 interface Exercise {
   id: string;
   type: 'reps' | 'isometry' | 'superset' | 'emom';
-  emom_rounds?: number;
-  emom_round_duration?: number;
   name: string;
   sets: number;
   reps: number;
@@ -48,8 +46,7 @@ const ActiveWorkoutPage: React.FC = () => {
   // Timer State for EMOM
   const [emomActive, setEmomActive] = useState(false);
   const [emomRoundRemaining, setEmomRoundRemaining] = useState(0);
-  const [currentEmomRoundIdx, setCurrentEmomRoundIdx] = useState(0);
-
+  
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Voice Command State
@@ -62,9 +59,9 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isResting) skipRest();
     else if (workout?.exercises[currentExerciseIdx]?.type === 'emom') {
       const ex = workout.exercises[currentExerciseIdx];
-      if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
-        setCurrentEmomRoundIdx(prev => prev + 1);
-        setEmomRoundRemaining(ex.emom_round_duration || 60);
+      if (currentSetIdx < (ex.sets || 1) - 1) {
+          setCurrentSetIdx(prev => prev + 1);
+          setEmomRoundRemaining(ex.duration_seconds || 60);
       } else {
         setEmomActive(false);
         if (currentSetIdx === ex.sets - 1) {
@@ -84,9 +81,9 @@ const ActiveWorkoutPage: React.FC = () => {
     const currentEx = workout.exercises[currentExerciseIdx];
 
     if (currentEx.type === 'emom') {
-      if (currentEmomRoundIdx > 0) {
-        setCurrentEmomRoundIdx(prev => prev - 1);
-        setEmomRoundRemaining(currentEx.emom_round_duration || 60);
+        if (currentSetIdx > 0) {
+          setCurrentSetIdx(prev => prev - 1);
+          setEmomRoundRemaining(currentEx.duration_seconds || 60);
       } else {
         handlePrevExercise();
       }
@@ -233,9 +230,13 @@ const ActiveWorkoutPage: React.FC = () => {
           } else if (ex.type === 'emom') {
             try {
               const parsed = JSON.parse(ex.name);
-              subExercises = parsed.subExercises;
-              ex.emom_rounds = parsed.emom_rounds;
-              ex.emom_round_duration = parsed.emom_round_duration;
+                if (Array.isArray(parsed)) {
+                  subExercises = parsed;
+                } else if (parsed && parsed.subExercises) {
+                  subExercises = parsed.subExercises;
+                  ex.sets = parsed.emom_rounds || ex.sets;
+                  ex.duration_seconds = parsed.emom_round_duration || ex.duration_seconds;
+                }
               parsedName = 'EMOM Circuit';
             } catch(e) {}
           }
@@ -257,7 +258,7 @@ const ActiveWorkoutPage: React.FC = () => {
           } else if (firstEx.type === 'superset' && firstEx.subExercises?.[0]?.type === 'isometry') {
               setIsometryRemaining(firstEx.subExercises[0].duration_seconds);
           } else if (firstEx.type === 'emom') {
-              setEmomRoundRemaining(firstEx.emom_round_duration || 60);
+              setEmomRoundRemaining(firstEx.duration_seconds || 60);
           }
         }
       }
@@ -294,9 +295,9 @@ const ActiveWorkoutPage: React.FC = () => {
     } else if (emomActive && emomRoundRemaining <= 0) {
       const ex = workout?.exercises[currentExerciseIdx];
       if (ex && ex.type === 'emom') {
-        if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
-          setCurrentEmomRoundIdx(prev => prev + 1);
-          setEmomRoundRemaining(ex.emom_round_duration || 60);
+        if (currentSetIdx < (ex.sets || 1) - 1) {
+          setCurrentSetIdx(prev => prev + 1);
+          setEmomRoundRemaining(ex.duration_seconds || 60);
         } else {
           setEmomActive(false);
           const isLSet = currentSetIdx === ex.sets - 1;
@@ -312,7 +313,7 @@ const ActiveWorkoutPage: React.FC = () => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [emomActive, emomRoundRemaining, currentEmomRoundIdx, workout, currentExerciseIdx, currentSetIdx]);
+  }, [emomActive, emomRoundRemaining, currentSetIdx, workout, currentExerciseIdx, currentSetIdx]);
 
   // Timer logic for ISOMETRY
   useEffect(() => {
@@ -367,12 +368,11 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentExerciseIdx(nextIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
-      setCurrentEmomRoundIdx(0);
-      setEmomActive(false);
+            setEmomActive(false);
       setIsResting(false);
       setIsometryActive(false);
       setIsometryRemaining(getTargetIsometry(nextEx, nextEx.subExercises?.[0]));
-      if (nextEx.type === 'emom') setEmomRoundRemaining(nextEx.emom_round_duration || 60);
+      if (nextEx.type === 'emom') setEmomRoundRemaining(nextEx.duration_seconds || 60);
     } else {
       // Workout Complete!
       if (window.confirm("Workout completed! Do you want to return to home?")) {
@@ -388,21 +388,20 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentExerciseIdx(prevIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
-      setCurrentEmomRoundIdx(0);
-      setEmomActive(false);
+            setEmomActive(false);
       setIsResting(false);
       setIsometryActive(false);
       setIsometryRemaining(getTargetIsometry(prevEx, prevEx.subExercises?.[0]));
-      if (prevEx.type === 'emom') setEmomRoundRemaining(prevEx.emom_round_duration || 60);
+      if (prevEx.type === 'emom') setEmomRoundRemaining(prevEx.duration_seconds || 60);
     }
   };
 
   const completeSet = () => {
     if (currentExercise.type === 'emom') {
       // Skipping round manually via button
-      if (currentEmomRoundIdx < (currentExercise.emom_rounds || 1) - 1) {
-        setCurrentEmomRoundIdx(prev => prev + 1);
-        setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
+      if (currentSetIdx < (currentExercise.sets || 1) - 1) {
+          setCurrentSetIdx(prev => prev + 1);
+          setEmomRoundRemaining(currentExercise.duration_seconds || 60);
       } else {
         setEmomActive(false);
         if (isLastSet) handleNextExercise();
@@ -440,8 +439,7 @@ const ActiveWorkoutPage: React.FC = () => {
     const nextSetIdx = currentSetIdx + 1;
     setCurrentSetIdx(nextSetIdx);
     setCurrentSubExerciseIdx(0);
-    setCurrentEmomRoundIdx(0);
-    if (currentExercise.type === 'emom') setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
+        if (currentExercise.type === 'emom') setEmomRoundRemaining(currentExercise.duration_seconds || 60);
     
     // Reset isometry timer if needed
     setIsometryRemaining(getTargetIsometry(currentExercise, currentExercise.subExercises?.[0]));
@@ -573,7 +571,7 @@ const ActiveWorkoutPage: React.FC = () => {
              )}
              {currentExercise.type === 'emom' && (
                <span className="text-[10px] text-blue-400 uppercase font-black tracking-widest block mt-1">
-                 Round {currentEmomRoundIdx + 1} of {currentExercise.emom_rounds}
+                 Round {currentSetIdx + 1} of {currentExercise.sets}
                </span>
              )}
           </div>
