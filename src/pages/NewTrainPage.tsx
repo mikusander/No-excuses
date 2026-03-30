@@ -604,21 +604,30 @@ const NewTrainPage: React.FC = () => {
             ))
           )}
 
-          <div className="flex space-x-3 pt-2">
+          <div className="flex flex-col space-y-3 pt-2">
+            <div className="flex space-x-3">
+              <button
+                onClick={addSuperset}
+                className="flex-1 text-white hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-white/10 hover:bg-white/20 px-4 py-3 rounded-xl transition-colors border border-white/5 border-dashed"
+                title="Add a sequence of exercises with a single rest period"
+              >
+                <Plus size={20} className="mr-1" />
+                SUPERSET
+              </button>
+              <button
+                onClick={addExercise}
+                className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
+              >
+                <Plus size={20} className="mr-1" />
+                EXERCISE
+              </button>
+            </div>
             <button
-              onClick={addSuperset}
-              className="flex-1 text-white hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-white/10 hover:bg-white/20 px-4 py-3 rounded-xl transition-colors border border-white/5 border-dashed"
-              title="Add a sequence of exercises with a single rest period"
+              onClick={addEmom}
+              className="w-full text-blue-400 hover:text-blue-300 flex items-center justify-center text-sm font-bold bg-blue-500/10 hover:bg-blue-500/20 px-4 py-3 rounded-xl transition-colors border border-blue-500/20 border-dashed"
             >
               <Plus size={20} className="mr-1" />
-              SUPERSET
-            </button>
-            <button
-              onClick={addExercise}
-              className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
-            >
-              <Plus size={20} className="mr-1" />
-              EXERCISE
+              EMOM
             </button>
           </div>
         </div>

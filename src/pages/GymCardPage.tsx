@@ -7,13 +7,15 @@ import { useNavigate } from 'react-router-dom';
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset';
+  type: 'reps' | 'isometry' | 'superset' | 'emom';
   name: string;
   sets: number;
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
   order_index: number;
+  emom_rounds?: number;
+  emom_round_duration?: number;
 }
 
 interface Workout {
