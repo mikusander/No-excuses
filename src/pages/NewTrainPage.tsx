@@ -182,7 +182,21 @@ const NewTrainPage: React.FC = () => {
   const removeSubExercise = (supersetId: string, subIndex: number) => {
     setExercises(exercises.map(ex => {
       if (ex.id === supersetId && ex.subExercises) {
-        return { ...ex, subExercises: ex.subExercises.filter((_, idx) => idx !== subIndex) };
+        const remaining = ex.subExercises.filter((_, idx) => idx !== subIndex);
+
+        if (ex.type === 'superset' && remaining.length === 1) {
+          const only = remaining[0];
+          return {
+            ...ex,
+            type: only.type,
+            name: only.name,
+            reps: only.type === 'reps' ? only.reps : ex.reps,
+            duration_seconds: only.type === 'isometry' ? only.duration_seconds : ex.duration_seconds,
+            subExercises: undefined,
+          };
+        }
+
+        return { ...ex, subExercises: remaining };
       }
       return ex;
     }));
@@ -430,7 +444,7 @@ const NewTrainPage: React.FC = () => {
                     ))}
                     <button
                       onClick={() => addSubExercise(ex.id)}
-                      className="w-full mt-2 py-2 border border-dashed border-brand-grey/30 text-brand-grey/70 text-xs font-bold rounded-lg hover:border-blue-400/50 hover:text-blue-400 transition-colors flex justify-center items-center"
+                      className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                     >
                       <Plus size={14} className="mr-1" /> ADD TO EMOM
                     </button>
@@ -473,7 +487,7 @@ const NewTrainPage: React.FC = () => {
                             placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           />
                         </div>
-                        {ex.subExercises && ex.subExercises.length > 2 && (
+                        {ex.subExercises && ex.subExercises.length > 1 && (
                           <button
                             onClick={() => removeSubExercise(ex.id, sIdx)}
                             className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
@@ -485,7 +499,7 @@ const NewTrainPage: React.FC = () => {
                     ))}
                     <button
                       onClick={() => addSubExercise(ex.id)}
-                      className="w-full mt-2 py-2 border border-dashed border-brand-grey/30 text-brand-grey/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                      className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                     >
                       <Plus size={14} className="mr-1" /> ADD TO SUPERSET
                     </button>
@@ -592,7 +606,7 @@ const NewTrainPage: React.FC = () => {
                     onClick={() => convertToSuperset(ex.id)}
                     className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                   >
-                    <Plus size={14} className="mr-1" /> AGGIUNGI ESERCIZIO E CREA SUPERSET
+                    <Plus size={14} className="mr-1" /> ADD EXERCISE AND CREATE SUPERSET
                   </button>
                 )}
               </div>
@@ -610,7 +624,7 @@ const NewTrainPage: React.FC = () => {
               </button>
               <button
                 onClick={addEmom}
-                className="flex-1 text-blue-400 hover:text-blue-300 flex items-center justify-center text-sm font-bold bg-blue-500/10 hover:bg-blue-500/20 px-4 py-3 rounded-xl transition-colors border border-blue-500/20 border-dashed"
+                className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
               >
                 <Plus size={20} className="mr-1" />
                 EMOM
