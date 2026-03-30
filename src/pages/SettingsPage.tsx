@@ -8,9 +8,9 @@ import { supabase } from '../lib/supabase';
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
   const VOICE_ASSIST_KEY = 'voice_assistance_enabled';
-  
-  const defaultName = user?.email?.split('@')[0] || 'User';
-  const [userName, setUserName] = useState(defaultName);
+
+  const [userName, setUserName] = useState('');
+  const [profileLoading, setProfileLoading] = useState(true);
   
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState('');
@@ -35,15 +35,19 @@ const SettingsPage: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     const fetchProfile = async () => {
+      setProfileLoading(true);
       const { data, error } = await supabase
         .from('profiles')
         .select('username')
         .eq('id', user.id)
         .maybeSingle();
-        
+
       if (!error && data?.username) {
         setUserName(data.username);
+      } else {
+        setUserName(user.email?.split('@')[0] || 'User');
       }
+      setProfileLoading(false);
     };
     fetchProfile();
   }, [user]);
@@ -102,12 +106,22 @@ const SettingsPage: React.FC = () => {
           {!isEditing ? (
             <>
               <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-bold text-white capitalize">{userName}</h2>
-                <button onClick={() => { setIsEditing(true); setNewName(userName); setError(null); }} className="text-brand-grey hover:text-white transition-colors">
-                  <Edit2 size={16} />
-                </button>
+                {profileLoading ? (
+                  <div className="h-8 w-44 rounded-md bg-brand-grey/20 animate-pulse" />
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-bold text-white capitalize">{userName}</h2>
+                    <button onClick={() => { setIsEditing(true); setNewName(userName); setError(null); }} className="text-brand-grey hover:text-white transition-colors">
+                      <Edit2 size={16} />
+                    </button>
+                  </>
+                )}
               </div>
-              <p className="text-sm text-brand-grey mt-1">{user?.email}</p>
+              {profileLoading ? (
+                <div className="h-4 w-52 rounded-md bg-brand-grey/20 animate-pulse mt-1" />
+              ) : (
+                <p className="text-sm text-brand-grey mt-1">{user?.email}</p>
+              )}
             </>
           ) : (
             <form onSubmit={handleSaveName} className="w-full flex flex-col items-center">
@@ -145,11 +159,11 @@ const SettingsPage: React.FC = () => {
               </div>
               <button
                 onClick={handleToggleVoiceAssistance}
-                className={`relative w-12 h-7 rounded-full transition-colors ${voiceAssistanceEnabled ? 'bg-brand-orange' : 'bg-brand-grey/30'}`}
+                className={`relative w-12 h-7 rounded-full overflow-hidden transition-colors ${voiceAssistanceEnabled ? 'bg-brand-orange' : 'bg-brand-grey/30'}`}
                 aria-label="Toggle voice assistance"
               >
                 <span
-                  className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${voiceAssistanceEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+                  className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${voiceAssistanceEnabled ? 'translate-x-5' : 'translate-x-0'}`}
                 />
               </button>
             </div>
