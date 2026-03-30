@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
+  const VOICE_ASSIST_KEY = 'voice_assistance_enabled';
   
   const defaultName = user?.email?.split('@')[0] || 'User';
   const [userName, setUserName] = useState(defaultName);
@@ -16,6 +17,20 @@ const SettingsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [voiceAssistanceEnabled, setVoiceAssistanceEnabled] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(VOICE_ASSIST_KEY);
+    if (saved !== null) {
+      setVoiceAssistanceEnabled(saved === 'true');
+    }
+  }, []);
+
+  const handleToggleVoiceAssistance = () => {
+    const next = !voiceAssistanceEnabled;
+    setVoiceAssistanceEnabled(next);
+    localStorage.setItem(VOICE_ASSIST_KEY, String(next));
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -122,8 +137,22 @@ const SettingsPage: React.FC = () => {
 
         {/* Spazio per future impostazioni */}
         <div className="w-full max-w-sm mt-8 space-y-4">
-          <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4 text-center">
-            <p className="text-brand-grey/60 text-sm">More options coming soon...</p>
+          <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white font-bold text-sm">Voice Assistance</p>
+                <p className="text-brand-grey/60 text-xs mt-1">Countdown and workout voice cues</p>
+              </div>
+              <button
+                onClick={handleToggleVoiceAssistance}
+                className={`relative w-12 h-7 rounded-full transition-colors ${voiceAssistanceEnabled ? 'bg-brand-orange' : 'bg-brand-grey/30'}`}
+                aria-label="Toggle voice assistance"
+              >
+                <span
+                  className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${voiceAssistanceEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+                />
+              </button>
+            </div>
           </div>
         </div>
 

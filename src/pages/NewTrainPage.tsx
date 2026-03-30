@@ -6,7 +6,7 @@ import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move } fr
 
 interface ExerciseDraft {
   id: string; // Temporaneo per la UI
-  type: 'reps' | 'isometry' | 'superset' | 'emom';
+  type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
   sets: number;
   reps: number;
@@ -19,6 +19,10 @@ interface ExerciseDraft {
     type: 'reps' | 'isometry';
     reps: number;
     duration_seconds: number;
+  }[];
+  pyramid_steps?: {
+    reps: number;
+    rest_seconds: number;
   }[];
 }
 
@@ -83,6 +87,16 @@ const NewTrainPage: React.FC = () => {
             }
           }
 
+          if (ex.type === 'pyramid') {
+            try {
+              const parsed = JSON.parse(ex.name);
+              ex.pyramid_steps = Array.isArray(parsed?.steps) ? parsed.steps : [];
+              parsedName = parsed?.name || '';
+            } catch (e) {
+              console.error('Error parsing pyramid JSON:', e);
+            }
+          }
+
           return {
             ...ex,
             name: parsedName,
@@ -135,6 +149,26 @@ const NewTrainPage: React.FC = () => {
     ]);
   };
 
+  const addPyramid = () => {
+    setExercises([
+      ...exercises,
+      {
+        id: crypto.randomUUID(),
+        type: 'pyramid',
+        name: '',
+        sets: 1,
+        reps: 0,
+        duration_seconds: 0,
+        rest_seconds: 0,
+        pyramid_steps: [
+          { reps: 10, rest_seconds: 60 },
+          { reps: 15, rest_seconds: 120 },
+          { reps: 20, rest_seconds: 120 },
+        ],
+      }
+    ]);
+  };
+
   const removeExercise = (id: string) => {
     setExercises(exercises.filter(ex => ex.id !== id));
   };
@@ -166,6 +200,40 @@ const NewTrainPage: React.FC = () => {
         const newSubs = [...ex.subExercises];
         newSubs[subIndex] = { ...newSubs[subIndex], [field]: value };
         return { ...ex, subExercises: newSubs };
+      }
+      return ex;
+    }));
+  };
+
+  const updatePyramidStep = (pyramidId: string, stepIndex: number, field: 'reps' | 'rest_seconds', value: number) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === pyramidId && ex.pyramid_steps) {
+        const nextSteps = [...ex.pyramid_steps];
+        nextSteps[stepIndex] = { ...nextSteps[stepIndex], [field]: value };
+        return { ...ex, pyramid_steps: nextSteps };
+      }
+      return ex;
+    }));
+  };
+
+  const addPyramidStep = (pyramidId: string) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === pyramidId) {
+        const lastStep = ex.pyramid_steps?.[ex.pyramid_steps.length - 1];
+        const nextReps = lastStep ? lastStep.reps + 5 : 10;
+        return {
+          ...ex,
+          pyramid_steps: [...(ex.pyramid_steps || []), { reps: nextReps, rest_seconds: 120 }]
+        };
+      }
+      return ex;
+    }));
+  };
+
+  const removePyramidStep = (pyramidId: string, stepIndex: number) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === pyramidId && ex.pyramid_steps) {
+        return { ...ex, pyramid_steps: ex.pyramid_steps.filter((_, idx) => idx !== stepIndex) };
       }
       return ex;
     }));
@@ -224,6 +292,24 @@ const NewTrainPage: React.FC = () => {
     if (parsed < min) parsed = min;
     if (typeof max === 'number' && parsed > max) parsed = max;
     updateSubExercise(supersetId, subIndex, field, parsed);
+    clearDraftValue(key);
+  };
+
+  const commitPyramidStepNumber = (
+    pyramidId: string,
+    stepIndex: number,
+    field: 'reps' | 'rest_seconds',
+    key: string,
+    defaultValue: number,
+    min = 0,
+    max?: number
+  ) => {
+    const raw = (numberDrafts[key] ?? '').trim();
+    let parsed = raw === '' ? defaultValue : parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = defaultValue;
+    if (parsed < min) parsed = min;
+    if (typeof max === 'number' && parsed > max) parsed = max;
+    updatePyramidStep(pyramidId, stepIndex, field, parsed);
     clearDraftValue(key);
   };
 
@@ -305,6 +391,13 @@ const NewTrainPage: React.FC = () => {
         for (const sub of ex.subExercises) {
           if (!sub.name.trim()) { setError('All exercises in an EMOM must have a name'); return; }
         }
+      } else if (ex.type === 'pyramid') {
+        if (!ex.name.trim()) {
+          setError('Pyramid exercise must have a name'); return;
+        }
+        if (!ex.pyramid_steps || ex.pyramid_steps.length === 0) {
+          setError('Pyramid must contain at least 1 step'); return;
+        }
       } else {
         if (!ex.name.trim()) {
           setError('All exercises must have a name');
@@ -351,7 +444,13 @@ const NewTrainPage: React.FC = () => {
         workout_id: workoutIdToUse,
         order_index: idx,
         type: ex.type,
-        name: ex.type === 'superset' ? JSON.stringify(ex.subExercises) : (ex.type === 'emom' ? JSON.stringify({ subExercises: ex.subExercises, emom_rounds: ex.emom_rounds || 1, emom_round_duration: ex.emom_round_duration || 60 }) : ex.name),
+        name: ex.type === 'superset'
+          ? JSON.stringify(ex.subExercises)
+          : ex.type === 'emom'
+            ? JSON.stringify({ subExercises: ex.subExercises, emom_rounds: ex.emom_rounds || 1, emom_round_duration: ex.emom_round_duration || 60 })
+            : ex.type === 'pyramid'
+              ? JSON.stringify({ name: ex.name, steps: ex.pyramid_steps || [] })
+              : ex.name,
         sets: ex.sets,
         reps: ex.type === 'reps' ? ex.reps : 0,
         duration_seconds: ex.type === 'isometry' ? ex.duration_seconds : 0,
@@ -589,6 +688,67 @@ const NewTrainPage: React.FC = () => {
                       <Plus size={14} className="mr-1" /> ADD TO SUPERSET
                     </button>
                   </div>
+                ) : ex.type === 'pyramid' ? (
+                  <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
+                    <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2">
+                      Pyramid
+                    </p>
+
+                    <input
+                      type="text"
+                      placeholder="Exercise Name (e.g. Push Ups)"
+                      value={ex.name}
+                      onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
+                      className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
+                    />
+
+                    {ex.pyramid_steps?.map((step, stepIdx) => (
+                      <div key={stepIdx} className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2 relative pr-8">
+                        <p className="text-[10px] uppercase tracking-wider text-brand-grey/70 font-bold">Step {stepIdx + 1}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Reps</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:reps`, step.reps)}
+                              onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:reps`, e.target.value)}
+                              onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'reps', `${ex.id}:pyr:${stepIdx}:reps`, 10, 1)}
+                              onFocus={onNumberFocus}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Rest (sec)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest`, step.rest_seconds)}
+                              onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest`, e.target.value)}
+                              onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'rest_seconds', `${ex.id}:pyr:${stepIdx}:rest`, 60, 0)}
+                              onFocus={onNumberFocus}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
+                            />
+                          </div>
+                        </div>
+                        {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
+                          <button
+                            onClick={() => removePyramidStep(ex.id, stepIdx)}
+                            className="absolute right-2 top-2 text-red-500/50 hover:text-red-500 p-1"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      onClick={() => addPyramidStep(ex.id)}
+                      className="w-full mt-1 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                    >
+                      <Plus size={14} className="mr-1" /> ADD PYRAMID STEP
+                    </button>
+                  </div>
                 ) : (
                   <>
                     <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
@@ -618,6 +778,7 @@ const NewTrainPage: React.FC = () => {
                 )}
 
                 {/* Dati Generici (Serie e Recupero) */}
+                {ex.type !== 'pyramid' && (
                 <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
                   <div className="flex flex-col">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
@@ -685,8 +846,9 @@ const NewTrainPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+                )}
 
-                {ex.type !== 'superset' && ex.type !== 'emom' && (
+                {ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
                   <button
                     onClick={() => convertToSuperset(ex.id)}
                     className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
@@ -713,6 +875,13 @@ const NewTrainPage: React.FC = () => {
               >
                 <Plus size={20} className="mr-1" />
                 EMOM
+              </button>
+              <button
+                onClick={addPyramid}
+                className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
+              >
+                <Plus size={20} className="mr-1" />
+                PYRAMID
               </button>
             </div>
           </div>

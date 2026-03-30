@@ -6,7 +6,7 @@ import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'emom';
+  type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
   sets: number;
   reps: number;
@@ -14,6 +14,7 @@ interface Exercise {
   rest_seconds: number;
   emom_rounds?: number;
   emom_round_duration?: number;
+  pyramid_steps?: { reps: number; rest_seconds: number }[];
   order_index: number;
   subExercises?: any[];
 }
@@ -25,6 +26,7 @@ interface Workout {
 }
 
 const ActiveWorkoutPage: React.FC = () => {
+  const VOICE_ASSIST_KEY = 'voice_assistance_enabled';
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -36,6 +38,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
   const [currentSetIdx, setCurrentSetIdx] = useState(0);
   const [currentSubExerciseIdx, setCurrentSubExerciseIdx] = useState(0);
+  const [currentPyramidStepIdx, setCurrentPyramidStepIdx] = useState(0);
+  const [pendingPyramidAdvance, setPendingPyramidAdvance] = useState(false);
 
   // Timer State for Rest
   const [isResting, setIsResting] = useState(false);
@@ -51,12 +55,48 @@ const ActiveWorkoutPage: React.FC = () => {
     const [currentEmomRoundIdx, setCurrentEmomRoundIdx] = useState(0);
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const wasRestingRef = useRef(false);
+    const wasEmomActiveRef = useRef(false);
+    const wasIsometryActiveRef = useRef(false);
 
   // Voice Command State
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [voiceAssistanceEnabled, setVoiceAssistanceEnabled] = useState(true);
   const handleVoiceNextRef = useRef<(() => void) | null>(null);
   const handleVoicePrevRef = useRef<(() => void) | null>(null);
+
+  const speakCue = (text: string) => {
+    if (!voiceAssistanceEnabled) return;
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
+    if (!synth) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    synth.speak(utterance);
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem(VOICE_ASSIST_KEY);
+    setVoiceAssistanceEnabled(saved !== 'false');
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === VOICE_ASSIST_KEY && e.newValue !== null) {
+        setVoiceAssistanceEnabled(e.newValue === 'true');
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const getExerciseVoiceName = (ex: Exercise) => {
+    if ((ex.type === 'superset' || ex.type === 'emom') && ex.subExercises?.[0]?.name) {
+      return `${ex.name} ${ex.subExercises[0].name}`;
+    }
+    return ex.name;
+  };
 
   handleVoiceNextRef.current = () => {
     if (isResting) skipRest();
@@ -92,6 +132,15 @@ const ActiveWorkoutPage: React.FC = () => {
         }
         return;
       }
+
+    if (currentEx.type === 'pyramid') {
+      if (currentPyramidStepIdx > 0) {
+        setCurrentPyramidStepIdx(prev => prev - 1);
+      } else {
+        handlePrevExercise();
+      }
+      return;
+    }
 
     if (isResting) {
       setIsResting(false);
@@ -242,6 +291,12 @@ const ActiveWorkoutPage: React.FC = () => {
                 }
               parsedName = 'EMOM Circuit';
             } catch(e) {}
+          } else if (ex.type === 'pyramid') {
+            try {
+              const parsed = JSON.parse(ex.name);
+              ex.pyramid_steps = Array.isArray(parsed?.steps) ? parsed.steps : [];
+              parsedName = parsed?.name || 'Pyramid';
+            } catch(e) {}
           }
           return { ...ex, name: parsedName, subExercises };
         });
@@ -253,6 +308,8 @@ const ActiveWorkoutPage: React.FC = () => {
         setCurrentSetIdx(0);
         setCurrentSubExerciseIdx(0);
         setCurrentEmomRoundIdx(0);
+        setCurrentPyramidStepIdx(0);
+        setPendingPyramidAdvance(false);
         setIsResting(false);
         
         const firstEx = sortedExercises[0];
@@ -277,7 +334,13 @@ const ActiveWorkoutPage: React.FC = () => {
   useEffect(() => {
     if (isResting && restRemaining > 0) {
       timerRef.current = setInterval(() => {
-        setRestRemaining((prev) => prev - 1);
+        setRestRemaining((prev) => {
+          if (prev <= 0) return prev;
+          if (prev <= 3) speakCue(String(prev));
+          const next = prev - 1;
+          if (next === 0) speakCue('finish');
+          return next;
+        });
       }, 1000);
     } else if (isResting && restRemaining <= 0) {
       // End of rest
@@ -290,11 +353,24 @@ const ActiveWorkoutPage: React.FC = () => {
     };
   }, [isResting, restRemaining]);
 
+  useEffect(() => {
+    if (!wasRestingRef.current && isResting && restRemaining > 0) {
+      speakCue('start');
+    }
+    wasRestingRef.current = isResting;
+  }, [isResting, restRemaining]);
+
   // Timer logic for EMOM
   useEffect(() => {
     if (emomActive && emomRoundRemaining > 0) {
       timerRef.current = setInterval(() => {
-        setEmomRoundRemaining((prev) => prev - 1);
+        setEmomRoundRemaining((prev) => {
+          if (prev <= 0) return prev;
+          if (prev <= 3) speakCue(String(prev));
+          const next = prev - 1;
+          if (next === 0) speakCue('finish');
+          return next;
+        });
       }, 1000);
     } else if (emomActive && emomRoundRemaining <= 0) {
       const ex = workout?.exercises[currentExerciseIdx];
@@ -319,11 +395,24 @@ const ActiveWorkoutPage: React.FC = () => {
     };
   }, [emomActive, emomRoundRemaining, currentSetIdx, currentEmomRoundIdx, workout, currentExerciseIdx]);
 
+  useEffect(() => {
+    if (!wasEmomActiveRef.current && emomActive && emomRoundRemaining > 0) {
+      speakCue('start');
+    }
+    wasEmomActiveRef.current = emomActive;
+  }, [emomActive, emomRoundRemaining]);
+
   // Timer logic for ISOMETRY
   useEffect(() => {
     if (isometryActive && isometryRemaining > 0) {
       timerRef.current = setInterval(() => {
-        setIsometryRemaining((prev) => prev - 1);
+        setIsometryRemaining((prev) => {
+          if (prev <= 0) return prev;
+          if (prev <= 3) speakCue(String(prev));
+          const next = prev - 1;
+          if (next === 0) speakCue('finish');
+          return next;
+        });
       }, 1000);
     } else if (isometryActive && isometryRemaining <= 0) {
       setIsometryActive(false);
@@ -333,6 +422,13 @@ const ActiveWorkoutPage: React.FC = () => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
+  }, [isometryActive, isometryRemaining]);
+
+  useEffect(() => {
+    if (!wasIsometryActiveRef.current && isometryActive && isometryRemaining > 0) {
+      speakCue('start');
+    }
+    wasIsometryActiveRef.current = isometryActive;
   }, [isometryActive, isometryRemaining]);
 
   if (loading) {
@@ -357,11 +453,13 @@ const ActiveWorkoutPage: React.FC = () => {
   const isLastSet = currentSetIdx === currentExercise.sets - 1;
   const isEmom = currentExercise.type === 'emom';
   const isLastEmomRound = currentEmomRoundIdx === (currentExercise.emom_rounds || 1) - 1;
+  const isPyramid = currentExercise.type === 'pyramid';
+  const isLastPyramidStep = currentPyramidStepIdx === ((currentExercise.pyramid_steps?.length || 1) - 1);
   
   const isSuperset = currentExercise.type === 'superset';
   const subExercise = isSuperset && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
   const isLastSupersetSub = !isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1;
-  const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : (isLastSet && isLastSupersetSub));
+  const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : isPyramid ? isLastPyramidStep : (isLastSet && isLastSupersetSub));
 
   const getTargetIsometry = (ex: Exercise, subEx: any) => {
     if (ex.type === 'superset' && subEx?.type === 'isometry') return subEx.duration_seconds;
@@ -373,10 +471,13 @@ const ActiveWorkoutPage: React.FC = () => {
     if (!isLastExercise) {
       const nextIdx = currentExerciseIdx + 1;
       const nextEx = workout.exercises[nextIdx];
+      speakCue(`next exercise ${getExerciseVoiceName(nextEx)}`);
       setCurrentExerciseIdx(nextIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
       setCurrentEmomRoundIdx(0);
+      setCurrentPyramidStepIdx(0);
+      setPendingPyramidAdvance(false);
       setEmomActive(false);
       setIsResting(false);
       setIsometryActive(false);
@@ -384,6 +485,7 @@ const ActiveWorkoutPage: React.FC = () => {
       if (nextEx.type === 'emom') setEmomRoundRemaining(nextEx.emom_round_duration || 60);
     } else {
       // Workout Complete!
+      speakCue('workout complete');
       if (window.confirm("Workout completed! Do you want to return to home?")) {
         navigate('/');
       }
@@ -398,6 +500,8 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
       setCurrentEmomRoundIdx(0);
+      setCurrentPyramidStepIdx(0);
+      setPendingPyramidAdvance(false);
       setEmomActive(false);
       setIsResting(false);
       setIsometryActive(false);
@@ -419,6 +523,26 @@ const ActiveWorkoutPage: React.FC = () => {
         }
         return;
       }
+
+    if (currentExercise.type === 'pyramid') {
+      const steps = currentExercise.pyramid_steps || [];
+      const currentStep = steps[currentPyramidStepIdx];
+      const isLastStep = currentPyramidStepIdx >= steps.length - 1;
+
+      if (isLastStep) {
+        handleNextExercise();
+      } else {
+        const stepRest = Math.max(0, currentStep?.rest_seconds || 0);
+        if (stepRest > 0) {
+          setPendingPyramidAdvance(true);
+          setRestRemaining(stepRest);
+          setIsResting(true);
+        } else {
+          setCurrentPyramidStepIdx(prev => prev + 1);
+        }
+      }
+      return;
+    }
 
     // Se siamo dentro a un superset e non abbiamo finito i sub-esercizi
     if (isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1) {
@@ -444,6 +568,12 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const finishRestAndNextSet = () => {
     setIsResting(false);
+
+    if (currentExercise.type === 'pyramid' && pendingPyramidAdvance) {
+      setPendingPyramidAdvance(false);
+      setCurrentPyramidStepIdx(prev => prev + 1);
+      return;
+    }
     
     // Increment set
     const nextSetIdx = currentSetIdx + 1;
@@ -470,6 +600,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const completeWorkoutNow = () => {
+    speakCue('workout complete');
     setEmomActive(false);
     setIsometryActive(false);
     setIsResting(false);
@@ -543,13 +674,15 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
 
         <div className="text-center space-y-2 mb-12">
-          <p className="text-brand-grey text-sm">Next Set:</p>
+          <p className="text-brand-grey text-sm">{currentExercise.type === 'pyramid' ? 'Next Step:' : 'Next Set:'}</p>
           <p className="text-white text-xl font-bold">{currentExercise.name}</p>
           {isSuperset && currentExercise.subExercises && (
             <p className="text-brand-orange/80 text-sm font-semibold">{currentExercise.subExercises.map((s:any) => s.name).join(' + ')}</p>
           )}
           <p className="text-brand-orange font-bold font-mono">
-            {isSuperset ? 'Round' : 'Set'} {currentSetIdx + 2} of {currentExercise.sets}
+            {currentExercise.type === 'pyramid'
+              ? `Step ${currentPyramidStepIdx + 2} of ${currentExercise.pyramid_steps?.length || 1}`
+              : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} of ${currentExercise.sets}`}
           </p>
         </div>
 
@@ -648,13 +781,13 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center">
           {currentExercise.type === 'emom' ? (
             <div className="text-center w-full max-w-sm flex flex-col items-center">
-              <div className={`w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${emomActive ? 'border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]' : 'border-brand-darkGrey'}`}
+                  <div className={`relative group w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${emomActive ? 'border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]' : 'border-brand-darkGrey'}`}
                    onClick={() => setEmomActive(!emomActive)}>
                  <span className={`text-[60px] font-mono tracking-tighter ${emomActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
                    {emomRoundRemaining}
                  </span>
                  <span className="text-brand-grey font-bold uppercase tracking-widest text-[10px] mt-1">SEC LEFT</span>
-                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 rounded-full transition-opacity">
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
                     {emomActive ? <Pause size={48} className="text-white"/> : <Play size={48} className="text-white"/>}
                  </div>
               </div>
@@ -684,6 +817,22 @@ const ActiveWorkoutPage: React.FC = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          ) : currentExercise.type === 'pyramid' ? (
+            <div className="text-center w-full max-w-sm flex flex-col items-center">
+              <span className="block text-[110px] font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_30px_rgba(255,107,0,0.2)]">
+                {currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0}
+              </span>
+              <span className="text-brand-grey font-bold uppercase tracking-widest text-lg">Reps</span>
+              <div className="mt-4 bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-4 text-center">
+                <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Step</span>
+                <span className="text-brand-orange font-black">{currentPyramidStepIdx + 1} / {currentExercise.pyramid_steps?.length || 1}</span>
+              </div>
+              {!isLastPyramidStep && (
+                <p className="text-brand-grey text-xs mt-3">
+                  Next rest: {formatTime(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0)}
+                </p>
+              )}
             </div>
           ) : (isSuperset ? subExercise?.type : currentExercise.type) === 'isometry' ? (
             <div className="text-center w-full max-w-xs relative group cursor-pointer" onClick={() => {
@@ -737,6 +886,8 @@ const ActiveWorkoutPage: React.FC = () => {
                <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
              ) : isEmom && isLastEmomRound ? (
                <>FINISH SET</>
+             ) : isPyramid && !isLastPyramidStep ? (
+               <>NEXT STEP <ArrowRight size={24} className="ml-2" /></>
              ) : isLastSet ? (
                <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
              ) : (

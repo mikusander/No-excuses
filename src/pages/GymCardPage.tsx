@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'emom';
+  type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
   sets: number;
   reps: number;
@@ -16,6 +16,7 @@ interface Exercise {
   order_index: number;
   emom_rounds?: number;
   emom_round_duration?: number;
+  pyramid_steps?: { reps: number; rest_seconds: number }[];
 }
 
 interface Workout {
@@ -70,6 +71,12 @@ const GymCardPage: React.FC = () => {
                 ex.duration_seconds = parsed.emom_round_duration || ex.duration_seconds;
               }
               parsedName = 'EMOM Circuit';
+            } catch(e) {}
+          } else if (ex.type === 'pyramid') {
+            try {
+              const parsed = JSON.parse(ex.name);
+              ex.pyramid_steps = Array.isArray(parsed?.steps) ? parsed.steps : [];
+              parsedName = parsed?.name || 'Pyramid';
             } catch(e) {}
           }
           return { ...ex, name: parsedName, subExercises };
@@ -175,14 +182,18 @@ const GymCardPage: React.FC = () => {
               <div className="space-y-4">
                 {workout.exercises && workout.exercises.map((ex, i) => (
                   <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
-                    {ex.type === 'superset' || ex.type === 'emom' ? (
+                    {ex.type === 'superset' || ex.type === 'emom' || ex.type === 'pyramid' ? (
                       <div className="mb-3">
                          <span className="font-bold text-lg text-white drop-shadow-md flex items-center mb-2">
                            <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i+1}.</span>
                            <Repeat size={16} className="mr-1 text-brand-orange"/> {ex.name}
                          </span>
                          <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
-                           {ex.subExercises?.map((sub, sIdx) => (
+                           {ex.type === 'pyramid' ? ex.pyramid_steps?.map((step, sIdx) => (
+                             <div key={sIdx} className="text-sm font-semibold text-white/80">
+                               • Step {sIdx + 1}: <span className="text-brand-orange ml-1 text-xs">{step.reps} reps</span> <span className="text-brand-grey/70 text-xs">/ rest {formatSecs(step.rest_seconds)}</span>
+                             </div>
+                           )) : ex.subExercises?.map((sub, sIdx) => (
                              <div key={sIdx} className="text-sm font-semibold text-white/80">
                                • {sub.name} <span className="text-brand-orange ml-1 text-xs">({sub.type === 'reps' ? sub.reps + ' reps' : sub.duration_seconds + ' s'})</span>
                              </div>
@@ -205,12 +216,12 @@ const GymCardPage: React.FC = () => {
                     <div className="flex items-center space-x-2 text-xs text-brand-grey font-bold w-full mt-2">
                       <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                            {ex.type === 'superset' ? 'Round' : (ex.type === 'emom' ? 'Rounds' : 'Sets')}
+                            {ex.type === 'superset' ? 'Round' : (ex.type === 'emom' ? 'Rounds' : ex.type === 'pyramid' ? 'Steps' : 'Sets')}
                           </span>
-                          <span className="text-sm text-white">{ex.sets}</span>
+                          <span className="text-sm text-white">{ex.type === 'pyramid' ? (ex.pyramid_steps?.length || 0) : ex.sets}</span>
                         </div>
 
-                        {ex.type !== 'superset' && (
+                        {ex.type !== 'superset' && ex.type !== 'pyramid' && (
                           <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
                             <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
                               {ex.type === 'isometry' ? 'Duration' : (ex.type === 'emom' ? 'Time/Rnd' : 'Reps')}
@@ -219,10 +230,12 @@ const GymCardPage: React.FC = () => {
                           </div>
                         )}
 
-                        <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                         <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center"><Clock size={9} className="mr-1"/> Rest</span>
-                         <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>
-                      </div>
+                        {ex.type !== 'pyramid' && (
+                          <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                           <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center"><Clock size={9} className="mr-1"/> Rest</span>
+                           <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>
+                        </div>
+                        )}
                     </div>
                   </div>
                 ))}
