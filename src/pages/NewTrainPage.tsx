@@ -356,6 +356,28 @@ const NewTrainPage: React.FC = () => {
                     <p className="text-xs font-bold text-blue-400 uppercase tracking-wider text-center mb-2 flex flex-col items-center justify-center">
                       ⏱️ EMOM Circuit
                     </p>
+                    <div className="grid grid-cols-2 gap-2 mb-4 mt-2">
+                      <div className="flex flex-col">
+                        <label className="text-xs text-brand-grey mb-1">Total Rounds</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={ex.sets}
+                          onChange={(e) => updateExercise(ex.id, 'sets', parseInt(e.target.value) || 1)}
+                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-xs text-brand-grey mb-1">Round Time (sec)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={ex.duration_seconds}
+                          onChange={(e) => updateExercise(ex.id, 'duration_seconds', parseInt(e.target.value) || 0)}
+                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                        />
+                      </div>
+                    </div>
 
                     {ex.subExercises?.map((sub, sIdx) => (
                       <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
@@ -491,7 +513,8 @@ const NewTrainPage: React.FC = () => {
                 )}
 
                 {/* Dati Generici (Serie e Recupero) */}
-                <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
+                {ex.type !== 'emom' && (
+                  <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
                   <div className="flex flex-col">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
                       {ex.type === 'superset' ? 'Total Rounds' : 'Sets'}
@@ -558,6 +581,7 @@ const NewTrainPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+                )}
               </div>
             ))
           )}
