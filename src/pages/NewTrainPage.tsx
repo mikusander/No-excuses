@@ -167,25 +167,6 @@ const NewTrainPage: React.FC = () => {
     ]);
   };
 
-  const addPyramid = () => {
-    setExercises([
-      ...exercises,
-      {
-        id: crypto.randomUUID(),
-        type: 'pyramid',
-        name: '',
-        sets: 1,
-        reps: 0,
-        duration_seconds: 0,
-        rest_seconds: 0,
-        pyramid_steps: [
-          { reps: 0, rest_seconds: 0 },
-          { reps: 0, rest_seconds: 0 },
-        ],
-      }
-    ]);
-  };
-
   const removeExercise = (id: string) => {
     setExercises(exercises.filter(ex => ex.id !== id));
   };
