@@ -8,17 +8,23 @@ const HomePage = () => {
       <HeaderLogo />
       
       <main className="w-full flex flex-col items-center mt-4 space-y-8">
-        <WorkoutCard
-          imageSrc="/images/download.jpeg"
-          buttonText="START NEW TRAIN"
-          to="/select-workout"
-        />
+        <div className="w-full flex justify-center animate-home-card animate-home-card-delay-1">
+          <WorkoutCard
+            imageSrc="/images/download.jpeg"
+            buttonText="START NEW TRAIN"
+            to="/select-workout"
+            ctaVariant="primary"
+          />
+        </div>
 
-        <WorkoutCard
-          imageSrc="/images/download (1).jpeg"
-          buttonText="START REPS COUNT"
-          to="/reps-count"
-        />
+        <div className="w-full flex justify-center animate-home-card animate-home-card-delay-2">
+          <WorkoutCard
+            imageSrc="/images/download (1).jpeg"
+            buttonText="START REPS COUNT"
+            to="/reps-count"
+            ctaVariant="secondary"
+          />
+        </div>
       </main>
 
       <BottomNavigation />

@@ -21,3 +21,43 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+@layer utilities {
+  @keyframes homeCardEnter {
+    from {
+      opacity: 0;
+      transform: translateY(22px) scale(0.985);
+      filter: blur(1.5px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+
+  .animate-home-card {
+    opacity: 0;
+    animation: homeCardEnter 620ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    will-change: transform, opacity, filter;
+  }
+
+  .animate-home-card-delay-1 {
+    animation-delay: 80ms;
+  }
+
+  .animate-home-card-delay-2 {
+    animation-delay: 230ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-home-card,
+  .animate-home-card-delay-1,
+  .animate-home-card-delay-2 {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}

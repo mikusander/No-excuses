@@ -138,6 +138,25 @@ const NewTrainPage: React.FC = () => {
     }));
   };
 
+  const convertToPyramid = (id: string) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === id) {
+        return {
+          ...ex,
+          type: 'pyramid',
+          sets: 1,
+          rest_seconds: 0,
+          pyramid_steps: [
+            { reps: ex.type === 'reps' ? ex.reps : 10, rest_seconds: 60 },
+            { reps: ex.type === 'reps' ? ex.reps + 5 : 15, rest_seconds: 120 },
+            { reps: ex.type === 'reps' ? ex.reps + 10 : 20, rest_seconds: 120 },
+          ],
+        };
+      }
+      return ex;
+    }));
+  };
+
   const addEmom = () => {
     setExercises([
       ...exercises,
@@ -849,12 +868,20 @@ const NewTrainPage: React.FC = () => {
                 )}
 
                 {ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
-                  <button
-                    onClick={() => convertToSuperset(ex.id)}
-                    className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                  >
-                    <Plus size={14} className="mr-1" /> ADD EXERCISE AND CREATE SUPERSET
-                  </button>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => convertToSuperset(ex.id)}
+                      className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                    >
+                      <Plus size={14} className="mr-1" /> CREATE SUPERSET
+                    </button>
+                    <button
+                      onClick={() => convertToPyramid(ex.id)}
+                      className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                    >
+                      <Plus size={14} className="mr-1" /> CREATE PYRAMID
+                    </button>
+                  </div>
                 )}
               </div>
             ))
