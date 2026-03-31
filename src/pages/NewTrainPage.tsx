@@ -147,9 +147,8 @@ const NewTrainPage: React.FC = () => {
           sets: 1,
           rest_seconds: 0,
           pyramid_steps: [
-            { reps: ex.type === 'reps' ? ex.reps : 10, rest_seconds: 60 },
-            { reps: ex.type === 'reps' ? ex.reps + 5 : 15, rest_seconds: 120 },
-            { reps: ex.type === 'reps' ? ex.reps + 10 : 20, rest_seconds: 120 },
+            { reps: 0, rest_seconds: 0 },
+            { reps: 0, rest_seconds: 0 },
           ],
         };
       }
@@ -180,9 +179,8 @@ const NewTrainPage: React.FC = () => {
         duration_seconds: 0,
         rest_seconds: 0,
         pyramid_steps: [
-          { reps: 10, rest_seconds: 60 },
-          { reps: 15, rest_seconds: 120 },
-          { reps: 20, rest_seconds: 120 },
+          { reps: 0, rest_seconds: 0 },
+          { reps: 0, rest_seconds: 0 },
         ],
       }
     ]);
@@ -252,7 +250,21 @@ const NewTrainPage: React.FC = () => {
   const removePyramidStep = (pyramidId: string, stepIndex: number) => {
     setExercises(exercises.map(ex => {
       if (ex.id === pyramidId && ex.pyramid_steps) {
-        return { ...ex, pyramid_steps: ex.pyramid_steps.filter((_, idx) => idx !== stepIndex) };
+        const remaining = ex.pyramid_steps.filter((_, idx) => idx !== stepIndex);
+
+        // If only one pyramid step remains, revert to a normal reps exercise.
+        if (remaining.length === 1) {
+          const only = remaining[0];
+          return {
+            ...ex,
+            type: 'reps',
+            reps: Number.isFinite(only.reps) && only.reps > 0 ? only.reps : 10,
+            rest_seconds: Number.isFinite(only.rest_seconds) && only.rest_seconds >= 0 ? only.rest_seconds : ex.rest_seconds,
+            pyramid_steps: undefined,
+          };
+        }
+
+        return { ...ex, pyramid_steps: remaining };
       }
       return ex;
     }));
@@ -730,7 +742,7 @@ const NewTrainPage: React.FC = () => {
                             <input
                               type="number"
                               min="1"
-                              value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:reps`, step.reps)}
+                              value={Object.prototype.hasOwnProperty.call(numberDrafts, `${ex.id}:pyr:${stepIdx}:reps`) ? numberDrafts[`${ex.id}:pyr:${stepIdx}:reps`] : (Number.isFinite(step.reps) && step.reps > 0 ? String(step.reps) : '')}
                               onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:reps`, e.target.value)}
                               onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'reps', `${ex.id}:pyr:${stepIdx}:reps`, 10, 1)}
                               onFocus={onNumberFocus}
@@ -742,7 +754,7 @@ const NewTrainPage: React.FC = () => {
                             <input
                               type="number"
                               min="0"
-                              value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest`, step.rest_seconds)}
+                              value={Object.prototype.hasOwnProperty.call(numberDrafts, `${ex.id}:pyr:${stepIdx}:rest`) ? numberDrafts[`${ex.id}:pyr:${stepIdx}:rest`] : (Number.isFinite(step.rest_seconds) && step.rest_seconds > 0 ? String(step.rest_seconds) : '')}
                               onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest`, e.target.value)}
                               onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'rest_seconds', `${ex.id}:pyr:${stepIdx}:rest`, 60, 0)}
                               onFocus={onNumberFocus}
@@ -902,13 +914,6 @@ const NewTrainPage: React.FC = () => {
               >
                 <Plus size={20} className="mr-1" />
                 EMOM
-              </button>
-              <button
-                onClick={addPyramid}
-                className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
-              >
-                <Plus size={20} className="mr-1" />
-                PYRAMID
               </button>
             </div>
           </div>
