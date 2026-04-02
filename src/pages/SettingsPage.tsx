@@ -37,9 +37,9 @@ const SettingsPage: React.FC = () => {
     const fetchProfile = async () => {
       setProfileLoading(true);
       const { data, error } = await supabase
-        .from('profiles')
+        .from('profili')
         .select('username')
-        .eq('id', user.id)
+        .eq('id_utente', user.id)
         .maybeSingle();
 
       if (!error && data?.username) {
@@ -71,8 +71,13 @@ const SettingsPage: React.FC = () => {
 
     try {
       const { error: upsertError } = await supabase
-        .from('profiles')
-        .upsert({ id: user!.id, username: newName.trim(), updated_at: new Date().toISOString() });
+        .from('profili')
+        .upsert({
+          id_utente: user!.id,
+          username: newName.trim(),
+          mail: user?.email || `${user!.id}@local.invalid`,
+          updated_at: new Date().toISOString()
+        });
         
       if (upsertError) {
         if (upsertError.code === '23505') {

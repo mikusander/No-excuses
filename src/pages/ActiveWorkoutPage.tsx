@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff } from 'lucide-react';
+import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface Exercise {
   id: string;
@@ -257,51 +258,36 @@ const ActiveWorkoutPage: React.FC = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('workouts')
+        .from('schede')
         .select(`
-          id, name,
-          exercises ( id, type, name, sets, reps, duration_seconds, rest_seconds, order_index )
+          id_scheda,
+          nome,
+          esecuzioni (
+            id_esecuzione,
+            ordine,
+            set_num,
+            rest_secondi,
+            tipo,
+            reps,
+            durata_secondi,
+            id_superset,
+            id_piramide,
+            stepindex_piramide,
+            id_emom,
+            stepindex_emom,
+            superset ( round_totali ),
+            emom ( round_totali, durata_round_secondi ),
+            esercizi ( nome )
+          )
         `)
-        .eq('id', id)
+        .eq('id_scheda', Number(id))
         .single();
 
       if (error) throw error;
 
       if (data) {
-        let sortedExercises = [...(data.exercises || [])].sort((a: any, b: any) => a.order_index - b.order_index) as Exercise[];
-        
-        // Parsing superset JSON
-        sortedExercises = sortedExercises.map(ex => {
-          let parsedName = ex.name;
-          let subExercises = undefined;
-          if (ex.type === 'superset') {
-            try {
-              subExercises = JSON.parse(ex.name);
-              parsedName = 'Superset Circuit'; 
-            } catch(e) {}
-          } else if (ex.type === 'emom') {
-              try {
-                const parsed = JSON.parse(ex.name);
-                if (Array.isArray(parsed)) {
-                  subExercises = parsed;
-                } else if (parsed && parsed.subExercises) {
-                  subExercises = parsed.subExercises;
-                  ex.emom_rounds = parsed.emom_rounds;
-                  ex.emom_round_duration = parsed.emom_round_duration;
-                }
-              parsedName = 'EMOM Circuit';
-            } catch(e) {}
-          } else if (ex.type === 'pyramid') {
-            try {
-              const parsed = JSON.parse(ex.name);
-              ex.pyramid_steps = Array.isArray(parsed?.steps) ? parsed.steps : [];
-              parsedName = parsed?.name || 'Pyramid';
-            } catch(e) {}
-          }
-          return { ...ex, name: parsedName, subExercises };
-        });
-
-        setWorkout({ ...data, exercises: sortedExercises });
+        const sortedExercises = parseDbExerciseRows(data.esecuzioni || []) as Exercise[];
+        setWorkout({ id: String(data.id_scheda), name: data.nome, exercises: sortedExercises });
         
         // Reset states just in case
         setCurrentExerciseIdx(0);

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move } from 'lucide-react';
+import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface ExerciseDraft {
   id: string; // Temporaneo per la UI
@@ -49,61 +50,40 @@ const NewTrainPage: React.FC = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('workouts')
+        .from('schede')
         .select(`
-          name,
-          exercises ( id, type, name, sets, reps, duration_seconds, rest_seconds, order_index )
+          id_scheda,
+          nome,
+          esecuzioni (
+            id_esecuzione,
+            ordine,
+            set_num,
+            rest_secondi,
+            tipo,
+            reps,
+            durata_secondi,
+            id_superset,
+            id_piramide,
+            stepindex_piramide,
+            id_emom,
+            stepindex_emom,
+            superset ( round_totali ),
+            emom ( round_totali, durata_round_secondi ),
+            esercizi ( nome )
+          )
         `)
-        .eq('id', workoutId)
+        .eq('id_scheda', Number(workoutId))
         .single();
 
       if (error) throw error;
 
       if (data) {
-        setWorkoutName(data.name);
-        const sorted = data.exercises.sort((a: any, b: any) => a.order_index - b.order_index);
-        setExercises(sorted.map((ex: any) => {
-          let parsedName = ex.name;
-          let subExercises = [];
-
-          if (ex.type === 'superset') {
-            try {
-              subExercises = JSON.parse(ex.name);
-              parsedName = ''; // Non ci serve il nome base per i superset
-            } catch (e) {
-              console.error('Error parsing superset JSON:', e);
-            }
-          }
-
-          if (ex.type === 'emom') {
-            try {
-              const parsed = JSON.parse(ex.name);
-              if (parsed.subExercises) subExercises = parsed.subExercises;
-              ex.emom_rounds = parsed.emom_rounds || 1;
-              ex.emom_round_duration = parsed.emom_round_duration || 60;
-              parsedName = ''; 
-            } catch (e) {
-              console.error('Error parsing emom JSON:', e);
-            }
-          }
-
-          if (ex.type === 'pyramid') {
-            try {
-              const parsed = JSON.parse(ex.name);
-              ex.pyramid_steps = Array.isArray(parsed?.steps) ? parsed.steps : [];
-              parsedName = parsed?.name || '';
-            } catch (e) {
-              console.error('Error parsing pyramid JSON:', e);
-            }
-          }
-
-          return {
-            ...ex,
-            name: parsedName,
-            subExercises,
-            id: crypto.randomUUID(), // Generiamo un nuovo ID temporaneo per la UI
-          };
+        setWorkoutName(data.nome);
+        const parsed = parseDbExerciseRows(data.esecuzioni || []).map((ex: any) => ({
+          ...ex,
+          id: crypto.randomUUID(),
         }));
+        setExercises(parsed as ExerciseDraft[]);
       }
     } catch (err: any) {
       console.error(err);
@@ -379,6 +359,36 @@ const NewTrainPage: React.FC = () => {
 
   // Esercizi state builder helper functions
 
+  const ensureExerciseDictionaryId = async (name: string) => {
+    const normalized = name.trim();
+    const { data: existing, error: existingError } = await supabase
+      .from('esercizi')
+      .select('id_esercizio')
+      .eq('nome', normalized)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    if (existing?.id_esercizio) return existing.id_esercizio;
+
+    const { data: inserted, error: insertError } = await supabase
+      .from('esercizi')
+      .insert([{ nome: normalized }])
+      .select('id_esercizio')
+      .single();
+
+    if (!insertError && inserted?.id_esercizio) return inserted.id_esercizio;
+
+    // Handle race on unique(nome): re-read the row.
+    const { data: afterRace, error: raceReadError } = await supabase
+      .from('esercizi')
+      .select('id_esercizio')
+      .eq('nome', normalized)
+      .single();
+
+    if (raceReadError) throw insertError || raceReadError;
+    return afterRace.id_esercizio;
+  };
+
   const saveWorkout = async () => {
     if (!workoutName.trim()) {
       setError('Enter a name for the workout');
@@ -427,52 +437,104 @@ const NewTrainPage: React.FC = () => {
       if (id) {
         // UPDATE scheda esistente
         const { error: updateError } = await supabase
-          .from('workouts')
-          .update({ name: workoutName })
-          .eq('id', id);
+          .from('schede')
+          .update({ nome: workoutName })
+          .eq('id_scheda', Number(id));
         if (updateError) throw updateError;
 
         // Rimuove i vecchi esercizi
         const { error: deleteError } = await supabase
-          .from('exercises')
+          .from('esecuzioni')
           .delete()
-          .eq('workout_id', id);
+          .eq('id_scheda', Number(id));
         if (deleteError) throw deleteError;
 
       } else {
         // INSERT nuova scheda
         const { data: workoutData, error: workoutError } = await supabase
-          .from('workouts')
-          .insert([{ name: workoutName, user_id: user?.id }])
-          .select()
+          .from('schede')
+          .insert([{ nome: workoutName, id_utente: user?.id }])
+          .select('id_scheda')
           .single();
 
         if (workoutError) throw workoutError;
-        workoutIdToUse = workoutData.id;
+        workoutIdToUse = String(workoutData.id_scheda);
       }
 
-      // 2. Prepara gli esercizi preservando l\'ordine
-      const exercisesToInsert = exercises.map((ex, idx) => ({
-        workout_id: workoutIdToUse,
-        order_index: idx,
-        type: ex.type,
-        name: ex.type === 'superset'
-          ? JSON.stringify(ex.subExercises)
-          : ex.type === 'emom'
-            ? JSON.stringify({ subExercises: ex.subExercises, emom_rounds: ex.emom_rounds || 1, emom_round_duration: ex.emom_round_duration || 60 })
-            : ex.type === 'pyramid'
-              ? JSON.stringify({ name: ex.name, steps: ex.pyramid_steps || [] })
-              : ex.name,
-        sets: ex.sets,
-        reps: ex.type === 'reps' ? ex.reps : 0,
-        duration_seconds: ex.type === 'isometry' ? ex.duration_seconds : 0,
-        rest_seconds: ex.rest_seconds
-      }));
+      const rowsToInsert: any[] = [];
 
-      // 3. Inserisci gli esercizi
+      for (let idx = 0; idx < exercises.length; idx += 1) {
+        const ex = exercises[idx];
+        let payloadName = ex.name.trim();
+        let idSuperset: number | null = null;
+        let idEmom: number | null = null;
+        let idPiramide: number | null = null;
+        let stepindexPiramide: number | null = null;
+        let stepindexEmom: number | null = null;
+
+        if (ex.type === 'superset') {
+          payloadName = JSON.stringify(ex.subExercises || []);
+          const { data, error: supersetError } = await supabase
+            .from('superset')
+            .insert([{ round_totali: Math.max(1, ex.sets) }])
+            .select('id_superset')
+            .single();
+          if (supersetError) throw supersetError;
+          idSuperset = data.id_superset;
+        }
+
+        if (ex.type === 'emom') {
+          payloadName = JSON.stringify({
+            subExercises: ex.subExercises || [],
+            emom_rounds: ex.emom_rounds || 1,
+            emom_round_duration: ex.emom_round_duration || 60,
+          });
+          const { data, error: emomError } = await supabase
+            .from('emom')
+            .insert([{ round_totali: Math.max(1, ex.emom_rounds || 1), durata_round_secondi: Math.max(1, ex.emom_round_duration || 60) }])
+            .select('id_emom')
+            .single();
+          if (emomError) throw emomError;
+          idEmom = data.id_emom;
+          stepindexEmom = 1;
+        }
+
+        if (ex.type === 'pyramid') {
+          payloadName = JSON.stringify({ name: ex.name, steps: ex.pyramid_steps || [] });
+          const { data, error: piramideError } = await supabase
+            .from('piramide')
+            .insert([{}])
+            .select('id_piramide')
+            .single();
+          if (piramideError) throw piramideError;
+          idPiramide = data.id_piramide;
+          stepindexPiramide = 1;
+        }
+
+        const idEsercizio = await ensureExerciseDictionaryId(payloadName);
+        const isIsometry = ex.type === 'isometry';
+
+        rowsToInsert.push({
+          id_scheda: Number(workoutIdToUse),
+          id_esercizio: idEsercizio,
+          ordine: idx + 1,
+          set_num: Math.max(1, ex.sets || 1),
+          rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+          peso_kg: null,
+          tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
+          reps: isIsometry ? null : Math.max(1, ex.type === 'reps' ? ex.reps : 1),
+          durata_secondi: isIsometry ? Math.max(1, ex.duration_seconds) : null,
+          id_superset: idSuperset,
+          id_piramide: idPiramide,
+          stepindex_piramide: stepindexPiramide,
+          id_emom: idEmom,
+          stepindex_emom: stepindexEmom,
+        });
+      }
+
       const { error: exercisesError } = await supabase
-        .from('exercises')
-        .insert(exercisesToInsert);
+        .from('esecuzioni')
+        .insert(rowsToInsert);
 
       if (exercisesError) throw exercisesError;
 

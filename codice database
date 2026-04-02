@@ -1,0 +1,420 @@
+-- =========================================================
+-- Supabase / PostgreSQL schema (v1)
+-- Notes:
+-- 1) Compatible with Supabase Postgres.
+-- 2) Logical constraints (first-order style) are modeled via CHECK/UNIQUE/FK.
+-- 3) Every business numeric value is constrained to be > 0.
+-- =========================================================
+
+-- Recommended extension in Supabase projects
+create extension if not exists pgcrypto;
+
+-- ---------------------------------------------------------
+-- Drop in reverse dependency order (optional for rebuild)
+-- ---------------------------------------------------------
+drop table if exists public.esecuzioni cascade;
+drop table if exists public.note_workout cascade;
+drop table if exists public.workout_run cascade;
+drop table if exists public.emom cascade;
+drop table if exists public.piramide cascade;
+drop table if exists public.superset cascade;
+drop table if exists public.schede cascade;
+drop table if exists public.libero cascade;
+drop table if exists public.follower cascade;
+drop table if exists public.esercizi cascade;
+drop table if exists public.profili cascade;
+
+-- ---------------------------------------------------------
+-- User profile (linked to auth.users)
+-- ---------------------------------------------------------
+create table public.profili (
+  id_utente uuid primary key references auth.users(id) on delete cascade,
+  username varchar(50) not null unique,
+  mail varchar(100) not null unique,
+  voice_assistant boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint ck_profili_username_not_blank check (length(trim(username)) > 0),
+  constraint ck_profili_mail_not_blank check (length(trim(mail)) > 0)
+);
+
+-- ---------------------------------------------------------
+-- Exercise dictionary
+-- ---------------------------------------------------------
+create table public.esercizi (
+  id_esercizio bigint generated always as identity primary key,
+  nome varchar(100) not null unique,
+  constraint ck_esercizi_nome_not_blank check (length(trim(nome)) > 0)
+);
+
+-- ---------------------------------------------------------
+-- Followers (self-relation)
+-- ---------------------------------------------------------
+create table public.follower (
+  id_follower uuid not null,
+  id_seguito uuid not null,
+  created_at timestamptz not null default now(),
+  primary key (id_follower, id_seguito),
+  constraint fk_follower_follower foreign key (id_follower) references public.profili(id_utente) on delete cascade,
+  constraint fk_follower_seguito foreign key (id_seguito) references public.profili(id_utente) on delete cascade,
+  constraint ck_follower_no_self_follow check (id_follower <> id_seguito)
+);
+
+-- ---------------------------------------------------------
+-- Free mode executions
+-- ---------------------------------------------------------
+create table public.libero (
+  id_libero bigint generated always as identity primary key,
+  id_utente uuid not null,
+  id_esercizio bigint not null,
+  conteggio int not null,
+  data_esecuzione date not null default current_date,
+  constraint fk_libero_utente foreign key (id_utente) references public.profili(id_utente) on delete cascade,
+  constraint fk_libero_esercizio foreign key (id_esercizio) references public.esercizi(id_esercizio) on delete cascade,
+  constraint ck_libero_conteggio_pos check (conteggio > 0)
+);
+
+-- ---------------------------------------------------------
+-- Workout templates (Schede)
+-- ---------------------------------------------------------
+create table public.schede (
+  id_scheda bigint generated always as identity primary key,
+  id_utente uuid not null,
+  nome varchar(100) not null,
+  data_creazione timestamptz not null default now(),
+  pubblica boolean not null default false,
+  constraint fk_schede_utente foreign key (id_utente) references public.profili(id_utente) on delete cascade,
+  constraint ck_schede_nome_not_blank check (length(trim(nome)) > 0)
+);
+
+-- ---------------------------------------------------------
+-- Workout run (actual execution of a template)
+-- ---------------------------------------------------------
+create table public.workout_run (
+  id_workout bigint generated always as identity primary key,
+  id_utente uuid not null,
+  id_scheda bigint not null,
+  data_esecuzione timestamptz not null default now(),
+  constraint fk_workout_utente foreign key (id_utente) references public.profili(id_utente) on delete cascade,
+  constraint fk_workout_scheda foreign key (id_scheda) references public.schede(id_scheda) on delete cascade
+);
+
+-- ---------------------------------------------------------
+-- Notes linked to workout run
+-- ---------------------------------------------------------
+create table public.note_workout (
+  id_nota bigint generated always as identity primary key,
+  id_workout bigint not null,
+  testo text not null,
+  created_at timestamptz not null default now(),
+  constraint fk_note_workout foreign key (id_workout) references public.workout_run(id_workout) on delete cascade,
+  constraint ck_note_testo_not_blank check (length(trim(testo)) > 0)
+);
+
+-- ---------------------------------------------------------
+-- Complex containers
+-- ---------------------------------------------------------
+create table public.superset (
+  id_superset bigint generated always as identity primary key,
+  round_totali int not null,
+  constraint ck_superset_round_totali_pos check (round_totali > 0)
+);
+
+create table public.piramide (
+  id_piramide bigint generated always as identity primary key
+);
+
+create table public.emom (
+  id_emom bigint generated always as identity primary key,
+  round_totali int not null,
+  durata_round_secondi int not null,
+  constraint ck_emom_round_totali_pos check (round_totali > 0),
+  constraint ck_emom_durata_round_pos check (durata_round_secondi > 0)
+);
+
+-- ---------------------------------------------------------
+-- Esecuzioni (associative + inheritance-like)
+-- ---------------------------------------------------------
+create table public.esecuzioni (
+  id_esecuzione bigint generated always as identity primary key,
+  id_scheda bigint not null,
+  id_esercizio bigint not null,
+
+  -- Base parameters
+  ordine int not null,
+  set_num int,
+  rest_secondi int,
+  peso_kg numeric(8,2),
+
+  -- Type discriminator
+  tipo varchar(20) not null,
+  reps int,
+  durata_secondi int,
+
+  -- Optional links to complex structures
+  id_superset bigint,
+  id_piramide bigint,
+  stepindex_piramide int,
+  id_emom bigint,
+  stepindex_emom int,
+
+  -- Foreign keys
+  constraint fk_esecuzioni_scheda foreign key (id_scheda) references public.schede(id_scheda) on delete cascade,
+  constraint fk_esecuzioni_esercizio foreign key (id_esercizio) references public.esercizi(id_esercizio) on delete cascade,
+  constraint fk_esecuzioni_superset foreign key (id_superset) references public.superset(id_superset) on delete set null,
+  constraint fk_esecuzioni_piramide foreign key (id_piramide) references public.piramide(id_piramide) on delete set null,
+  constraint fk_esecuzioni_emom foreign key (id_emom) references public.emom(id_emom) on delete set null,
+
+  -- Generic positivity constraints for numeric business fields
+  constraint ck_esecuzioni_ordine_pos check (ordine > 0),
+  constraint ck_esecuzioni_set_num_pos check (set_num is null or set_num > 0),
+  constraint ck_esecuzioni_rest_pos check (rest_secondi is null or rest_secondi > 0),
+  constraint ck_esecuzioni_peso_pos check (peso_kg is null or peso_kg > 0),
+  constraint ck_esecuzioni_reps_pos check (reps is null or reps > 0),
+  constraint ck_esecuzioni_durata_pos check (durata_secondi is null or durata_secondi > 0),
+  constraint ck_esecuzioni_step_piramide_pos check (stepindex_piramide is null or stepindex_piramide > 0),
+  constraint ck_esecuzioni_step_emom_pos check (stepindex_emom is null or stepindex_emom > 0),
+
+  -- Allowed discriminator values
+  constraint ck_esecuzioni_tipo check (upper(tipo) in ('REPS', 'ISOMETRIA')),
+
+  -- If tipo=REPS then reps required and durata null; if tipo=ISOMETRIA vice versa
+  constraint ck_esecuzioni_tipo_coerenza check (
+    (upper(tipo) = 'REPS' and reps is not null and durata_secondi is null)
+    or
+    (upper(tipo) = 'ISOMETRIA' and durata_secondi is not null and reps is null)
+  ),
+
+  -- At most one complex structure per row
+  constraint ck_esecuzioni_struttura_esclusiva check (
+    num_nonnulls(id_superset, id_piramide, id_emom) <= 1
+  ),
+
+  -- Pyramid coherence: step index required if linked
+  constraint ck_esecuzioni_piramide_coerenza check (
+    (id_piramide is null and stepindex_piramide is null)
+    or
+    (id_piramide is not null and stepindex_piramide is not null)
+  ),
+
+  -- Emom coherence: step index required if linked
+  constraint ck_esecuzioni_emom_coerenza check (
+    (id_emom is null and stepindex_emom is null)
+    or
+    (id_emom is not null and stepindex_emom is not null)
+  )
+);
+
+-- ---------------------------------------------------------
+-- Uniqueness / ordering constraints
+-- ---------------------------------------------------------
+create unique index ux_esecuzioni_scheda_ordine
+  on public.esecuzioni(id_scheda, ordine);
+
+create unique index ux_esecuzioni_piramide_step
+  on public.esecuzioni(id_scheda, id_piramide, stepindex_piramide)
+  where id_piramide is not null;
+
+create unique index ux_esecuzioni_emom_step
+  on public.esecuzioni(id_scheda, id_emom, stepindex_emom)
+  where id_emom is not null;
+
+-- [LIBERO. COERENZA TEMPO]
+-- For the same user and exercise, each calendar date can appear only once.
+create unique index ux_libero_utente_esercizio_data
+  on public.libero(id_utente, id_esercizio, data_esecuzione);
+
+-- Useful indexes
+create index ix_libero_utente on public.libero(id_utente);
+create index ix_schede_utente on public.schede(id_utente);
+create index ix_workout_run_utente on public.workout_run(id_utente);
+create index ix_workout_run_scheda on public.workout_run(id_scheda);
+create index ix_note_workout_id_workout on public.note_workout(id_workout);
+create index ix_esecuzioni_scheda on public.esecuzioni(id_scheda);
+create index ix_esecuzioni_esercizio on public.esecuzioni(id_esercizio);
+
+-- ---------------------------------------------------------
+-- First-order logic constraints that need cross-row/table checks
+-- ---------------------------------------------------------
+
+-- [WORKOUT. DATA COERENZA]
+-- DATA(workout) >= DATA_CREAZIONE(scheda)
+create or replace function public.fn_check_workout_data_coerenza()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_data_creazione timestamptz;
+begin
+  select s.data_creazione
+    into v_data_creazione
+  from public.schede s
+  where s.id_scheda = new.id_scheda;
+
+  if v_data_creazione is null then
+    raise exception 'Scheda % non trovata', new.id_scheda;
+  end if;
+
+  if new.data_esecuzione < v_data_creazione then
+    raise exception 'DATA(workout) deve essere >= DATA_CREAZIONE(scheda). workout=%, scheda=%', new.data_esecuzione, v_data_creazione;
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger trg_check_workout_data_coerenza
+before insert or update on public.workout_run
+for each row
+execute function public.fn_check_workout_data_coerenza();
+
+-- [SUPERSET. COERENZA]
+-- For any execution linked to a superset:
+-- 1) set_num must equal superset.round_totali
+-- 2) executions in the same superset/scheda are coherent by construction
+create or replace function public.fn_check_superset_coerenza()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_round_totali int;
+begin
+  if new.id_superset is null then
+    return new;
+  end if;
+
+  select s.round_totali
+    into v_round_totali
+  from public.superset s
+  where s.id_superset = new.id_superset;
+
+  if v_round_totali is null then
+    raise exception 'Superset % non trovato', new.id_superset;
+  end if;
+
+  if new.set_num is null then
+    raise exception 'set_num non puo'' essere NULL quando id_superset e'' valorizzato';
+  end if;
+
+  if new.set_num <> v_round_totali then
+    raise exception 'Violazione SUPERSET.COHERENZA: set_num (%) deve essere uguale a round_totali (%)', new.set_num, v_round_totali;
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger trg_check_superset_coerenza
+before insert or update on public.esecuzioni
+for each row
+execute function public.fn_check_superset_coerenza();
+
+-- [ESECUZIONE. ORDINE]
+-- For each (id_scheda, id_esercizio), all rows must have the same ordine.
+create or replace function public.fn_check_esecuzione_ordine_fd()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_existing_ordine int;
+begin
+  select e.ordine
+    into v_existing_ordine
+  from public.esecuzioni e
+  where e.id_scheda = new.id_scheda
+    and e.id_esercizio = new.id_esercizio
+    and e.id_esecuzione <> coalesce(new.id_esecuzione, -1)
+  limit 1;
+
+  if v_existing_ordine is not null and v_existing_ordine <> new.ordine then
+    raise exception 'Violazione ESECUZIONE.ORDINE: per (scheda %, esercizio %) ordine deve essere univoco. Trovato %, ricevuto %',
+      new.id_scheda, new.id_esercizio, v_existing_ordine, new.ordine;
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger trg_check_esecuzione_ordine_fd
+before insert or update on public.esecuzioni
+for each row
+execute function public.fn_check_esecuzione_ordine_fd();
+
+-- ---------------------------------------------------------
+-- RLS (Row Level Security)
+-- ---------------------------------------------------------
+alter table public.profili enable row level security;
+alter table public.follower enable row level security;
+alter table public.libero enable row level security;
+alter table public.schede enable row level security;
+alter table public.workout_run enable row level security;
+alter table public.note_workout enable row level security;
+alter table public.esecuzioni enable row level security;
+
+-- Profili: user sees/updates only own profile
+create policy profili_select_own on public.profili
+  for select using (auth.uid() = id_utente);
+create policy profili_update_own on public.profili
+  for update using (auth.uid() = id_utente) with check (auth.uid() = id_utente);
+create policy profili_insert_own on public.profili
+  for insert with check (auth.uid() = id_utente);
+
+-- Follower: user can see and manage only rows where involved
+create policy follower_select_involved on public.follower
+  for select using (auth.uid() = id_follower or auth.uid() = id_seguito);
+create policy follower_insert_own on public.follower
+  for insert with check (auth.uid() = id_follower);
+create policy follower_delete_own on public.follower
+  for delete using (auth.uid() = id_follower);
+
+-- Libero: only owner
+create policy libero_all_own on public.libero
+  for all using (auth.uid() = id_utente) with check (auth.uid() = id_utente);
+
+-- Schede: owner (plus public visibility on read)
+create policy schede_select_owner_or_public on public.schede
+  for select using (auth.uid() = id_utente or pubblica = true);
+create policy schede_write_owner on public.schede
+  for all using (auth.uid() = id_utente) with check (auth.uid() = id_utente);
+
+-- Workout run: only owner
+create policy workout_run_all_own on public.workout_run
+  for all using (auth.uid() = id_utente) with check (auth.uid() = id_utente);
+
+-- Notes: owner through workout_run
+create policy note_workout_all_owner on public.note_workout
+  for all using (
+    exists (
+      select 1
+      from public.workout_run wr
+      where wr.id_workout = note_workout.id_workout
+        and wr.id_utente = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.workout_run wr
+      where wr.id_workout = note_workout.id_workout
+        and wr.id_utente = auth.uid()
+    )
+  );
+
+-- Esecuzioni: owner through scheda
+create policy esecuzioni_all_owner on public.esecuzioni
+  for all using (
+    exists (
+      select 1
+      from public.schede s
+      where s.id_scheda = esecuzioni.id_scheda
+        and s.id_utente = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.schede s
+      where s.id_scheda = esecuzioni.id_scheda
+        and s.id_utente = auth.uid()
+    )
+  );

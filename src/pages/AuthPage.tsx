@@ -32,8 +32,20 @@ const AuthPage: React.FC = () => {
         if (error) throw error;
         navigate('/');
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
+
+        if (data.user?.id) {
+          await supabase
+            .from('profili')
+            .upsert({
+              id_utente: data.user.id,
+              username: email.split('@')[0] || 'user',
+              mail: email,
+              updated_at: new Date().toISOString(),
+            });
+        }
+
         navigate('/');
       }
       navigate('/');

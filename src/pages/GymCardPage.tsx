@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Dumbbell, Calendar, Trash2, ArrowLeft, Clock, Timer, Repeat, Pencil, Plus } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { useNavigate } from 'react-router-dom';
+import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface Exercise {
   id: string;
@@ -40,47 +41,37 @@ const GymCardPage: React.FC = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('workouts')
+        .from('schede')
         .select(`
-          id, name, created_at,
-          exercises ( id, type, name, sets, reps, duration_seconds, rest_seconds, order_index )
+          id_scheda,
+          nome,
+          data_creazione,
+          esecuzioni (
+            id_esecuzione,
+            ordine,
+            set_num,
+            rest_secondi,
+            tipo,
+            reps,
+            durata_secondi,
+            id_superset,
+            id_piramide,
+            stepindex_piramide,
+            id_emom,
+            stepindex_emom,
+            superset ( round_totali ),
+            emom ( round_totali, durata_round_secondi ),
+            esercizi ( nome )
+          )
         `)
-        .order('created_at', { ascending: false });
+        .order('data_creazione', { ascending: false });
 
       if (error) throw error;
-      
-      const parsedWorkouts = (data as unknown as Workout[]).map(w => ({
-        ...w,
-        // Riordiniamo gli esercizi caricati nella card per l'order_index corretto
-        exercises: w.exercises?.sort((a, b) => (a.order_index || 0) - (b.order_index || 0)).map((ex: any) => {
-          let parsedName = ex.name;
-          let subExercises = [];
-          if (ex.type === 'superset') {
-            try {
-              subExercises = JSON.parse(ex.name);
-              parsedName = 'Superset Circuit';
-            } catch(e) {}
-          } else if (ex.type === 'emom') {
-            try {
-              const parsed = JSON.parse(ex.name);
-              if (Array.isArray(parsed)) {
-                subExercises = parsed;
-              } else if (parsed && parsed.subExercises) {
-                subExercises = parsed.subExercises;
-                ex.sets = parsed.emom_rounds || ex.sets;
-                ex.duration_seconds = parsed.emom_round_duration || ex.duration_seconds;
-              }
-              parsedName = 'EMOM Circuit';
-            } catch(e) {}
-          } else if (ex.type === 'pyramid') {
-            try {
-              const parsed = JSON.parse(ex.name);
-              ex.pyramid_steps = Array.isArray(parsed?.steps) ? parsed.steps : [];
-              parsedName = parsed?.name || 'Pyramid';
-            } catch(e) {}
-          }
-          return { ...ex, name: parsedName, subExercises };
-        }) || []
+      const parsedWorkouts = (data || []).map((w: any) => ({
+        id: String(w.id_scheda),
+        name: w.nome,
+        created_at: w.data_creazione,
+        exercises: parseDbExerciseRows(w.esecuzioni || []) as any,
       }));
       
       setWorkouts(parsedWorkouts);
@@ -94,7 +85,7 @@ const GymCardPage: React.FC = () => {
   const deleteWorkout = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this workout?')) return;
     try {
-      const { error } = await supabase.from('workouts').delete().eq('id', id);
+      const { error } = await supabase.from('schede').delete().eq('id_scheda', Number(id));
       if (error) throw error;
       setWorkouts(workouts.filter(w => w.id !== id));
     } catch (error) {

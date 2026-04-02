@@ -25,12 +25,16 @@ const SelectWorkoutPage: React.FC = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('workouts')
-        .select('id, name, created_at')
-        .order('created_at', { ascending: false });
+        .from('schede')
+        .select('id_scheda, nome, data_creazione')
+        .order('data_creazione', { ascending: false });
 
       if (error) throw error;
-      setWorkouts(data as Workout[]);
+      setWorkouts((data || []).map((w: any) => ({
+        id: String(w.id_scheda),
+        name: w.nome,
+        created_at: w.data_creazione,
+      })));
     } catch (error) {
       console.error('Error fetching workouts:', error);
     } finally {
