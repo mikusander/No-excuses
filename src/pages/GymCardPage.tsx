@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Calendar, Trash2, ArrowLeft, Clock, Timer, Repeat, Pencil, Plus } from 'lucide-react';
+import { Dumbbell, Calendar, Trash2, Clock, Timer, Repeat, Pencil, Plus } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { useNavigate } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
@@ -102,19 +102,11 @@ const GymCardPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
-      <header className="p-4 flex items-center justify-between bg-black/50 sticky top-0 z-20 backdrop-blur-md">
-        <div className="flex items-center">
-          <button 
-            onClick={() => navigate('/')} 
-            className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors"
-          >
-            <ArrowLeft size={28} />
-          </button>
-          <h1 className="text-xl font-bold ml-2">Your Workouts</h1>
-        </div>
+      <header className="p-4 relative flex items-center justify-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
+        <h1 className="text-xl font-bold text-center">Your Workouts</h1>
         <button
           onClick={() => navigate('/new-train')}
-          className="p-2 text-brand-orange hover:text-brand-lightOrange transition-colors bg-brand-orange/10 rounded-full shadow-lg"
+          className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-brand-orange hover:text-brand-lightOrange transition-colors bg-brand-orange/10 rounded-full shadow-lg"
           title="Create New Workout"
         >
           <Plus size={24} />

@@ -1,11 +1,28 @@
 import { Home, Folder, Settings } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
+const historyIconMaskStyle = {
+  WebkitMaskImage: "url('/images/icons8-passato-100.png')",
+  maskImage: "url('/images/icons8-passato-100.png')",
+  WebkitMaskSize: 'contain',
+  maskSize: 'contain',
+  WebkitMaskRepeat: 'no-repeat',
+  maskRepeat: 'no-repeat',
+  WebkitMaskPosition: 'center',
+  maskPosition: 'center',
+  backgroundColor: 'currentColor',
+};
+
 const BottomNavigation = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
   const isActive = (path: string) => location.pathname === path;
+
+  const isHomeActive = isActive('/');
+  const isGymCardActive = isActive('/gym-card');
+  const isHistoryActive = location.pathname.startsWith('/workout-history');
+  const isSettingsActive = isActive('/settings');
 
   return (
     <div className="fixed bottom-6 left-0 w-full flex justify-center items-center px-4 z-50 pointer-events-none">
@@ -20,21 +37,27 @@ const BottomNavigation = () => {
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-50 pointer-events-none" />
 
           <NavItem
-            icon={<Home size={24} strokeWidth={isActive('/') ? 2.5 : 2} />}
+            icon={<Home size={24} strokeWidth={isHomeActive ? 2.5 : 2} />}
             label="Home"
-            active={isActive('/')}
+            active={isHomeActive}
             onClick={() => navigate('/')}
           />
           <NavItem
-            icon={<Folder size={24} strokeWidth={isActive('/gym-card') ? 2.5 : 2} />}
+            icon={<Folder size={24} strokeWidth={isGymCardActive ? 2.5 : 2} />}
             label="Gym Card"
-            active={isActive('/gym-card')}
+            active={isGymCardActive}
             onClick={() => navigate('/gym-card')}
           />
           <NavItem
-            icon={<Settings size={24} strokeWidth={isActive('/settings') ? 2.5 : 2} />}
+            icon={<span className="block w-6 h-6" style={historyIconMaskStyle} />}
+            label="History"
+            active={isHistoryActive}
+            onClick={() => navigate('/workout-history')}
+          />
+          <NavItem
+            icon={<Settings size={24} strokeWidth={isSettingsActive ? 2.5 : 2} />}
             label="Settings"
-            active={isActive('/settings')}
+            active={isSettingsActive}
             onClick={() => navigate('/settings')}
           />
         </div>
@@ -54,7 +77,7 @@ const NavItem = ({ icon, label, active, onClick }: NavItemProps) => {
   return (
     <button
       onClick={onClick}
-      className={`relative flex flex-col items-center justify-center w-[84px] h-[64px] rounded-3xl transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] z-10 overflow-hidden ${active ? 'bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)]' : 'hover:bg-white/5'}`}
+      className={`relative flex flex-col items-center justify-center w-[72px] sm:w-[84px] h-[64px] rounded-3xl transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] z-10 overflow-hidden ${active ? 'bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)]' : 'hover:bg-white/5'}`}
     >
       {/* Animated Glow Behind Icon */}
       <div

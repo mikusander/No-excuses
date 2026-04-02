@@ -28,6 +28,10 @@ interface ExerciseDraft {
 }
 
 const NewTrainPage: React.FC = () => {
+  const PYRAMID_DEFAULT_REPS = 10;
+  const PYRAMID_DEFAULT_REPS_INCREMENT = 5;
+  const PYRAMID_DEFAULT_REST_SECONDS = 60;
+
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -121,14 +125,17 @@ const NewTrainPage: React.FC = () => {
   const convertToPyramid = (id: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === id) {
+        const baseReps = Number.isFinite(ex.reps) && ex.reps > 0 ? ex.reps : PYRAMID_DEFAULT_REPS;
+        const baseRest = Number.isFinite(ex.rest_seconds) && ex.rest_seconds >= 0 ? ex.rest_seconds : PYRAMID_DEFAULT_REST_SECONDS;
+
         return {
           ...ex,
           type: 'pyramid',
           sets: 1,
           rest_seconds: 0,
           pyramid_steps: [
-            { reps: 0, rest_seconds: 0 },
-            { reps: 0, rest_seconds: 0 },
+            { reps: baseReps, rest_seconds: baseRest },
+            { reps: baseReps + PYRAMID_DEFAULT_REPS_INCREMENT, rest_seconds: baseRest },
           ],
         };
       }
@@ -198,10 +205,15 @@ const NewTrainPage: React.FC = () => {
     setExercises(exercises.map(ex => {
       if (ex.id === pyramidId) {
         const lastStep = ex.pyramid_steps?.[ex.pyramid_steps.length - 1];
-        const nextReps = lastStep ? lastStep.reps + 5 : 10;
+        const safeLastReps = Number.isFinite(lastStep?.reps) && (lastStep?.reps || 0) > 0 ? (lastStep?.reps || 0) : PYRAMID_DEFAULT_REPS;
+        const nextReps = safeLastReps + PYRAMID_DEFAULT_REPS_INCREMENT;
+        const nextRest = Number.isFinite(lastStep?.rest_seconds) && (lastStep?.rest_seconds || 0) >= 0
+          ? (lastStep?.rest_seconds || 0)
+          : PYRAMID_DEFAULT_REST_SECONDS;
+
         return {
           ...ex,
-          pyramid_steps: [...(ex.pyramid_steps || []), { reps: nextReps, rest_seconds: 120 }]
+          pyramid_steps: [...(ex.pyramid_steps || []), { reps: nextReps, rest_seconds: nextRest }]
         };
       }
       return ex;
@@ -302,6 +314,27 @@ const NewTrainPage: React.FC = () => {
     if (parsed < min) parsed = min;
     if (typeof max === 'number' && parsed > max) parsed = max;
     updatePyramidStep(pyramidId, stepIndex, field, parsed);
+    clearDraftValue(key);
+  };
+
+  const commitPyramidRestPart = (
+    pyramidId: string,
+    stepIndex: number,
+    part: 'min' | 'sec',
+    key: string,
+    currentRestSeconds: number
+  ) => {
+    const raw = (numberDrafts[key] ?? '').trim();
+    let parsed = raw === '' ? 0 : parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = 0;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
+    const safeCurrent = Number.isFinite(currentRestSeconds) ? currentRestSeconds : 0;
+    const minutes = Math.floor(safeCurrent / 60);
+    const seconds = safeCurrent % 60;
+    const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
+    updatePyramidStep(pyramidId, stepIndex, 'rest_seconds', next);
     clearDraftValue(key);
   };
 
@@ -627,7 +660,7 @@ const NewTrainPage: React.FC = () => {
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24">
       <header className="p-4 flex items-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/gym-card')}
           className="p-2 text-white hover:text-brand-orange transition-colors"
         >
           <ArrowLeft size={28} />
@@ -753,6 +786,9 @@ const NewTrainPage: React.FC = () => {
                           </button>
                         </div>
                         <div>
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                            {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                          </label>
                           <input
                             type="number"
                             min="1"
@@ -810,6 +846,9 @@ const NewTrainPage: React.FC = () => {
                           </button>
                         </div>
                         <div>
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                            {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                          </label>
                           <input
                             type="number"
                             min="1"
@@ -869,16 +908,37 @@ const NewTrainPage: React.FC = () => {
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Rest (sec)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={Object.prototype.hasOwnProperty.call(numberDrafts, `${ex.id}:pyr:${stepIdx}:rest`) ? numberDrafts[`${ex.id}:pyr:${stepIdx}:rest`] : (Number.isFinite(step.rest_seconds) && step.rest_seconds > 0 ? String(step.rest_seconds) : '')}
-                              onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest`, e.target.value)}
-                              onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'rest_seconds', `${ex.id}:pyr:${stepIdx}:rest`, 60, 0)}
-                              onFocus={onNumberFocus}
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
-                            />
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1 flex items-center">
+                              <Clock size={10} className="mr-1" />
+                              Rest
+                            </label>
+                            <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
+                              <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:min`, Math.floor(step.rest_seconds / 60))}
+                                  onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:min`, e.target.value)}
+                                  onBlur={() => commitPyramidRestPart(ex.id, stepIdx, 'min', `${ex.id}:pyr:${stepIdx}:rest:min`, step.rest_seconds)}
+                                  onFocus={onNumberFocus}
+                                  className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
+                                />
+                                <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                              </div>
+                              <div className="flex flex-col items-center justify-center w-1/2 relative">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="59"
+                                  value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds % 60)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, e.target.value)}
+                                  onBlur={() => commitPyramidRestPart(ex.id, stepIdx, 'sec', `${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds)}
+                                  onFocus={onNumberFocus}
+                                  className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
+                                />
+                                <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                         {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
@@ -932,7 +992,7 @@ const NewTrainPage: React.FC = () => {
                 <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
                   <div className="flex flex-col">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                      {ex.type === 'superset' ? 'Total Rounds' : 'Sets'}
+                      Sets
                     </label>
                     <input
                       type="number"
@@ -947,7 +1007,7 @@ const NewTrainPage: React.FC = () => {
 
                   {ex.type !== 'superset' && ex.type !== 'emom' && (
                     <div className="flex flex-col">
-                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-center">
+                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
                         {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
                       </label>
                       <input
@@ -963,7 +1023,7 @@ const NewTrainPage: React.FC = () => {
                   )}
 
                   <div className="flex flex-col relative">
-                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 text-center justify-center flex items-center">
+                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 flex items-center">
                       <Clock size={10} className="mr-1" />
                       Rest
                     </label>

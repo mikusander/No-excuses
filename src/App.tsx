@@ -5,18 +5,21 @@ import RepCounterPage from './pages/RepCounterPage';
 import AuthPage from './pages/AuthPage';
 import NewTrainPage from './pages/NewTrainPage';
 import GymCardPage from './pages/GymCardPage';
+import WorkoutHistoryPage from './pages/WorkoutHistoryPage';
+import WorkoutHistoryDetailPage from './pages/WorkoutHistoryDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import SelectWorkoutPage from './pages/SelectWorkoutPage';
 import ActiveWorkoutPage from './pages/ActiveWorkoutPage';
 import { useAuth } from './context/AuthContext';
 import ResetPasswordModal from './components/ResetPasswordModal';
+import { supabaseConfigError } from './lib/supabase';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
-    return <div className="min-h-screen bg-brand-dark flex items-center justify-center text-brand-orange">Caricamento...</div>;
+    return <div className="min-h-screen bg-brand-dark flex items-center justify-center text-brand-orange">Loading...</div>;
   }
 
   if (!user) {
@@ -29,6 +32,19 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   const { isPasswordRecovery } = useAuth();
+
+  if (supabaseConfigError) {
+    return (
+      <div className="min-h-screen bg-brand-dark flex items-center justify-center p-6">
+        <div className="w-full max-w-lg rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-red-100">
+          <h1 className="text-xl font-bold mb-3">Missing Supabase configuration</h1>
+          <p className="text-sm leading-relaxed">
+            Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in production, then deploy again.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -58,6 +74,16 @@ function App() {
         <Route path="/gym-card" element={
           <ProtectedRoute>
             <GymCardPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/workout-history" element={
+          <ProtectedRoute>
+            <WorkoutHistoryPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/workout-history/:workoutRunId" element={
+          <ProtectedRoute>
+            <WorkoutHistoryDetailPage />
           </ProtectedRoute>
         } />
         <Route path="/select-workout" element={

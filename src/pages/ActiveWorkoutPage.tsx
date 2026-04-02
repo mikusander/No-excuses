@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface Exercise {
@@ -24,6 +24,16 @@ interface Workout {
   id: string;
   name: string;
   exercises: Exercise[];
+}
+
+interface ExerciseNoteEntry {
+  exerciseName: string;
+  note: string;
+}
+
+interface NoteModalContext {
+  key: string;
+  name: string;
 }
 
 const ActiveWorkoutPage: React.FC = () => {
@@ -53,17 +63,28 @@ const ActiveWorkoutPage: React.FC = () => {
   // Timer State for EMOM
   const [emomActive, setEmomActive] = useState(false);
   const [emomRoundRemaining, setEmomRoundRemaining] = useState(0);
-    const [currentEmomRoundIdx, setCurrentEmomRoundIdx] = useState(0);
+  const [currentEmomRoundIdx, setCurrentEmomRoundIdx] = useState(0);
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const wasRestingRef = useRef(false);
-    const wasEmomActiveRef = useRef(false);
-    const wasIsometryActiveRef = useRef(false);
+  const wasRestingRef = useRef(false);
+  const wasEmomActiveRef = useRef(false);
+  const wasIsometryActiveRef = useRef(false);
+  const lastCountdownRestRef = useRef<number | null>(null);
+  const lastCountdownEmomRef = useRef<number | null>(null);
+  const lastCountdownIsometryRef = useRef<number | null>(null);
+  const workoutRunSavedRef = useRef(false);
+  const workoutRunIdRef = useRef<number | null>(null);
+  const workoutNotesSavedRef = useRef(false);
+  const workoutCompletionHandledRef = useRef(false);
 
   // Voice Command State
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [voiceAssistanceEnabled, setVoiceAssistanceEnabled] = useState(true);
+  const [exerciseNotesByKey, setExerciseNotesByKey] = useState<Record<string, ExerciseNoteEntry>>({});
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [noteModalDraft, setNoteModalDraft] = useState('');
+  const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
   const handleVoiceNextRef = useRef<(() => void) | null>(null);
   const handleVoicePrevRef = useRef<(() => void) | null>(null);
 
@@ -92,18 +113,12 @@ const ActiveWorkoutPage: React.FC = () => {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  const getExerciseVoiceName = (ex: Exercise) => {
-    if ((ex.type === 'superset' || ex.type === 'emom') && ex.subExercises?.[0]?.name) {
-      return `${ex.name} ${ex.subExercises[0].name}`;
-    }
-    return ex.name;
-  };
-
   handleVoiceNextRef.current = () => {
     if (isResting) skipRest();
     else if (workout?.exercises[currentExerciseIdx]?.type === 'emom') {
       const ex = workout.exercises[currentExerciseIdx];
       if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
+          speakCue('next round');
           setCurrentEmomRoundIdx(prev => prev + 1);
           setEmomRoundRemaining(ex.emom_round_duration || 60);
       } else {
@@ -297,6 +312,14 @@ const ActiveWorkoutPage: React.FC = () => {
         setCurrentPyramidStepIdx(0);
         setPendingPyramidAdvance(false);
         setIsResting(false);
+        setExerciseNotesByKey({});
+        setIsNoteModalOpen(false);
+        setNoteModalDraft('');
+        setNoteModalContext(null);
+        workoutRunSavedRef.current = false;
+        workoutRunIdRef.current = null;
+        workoutNotesSavedRef.current = false;
+        workoutCompletionHandledRef.current = false;
         
         const firstEx = sortedExercises[0];
         if (firstEx) {
@@ -316,17 +339,61 @@ const ActiveWorkoutPage: React.FC = () => {
     }
   };
 
+  const saveWorkoutRun = async (): Promise<number | null> => {
+    if (workoutRunSavedRef.current) return workoutRunIdRef.current;
+    if (!user?.id || !id) return null;
+
+    const { data, error } = await supabase
+      .from('workout_run')
+      .insert([
+        {
+          id_utente: user.id,
+          id_scheda: Number(id),
+        },
+      ])
+      .select('id_workout')
+      .single();
+
+    if (error || !data?.id_workout) {
+      console.error('Error saving completed workout:', error || 'Missing workout id');
+      return null;
+    }
+
+    workoutRunSavedRef.current = true;
+    workoutRunIdRef.current = Number(data.id_workout);
+    return workoutRunIdRef.current;
+  };
+
+  const saveWorkoutNotes = async (workoutRunId: number) => {
+    if (workoutNotesSavedRef.current) return;
+
+    const rowsToInsert = Object.values(exerciseNotesByKey)
+      .map((entry) => ({
+        id_workout: workoutRunId,
+        testo: `[${entry.exerciseName}] ${entry.note.trim()}`,
+      }))
+      .filter((row) => row.testo.length > 3);
+
+    if (rowsToInsert.length === 0) {
+      workoutNotesSavedRef.current = true;
+      return;
+    }
+
+    const { error } = await supabase.from('note_workout').insert(rowsToInsert);
+
+    if (error) {
+      console.error('Error saving workout notes:', error);
+      return;
+    }
+
+    workoutNotesSavedRef.current = true;
+  };
+
   // Timer logic for REST
   useEffect(() => {
     if (isResting && restRemaining > 0) {
       timerRef.current = setInterval(() => {
-        setRestRemaining((prev) => {
-          if (prev <= 0) return prev;
-          if (prev <= 3) speakCue(String(prev));
-          const next = prev - 1;
-          if (next === 0) speakCue('finish');
-          return next;
-        });
+        setRestRemaining((prev) => (prev > 0 ? prev - 1 : prev));
       }, 1000);
     } else if (isResting && restRemaining <= 0) {
       // End of rest
@@ -340,6 +407,16 @@ const ActiveWorkoutPage: React.FC = () => {
   }, [isResting, restRemaining]);
 
   useEffect(() => {
+    if (!isResting || restRemaining > 3 || restRemaining <= 0) {
+      lastCountdownRestRef.current = null;
+      return;
+    }
+    if (lastCountdownRestRef.current === restRemaining) return;
+    lastCountdownRestRef.current = restRemaining;
+    speakCue(String(restRemaining));
+  }, [isResting, restRemaining]);
+
+  useEffect(() => {
     if (!wasRestingRef.current && isResting && restRemaining > 0) {
       speakCue('start');
     }
@@ -350,18 +427,13 @@ const ActiveWorkoutPage: React.FC = () => {
   useEffect(() => {
     if (emomActive && emomRoundRemaining > 0) {
       timerRef.current = setInterval(() => {
-        setEmomRoundRemaining((prev) => {
-          if (prev <= 0) return prev;
-          if (prev <= 3) speakCue(String(prev));
-          const next = prev - 1;
-          if (next === 0) speakCue('finish');
-          return next;
-        });
+        setEmomRoundRemaining((prev) => (prev > 0 ? prev - 1 : prev));
       }, 1000);
     } else if (emomActive && emomRoundRemaining <= 0) {
       const ex = workout?.exercises[currentExerciseIdx];
       if (ex && ex.type === 'emom') {
           if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
+            speakCue('next round');
             setCurrentEmomRoundIdx(prev => prev + 1);
             setEmomRoundRemaining(ex.emom_round_duration || 60);
           } else {
@@ -382,6 +454,16 @@ const ActiveWorkoutPage: React.FC = () => {
   }, [emomActive, emomRoundRemaining, currentSetIdx, currentEmomRoundIdx, workout, currentExerciseIdx]);
 
   useEffect(() => {
+    if (!emomActive || emomRoundRemaining > 3 || emomRoundRemaining <= 0) {
+      lastCountdownEmomRef.current = null;
+      return;
+    }
+    if (lastCountdownEmomRef.current === emomRoundRemaining) return;
+    lastCountdownEmomRef.current = emomRoundRemaining;
+    speakCue(String(emomRoundRemaining));
+  }, [emomActive, emomRoundRemaining]);
+
+  useEffect(() => {
     if (!wasEmomActiveRef.current && emomActive && emomRoundRemaining > 0) {
       speakCue('start');
     }
@@ -392,13 +474,7 @@ const ActiveWorkoutPage: React.FC = () => {
   useEffect(() => {
     if (isometryActive && isometryRemaining > 0) {
       timerRef.current = setInterval(() => {
-        setIsometryRemaining((prev) => {
-          if (prev <= 0) return prev;
-          if (prev <= 3) speakCue(String(prev));
-          const next = prev - 1;
-          if (next === 0) speakCue('finish');
-          return next;
-        });
+        setIsometryRemaining((prev) => (prev > 0 ? prev - 1 : prev));
       }, 1000);
     } else if (isometryActive && isometryRemaining <= 0) {
       setIsometryActive(false);
@@ -408,6 +484,16 @@ const ActiveWorkoutPage: React.FC = () => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
+  }, [isometryActive, isometryRemaining]);
+
+  useEffect(() => {
+    if (!isometryActive || isometryRemaining > 3 || isometryRemaining <= 0) {
+      lastCountdownIsometryRef.current = null;
+      return;
+    }
+    if (lastCountdownIsometryRef.current === isometryRemaining) return;
+    lastCountdownIsometryRef.current = isometryRemaining;
+    speakCue(String(isometryRemaining));
   }, [isometryActive, isometryRemaining]);
 
   useEffect(() => {
@@ -447,6 +533,58 @@ const ActiveWorkoutPage: React.FC = () => {
   const isLastSupersetSub = !isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1;
   const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : isPyramid ? isLastPyramidStep : (isLastSet && isLastSupersetSub));
 
+  const getCurrentExerciseNoteContext = () => {
+    if (isSuperset && subExercise) {
+      const subName = String(subExercise.name || '').trim() || `Superset Exercise ${currentSubExerciseIdx + 1}`;
+      return {
+        key: `${currentExercise.id}:superset:${currentSubExerciseIdx}`,
+        name: subName,
+      };
+    }
+
+    const baseName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
+    return {
+      key: currentExercise.id,
+      name: baseName,
+    };
+  };
+
+  const currentExerciseNoteContext = getCurrentExerciseNoteContext();
+  const hasCurrentExerciseNote = Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim());
+
+  const openCurrentExerciseNoteModal = () => {
+    const existingNote = exerciseNotesByKey[currentExerciseNoteContext.key]?.note || '';
+    setNoteModalContext(currentExerciseNoteContext);
+    setNoteModalDraft(existingNote);
+    setIsNoteModalOpen(true);
+  };
+
+  const closeCurrentExerciseNoteModal = () => {
+    setIsNoteModalOpen(false);
+    setNoteModalDraft('');
+    setNoteModalContext(null);
+  };
+
+  const saveCurrentExerciseNote = () => {
+    if (!noteModalContext) return;
+
+    const trimmed = noteModalDraft.trim();
+    setExerciseNotesByKey((prev) => {
+      const next = { ...prev };
+      if (!trimmed) {
+        delete next[noteModalContext.key];
+      } else {
+        next[noteModalContext.key] = {
+          exerciseName: noteModalContext.name,
+          note: trimmed,
+        };
+      }
+      return next;
+    });
+
+    closeCurrentExerciseNoteModal();
+  };
+
   const getTargetIsometry = (ex: Exercise, subEx: any) => {
     if (ex.type === 'superset' && subEx?.type === 'isometry') return subEx.duration_seconds;
     if (ex.type === 'isometry') return ex.duration_seconds;
@@ -457,7 +595,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (!isLastExercise) {
       const nextIdx = currentExerciseIdx + 1;
       const nextEx = workout.exercises[nextIdx];
-      speakCue(`next exercise ${getExerciseVoiceName(nextEx)}`);
+      speakCue('next exercise');
       setCurrentExerciseIdx(nextIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
@@ -470,10 +608,10 @@ const ActiveWorkoutPage: React.FC = () => {
       setIsometryRemaining(getTargetIsometry(nextEx, nextEx.subExercises?.[0]));
       if (nextEx.type === 'emom') setEmomRoundRemaining(nextEx.emom_round_duration || 60);
     } else {
-      // Workout Complete!
-      speakCue('workout complete');
       if (window.confirm("Workout completed! Do you want to return to home?")) {
-        navigate('/');
+        void completeWorkoutNow();
+      } else {
+        void markWorkoutComplete();
       }
     }
   };
@@ -500,6 +638,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (currentExercise.type === 'emom') {
         // Skipping round manually via button
         if (currentEmomRoundIdx < (currentExercise.emom_rounds || 1) - 1) {
+          speakCue('next round');
           setCurrentEmomRoundIdx(prev => prev + 1);
           setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
         } else {
@@ -585,12 +724,24 @@ const ActiveWorkoutPage: React.FC = () => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const completeWorkoutNow = () => {
+  const markWorkoutComplete = async () => {
+    if (workoutCompletionHandledRef.current) return;
+    workoutCompletionHandledRef.current = true;
+
     speakCue('workout complete');
     setEmomActive(false);
     setIsometryActive(false);
     setIsResting(false);
     if (timerRef.current) clearInterval(timerRef.current);
+
+    const workoutRunId = await saveWorkoutRun();
+    if (workoutRunId) {
+      await saveWorkoutNotes(workoutRunId);
+    }
+  };
+
+  const completeWorkoutNow = async () => {
+    await markWorkoutComplete();
     navigate('/');
   };
 
@@ -598,12 +749,13 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isEmom) {
       // COMPLETE WORKOUT on final EMOM state must end workout immediately.
       if (isFinalCompletionAction) {
-        completeWorkoutNow();
+        void completeWorkoutNow();
         return;
       }
 
       // NEXT ROUND must advance even if timer is still running.
       if (!isLastEmomRound) {
+        speakCue('next round');
         setCurrentEmomRoundIdx(prev => prev + 1);
         setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
         return;
@@ -852,10 +1004,22 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
 
         {/* Primary Action Button */}
-        <div className="mt-auto pt-8">
+        <div className="mt-auto pt-8 flex items-stretch gap-3">
+          <button
+            onClick={openCurrentExerciseNoteModal}
+            className={`w-[70px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${
+              hasCurrentExerciseNote
+                ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
+                : 'bg-brand-darkGrey/40 border-brand-grey/20 text-brand-grey hover:text-white hover:border-brand-grey/40'
+            }`}
+            title="Exercise Notes"
+          >
+            <FileText size={24} />
+          </button>
+
           <button
             onClick={handlePrimaryAction}
-            className={`w-full py-5 rounded-2xl font-black text-xl flex items-center justify-center transition-all active:scale-95 shadow-xl ${
+            className={`flex-1 h-[70px] rounded-2xl font-black text-xl flex items-center justify-center transition-all active:scale-95 shadow-xl ${
               isFinalCompletionAction
                 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20' 
                 : 'bg-brand-orange hover:bg-brand-lightOrange text-black shadow-brand-orange/20'
@@ -882,6 +1046,48 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
         </div>
       </main>
+
+      {isNoteModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Exercise Note</h3>
+                <p className="text-xs text-brand-grey mt-1">{noteModalContext?.name || 'Current exercise'}</p>
+              </div>
+              <button
+                onClick={closeCurrentExerciseNoteModal}
+                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
+                title="Close notes"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <textarea
+              value={noteModalDraft}
+              onChange={(e) => setNoteModalDraft(e.target.value)}
+              placeholder="Write your considerations for this exercise..."
+              className="w-full min-h-[150px] bg-black/40 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none"
+            />
+
+            <div className="mt-4 flex items-center justify-end gap-3">
+              <button
+                onClick={closeCurrentExerciseNoteModal}
+                className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveCurrentExerciseNote}
+                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black"
+              >
+                Save Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
