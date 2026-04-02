@@ -359,12 +359,16 @@ const NewTrainPage: React.FC = () => {
 
   // Esercizi state builder helper functions
 
+  const normalizeExerciseName = (name: string) => name.replace(/@@@meta:.*$/, '').trim();
+
   const ensureExerciseDictionaryId = async (name: string) => {
-    const normalized = name.trim();
+    const normalized = normalizeExerciseName(name);
     const { data: existing, error: existingError } = await supabase
       .from('esercizi')
       .select('id_esercizio')
       .eq('nome', normalized)
+      .order('id_esercizio', { ascending: true })
+      .limit(1)
       .maybeSingle();
 
     if (existingError) throw existingError;
@@ -378,14 +382,16 @@ const NewTrainPage: React.FC = () => {
 
     if (!insertError && inserted?.id_esercizio) return inserted.id_esercizio;
 
-    // Handle race on unique(nome): re-read the row.
+    // Handle concurrent inserts by re-reading the first matching row.
     const { data: afterRace, error: raceReadError } = await supabase
       .from('esercizi')
       .select('id_esercizio')
       .eq('nome', normalized)
-      .single();
+      .order('id_esercizio', { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-    if (raceReadError) throw insertError || raceReadError;
+    if (raceReadError || !afterRace?.id_esercizio) throw insertError || raceReadError;
     return afterRace.id_esercizio;
   };
 
@@ -419,6 +425,11 @@ const NewTrainPage: React.FC = () => {
         }
         if (!ex.pyramid_steps || ex.pyramid_steps.length === 0) {
           setError('Pyramid must contain at least 1 step'); return;
+        }
+        for (const step of ex.pyramid_steps) {
+          if (!Number.isFinite(step.reps) || step.reps <= 0) {
+            setError('Each pyramid step must have reps > 0'); return;
+          }
         }
       } else {
         if (!ex.name.trim()) {
@@ -462,74 +473,139 @@ const NewTrainPage: React.FC = () => {
       }
 
       const rowsToInsert: any[] = [];
+      let orderCounter = 1;
 
       for (let idx = 0; idx < exercises.length; idx += 1) {
         const ex = exercises[idx];
-        let payloadName = ex.name.trim();
-        let idSuperset: number | null = null;
-        let idEmom: number | null = null;
-        let idPiramide: number | null = null;
-        let stepindexPiramide: number | null = null;
-        let stepindexEmom: number | null = null;
 
         if (ex.type === 'superset') {
-          payloadName = JSON.stringify(ex.subExercises || []);
           const { data, error: supersetError } = await supabase
             .from('superset')
             .insert([{ round_totali: Math.max(1, ex.sets) }])
             .select('id_superset')
             .single();
           if (supersetError) throw supersetError;
-          idSuperset = data.id_superset;
+
+          for (let subIdx = 0; subIdx < (ex.subExercises || []).length; subIdx += 1) {
+            const sub = ex.subExercises![subIdx];
+            const idEsercizio = await ensureExerciseDictionaryId(sub.name);
+            const isIso = sub.type === 'isometry';
+
+            rowsToInsert.push({
+              id_scheda: Number(workoutIdToUse),
+              id_esercizio: idEsercizio,
+              ordine: orderCounter,
+              set_num: Math.max(1, ex.sets || 1),
+              rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+              peso_kg: null,
+              tipo: isIso ? 'ISOMETRIA' : 'REPS',
+              reps: isIso ? null : Math.max(1, sub.reps || 1),
+              durata_secondi: isIso ? Math.max(1, sub.duration_seconds || 1) : null,
+              id_superset: data.id_superset,
+              id_piramide: null,
+              stepindex_piramide: null,
+              id_emom: null,
+              stepindex_emom: null,
+            });
+
+            orderCounter += 1;
+          }
+
+          continue;
         }
 
         if (ex.type === 'emom') {
-          payloadName = JSON.stringify({
-            subExercises: ex.subExercises || [],
-            emom_rounds: ex.emom_rounds || 1,
-            emom_round_duration: ex.emom_round_duration || 60,
-          });
           const { data, error: emomError } = await supabase
             .from('emom')
             .insert([{ round_totali: Math.max(1, ex.emom_rounds || 1), durata_round_secondi: Math.max(1, ex.emom_round_duration || 60) }])
             .select('id_emom')
             .single();
           if (emomError) throw emomError;
-          idEmom = data.id_emom;
-          stepindexEmom = 1;
+
+          for (let subIdx = 0; subIdx < (ex.subExercises || []).length; subIdx += 1) {
+            const sub = ex.subExercises![subIdx];
+            const idEsercizio = await ensureExerciseDictionaryId(sub.name);
+            const isIso = sub.type === 'isometry';
+
+            rowsToInsert.push({
+              id_scheda: Number(workoutIdToUse),
+              id_esercizio: idEsercizio,
+              ordine: orderCounter,
+              set_num: Math.max(1, ex.sets || 1),
+              rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+              peso_kg: null,
+              tipo: isIso ? 'ISOMETRIA' : 'REPS',
+              reps: isIso ? null : Math.max(1, sub.reps || 1),
+              durata_secondi: isIso ? Math.max(1, sub.duration_seconds || 1) : null,
+              id_superset: null,
+              id_piramide: null,
+              stepindex_piramide: null,
+              id_emom: data.id_emom,
+              stepindex_emom: subIdx + 1,
+            });
+
+            orderCounter += 1;
+          }
+
+          continue;
         }
 
         if (ex.type === 'pyramid') {
-          payloadName = JSON.stringify({ name: ex.name, steps: ex.pyramid_steps || [] });
           const { data, error: piramideError } = await supabase
             .from('piramide')
             .insert([{}])
             .select('id_piramide')
             .single();
           if (piramideError) throw piramideError;
-          idPiramide = data.id_piramide;
-          stepindexPiramide = 1;
+
+          for (let stepIdx = 0; stepIdx < (ex.pyramid_steps || []).length; stepIdx += 1) {
+            const step = ex.pyramid_steps![stepIdx];
+            const idEsercizio = await ensureExerciseDictionaryId(ex.name);
+
+            rowsToInsert.push({
+              id_scheda: Number(workoutIdToUse),
+              id_esercizio: idEsercizio,
+              ordine: orderCounter,
+              set_num: 1,
+              rest_secondi: step.rest_seconds > 0 ? step.rest_seconds : null,
+              peso_kg: null,
+              tipo: 'REPS',
+              reps: Math.max(1, step.reps || 1),
+              durata_secondi: null,
+              id_superset: null,
+              id_piramide: data.id_piramide,
+              stepindex_piramide: stepIdx + 1,
+              id_emom: null,
+              stepindex_emom: null,
+            });
+
+            orderCounter += 1;
+          }
+
+          continue;
         }
 
-        const idEsercizio = await ensureExerciseDictionaryId(payloadName);
+        const idEsercizio = await ensureExerciseDictionaryId(ex.name);
         const isIsometry = ex.type === 'isometry';
 
         rowsToInsert.push({
           id_scheda: Number(workoutIdToUse),
           id_esercizio: idEsercizio,
-          ordine: idx + 1,
+          ordine: orderCounter,
           set_num: Math.max(1, ex.sets || 1),
           rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
           peso_kg: null,
           tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
-          reps: isIsometry ? null : Math.max(1, ex.type === 'reps' ? ex.reps : 1),
-          durata_secondi: isIsometry ? Math.max(1, ex.duration_seconds) : null,
-          id_superset: idSuperset,
-          id_piramide: idPiramide,
-          stepindex_piramide: stepindexPiramide,
-          id_emom: idEmom,
-          stepindex_emom: stepindexEmom,
+          reps: isIsometry ? null : Math.max(1, ex.reps || 1),
+          durata_secondi: isIsometry ? Math.max(1, ex.duration_seconds || 1) : null,
+          id_superset: null,
+          id_piramide: null,
+          stepindex_piramide: null,
+          id_emom: null,
+          stepindex_emom: null,
         });
+
+        orderCounter += 1;
       }
 
       const { error: exercisesError } = await supabase

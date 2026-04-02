@@ -43,7 +43,7 @@ create table public.profili (
 -- ---------------------------------------------------------
 create table public.esercizi (
   id_esercizio bigint generated always as identity primary key,
-  nome varchar(100) not null unique,
+  nome text not null,
   constraint ck_esercizi_nome_not_blank check (length(trim(nome)) > 0)
 );
 
@@ -208,6 +208,8 @@ create table public.esecuzioni (
 -- ---------------------------------------------------------
 -- Uniqueness / ordering constraints
 -- ---------------------------------------------------------
+-- A scheda cannot have two rows with the same ordine.
+-- Repeating the same exercise is allowed as long as ordine differs.
 create unique index ux_esecuzioni_scheda_ordine
   on public.esecuzioni(id_scheda, ordine);
 
@@ -309,37 +311,6 @@ before insert or update on public.esecuzioni
 for each row
 execute function public.fn_check_superset_coerenza();
 
--- [ESECUZIONE. ORDINE]
--- For each (id_scheda, id_esercizio), all rows must have the same ordine.
-create or replace function public.fn_check_esecuzione_ordine_fd()
-returns trigger
-language plpgsql
-as $$
-declare
-  v_existing_ordine int;
-begin
-  select e.ordine
-    into v_existing_ordine
-  from public.esecuzioni e
-  where e.id_scheda = new.id_scheda
-    and e.id_esercizio = new.id_esercizio
-    and e.id_esecuzione <> coalesce(new.id_esecuzione, -1)
-  limit 1;
-
-  if v_existing_ordine is not null and v_existing_ordine <> new.ordine then
-    raise exception 'Violazione ESECUZIONE.ORDINE: per (scheda %, esercizio %) ordine deve essere univoco. Trovato %, ricevuto %',
-      new.id_scheda, new.id_esercizio, v_existing_ordine, new.ordine;
-  end if;
-
-  return new;
-end;
-$$;
-
-create trigger trg_check_esecuzione_ordine_fd
-before insert or update on public.esecuzioni
-for each row
-execute function public.fn_check_esecuzione_ordine_fd();
-
 -- ---------------------------------------------------------
 -- RLS (Row Level Security)
 -- ---------------------------------------------------------
@@ -418,3 +389,32 @@ create policy esecuzioni_all_owner on public.esecuzioni
         and s.id_utente = auth.uid()
     )
   );
+
+-- ---------------------------------------------------------
+-- API grants for Supabase roles + schema cache reload
+-- ---------------------------------------------------------
+grant usage on schema public to anon, authenticated, service_role;
+
+grant select, insert, update, delete on all tables in schema public
+  to anon, authenticated, service_role;
+
+grant usage, select on all sequences in schema public
+  to anon, authenticated, service_role;
+
+grant execute on all functions in schema public
+  to anon, authenticated, service_role;
+
+alter default privileges in schema public
+grant select, insert, update, delete on tables
+to anon, authenticated, service_role;
+
+alter default privileges in schema public
+grant usage, select on sequences
+to anon, authenticated, service_role;
+
+alter default privileges in schema public
+grant execute on functions
+to anon, authenticated, service_role;
+
+-- Force PostgREST schema cache refresh
+notify pgrst, 'reload schema';

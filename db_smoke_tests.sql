@@ -139,12 +139,25 @@ begin
       v_scheda_id, v_esercizio_id, 3, 3, 'REPS', 10, v_superset_id
     );
 
+    -- Same exercise can be repeated in the same scheda with a different ordine
+    begin
+      insert into public.esecuzioni(
+        id_scheda, id_esercizio, ordine, set_num, tipo, reps
+      ) values (
+        v_scheda_id, v_esercizio_id, 4, 3, 'REPS', 8
+      );
+      raise notice 'PASS: same exercise can be repeated in the same scheda';
+    exception
+      when others then
+        raise exception 'FAIL: same exercise repetition should be allowed, got: %', sqlerrm;
+    end;
+
     -- Exclusivity: cannot link both emom and superset
     begin
       insert into public.esecuzioni(
         id_scheda, id_esercizio, ordine, set_num, tipo, reps, id_superset, id_emom, stepindex_emom
       ) values (
-        v_scheda_id, v_esercizio_id_2, 4, 3, 'REPS', 10, v_superset_id, v_emom_id, 1
+        v_scheda_id, v_esercizio_id_2, 5, 3, 'REPS', 10, v_superset_id, v_emom_id, 1
       );
       raise exception 'FAIL: exclusivity constraint not enforced';
     exception
