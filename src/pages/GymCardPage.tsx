@@ -1192,7 +1192,7 @@ const GymCardPage: React.FC = () => {
         </div>
       )}
 
-      <BottomNavigation />
+      <BottomNavigation hidden={Boolean(selectedWorkout) || Boolean(exerciseQuickEditDraft)} />
     </div>
   );
 };

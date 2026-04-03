@@ -343,7 +343,7 @@ const SelectWorkoutPage: React.FC = () => {
         </div>
       )}
 
-      <BottomNavigation />
+      <BottomNavigation hidden={Boolean(selectedWorkout)} />
     </div>
   );
 };

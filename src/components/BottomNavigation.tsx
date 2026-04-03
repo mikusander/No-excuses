@@ -13,7 +13,13 @@ const historyIconMaskStyle = {
   backgroundColor: 'currentColor',
 };
 
-const BottomNavigation = () => {
+interface BottomNavigationProps {
+  hidden?: boolean;
+}
+
+const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
+  if (hidden) return null;
+
   const navigate = useNavigate();
   const location = useLocation();
 
