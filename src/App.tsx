@@ -96,6 +96,11 @@ function App() {
             <ActiveWorkoutPage />
           </ProtectedRoute>
         } />
+        <Route path="/active-workout-history/:workoutRunId" element={
+          <ProtectedRoute>
+            <ActiveWorkoutPage />
+          </ProtectedRoute>
+        } />
         <Route path="/settings" element={
           <ProtectedRoute>
             <SettingsPage />

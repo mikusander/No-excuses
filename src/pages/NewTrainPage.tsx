@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move } from 'lucide-react';
@@ -37,14 +37,24 @@ const NewTrainPage: React.FC = () => {
 
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [workoutName, setWorkoutName] = useState('');
   const [exercises, setExercises] = useState<ExerciseDraft[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [numberDrafts, setNumberDrafts] = useState<Record<string, string>>({});
+  const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
+  const [didAutoFocusExercise, setDidAutoFocusExercise] = useState(false);
+  const exerciseRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
 
   const { id } = useParams<{ id: string }>();
+  const requestedExerciseIndex = React.useMemo(() => {
+    const raw = new URLSearchParams(location.search).get('exerciseIndex');
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(1, Math.trunc(parsed));
+  }, [location.search]);
 
   // Carica i dati della scheda se siamo in modalità modifica
   React.useEffect(() => {
@@ -52,6 +62,36 @@ const NewTrainPage: React.FC = () => {
       loadWorkout(id);
     }
   }, [id]);
+
+  React.useEffect(() => {
+    setDidAutoFocusExercise(false);
+  }, [location.search, id]);
+
+  React.useEffect(() => {
+    if (didAutoFocusExercise || requestedExerciseIndex == null || exercises.length === 0) return;
+
+    const targetIndex = Math.min(Math.max(requestedExerciseIndex - 1, 0), exercises.length - 1);
+    const targetExercise = exercises[targetIndex];
+    if (!targetExercise) return;
+
+    const targetNode = exerciseRefs.current[targetExercise.id];
+    if (targetNode) {
+      requestAnimationFrame(() => {
+        targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+
+    setFocusedExerciseId(targetExercise.id);
+    setDidAutoFocusExercise(true);
+
+    const timeoutId = window.setTimeout(() => {
+      setFocusedExerciseId((prev) => (prev === targetExercise.id ? null : prev));
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [didAutoFocusExercise, requestedExerciseIndex, exercises]);
 
   const loadWorkout = async (workoutId: string) => {
     try {
@@ -443,6 +483,27 @@ const NewTrainPage: React.FC = () => {
     clearDraftValue(key);
   };
 
+  const commitEmomRoundDurationPart = (
+    id: string,
+    part: 'min' | 'sec',
+    key: string,
+    currentRoundDurationSeconds: number
+  ) => {
+    const raw = (numberDrafts[key] ?? '').trim();
+    let parsed = raw === '' ? 0 : parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = 0;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
+    const safeCurrent = Number.isFinite(currentRoundDurationSeconds) ? Math.max(1, currentRoundDurationSeconds) : 60;
+    const minutes = Math.floor(safeCurrent / 60);
+    const seconds = safeCurrent % 60;
+    const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
+
+    updateExercise(id, 'emom_round_duration', Math.max(1, next));
+    clearDraftValue(key);
+  };
+
   const addSubExercise = (supersetId: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === supersetId && ex.subExercises) {
@@ -786,7 +847,15 @@ const NewTrainPage: React.FC = () => {
             </div>
           ) : (
             exercises.map((ex, index) => (
-              <div key={ex.id} className="bg-brand-darkGrey/40 border border-brand-grey/20 p-4 rounded-3xl flex flex-col space-y-4 relative shadow-lg">
+              <div
+                key={ex.id}
+                ref={(node) => {
+                  exerciseRefs.current[ex.id] = node;
+                }}
+                className={`bg-brand-darkGrey/40 border p-4 rounded-3xl flex flex-col space-y-4 relative shadow-lg transition-colors ${
+                  focusedExerciseId === ex.id ? 'border-brand-orange/70 ring-2 ring-brand-orange/30' : 'border-brand-grey/20'
+                }`}
+              >
 
                 {/* Header Esercizio: Frecce Ordine e Bottone Elimina */}
                 <div className="flex justify-between items-center bg-black/30 -mx-4 -mt-4 p-3 rounded-t-3xl border-b border-white/5">
@@ -835,16 +904,34 @@ const NewTrainPage: React.FC = () => {
                         />
                       </div>
                       <div className="flex flex-col">
-                        <label className="text-xs text-brand-grey mb-1">Round Time (sec)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={getDraftOrValue(`${ex.id}:emom_round_duration`, ex.emom_round_duration || 60)}
-                          onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration`, e.target.value)}
-                          onBlur={() => commitExerciseNumber(ex.id, 'emom_round_duration', `${ex.id}:emom_round_duration`, 60, 0)}
-                          onFocus={onNumberFocus}
-                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
-                        />
+                        <label className="text-xs text-brand-grey mb-1">Round Time</label>
+                        <div className="flex bg-black/40 border border-brand-grey/20 rounded-lg overflow-hidden focus-within:border-blue-400 transition-colors h-[42px]">
+                          <div className="relative flex-1 border-r border-brand-grey/10">
+                            <input
+                              type="number"
+                              min="0"
+                              value={getDraftOrValue(`${ex.id}:emom_round_duration:min`, Math.floor((ex.emom_round_duration || 60) / 60))}
+                              onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:min`, e.target.value)}
+                              onBlur={() => commitEmomRoundDurationPart(ex.id, 'min', `${ex.id}:emom_round_duration:min`, ex.emom_round_duration || 60)}
+                              onFocus={onNumberFocus}
+                              className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                            />
+                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                          </div>
+                          <div className="relative flex-1">
+                            <input
+                              type="number"
+                              min="0"
+                              max="59"
+                              value={getDraftOrValue(`${ex.id}:emom_round_duration:sec`, (ex.emom_round_duration || 60) % 60)}
+                              onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:sec`, e.target.value)}
+                              onBlur={() => commitEmomRoundDurationPart(ex.id, 'sec', `${ex.id}:emom_round_duration:sec`, ex.emom_round_duration || 60)}
+                              onFocus={onNumberFocus}
+                              className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                            />
+                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -897,6 +984,7 @@ const NewTrainPage: React.FC = () => {
                             onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
                             onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
                             onFocus={onNumberFocus}
+                            placeholder="body Weight"
                             className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
                           />
                         </div>
@@ -971,6 +1059,7 @@ const NewTrainPage: React.FC = () => {
                             onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
                             onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
                             onFocus={onNumberFocus}
+                            placeholder="body Weight"
                             className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
                           />
                         </div>
@@ -1064,6 +1153,7 @@ const NewTrainPage: React.FC = () => {
                             onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:weight`, e.target.value)}
                             onBlur={() => commitPyramidStepWeight(ex.id, stepIdx, `${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
                             onFocus={onNumberFocus}
+                            placeholder="body Weight"
                             className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
                           />
                         </div>
@@ -1160,6 +1250,7 @@ const NewTrainPage: React.FC = () => {
                         onChange={(e) => setDraftValue(`${ex.id}:weight`, e.target.value)}
                         onBlur={() => commitExerciseWeight(ex.id, `${ex.id}:weight`, ex.weight_kg)}
                         onFocus={onNumberFocus}
+                        placeholder="body Weight"
                         className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
                       />
                     </div>

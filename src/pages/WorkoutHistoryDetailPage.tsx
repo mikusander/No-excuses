@@ -9,7 +9,9 @@ import type { UiExercise, UiSubExercise } from '../lib/workoutSchemaAdapter';
 
 interface WorkoutHistoryDetail {
   id: string;
-  schedaId: string;
+  schedaId: string | null;
+  canRestartFromTemplate: boolean;
+  canRestartFromSnapshot: boolean;
   workoutName: string;
   executedAt: string;
   notes: string[];
@@ -52,6 +54,65 @@ const formatSecs = (totalSecs: number) => {
   return `${minutes}m ${seconds}s`;
 };
 
+const toSafeNumber = (value: unknown, fallback: number) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const toSnapshotExercises = (raw: unknown): UiExercise[] => {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((entry, idx) => {
+      const item = entry as Record<string, unknown>;
+      const typeRaw = String(item.type || 'reps').toLowerCase();
+      const type: UiExercise['type'] =
+        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'emom' || typeRaw === 'pyramid'
+          ? (typeRaw as UiExercise['type'])
+          : 'reps';
+
+      const subExercises = Array.isArray(item.subExercises)
+        ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
+            const subType: UiSubExercise['type'] =
+              String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
+            return {
+              name: String(sub.name || ''),
+              type: subType,
+              reps: Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0))),
+              duration_seconds: Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0))),
+              weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
+            } satisfies UiSubExercise;
+          })
+        : undefined;
+
+      const pyramidSteps = Array.isArray(item.pyramid_steps)
+        ? (item.pyramid_steps as Array<Record<string, unknown>>).map((step) => ({
+            reps: Math.max(0, Math.trunc(toSafeNumber(step.reps, 0))),
+            rest_seconds: Math.max(0, Math.trunc(toSafeNumber(step.rest_seconds, 0))),
+            weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
+          }))
+        : undefined;
+
+      return {
+        id: String(item.id || `snapshot-${idx}`),
+        type,
+        name: String(item.name || `Exercise ${idx + 1}`),
+        sets: Math.max(1, Math.trunc(toSafeNumber(item.sets, 1))),
+        reps: Math.max(0, Math.trunc(toSafeNumber(item.reps, 0))),
+        duration_seconds: Math.max(0, Math.trunc(toSafeNumber(item.duration_seconds, 0))),
+        rest_seconds: Math.max(0, Math.trunc(toSafeNumber(item.rest_seconds, 0))),
+        weight_kg: Number.isFinite(Number(item.weight_kg)) ? Number(item.weight_kg) : null,
+        order_index: Math.max(0, Math.trunc(toSafeNumber(item.order_index, idx))),
+        emom_rounds: item.emom_rounds == null ? undefined : Math.max(1, Math.trunc(toSafeNumber(item.emom_rounds, 1))),
+        emom_round_duration:
+          item.emom_round_duration == null ? undefined : Math.max(1, Math.trunc(toSafeNumber(item.emom_round_duration, 1))),
+        pyramid_steps: pyramidSteps,
+        subExercises,
+      } satisfies UiExercise;
+    })
+    .sort((a, b) => a.order_index - b.order_index);
+};
+
 const WorkoutHistoryDetailPage: React.FC = () => {
   const { workoutRunId } = useParams<{ workoutRunId: string }>();
   const { user } = useAuth();
@@ -82,6 +143,8 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           .select(`
             id_workout,
             id_scheda,
+            workout_name_snapshot,
+            exercises_snapshot,
             data_esecuzione,
             schede ( id_scheda, nome ),
             note_workout ( testo, created_at )
@@ -100,11 +163,20 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
         const linkedScheda = Array.isArray(runData.schede) ? runData.schede[0] : runData.schede;
         const linkedNotes = Array.isArray(runData.note_workout) ? runData.note_workout : [];
+        const workoutNameSnapshot = String((runData as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
+        const snapshotExercises = toSnapshotExercises((runData as { exercises_snapshot?: unknown }).exercises_snapshot);
+        const canRestartFromTemplate = runData.id_scheda != null && Boolean(linkedScheda?.id_scheda);
+        const canRestartFromSnapshot = snapshotExercises.length > 0;
 
         const parsedDetail: WorkoutHistoryDetail = {
           id: String(runData.id_workout),
-          schedaId: String(runData.id_scheda),
-          workoutName: linkedScheda?.nome || `Workout #${runData.id_scheda}`,
+          schedaId: runData.id_scheda == null ? null : String(runData.id_scheda),
+          canRestartFromTemplate,
+          canRestartFromSnapshot,
+          workoutName:
+            workoutNameSnapshot ||
+            linkedScheda?.nome ||
+            (runData.id_scheda != null ? `Workout #${runData.id_scheda}` : `Workout #${runData.id_workout}`),
           executedAt: runData.data_esecuzione,
           notes: linkedNotes
             .map((note: { testo?: unknown }) => String(note?.testo || '').trim())
@@ -112,6 +184,16 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         };
 
         setDetail(parsedDetail);
+
+        if (snapshotExercises.length > 0) {
+          setExercises(snapshotExercises);
+          return;
+        }
+
+        if (runData.id_scheda == null) {
+          setExercises([]);
+          return;
+        }
 
         const { data: workoutData, error: workoutError } = await supabase
           .from('schede')
@@ -136,9 +218,12 @@ const WorkoutHistoryDetailPage: React.FC = () => {
             )
           `)
           .eq('id_scheda', Number(runData.id_scheda))
-          .single();
+          .maybeSingle();
 
-        if (workoutError) throw workoutError;
+        if (workoutError || !workoutData) {
+          setExercises([]);
+          return;
+        }
 
         const parsedExercises = parseDbExerciseRows(workoutData?.esecuzioni || []);
         setExercises(parsedExercises);
@@ -438,13 +523,25 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           </section>
         )}
 
-        <button
-          onClick={() => navigate(`/active-workout/${detail.schedaId}`)}
-          className="w-full bg-brand-orange hover:bg-brand-lightOrange text-black font-black py-4 px-5 rounded-full flex items-center justify-center transition-colors mt-2"
-        >
-          <PlayCircle size={20} className="mr-2" />
-          Restart this workout
-        </button>
+        {(detail.canRestartFromTemplate && detail.schedaId) || detail.canRestartFromSnapshot ? (
+          <button
+            onClick={() => {
+              if (detail.canRestartFromTemplate && detail.schedaId) {
+                navigate(`/active-workout/${detail.schedaId}`);
+                return;
+              }
+              navigate(`/active-workout-history/${detail.id}`);
+            }}
+            className="w-full bg-brand-orange hover:bg-brand-lightOrange text-black font-black py-4 px-5 rounded-full flex items-center justify-center transition-colors mt-2"
+          >
+            <PlayCircle size={20} className="mr-2" />
+            Restart this workout
+          </button>
+        ) : (
+          <div className="w-full bg-brand-darkGrey/40 border border-brand-grey/20 rounded-full py-4 px-5 text-center text-sm text-brand-grey mt-2">
+            This workout template was deleted and no exercise snapshot is available for replay.
+          </div>
+        )}
       </main>
 
       <BottomNavigation />

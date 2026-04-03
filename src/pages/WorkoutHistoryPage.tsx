@@ -7,7 +7,7 @@ import BottomNavigation from '../components/BottomNavigation';
 
 interface WorkoutHistoryItem {
   id: string;
-  schedaId: string;
+  schedaId: string | null;
   workoutName: string;
   executedAt: string;
 }
@@ -32,6 +32,7 @@ const WorkoutHistoryPage: React.FC = () => {
         .select(`
           id_workout,
           id_scheda,
+          workout_name_snapshot,
           data_esecuzione,
           schede ( id_scheda, nome )
         `)
@@ -40,11 +41,15 @@ const WorkoutHistoryPage: React.FC = () => {
       if (error) throw error;
 
       const parsed = (data || []).map((row) => {
+        const snapshotName = String((row as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
         const linkedScheda = Array.isArray(row.schede) ? row.schede[0] : row.schede;
         return {
           id: String(row.id_workout),
-          schedaId: String(row.id_scheda),
-          workoutName: linkedScheda?.nome || `Workout #${row.id_scheda}`,
+          schedaId: row.id_scheda == null ? null : String(row.id_scheda),
+          workoutName:
+            snapshotName ||
+            linkedScheda?.nome ||
+            (row.id_scheda != null ? `Workout #${row.id_scheda}` : `Workout #${row.id_workout}`),
           executedAt: row.data_esecuzione,
         } as WorkoutHistoryItem;
       });

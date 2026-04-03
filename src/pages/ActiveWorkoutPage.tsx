@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface Exercise {
@@ -43,14 +43,90 @@ interface NoteModalContext {
   name: string;
 }
 
+interface ExerciseEditDraft {
+  sets: string;
+  restSeconds: string;
+  reps: string;
+  durationSeconds: string;
+  weightKg: string;
+  emomRounds: string;
+  emomRoundDuration: string;
+  currentSubReps: string;
+  currentSubDuration: string;
+  currentSubWeightKg: string;
+  currentStepReps: string;
+  currentStepRestSeconds: string;
+  currentStepWeightKg: string;
+}
+
+const toSafeSnapshotNumber = (value: unknown, fallback: number) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const toSnapshotExercises = (raw: unknown): Exercise[] => {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((entry, idx) => {
+      const item = entry as Record<string, unknown>;
+      const typeRaw = String(item.type || 'reps').toLowerCase();
+      const type: Exercise['type'] =
+        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'emom' || typeRaw === 'pyramid'
+          ? (typeRaw as Exercise['type'])
+          : 'reps';
+
+      const subExercises = Array.isArray(item.subExercises)
+        ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
+            const subType: 'reps' | 'isometry' =
+              String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
+            return {
+              name: String(sub.name || ''),
+              type: subType,
+              reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.reps, 0))),
+              duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.duration_seconds, 0))),
+              weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
+            };
+          })
+        : undefined;
+
+      const pyramidSteps = Array.isArray(item.pyramid_steps)
+        ? (item.pyramid_steps as Array<Record<string, unknown>>).map((step) => ({
+            reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(step.reps, 0))),
+            rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(step.rest_seconds, 0))),
+            weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
+          }))
+        : undefined;
+
+      return {
+        id: String(item.id || `snapshot-${idx}`),
+        type,
+        name: String(item.name || `Exercise ${idx + 1}`),
+        sets: Math.max(1, Math.trunc(toSafeSnapshotNumber(item.sets, 1))),
+        reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.reps, 0))),
+        duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.duration_seconds, 0))),
+        rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.rest_seconds, 0))),
+        weight_kg: Number.isFinite(Number(item.weight_kg)) ? Number(item.weight_kg) : null,
+        order_index: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.order_index, idx))),
+        emom_rounds: item.emom_rounds == null ? undefined : Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_rounds, 1))),
+        emom_round_duration:
+          item.emom_round_duration == null ? undefined : Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_round_duration, 1))),
+        pyramid_steps: pyramidSteps,
+        subExercises,
+      } satisfies Exercise;
+    })
+    .sort((a, b) => a.order_index - b.order_index);
+};
+
 const ActiveWorkoutPage: React.FC = () => {
   const VOICE_ASSIST_KEY = 'voice_assistance_enabled';
-  const { id } = useParams<{ id: string }>();
+  const { id, workoutRunId } = useParams<{ id?: string; workoutRunId?: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
+  const [sourceSchedaId, setSourceSchedaId] = useState<number | null>(null);
   
   // App State
   const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
@@ -92,6 +168,24 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [noteModalDraft, setNoteModalDraft] = useState('');
   const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
+  const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
+  const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
+    sets: '',
+    restSeconds: '',
+    reps: '',
+    durationSeconds: '',
+    weightKg: '',
+    emomRounds: '',
+    emomRoundDuration: '',
+    currentSubReps: '',
+    currentSubDuration: '',
+    currentSubWeightKg: '',
+    currentStepReps: '',
+    currentStepRestSeconds: '',
+    currentStepWeightKg: '',
+  });
+  const [exerciseEditError, setExerciseEditError] = useState<string | null>(null);
+  const [isSavingExerciseEdit, setIsSavingExerciseEdit] = useState(false);
   const [isVoiceHelpVisible, setIsVoiceHelpVisible] = useState(false);
   const handleVoiceNextRef = useRef<(() => void) | null>(null);
   const handleVoicePrevRef = useRef<(() => void) | null>(null);
@@ -99,6 +193,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const handleVoicePrevExerciseRef = useRef<(() => void) | null>(null);
   const handleVoiceEndWorkoutRef = useRef<(() => void) | null>(null);
   const voiceHelpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canPersistExerciseEdits = sourceSchedaId != null;
 
   const openVoiceHelp = () => {
     setIsVoiceHelpVisible(true);
@@ -378,12 +473,52 @@ const ActiveWorkoutPage: React.FC = () => {
   }, [isVoiceEnabled]);
 
   useEffect(() => {
-    fetchWorkout();
-  }, [id, user]);
+    void fetchWorkout();
+  }, [id, workoutRunId, user?.id]);
 
   const fetchWorkout = async () => {
-    try {
-      setLoading(true);
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
+    const initializeWorkoutState = (nextWorkout: Workout, nextSourceSchedaId: number | null) => {
+      setWorkout(nextWorkout);
+      setSourceSchedaId(nextSourceSchedaId);
+
+      // Reset states just in case
+      setCurrentExerciseIdx(0);
+      setCurrentSetIdx(0);
+      setCurrentSubExerciseIdx(0);
+      setCurrentEmomRoundIdx(0);
+      setCurrentPyramidStepIdx(0);
+      setPendingPyramidAdvance(false);
+      setIsResting(false);
+      setExerciseNotesByKey({});
+      setIsNoteModalOpen(false);
+      setNoteModalDraft('');
+      setNoteModalContext(null);
+      setIsEditExerciseModalOpen(false);
+      setExerciseEditError(null);
+      setIsSavingExerciseEdit(false);
+      workoutRunSavedRef.current = false;
+      workoutRunIdRef.current = null;
+      workoutNotesSavedRef.current = false;
+      workoutCompletionHandledRef.current = false;
+
+      const firstEx = nextWorkout.exercises[0];
+      if (firstEx) {
+        if (firstEx.type === 'isometry') {
+          setIsometryRemaining(firstEx.duration_seconds);
+        } else if (firstEx.type === 'superset' && firstEx.subExercises?.[0]?.type === 'isometry') {
+          setIsometryRemaining(firstEx.subExercises[0].duration_seconds);
+        } else if (firstEx.type === 'emom') {
+          setEmomRoundRemaining(firstEx.emom_round_duration || 60);
+        }
+      }
+    };
+
+    const fetchSchedaById = async (schedaId: number) => {
       const { data, error } = await supabase
         .from('schede')
         .select(`
@@ -408,43 +543,101 @@ const ActiveWorkoutPage: React.FC = () => {
             esercizi ( nome )
           )
         `)
-        .eq('id_scheda', Number(id))
-        .single();
+        .eq('id_scheda', schedaId)
+        .maybeSingle();
 
       if (error) throw error;
+      return data;
+    };
 
-      if (data) {
-        const sortedExercises = parseDbExerciseRows(data.esecuzioni || []) as Exercise[];
-        setWorkout({ id: String(data.id_scheda), name: data.nome, exercises: sortedExercises });
-        
-        // Reset states just in case
-        setCurrentExerciseIdx(0);
-        setCurrentSetIdx(0);
-        setCurrentSubExerciseIdx(0);
-        setCurrentEmomRoundIdx(0);
-        setCurrentPyramidStepIdx(0);
-        setPendingPyramidAdvance(false);
-        setIsResting(false);
-        setExerciseNotesByKey({});
-        setIsNoteModalOpen(false);
-        setNoteModalDraft('');
-        setNoteModalContext(null);
-        workoutRunSavedRef.current = false;
-        workoutRunIdRef.current = null;
-        workoutNotesSavedRef.current = false;
-        workoutCompletionHandledRef.current = false;
-        
-        const firstEx = sortedExercises[0];
-        if (firstEx) {
-          if (firstEx.type === 'isometry') {
-              setIsometryRemaining(firstEx.duration_seconds);
-          } else if (firstEx.type === 'superset' && firstEx.subExercises?.[0]?.type === 'isometry') {
-              setIsometryRemaining(firstEx.subExercises[0].duration_seconds);
-          } else if (firstEx.type === 'emom') {
-              setEmomRoundRemaining(firstEx.emom_round_duration || 60);
+    try {
+      setLoading(true);
+      if (workoutRunId) {
+        const workoutRunNumericId = Number(workoutRunId);
+        if (!Number.isFinite(workoutRunNumericId)) {
+          throw new Error('Invalid workout history id.');
+        }
+
+        const { data: runData, error: runError } = await supabase
+          .from('workout_run')
+          .select(`
+            id_workout,
+            id_scheda,
+            workout_name_snapshot,
+            exercises_snapshot,
+            schede ( id_scheda, nome )
+          `)
+          .eq('id_workout', workoutRunNumericId)
+          .eq('id_utente', user.id)
+          .maybeSingle();
+
+        if (runError) throw runError;
+        if (!runData) {
+          throw new Error('Workout history entry not found.');
+        }
+
+        const linkedScheda = Array.isArray(runData.schede) ? runData.schede[0] : runData.schede;
+        const runSourceSchedaId = runData.id_scheda == null ? null : Number(runData.id_scheda);
+        const workoutNameSnapshot = String((runData as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
+        const snapshotExercises = toSnapshotExercises((runData as { exercises_snapshot?: unknown }).exercises_snapshot);
+
+        if (snapshotExercises.length > 0) {
+          initializeWorkoutState(
+            {
+              id: `history-${runData.id_workout}`,
+              name:
+                workoutNameSnapshot ||
+                linkedScheda?.nome ||
+                (runSourceSchedaId != null ? `Workout #${runSourceSchedaId}` : `Workout #${runData.id_workout}`),
+              exercises: snapshotExercises,
+            },
+            runSourceSchedaId,
+          );
+          return;
+        }
+
+        if (runSourceSchedaId != null) {
+          const linkedWorkout = await fetchSchedaById(runSourceSchedaId);
+          if (linkedWorkout) {
+            const linkedExercises = parseDbExerciseRows(linkedWorkout.esecuzioni || []) as Exercise[];
+            initializeWorkoutState(
+              {
+                id: String(linkedWorkout.id_scheda),
+                name: workoutNameSnapshot || linkedWorkout.nome,
+                exercises: linkedExercises,
+              },
+              runSourceSchedaId,
+            );
+            return;
           }
         }
+
+        initializeWorkoutState(
+          {
+            id: `history-${runData.id_workout}`,
+            name: workoutNameSnapshot || `Workout #${runData.id_workout}`,
+            exercises: [],
+          },
+          runSourceSchedaId,
+        );
+        return;
       }
+
+      const schedaId = Number(id);
+      if (!Number.isFinite(schedaId)) {
+        throw new Error('Invalid workout id.');
+      }
+
+      const data = await fetchSchedaById(schedaId);
+      if (!data) {
+        throw new Error('Workout not found.');
+      }
+
+      const sortedExercises = parseDbExerciseRows(data.esecuzioni || []) as Exercise[];
+      initializeWorkoutState(
+        { id: String(data.id_scheda), name: data.nome, exercises: sortedExercises },
+        Number(data.id_scheda),
+      );
     } catch (error) {
       console.error('Error fetching workout:', error);
     } finally {
@@ -454,18 +647,69 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const saveWorkoutRun = async (): Promise<number | null> => {
     if (workoutRunSavedRef.current) return workoutRunIdRef.current;
-    if (!user?.id || !id) return null;
+    if (!user?.id) return null;
 
-    const { data, error } = await supabase
+    const fallbackSchedaId = Number(id);
+    const computedSchedaId = sourceSchedaId != null
+      ? sourceSchedaId
+      : Number.isFinite(fallbackSchedaId)
+        ? fallbackSchedaId
+        : null;
+
+    const workoutNameSnapshot = String(
+      workout?.name ||
+      (computedSchedaId != null
+        ? `Workout #${computedSchedaId}`
+        : workoutRunId
+          ? `Workout Replay #${workoutRunId}`
+          : 'Workout')
+    ).trim();
+    const exercisesSnapshot = Array.isArray(workout?.exercises)
+      ? workout.exercises.map((exercise) => ({
+          ...exercise,
+          subExercises: exercise.subExercises || [],
+          pyramid_steps: exercise.pyramid_steps || [],
+        }))
+      : [];
+
+    let data: { id_workout?: number } | null = null;
+    let error: { message?: string } | null = null;
+
+    const firstAttempt = await supabase
       .from('workout_run')
       .insert([
         {
           id_utente: user.id,
-          id_scheda: Number(id),
+          id_scheda: computedSchedaId,
+          workout_name_snapshot: workoutNameSnapshot,
+          exercises_snapshot: exercisesSnapshot,
         },
       ])
       .select('id_workout')
       .single();
+
+    data = firstAttempt.data as { id_workout?: number } | null;
+    error = firstAttempt.error as { message?: string } | null;
+
+    const needsLegacyFallback =
+      Boolean(error) &&
+      /workout_name_snapshot|exercises_snapshot/i.test(String(error?.message || ''));
+
+    if (needsLegacyFallback) {
+      const legacyAttempt = await supabase
+        .from('workout_run')
+        .insert([
+          {
+            id_utente: user.id,
+            id_scheda: computedSchedaId,
+          },
+        ])
+        .select('id_workout')
+        .single();
+
+      data = legacyAttempt.data as { id_workout?: number } | null;
+      error = legacyAttempt.error as { message?: string } | null;
+    }
 
     if (error || !data?.id_workout) {
       console.error('Error saving completed workout:', error || 'Missing workout id');
@@ -665,6 +909,92 @@ const ActiveWorkoutPage: React.FC = () => {
   const currentExerciseNoteContext = getCurrentExerciseNoteContext();
   const hasCurrentExerciseNote = Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim());
 
+  const formatWeightDraft = (value?: number | null) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return String(Math.round(n * 100) / 100).replace('.', ',');
+  };
+
+  const parseStrictInt = (raw: string, label: string, allowZero = false) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      throw new Error(`${label} must be an integer value.`);
+    }
+    if (allowZero ? n < 0 : n <= 0) {
+      throw new Error(`${label} must be ${allowZero ? '>= 0' : '> 0'}.`);
+    }
+    return n;
+  };
+
+  const parseOptionalWeight = (raw: string) => {
+    const normalized = raw.trim().replace(',', '.');
+    if (!normalized) return null;
+    const n = Number(normalized);
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error('Weight must be > 0.');
+    }
+    return Math.round(n * 100) / 100;
+  };
+
+  const toNonNegativeInt = (raw: string, max?: number) => {
+    const parsed = Math.trunc(Number(raw));
+    if (!Number.isFinite(parsed)) return 0;
+    if (parsed < 0) return 0;
+    if (typeof max === 'number' && parsed > max) return max;
+    return parsed;
+  };
+
+  const toDurationParts = (rawSeconds: string) => {
+    const total = toNonNegativeInt(rawSeconds);
+    return {
+      minutes: Math.floor(total / 60),
+      seconds: total % 60,
+    };
+  };
+
+  const updateEmomRoundDurationPart = (part: 'min' | 'sec', value: string) => {
+    setExerciseEditDraft((prev) => {
+      const current = toDurationParts(prev.emomRoundDuration);
+      const nextMinutes = part === 'min' ? toNonNegativeInt(value) : current.minutes;
+      const nextSeconds = part === 'sec' ? toNonNegativeInt(value, 59) : current.seconds;
+      return {
+        ...prev,
+        emomRoundDuration: String((nextMinutes * 60) + nextSeconds),
+      };
+    });
+  };
+
+  const openEditExerciseModal = () => {
+    const currentSub = currentExercise.type === 'superset' ? subExercise : null;
+    const currentStep = currentExercise.type === 'pyramid'
+      ? currentExercise.pyramid_steps?.[currentPyramidStepIdx]
+      : null;
+
+    setExerciseEditDraft({
+      sets: String(currentExercise.sets || 1),
+      restSeconds: String(currentExercise.rest_seconds || 0),
+      reps: String(currentExercise.reps || 1),
+      durationSeconds: String(currentExercise.duration_seconds || 1),
+      weightKg: formatWeightDraft(currentExercise.weight_kg),
+      emomRounds: String(currentExercise.emom_rounds || 1),
+      emomRoundDuration: String(currentExercise.emom_round_duration || 60),
+      currentSubReps: String(currentSub?.reps || 1),
+      currentSubDuration: String(currentSub?.duration_seconds || 1),
+      currentSubWeightKg: formatWeightDraft(currentSub?.weight_kg),
+      currentStepReps: String(currentStep?.reps || 1),
+      currentStepRestSeconds: String(currentStep?.rest_seconds || 0),
+      currentStepWeightKg: formatWeightDraft(currentStep?.weight_kg),
+    });
+    setExerciseEditError(null);
+    setIsEditExerciseModalOpen(true);
+  };
+
+  const closeEditExerciseModal = () => {
+    if (isSavingExerciseEdit) return;
+    setIsEditExerciseModalOpen(false);
+    setExerciseEditError(null);
+  };
+
   const openCurrentExerciseNoteModal = () => {
     const existingNote = exerciseNotesByKey[currentExerciseNoteContext.key]?.note || '';
     setNoteModalContext(currentExerciseNoteContext);
@@ -696,6 +1026,245 @@ const ActiveWorkoutPage: React.FC = () => {
     });
 
     closeCurrentExerciseNoteModal();
+  };
+
+  const saveCurrentExerciseEdits = async () => {
+    if (!workout) return;
+    if (sourceSchedaId == null) {
+      setExerciseEditError('Live editing is unavailable for historical replay without a linked template.');
+      return;
+    }
+
+    setIsSavingExerciseEdit(true);
+    setExerciseEditError(null);
+
+    try {
+      const schedaId = sourceSchedaId;
+
+      const minAllowedSets = currentSetIdx + 1;
+
+      if (currentExercise.type === 'emom') {
+        const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Sets');
+        const nextRounds = parseStrictInt(exerciseEditDraft.emomRounds, 'Rounds');
+        const nextRoundDuration = parseStrictInt(exerciseEditDraft.emomRoundDuration, 'Round duration');
+        const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
+
+        if (nextSets < minAllowedSets) {
+          throw new Error(`You are currently at set ${minAllowedSets}. Sets cannot be lower than this value.`);
+        }
+
+        const minAllowedRounds = currentEmomRoundIdx + 1;
+        if (nextRounds < minAllowedRounds) {
+          throw new Error(`You are currently at round ${minAllowedRounds}. Rounds cannot be lower than this value.`);
+        }
+
+        const { error: emomTableError } = await supabase
+          .from('emom')
+          .update({
+            round_totali: nextRounds,
+            durata_round_secondi: nextRoundDuration,
+          })
+          .eq('id_emom', Number(currentExercise.id));
+        if (emomTableError) throw emomTableError;
+
+        const { error: emomRowsError } = await supabase
+          .from('esecuzioni')
+          .update({
+            set_num: nextSets,
+            rest_secondi: nextRest > 0 ? nextRest : null,
+          })
+          .eq('id_scheda', schedaId)
+          .eq('id_emom', Number(currentExercise.id));
+        if (emomRowsError) throw emomRowsError;
+
+        setWorkout((prev) => {
+          if (!prev) return prev;
+          const exercises = [...prev.exercises];
+          exercises[currentExerciseIdx] = {
+            ...exercises[currentExerciseIdx],
+            sets: nextSets,
+            rest_seconds: nextRest,
+            emom_rounds: nextRounds,
+            emom_round_duration: nextRoundDuration,
+            duration_seconds: nextRoundDuration,
+          };
+          return { ...prev, exercises };
+        });
+
+        setEmomRoundRemaining((prev) => Math.min(prev, nextRoundDuration));
+      } else if (currentExercise.type === 'superset') {
+        const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Rounds');
+        const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
+        if (nextSets < minAllowedSets) {
+          throw new Error(`You are currently at round ${minAllowedSets}. Rounds cannot be lower than this value.`);
+        }
+
+        const currentSub = subExercise;
+        if (!currentSub) throw new Error('No current superset exercise found.');
+
+        const nextSubWeight = parseOptionalWeight(exerciseEditDraft.currentSubWeightKg);
+        let nextSubReps = currentSub.reps;
+        let nextSubDuration = currentSub.duration_seconds;
+
+        if (currentSub.type === 'isometry') {
+          nextSubDuration = parseStrictInt(exerciseEditDraft.currentSubDuration, 'Current exercise duration');
+        } else {
+          nextSubReps = parseStrictInt(exerciseEditDraft.currentSubReps, 'Current exercise reps');
+        }
+
+        const supersetId = Number(currentExercise.id);
+        const { error: supersetTableError } = await supabase
+          .from('superset')
+          .update({
+            round_totali: nextSets,
+          })
+          .eq('id_superset', supersetId);
+        if (supersetTableError) throw supersetTableError;
+
+        const { error: supersetRowsError } = await supabase
+          .from('esecuzioni')
+          .update({
+            set_num: nextSets,
+            rest_secondi: nextRest > 0 ? nextRest : null,
+          })
+          .eq('id_scheda', schedaId)
+          .eq('id_superset', supersetId);
+        if (supersetRowsError) throw supersetRowsError;
+
+        const { data: supersetRows, error: supersetFetchError } = await supabase
+          .from('esecuzioni')
+          .select('id_esecuzione, ordine')
+          .eq('id_scheda', schedaId)
+          .eq('id_superset', supersetId)
+          .order('ordine', { ascending: true });
+        if (supersetFetchError) throw supersetFetchError;
+
+        const targetRow = supersetRows?.[currentSubExerciseIdx];
+        if (!targetRow?.id_esecuzione) {
+          throw new Error('Unable to map current superset exercise to database row.');
+        }
+
+        const { error: currentSubUpdateError } = await supabase
+          .from('esecuzioni')
+          .update({
+            reps: currentSub.type === 'reps' ? nextSubReps : null,
+            durata_secondi: currentSub.type === 'isometry' ? nextSubDuration : null,
+            peso_kg: nextSubWeight,
+          })
+          .eq('id_scheda', schedaId)
+          .eq('id_esecuzione', targetRow.id_esecuzione);
+        if (currentSubUpdateError) throw currentSubUpdateError;
+
+        setWorkout((prev) => {
+          if (!prev) return prev;
+          const exercises = [...prev.exercises];
+          const updated = { ...exercises[currentExerciseIdx] };
+          updated.sets = nextSets;
+          updated.rest_seconds = nextRest;
+          updated.subExercises = [...(updated.subExercises || [])];
+          if (updated.subExercises[currentSubExerciseIdx]) {
+            updated.subExercises[currentSubExerciseIdx] = {
+              ...updated.subExercises[currentSubExerciseIdx],
+              reps: nextSubReps,
+              duration_seconds: nextSubDuration,
+              weight_kg: nextSubWeight,
+            };
+          }
+          exercises[currentExerciseIdx] = updated;
+          return { ...prev, exercises };
+        });
+
+        if (currentSub.type === 'isometry') {
+          setIsometryRemaining((prev) => Math.min(prev, nextSubDuration));
+        }
+      } else if (currentExercise.type === 'pyramid') {
+        const nextStepReps = parseStrictInt(exerciseEditDraft.currentStepReps, 'Step reps');
+        const nextStepRest = parseStrictInt(exerciseEditDraft.currentStepRestSeconds, 'Step rest', true);
+        const nextStepWeight = parseOptionalWeight(exerciseEditDraft.currentStepWeightKg);
+
+        const { error: stepUpdateError } = await supabase
+          .from('esecuzioni')
+          .update({
+            reps: nextStepReps,
+            rest_secondi: nextStepRest > 0 ? nextStepRest : null,
+            peso_kg: nextStepWeight,
+          })
+          .eq('id_scheda', schedaId)
+          .eq('id_piramide', Number(currentExercise.id))
+          .eq('stepindex_piramide', currentPyramidStepIdx + 1);
+        if (stepUpdateError) throw stepUpdateError;
+
+        setWorkout((prev) => {
+          if (!prev) return prev;
+          const exercises = [...prev.exercises];
+          const updated = { ...exercises[currentExerciseIdx] };
+          const nextSteps = [...(updated.pyramid_steps || [])];
+          if (nextSteps[currentPyramidStepIdx]) {
+            nextSteps[currentPyramidStepIdx] = {
+              ...nextSteps[currentPyramidStepIdx],
+              reps: nextStepReps,
+              rest_seconds: nextStepRest,
+              weight_kg: nextStepWeight,
+            };
+          }
+          updated.pyramid_steps = nextSteps;
+          exercises[currentExerciseIdx] = updated;
+          return { ...prev, exercises };
+        });
+      } else {
+        const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Sets');
+        const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
+        const nextWeight = parseOptionalWeight(exerciseEditDraft.weightKg);
+
+        if (nextSets < minAllowedSets) {
+          throw new Error(`You are currently at set ${minAllowedSets}. Sets cannot be lower than this value.`);
+        }
+
+        const isIso = currentExercise.type === 'isometry';
+        const nextReps = isIso ? currentExercise.reps : parseStrictInt(exerciseEditDraft.reps, 'Reps');
+        const nextDuration = isIso
+          ? parseStrictInt(exerciseEditDraft.durationSeconds, 'Duration')
+          : currentExercise.duration_seconds;
+
+        const { error: baseUpdateError } = await supabase
+          .from('esecuzioni')
+          .update({
+            set_num: nextSets,
+            rest_secondi: nextRest > 0 ? nextRest : null,
+            peso_kg: nextWeight,
+            reps: isIso ? null : nextReps,
+            durata_secondi: isIso ? nextDuration : null,
+          })
+          .eq('id_scheda', schedaId)
+          .eq('id_esecuzione', Number(currentExercise.id));
+        if (baseUpdateError) throw baseUpdateError;
+
+        setWorkout((prev) => {
+          if (!prev) return prev;
+          const exercises = [...prev.exercises];
+          exercises[currentExerciseIdx] = {
+            ...exercises[currentExerciseIdx],
+            sets: nextSets,
+            rest_seconds: nextRest,
+            weight_kg: nextWeight,
+            reps: nextReps,
+            duration_seconds: nextDuration,
+          };
+          return { ...prev, exercises };
+        });
+
+        if (isIso) {
+          setIsometryRemaining((prev) => Math.min(prev, nextDuration));
+        }
+      }
+
+      setIsEditExerciseModalOpen(false);
+    } catch (error: any) {
+      console.error('Error saving live exercise edits:', error);
+      setExerciseEditError(error?.message || 'Unable to save exercise changes.');
+    } finally {
+      setIsSavingExerciseEdit(false);
+    }
   };
 
   const getTargetIsometry = (ex: Exercise, subEx: any) => {
@@ -1284,6 +1853,15 @@ const ActiveWorkoutPage: React.FC = () => {
         {/* Primary Action Button */}
         <div className="mt-auto pt-8 flex items-stretch gap-3">
           <button
+            onClick={openEditExerciseModal}
+            disabled={!canPersistExerciseEdits}
+            className="w-[70px] rounded-2xl border bg-brand-darkGrey/40 border-brand-grey/20 text-brand-grey hover:text-white hover:border-brand-grey/40 transition-all active:scale-95 flex items-center justify-center disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:text-brand-grey disabled:hover:border-brand-grey/20"
+            title={canPersistExerciseEdits ? 'Edit Exercise' : 'Edit unavailable for historical replay without linked template'}
+          >
+            <SlidersHorizontal size={22} />
+          </button>
+
+          <button
             onClick={openCurrentExerciseNoteModal}
             className={`w-[70px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${
               hasCurrentExerciseNote
@@ -1363,6 +1941,263 @@ const ActiveWorkoutPage: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black"
               >
                 Save Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isEditExerciseModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-lg bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Edit Current Exercise</h3>
+                <p className="text-xs text-brand-grey mt-1">
+                  {isSuperset && subExercise ? `${currentExercise.name} - ${subExercise.name}` : currentExercise.name}
+                </p>
+              </div>
+              <button
+                onClick={closeEditExerciseModal}
+                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
+                title="Close exercise editor"
+                disabled={isSavingExerciseEdit}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {currentExercise.type === 'emom' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-sm text-brand-grey">Sets
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.sets}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                    <label className="text-sm text-brand-grey">Rounds
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.emomRounds}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, emomRounds: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col">
+                      <label className="text-sm text-brand-grey">Round Duration</label>
+                      <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
+                        <div className="relative flex-1 border-r border-brand-grey/10">
+                          <input
+                            type="number"
+                            min={0}
+                            value={toDurationParts(exerciseEditDraft.emomRoundDuration).minutes}
+                            onChange={(e) => updateEmomRoundDurationPart('min', e.target.value)}
+                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                          />
+                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">MIN</span>
+                        </div>
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={59}
+                            value={toDurationParts(exerciseEditDraft.emomRoundDuration).seconds}
+                            onChange={(e) => updateEmomRoundDurationPart('sec', e.target.value)}
+                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                          />
+                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">SEC</span>
+                        </div>
+                      </div>
+                    </div>
+                    <label className="text-sm text-brand-grey">Rest Between Sets (sec)
+                      <input
+                        type="number"
+                        min={0}
+                        value={exerciseEditDraft.restSeconds}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
+
+              {currentExercise.type === 'superset' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-sm text-brand-grey">Rounds
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.sets}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                    <label className="text-sm text-brand-grey">Rest Between Rounds (sec)
+                      <input
+                        type="number"
+                        min={0}
+                        value={exerciseEditDraft.restSeconds}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  </div>
+
+                  {subExercise?.type === 'isometry' ? (
+                    <label className="text-sm text-brand-grey">Current Exercise Duration (sec)
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.currentSubDuration}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubDuration: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  ) : (
+                    <label className="text-sm text-brand-grey">Current Exercise Reps
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.currentSubReps}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubReps: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  )}
+
+                  <label className="text-sm text-brand-grey">Current Exercise Weight (kg)
+                    <input
+                      type="text"
+                      value={exerciseEditDraft.currentSubWeightKg}
+                      onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubWeightKg: e.target.value }))}
+                      placeholder="body Weight"
+                      className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                    />
+                  </label>
+                </>
+              )}
+
+              {currentExercise.type === 'pyramid' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-sm text-brand-grey">Current Step Reps
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.currentStepReps}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepReps: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                    <label className="text-sm text-brand-grey">Current Step Rest (sec)
+                      <input
+                        type="number"
+                        min={0}
+                        value={exerciseEditDraft.currentStepRestSeconds}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepRestSeconds: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  </div>
+                  <label className="text-sm text-brand-grey">Current Step Weight (kg)
+                    <input
+                      type="text"
+                      value={exerciseEditDraft.currentStepWeightKg}
+                      onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepWeightKg: e.target.value }))}
+                      placeholder="body Weight"
+                      className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                    />
+                  </label>
+                </>
+              )}
+
+              {(currentExercise.type === 'reps' || currentExercise.type === 'isometry') && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-sm text-brand-grey">Sets
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.sets}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                    <label className="text-sm text-brand-grey">Rest (sec)
+                      <input
+                        type="number"
+                        min={0}
+                        value={exerciseEditDraft.restSeconds}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  </div>
+
+                  {currentExercise.type === 'isometry' ? (
+                    <label className="text-sm text-brand-grey">Duration (sec)
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.durationSeconds}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, durationSeconds: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  ) : (
+                    <label className="text-sm text-brand-grey">Reps
+                      <input
+                        type="number"
+                        min={1}
+                        value={exerciseEditDraft.reps}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, reps: e.target.value }))}
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  )}
+
+                  <label className="text-sm text-brand-grey">Weight (kg)
+                    <input
+                      type="text"
+                      value={exerciseEditDraft.weightKg}
+                      onChange={(e) => setExerciseEditDraft((d) => ({ ...d, weightKg: e.target.value }))}
+                      placeholder="body Weight"
+                      className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+
+            {exerciseEditError && (
+              <p className="mt-3 text-sm text-red-300">{exerciseEditError}</p>
+            )}
+
+            <div className="mt-4 flex items-center justify-end gap-3">
+              <button
+                onClick={closeEditExerciseModal}
+                disabled={isSavingExerciseEdit}
+                className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveCurrentExerciseEdits}
+                disabled={isSavingExerciseEdit}
+                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60"
+              >
+                {isSavingExerciseEdit ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
