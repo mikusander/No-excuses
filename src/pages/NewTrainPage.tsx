@@ -13,6 +13,7 @@ interface ExerciseDraft {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  weight_kg?: number | null;
   emom_rounds?: number;
   emom_round_duration?: number;
   subExercises?: {
@@ -20,10 +21,12 @@ interface ExerciseDraft {
     type: 'reps' | 'isometry';
     reps: number;
     duration_seconds: number;
+    weight_kg?: number | null;
   }[];
   pyramid_steps?: {
     reps: number;
     rest_seconds: number;
+    weight_kg?: number | null;
   }[];
 }
 
@@ -63,6 +66,7 @@ const NewTrainPage: React.FC = () => {
             ordine,
             set_num,
             rest_secondi,
+            peso_kg,
             tipo,
             reps,
             durata_secondi,
@@ -100,7 +104,7 @@ const NewTrainPage: React.FC = () => {
   const addExercise = () => {
     setExercises([
       ...exercises,
-      { id: crypto.randomUUID(), type: 'reps', name: '', sets: 3, reps: 10, duration_seconds: 30, rest_seconds: 60 }
+      { id: crypto.randomUUID(), type: 'reps', name: '', sets: 3, reps: 10, duration_seconds: 30, rest_seconds: 60, weight_kg: null }
     ]);
   };
 
@@ -113,8 +117,14 @@ const NewTrainPage: React.FC = () => {
           ...ex,
           type: 'superset',
           subExercises: [
-            { name: ex.name, type: ex.type as 'reps' | 'isometry', reps: ex.reps, duration_seconds: ex.duration_seconds },
-            { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
+            {
+              name: ex.name,
+              type: ex.type as 'reps' | 'isometry',
+              reps: ex.reps,
+              duration_seconds: ex.duration_seconds,
+              weight_kg: ex.weight_kg ?? null,
+            },
+            { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null }
           ]
         };
       }
@@ -134,8 +144,8 @@ const NewTrainPage: React.FC = () => {
           sets: 1,
           rest_seconds: 0,
           pyramid_steps: [
-            { reps: baseReps, rest_seconds: baseRest },
-            { reps: baseReps + PYRAMID_DEFAULT_REPS_INCREMENT, rest_seconds: baseRest },
+            { reps: baseReps, rest_seconds: baseRest, weight_kg: ex.weight_kg ?? null },
+            { reps: baseReps + PYRAMID_DEFAULT_REPS_INCREMENT, rest_seconds: baseRest, weight_kg: ex.weight_kg ?? null },
           ],
         };
       }
@@ -147,8 +157,8 @@ const NewTrainPage: React.FC = () => {
     setExercises([
       ...exercises,
       {
-        id: crypto.randomUUID(), type: 'emom', name: '', sets: 1, reps: 0, duration_seconds: 0, rest_seconds: 60, emom_rounds: 10, emom_round_duration: 60, subExercises: [
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0 }
+        id: crypto.randomUUID(), type: 'emom', name: '', sets: 1, reps: 0, duration_seconds: 0, rest_seconds: 60, weight_kg: null, emom_rounds: 10, emom_round_duration: 60, subExercises: [
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null }
         ]
       }
     ]);
@@ -210,10 +220,13 @@ const NewTrainPage: React.FC = () => {
         const nextRest = Number.isFinite(lastStep?.rest_seconds) && (lastStep?.rest_seconds || 0) >= 0
           ? (lastStep?.rest_seconds || 0)
           : PYRAMID_DEFAULT_REST_SECONDS;
+        const nextWeight = typeof lastStep?.weight_kg === 'number' && Number.isFinite(lastStep.weight_kg) && lastStep.weight_kg > 0
+          ? lastStep.weight_kg
+          : null;
 
         return {
           ...ex,
-          pyramid_steps: [...(ex.pyramid_steps || []), { reps: nextReps, rest_seconds: nextRest }]
+          pyramid_steps: [...(ex.pyramid_steps || []), { reps: nextReps, rest_seconds: nextRest, weight_kg: nextWeight }]
         };
       }
       return ex;
@@ -233,6 +246,7 @@ const NewTrainPage: React.FC = () => {
             type: 'reps',
             reps: Number.isFinite(only.reps) && only.reps > 0 ? only.reps : 10,
             rest_seconds: Number.isFinite(only.rest_seconds) && only.rest_seconds >= 0 ? only.rest_seconds : ex.rest_seconds,
+            weight_kg: only.weight_kg ?? null,
             pyramid_steps: undefined,
           };
         }
@@ -262,6 +276,30 @@ const NewTrainPage: React.FC = () => {
       delete next[key];
       return next;
     });
+  };
+
+  const formatWeightDisplay = (value?: number | null) => {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '';
+    return String(value).replace('.', ',');
+  };
+
+  const getWeightDraftOrValue = (key: string, value?: number | null) => {
+    if (Object.prototype.hasOwnProperty.call(numberDrafts, key)) return numberDrafts[key];
+    return formatWeightDisplay(value);
+  };
+
+  const parseWeightInput = (raw: string, fallback: number | null) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(',', '.');
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.round(parsed * 100) / 100;
+  };
+
+  const toDbWeight = (value?: number | null) => {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+    return Math.round(value * 100) / 100;
   };
 
   const commitExerciseNumber = (
@@ -338,6 +376,53 @@ const NewTrainPage: React.FC = () => {
     clearDraftValue(key);
   };
 
+  const commitPyramidStepWeight = (
+    pyramidId: string,
+    stepIndex: number,
+    key: string,
+    currentWeight: number | null | undefined
+  ) => {
+    const raw = numberDrafts[key] ?? '';
+    const fallback = typeof currentWeight === 'number' && Number.isFinite(currentWeight) ? currentWeight : null;
+    const parsed = parseWeightInput(raw, fallback);
+
+    setExercises(exercises.map(ex => {
+      if (ex.id === pyramidId && ex.pyramid_steps) {
+        const nextSteps = [...ex.pyramid_steps];
+        nextSteps[stepIndex] = { ...nextSteps[stepIndex], weight_kg: parsed };
+        return { ...ex, pyramid_steps: nextSteps };
+      }
+      return ex;
+    }));
+
+    clearDraftValue(key);
+  };
+
+  const commitExerciseWeight = (
+    id: string,
+    key: string,
+    currentWeight: number | null | undefined
+  ) => {
+    const raw = numberDrafts[key] ?? '';
+    const fallback = typeof currentWeight === 'number' && Number.isFinite(currentWeight) ? currentWeight : null;
+    const parsed = parseWeightInput(raw, fallback);
+    updateExercise(id, 'weight_kg', parsed);
+    clearDraftValue(key);
+  };
+
+  const commitSubExerciseWeight = (
+    containerId: string,
+    subIndex: number,
+    key: string,
+    currentWeight: number | null | undefined
+  ) => {
+    const raw = numberDrafts[key] ?? '';
+    const fallback = typeof currentWeight === 'number' && Number.isFinite(currentWeight) ? currentWeight : null;
+    const parsed = parseWeightInput(raw, fallback);
+    updateSubExercise(containerId, subIndex, 'weight_kg', parsed);
+    clearDraftValue(key);
+  };
+
   const commitRestPart = (
     id: string,
     part: 'min' | 'sec',
@@ -361,7 +446,7 @@ const NewTrainPage: React.FC = () => {
   const addSubExercise = (supersetId: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === supersetId && ex.subExercises) {
-        return { ...ex, subExercises: [...ex.subExercises, { name: '', type: 'reps', reps: 10, duration_seconds: 0 }] };
+        return { ...ex, subExercises: [...ex.subExercises, { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null }] };
       }
       return ex;
     }));
@@ -380,6 +465,7 @@ const NewTrainPage: React.FC = () => {
             name: only.name,
             reps: only.type === 'reps' ? only.reps : ex.reps,
             duration_seconds: only.type === 'isometry' ? only.duration_seconds : ex.duration_seconds,
+            weight_kg: only.weight_kg ?? null,
             subExercises: undefined,
           };
         }
@@ -530,7 +616,7 @@ const NewTrainPage: React.FC = () => {
               ordine: orderCounter,
               set_num: Math.max(1, ex.sets || 1),
               rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
-              peso_kg: null,
+              peso_kg: toDbWeight(sub.weight_kg),
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
               reps: isIso ? null : Math.max(1, sub.reps || 1),
               durata_secondi: isIso ? Math.max(1, sub.duration_seconds || 1) : null,
@@ -566,7 +652,7 @@ const NewTrainPage: React.FC = () => {
               ordine: orderCounter,
               set_num: Math.max(1, ex.sets || 1),
               rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
-              peso_kg: null,
+              peso_kg: toDbWeight(sub.weight_kg),
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
               reps: isIso ? null : Math.max(1, sub.reps || 1),
               durata_secondi: isIso ? Math.max(1, sub.duration_seconds || 1) : null,
@@ -601,7 +687,7 @@ const NewTrainPage: React.FC = () => {
               ordine: orderCounter,
               set_num: 1,
               rest_secondi: step.rest_seconds > 0 ? step.rest_seconds : null,
-              peso_kg: null,
+              peso_kg: toDbWeight(step.weight_kg),
               tipo: 'REPS',
               reps: Math.max(1, step.reps || 1),
               durata_secondi: null,
@@ -627,7 +713,7 @@ const NewTrainPage: React.FC = () => {
           ordine: orderCounter,
           set_num: Math.max(1, ex.sets || 1),
           rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
-          peso_kg: null,
+          peso_kg: toDbWeight(ex.weight_kg),
           tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
           reps: isIsometry ? null : Math.max(1, ex.reps || 1),
           durata_secondi: isIsometry ? Math.max(1, ex.duration_seconds || 1) : null,
@@ -800,6 +886,20 @@ const NewTrainPage: React.FC = () => {
                             placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           />
                         </div>
+                        <div>
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                            Weight (kg)
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                            onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
+                            onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                            onFocus={onNumberFocus}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
+                          />
+                        </div>
                         {ex.subExercises && ex.subExercises.length > 1 && (
                           <button
                             onClick={() => removeSubExercise(ex.id, sIdx)}
@@ -858,6 +958,20 @@ const NewTrainPage: React.FC = () => {
                             onFocus={onNumberFocus}
                             className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
                             placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                            Weight (kg)
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                            onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
+                            onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                            onFocus={onNumberFocus}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
                           />
                         </div>
                         {ex.subExercises && ex.subExercises.length > 1 && (
@@ -941,6 +1055,18 @@ const NewTrainPage: React.FC = () => {
                             </div>
                           </div>
                         </div>
+                        <div>
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Weight (kg)</label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={getWeightDraftOrValue(`${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
+                            onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:weight`, e.target.value)}
+                            onBlur={() => commitPyramidStepWeight(ex.id, stepIdx, `${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
+                            onFocus={onNumberFocus}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
+                          />
+                        </div>
                         {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
                           <button
                             onClick={() => removePyramidStep(ex.id, stepIdx)}
@@ -989,7 +1115,7 @@ const NewTrainPage: React.FC = () => {
 
                 {/* Dati Generici (Serie e Recupero) */}
                 {ex.type !== 'pyramid' && (
-                <div className={`grid ${ex.type === 'superset' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
+                <div className={`grid ${ex.type === 'superset' || ex.type === 'emom' ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'} gap-3`}>
                   <div className="flex flex-col">
                     <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
                       Sets
@@ -1016,6 +1142,23 @@ const NewTrainPage: React.FC = () => {
                         value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds)}
                         onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
                         onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? 10 : 30, 1)}
+                        onFocus={onNumberFocus}
+                        className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
+                      />
+                    </div>
+                  )}
+
+                  {ex.type !== 'superset' && ex.type !== 'emom' && (
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
+                        Weight (kg)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={getWeightDraftOrValue(`${ex.id}:weight`, ex.weight_kg)}
+                        onChange={(e) => setDraftValue(`${ex.id}:weight`, e.target.value)}
+                        onBlur={() => commitExerciseWeight(ex.id, `${ex.id}:weight`, ex.weight_kg)}
                         onFocus={onNumberFocus}
                         className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
                       />

@@ -5,11 +5,13 @@ export interface UiSubExercise {
   type: 'reps' | 'isometry';
   reps: number;
   duration_seconds: number;
+  weight_kg?: number | null;
 }
 
 export interface UiPyramidStep {
   reps: number;
   rest_seconds: number;
+  weight_kg?: number | null;
 }
 
 export interface UiExercise {
@@ -20,6 +22,7 @@ export interface UiExercise {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  weight_kg?: number | null;
   order_index: number;
   emom_rounds?: number;
   emom_round_duration?: number;
@@ -30,6 +33,11 @@ export interface UiExercise {
 const toSafeInt = (value: unknown, fallback: number) => {
   const n = Number(value);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
+};
+
+const toSafeDecimal = (value: unknown, fallback: number | null) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : fallback;
 };
 
 const stripStorageMeta = (name: string) => name.replace(/@@@meta:.*$/, '').trim();
@@ -70,6 +78,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: 0,
             duration_seconds: 0,
             rest_seconds: restSeconds,
+            weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             subExercises: [],
           },
@@ -83,7 +92,10 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       g.ex.order_index = g.order;
 
       if (Array.isArray(jsonPayload)) {
-        g.ex.subExercises = jsonPayload as UiSubExercise[];
+        g.ex.subExercises = (jsonPayload as UiSubExercise[]).map((item) => ({
+          ...item,
+          weight_kg: toSafeDecimal((item as { weight_kg?: unknown }).weight_kg, null),
+        }));
       } else {
         g.subs.push({
           idx,
@@ -92,6 +104,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             type: rowType,
             reps: Math.max(1, toSafeInt(row.reps, 1)),
             duration_seconds: Math.max(1, toSafeInt(row.durata_secondi, 1)),
+            weight_kg: toSafeDecimal(row.peso_kg, null),
           },
         });
       }
@@ -110,6 +123,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: 0,
             duration_seconds: Math.max(1, toSafeInt(row?.emom?.durata_round_secondi, 60)),
             rest_seconds: restSeconds,
+            weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             emom_rounds: Math.max(1, toSafeInt(row?.emom?.round_totali, 1)),
             emom_round_duration: Math.max(1, toSafeInt(row?.emom?.durata_round_secondi, 60)),
@@ -125,9 +139,15 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       g.ex.order_index = g.order;
 
       if (Array.isArray(jsonPayload)) {
-        g.ex.subExercises = jsonPayload as UiSubExercise[];
+        g.ex.subExercises = (jsonPayload as UiSubExercise[]).map((item) => ({
+          ...item,
+          weight_kg: toSafeDecimal((item as { weight_kg?: unknown }).weight_kg, null),
+        }));
       } else if (jsonPayload?.subExercises && Array.isArray(jsonPayload.subExercises)) {
-        g.ex.subExercises = jsonPayload.subExercises as UiSubExercise[];
+        g.ex.subExercises = (jsonPayload.subExercises as UiSubExercise[]).map((item) => ({
+          ...item,
+          weight_kg: toSafeDecimal((item as { weight_kg?: unknown }).weight_kg, null),
+        }));
         g.ex.emom_rounds = Math.max(1, toSafeInt(jsonPayload.emom_rounds, g.ex.emom_rounds || 1));
         g.ex.emom_round_duration = Math.max(1, toSafeInt(jsonPayload.emom_round_duration, g.ex.emom_round_duration || 60));
         g.ex.duration_seconds = g.ex.emom_round_duration;
@@ -139,6 +159,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             type: rowType,
             reps: Math.max(1, toSafeInt(row.reps, 1)),
             duration_seconds: Math.max(1, toSafeInt(row.durata_secondi, 1)),
+            weight_kg: toSafeDecimal(row.peso_kg, null),
           },
         });
       }
@@ -157,6 +178,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: 0,
             duration_seconds: 0,
             rest_seconds: 0,
+            weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             pyramid_steps: [],
           },
@@ -170,15 +192,25 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       g.ex.order_index = g.order;
 
       if (jsonPayload?.steps && Array.isArray(jsonPayload.steps)) {
-        g.ex.pyramid_steps = jsonPayload.steps as UiPyramidStep[];
+        const payloadWeight = toSafeDecimal((jsonPayload as { weight_kg?: unknown }).weight_kg, null);
+        g.ex.pyramid_steps = (jsonPayload.steps as Array<{ reps?: unknown; rest_seconds?: unknown; weight_kg?: unknown }>).map((step) => ({
+          reps: Math.max(1, toSafeInt(step.reps, 1)),
+          rest_seconds: Math.max(0, toSafeInt(step.rest_seconds, 0)),
+          weight_kg: toSafeDecimal(step.weight_kg, payloadWeight),
+        }));
         g.ex.name = jsonPayload.name || g.ex.name;
+        g.ex.weight_kg = payloadWeight;
       } else {
         if (!g.ex.name && dictName) g.ex.name = dictName;
+        if (g.ex.weight_kg == null) {
+          g.ex.weight_kg = toSafeDecimal(row.peso_kg, null);
+        }
         g.steps.push({
           idx: Math.max(0, toSafeInt(row.stepindex_piramide, g.steps.length + 1)),
           item: {
             reps: Math.max(1, toSafeInt(row.reps, 1)),
             rest_seconds: Math.max(0, toSafeInt(row.rest_secondi, 0)),
+            weight_kg: toSafeDecimal(row.peso_kg, null),
           },
         });
       }
@@ -193,6 +225,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       reps: Math.max(0, toSafeInt(row.reps, 0)),
       duration_seconds: Math.max(0, toSafeInt(row.durata_secondi, 0)),
       rest_seconds: restSeconds,
+      weight_kg: toSafeDecimal(row.peso_kg, null),
       order_index: orderIndex,
     });
   });

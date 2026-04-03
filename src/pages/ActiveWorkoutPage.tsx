@@ -13,11 +13,18 @@ interface Exercise {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  weight_kg?: number | null;
   emom_rounds?: number;
   emom_round_duration?: number;
-  pyramid_steps?: { reps: number; rest_seconds: number }[];
+  pyramid_steps?: { reps: number; rest_seconds: number; weight_kg?: number | null }[];
   order_index: number;
-  subExercises?: any[];
+  subExercises?: {
+    name: string;
+    type: 'reps' | 'isometry';
+    reps: number;
+    duration_seconds: number;
+    weight_kg?: number | null;
+  }[];
 }
 
 interface Workout {
@@ -85,8 +92,44 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [noteModalDraft, setNoteModalDraft] = useState('');
   const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
+  const [isVoiceHelpVisible, setIsVoiceHelpVisible] = useState(false);
   const handleVoiceNextRef = useRef<(() => void) | null>(null);
   const handleVoicePrevRef = useRef<(() => void) | null>(null);
+  const handleVoiceNextExerciseRef = useRef<(() => void) | null>(null);
+  const handleVoicePrevExerciseRef = useRef<(() => void) | null>(null);
+  const handleVoiceEndWorkoutRef = useRef<(() => void) | null>(null);
+  const voiceHelpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openVoiceHelp = () => {
+    setIsVoiceHelpVisible(true);
+    if (voiceHelpTimeoutRef.current) {
+      clearTimeout(voiceHelpTimeoutRef.current);
+      voiceHelpTimeoutRef.current = null;
+    }
+    voiceHelpTimeoutRef.current = setTimeout(() => {
+      setIsVoiceHelpVisible(false);
+      voiceHelpTimeoutRef.current = null;
+    }, 10000);
+  };
+
+  const closeVoiceHelp = () => {
+    setIsVoiceHelpVisible(false);
+    if (voiceHelpTimeoutRef.current) {
+      clearTimeout(voiceHelpTimeoutRef.current);
+      voiceHelpTimeoutRef.current = null;
+    }
+  };
+
+  const handleVoiceButtonClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const nextEnabled = !isVoiceEnabled;
+    setIsVoiceEnabled(nextEnabled);
+    if (nextEnabled) {
+      openVoiceHelp();
+    } else {
+      closeVoiceHelp();
+    }
+  };
 
   const speakCue = (text: string) => {
     if (!voiceAssistanceEnabled) return;
@@ -111,6 +154,28 @@ const ActiveWorkoutPage: React.FC = () => {
 
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  useEffect(() => {
+    if (!isVoiceHelpVisible) return;
+
+    const onAnyScreenClick = () => {
+      closeVoiceHelp();
+    };
+
+    document.addEventListener('click', onAnyScreenClick);
+    return () => {
+      document.removeEventListener('click', onAnyScreenClick);
+    };
+  }, [isVoiceHelpVisible]);
+
+  useEffect(() => {
+    return () => {
+      if (voiceHelpTimeoutRef.current) {
+        clearTimeout(voiceHelpTimeoutRef.current);
+        voiceHelpTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   handleVoiceNextRef.current = () => {
@@ -190,6 +255,32 @@ const ActiveWorkoutPage: React.FC = () => {
     handlePrevExercise();
   };
 
+  handleVoiceNextExerciseRef.current = () => {
+    if (!workout) return;
+
+    if (currentExerciseIdx < workout.exercises.length - 1) {
+      handleNextExercise();
+      return;
+    }
+
+    speakCue('last exercise');
+  };
+
+  handleVoicePrevExerciseRef.current = () => {
+    if (!workout) return;
+
+    if (currentExerciseIdx > 0) {
+      handlePrevExercise();
+      return;
+    }
+
+    speakCue('first exercise');
+  };
+
+  handleVoiceEndWorkoutRef.current = () => {
+    void completeWorkoutNow();
+  };
+
   // Voice Recognition logic
   useEffect(() => {
     let recognition: any = null;
@@ -205,8 +296,29 @@ const ActiveWorkoutPage: React.FC = () => {
         recognition.onresult = (event: any) => {
           const current = event.resultIndex;
           const transcript = event.results[current][0].transcript.toLowerCase();
+          const isNextExerciseCommand = transcript.includes('next exercise') || transcript.includes('prossimo esercizio');
+          const isPrevExerciseCommand = transcript.includes('previous exercise') || transcript.includes('esercizio precedente');
+          const isEndWorkoutCommand = transcript.includes('end workout') || transcript.includes('termina workout');
           
-          if (transcript.includes('vai') || transcript.includes('go')) {
+          if (isNextExerciseCommand) {
+            setVoiceStatus('success');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
+            if (handleVoiceNextExerciseRef.current) {
+              handleVoiceNextExerciseRef.current();
+            }
+          } else if (isPrevExerciseCommand) {
+            setVoiceStatus('success');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
+            if (handleVoicePrevExerciseRef.current) {
+              handleVoicePrevExerciseRef.current();
+            }
+          } else if (isEndWorkoutCommand) {
+            setVoiceStatus('success');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
+            if (handleVoiceEndWorkoutRef.current) {
+              handleVoiceEndWorkoutRef.current();
+            }
+          } else if (transcript.includes('vai') || transcript.includes('go')) {
             setVoiceStatus('success');
             setTimeout(() => setVoiceStatus('idle'), 1500);
             if (workout?.exercises[currentExerciseIdx]?.type === 'emom') setEmomActive(true);
@@ -282,6 +394,7 @@ const ActiveWorkoutPage: React.FC = () => {
             ordine,
             set_num,
             rest_secondi,
+            peso_kg,
             tipo,
             reps,
             durata_secondi,
@@ -591,11 +704,88 @@ const ActiveWorkoutPage: React.FC = () => {
     return 0;
   };
 
+  const formatWeightLabel = (weight?: number | null) => {
+    const n = Number(weight);
+    if (!Number.isFinite(n) || n <= 0) return 'Body Weight';
+    return `${n.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg`;
+  };
+
+  const getCurrentExecutionWeightLabel = () => {
+    if (currentExercise.type === 'pyramid') {
+      const stepWeight = currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.weight_kg;
+      return formatWeightLabel(stepWeight);
+    }
+    if (currentExercise.type === 'superset' && subExercise) {
+      return formatWeightLabel(subExercise.weight_kg);
+    }
+    return formatWeightLabel(currentExercise.weight_kg);
+  };
+
+  const currentExecutionWeightLabel = getCurrentExecutionWeightLabel();
+
+  const getCurrentExecutionTargetLabel = () => {
+    if (currentExercise.type === 'pyramid') {
+      return String(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0);
+    }
+    if (currentExercise.type === 'superset' && subExercise) {
+      return subExercise.type === 'isometry'
+        ? String(subExercise.duration_seconds)
+        : String(subExercise.reps);
+    }
+    if (currentExercise.type === 'isometry') {
+      return String(currentExercise.duration_seconds);
+    }
+    return String(currentExercise.reps);
+  };
+
+  const currentExecutionTargetLabel = getCurrentExecutionTargetLabel();
+  const specialExerciseLabel =
+    currentExercise.type === 'emom'
+      ? 'EMOM MODE'
+      : currentExercise.type === 'superset'
+        ? 'SUPERSET MODE'
+        : currentExercise.type === 'pyramid'
+          ? 'PYRAMID MODE'
+          : null;
+  const specialExercisePillClass =
+    currentExercise.type === 'emom'
+      ? 'border-blue-400/60 bg-blue-500/10 text-blue-300'
+      : currentExercise.type === 'superset'
+        ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
+        : currentExercise.type === 'pyramid'
+          ? 'border-amber-300/60 bg-amber-300/10 text-amber-300'
+          : '';
+
+  const getNextRecoveryLabel = () => {
+    if (currentExercise.type === 'emom') {
+      const hasNextExercise = currentExerciseIdx < workout.exercises.length - 1;
+      if (!hasNextExercise) return null;
+
+      const hasMultipleSets = currentExercise.sets > 1;
+      if (hasMultipleSets) {
+        return formatTime(currentExercise.rest_seconds || 0);
+      }
+
+      const nextExercise = workout.exercises[currentExerciseIdx + 1];
+      return formatTime(nextExercise?.rest_seconds || 0);
+    }
+
+    if (currentExercise.type === 'pyramid') {
+      return formatTime(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0);
+    }
+
+    const hasUpcomingRest = currentSetIdx < currentExercise.sets - 1;
+    return formatTime(hasUpcomingRest ? (currentExercise.rest_seconds || 0) : 0);
+  };
+
   const handleNextExercise = () => {
     if (!isLastExercise) {
       const nextIdx = currentExerciseIdx + 1;
       const nextEx = workout.exercises[nextIdx];
-      speakCue('next exercise');
+      if (nextEx.type === 'emom') speakCue('next exercise, emom');
+      else if (nextEx.type === 'superset') speakCue('next exercise, superset');
+      else if (nextEx.type === 'pyramid') speakCue('next exercise, pyramid');
+      else speakCue('next exercise');
       setCurrentExerciseIdx(nextIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
@@ -724,6 +914,8 @@ const ActiveWorkoutPage: React.FC = () => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const nextRecoveryLabel = getNextRecoveryLabel();
+
   const markWorkoutComplete = async () => {
     if (workoutCompletionHandledRef.current) return;
     workoutCompletionHandledRef.current = true;
@@ -775,12 +967,32 @@ const ActiveWorkoutPage: React.FC = () => {
     completeSet();
   };
 
+  const voiceCommandsHelpBubble = isVoiceHelpVisible ? (
+    <div className="fixed top-20 right-4 z-50 w-[min(92vw,430px)] pointer-events-none">
+      <div className="relative rounded-none border-2 border-white/70 bg-[#101010] px-4 py-3 shadow-[6px_6px_0_rgba(0,0,0,0.45)]">
+        <div className="absolute -top-2 right-8 h-3 w-3 rotate-45 border-l-2 border-t-2 border-white/70 bg-[#101010]" />
+        <p className="mb-2 text-[11px] font-black tracking-widest text-brand-orange">VOICE COMMANDS</p>
+        <div className="space-y-1 text-xs leading-relaxed text-white/90">
+          <p><span className="font-bold text-brand-orange">go / vai</span> - start timer</p>
+          <p><span className="font-bold text-brand-orange">stop / fermo</span> - pause timer</p>
+          <p><span className="font-bold text-brand-orange">next / avanti</span> - next set or round</p>
+          <p><span className="font-bold text-brand-orange">back / indietro</span> - previous step</p>
+          <p><span className="font-bold text-brand-orange">next exercise / prossimo esercizio</span> - jump to next exercise</p>
+          <p><span className="font-bold text-brand-orange">previous exercise / esercizio precedente</span> - jump to previous exercise</p>
+          <p><span className="font-bold text-brand-orange">end workout / termina workout</span> - finish workout now</p>
+        </div>
+        <p className="mt-2 text-[10px] uppercase tracking-wider text-brand-grey/80">Auto closes in 10s or on any tap</p>
+      </div>
+    </div>
+  ) : null;
+
   // ----------------------------------------------------------------------
   // RENDER REST VIEW
   // ----------------------------------------------------------------------
   if (isResting) {
     return (
       <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center p-6 relative">
+        {voiceCommandsHelpBubble}
         <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-10 p-2">
           <button onClick={() => navigate(-1)} className="text-white/50 hover:text-white transition-colors">
             <ArrowLeft size={28} />
@@ -789,7 +1001,7 @@ const ActiveWorkoutPage: React.FC = () => {
             {voiceStatus === 'success' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
             {voiceStatus === 'error' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
             <button 
-              onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} 
+              onClick={handleVoiceButtonClick}
               className={`p-2 rounded-full transition-all duration-300 ${isVoiceEnabled ? (voiceStatus === 'success' ? 'bg-green-500 text-white scale-110' : voiceStatus === 'error' ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-orange text-black') : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
             >
               {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
@@ -812,8 +1024,8 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
 
         <div className="text-center space-y-2 mb-12">
-          <p className="text-brand-grey text-sm">{currentExercise.type === 'pyramid' ? 'Next Step:' : 'Next Set:'}</p>
           <p className="text-white text-xl font-bold">{currentExercise.name}</p>
+          <p className="text-brand-grey text-xs">Weights: {currentExecutionWeightLabel}</p>
           {isSuperset && currentExercise.subExercises && (
             <p className="text-brand-orange/80 text-sm font-semibold">{currentExercise.subExercises.map((s:any) => s.name).join(' + ')}</p>
           )}
@@ -839,6 +1051,7 @@ const ActiveWorkoutPage: React.FC = () => {
   // ----------------------------------------------------------------------
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pt-4 pb-12 px-6 safe-top safe-bottom relative">
+      {voiceCommandsHelpBubble}
       <header className="flex items-center justify-between mb-8 z-10 relative">
         <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors">
           <ArrowLeft size={28} />
@@ -851,7 +1064,7 @@ const ActiveWorkoutPage: React.FC = () => {
           {voiceStatus === 'success' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
           {voiceStatus === 'error' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
           <button 
-            onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} 
+            onClick={handleVoiceButtonClick}
             className={`p-2 -mr-2 rounded-full transition-all duration-300 ${isVoiceEnabled ? (voiceStatus === 'success' ? 'bg-green-500 text-white scale-110' : voiceStatus === 'error' ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-orange text-black') : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
           >
             {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
@@ -885,10 +1098,12 @@ const ActiveWorkoutPage: React.FC = () => {
              <h2 className="text-3xl font-black text-white leading-tight drop-shadow-md">
                {isSuperset && subExercise ? subExercise.name : currentExercise.name}
              </h2>
-             {isSuperset && (
-               <span className="text-[10px] text-brand-orange/60 uppercase font-black tracking-widest block mt-1">
-                 Superset (Exercise {currentSubExerciseIdx + 1} of {currentExercise.subExercises?.length})
-               </span>
+             {specialExerciseLabel && (
+               <div className="mt-2 flex flex-col items-center gap-1">
+                 <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${specialExercisePillClass}`}>
+                   {specialExerciseLabel}
+                 </span>
+               </div>
              )}
              
           </div>
@@ -942,16 +1157,29 @@ const ActiveWorkoutPage: React.FC = () => {
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Round</span>
                   <span className="text-brand-orange font-black">{currentEmomRoundIdx + 1} / {currentExercise.emom_rounds || 1}</span>
                 </div>
+                <div className="col-span-2 bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
+                  <span className="text-brand-orange font-black text-xs block">{currentExecutionWeightLabel}</span>
+                </div>
               </div>
+
+              {nextRecoveryLabel && (
+                <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mb-3">
+                  Upcoming Recovery: {nextRecoveryLabel}
+                </p>
+              )}
               
               {/* EMOM Tasks */}
               <div className="w-full flex-1 max-h-[25vh] overflow-y-auto space-y-2 px-2">
                 {currentExercise.subExercises?.map((sub, idx) => (
                   <div key={idx} className="bg-brand-darkGrey/30 p-3 rounded-xl border border-white/5 flex justify-between items-center">
                     <span className="text-white font-bold text-sm truncate max-w-[70%] text-left">{sub.name}</span>
-                    <span className="text-blue-400 font-mono font-black text-sm">
-                      {sub.type === 'reps' ? `${sub.reps} REPS` : `${sub.duration_seconds}s`}
-                    </span>
+                    <div className="text-right">
+                      <span className="text-blue-400 font-mono font-black text-sm block">
+                        {sub.type === 'reps' ? `${sub.reps} REPS` : `${sub.duration_seconds}s`}
+                      </span>
+                      <span className="text-[10px] text-brand-grey/80">{formatWeightLabel(sub.weight_kg)}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -962,15 +1190,19 @@ const ActiveWorkoutPage: React.FC = () => {
                 {currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0}
               </span>
               <span className="text-brand-grey font-bold uppercase tracking-widest text-lg">Reps</span>
-              <div className="mt-4 bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-4 text-center">
-                <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Step</span>
-                <span className="text-brand-orange font-black">{currentPyramidStepIdx + 1} / {currentExercise.pyramid_steps?.length || 1}</span>
+              <div className="mt-4 w-full max-w-sm grid grid-cols-2 gap-2">
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Step</span>
+                  <span className="text-brand-orange font-black">{currentPyramidStepIdx + 1} / {currentExercise.pyramid_steps?.length || 1}</span>
+                </div>
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
+                  <span className="text-brand-orange font-black text-xs truncate block">{currentExecutionWeightLabel}</span>
+                </div>
               </div>
-              {!isLastPyramidStep && (
-                <p className="text-brand-grey text-xs mt-3">
-                  Next rest: {formatTime(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0)}
-                </p>
-              )}
+              <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-3">
+                Upcoming Recovery: {nextRecoveryLabel}
+              </p>
             </div>
           ) : (isSuperset ? subExercise?.type : currentExercise.type) === 'isometry' ? (
             <div className="text-center w-full max-w-xs relative group cursor-pointer" onClick={() => {
@@ -992,6 +1224,33 @@ const ActiveWorkoutPage: React.FC = () => {
               <p className="text-center text-xs text-brand-grey mt-6 uppercase tracking-wider font-bold">
                  Tap timer to {isometryActive ? 'pause' : 'start'}
               </p>
+              <div className={`mt-4 w-full max-w-sm grid ${isSuperset ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">{isSuperset ? 'Round' : 'Set'}</span>
+                  <span className="text-brand-orange font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
+                </div>
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">{isSuperset ? 'Exercise' : 'Reps'}</span>
+                  <span className="text-brand-orange font-black">
+                    {isSuperset
+                      ? `${currentSubExerciseIdx + 1} / ${currentExercise.subExercises?.length || 1}`
+                      : currentExecutionTargetLabel}
+                  </span>
+                </div>
+                {!isSuperset && (
+                  <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                    <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Rest</span>
+                    <span className="text-brand-orange font-black">{formatTime(currentExercise.rest_seconds || 0)}</span>
+                  </div>
+                )}
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
+                  <span className="text-brand-orange font-black text-xs truncate block">{currentExecutionWeightLabel}</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-2">
+                Upcoming Recovery: {nextRecoveryLabel}
+              </p>
             </div>
           ) : (
             <div className="text-center">
@@ -999,6 +1258,25 @@ const ActiveWorkoutPage: React.FC = () => {
                 {isSuperset && subExercise ? subExercise.reps : currentExercise.reps}
               </span>
               <span className="text-brand-grey font-bold uppercase tracking-widest text-lg">Reps</span>
+              <div className={`mt-4 w-full max-w-sm grid ${isSuperset ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">{isSuperset ? 'Round' : 'Set'}</span>
+                  <span className="text-brand-orange font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
+                </div>
+                {isSuperset && (
+                  <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                    <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Exercise</span>
+                    <span className="text-brand-orange font-black">{currentSubExerciseIdx + 1} / {currentExercise.subExercises?.length || 1}</span>
+                  </div>
+                )}
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
+                  <span className="text-brand-orange font-black text-xs truncate block">{currentExecutionWeightLabel}</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-2">
+                Upcoming Recovery: {nextRecoveryLabel}
+              </p>
             </div>
           )}
         </div>
@@ -1037,9 +1315,11 @@ const ActiveWorkoutPage: React.FC = () => {
              ) : isEmom && isLastEmomRound ? (
                <>FINISH SET</>
              ) : isPyramid && !isLastPyramidStep ? (
-               <>NEXT STEP <ArrowRight size={24} className="ml-2" /></>
+               <>FINISH STEP <ArrowRight size={24} className="ml-2" /></>
              ) : isLastSet ? (
-               <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
+               isSuperset
+                 ? <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
+                 : <>FINISH EXERCISE <ArrowRight size={24} className="ml-2" /></>
              ) : (
                <>FINISH {isSuperset ? 'ROUND' : 'SET'}</>
              )}
