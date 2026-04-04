@@ -9,6 +9,7 @@ interface ExerciseDraft {
   id: string; // Temporaneo per la UI
   type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
+  instruction_note?: string;
   sets: number;
   reps: number;
   duration_seconds: number;
@@ -22,6 +23,7 @@ interface ExerciseDraft {
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
+    instruction_note?: string;
   }[];
   pyramid_steps?: {
     reps: number;
@@ -107,6 +109,7 @@ const NewTrainPage: React.FC = () => {
             set_num,
             rest_secondi,
             peso_kg,
+            note_esercizio,
             tipo,
             reps,
             durata_secondi,
@@ -130,6 +133,13 @@ const NewTrainPage: React.FC = () => {
         const parsed = parseDbExerciseRows(data.esecuzioni || []).map((ex: any) => ({
           ...ex,
           id: crypto.randomUUID(),
+          instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
+          subExercises: Array.isArray(ex.subExercises)
+            ? ex.subExercises.map((sub: any) => ({
+                ...sub,
+                instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
+              }))
+            : ex.subExercises,
         }));
         setExercises(parsed as ExerciseDraft[]);
       }
@@ -144,7 +154,7 @@ const NewTrainPage: React.FC = () => {
   const addExercise = () => {
     setExercises([
       ...exercises,
-      { id: crypto.randomUUID(), type: 'reps', name: '', sets: 3, reps: 10, duration_seconds: 30, rest_seconds: 60, weight_kg: null }
+      { id: crypto.randomUUID(), type: 'reps', name: '', instruction_note: '', sets: 3, reps: 10, duration_seconds: 30, rest_seconds: 60, weight_kg: null }
     ]);
   };
 
@@ -163,8 +173,9 @@ const NewTrainPage: React.FC = () => {
               reps: ex.reps,
               duration_seconds: ex.duration_seconds,
               weight_kg: ex.weight_kg ?? null,
+              instruction_note: ex.instruction_note || '',
             },
-            { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null }
+            { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
           ]
         };
       }
@@ -197,8 +208,8 @@ const NewTrainPage: React.FC = () => {
     setExercises([
       ...exercises,
       {
-        id: crypto.randomUUID(), type: 'emom', name: '', sets: 1, reps: 0, duration_seconds: 0, rest_seconds: 60, weight_kg: null, emom_rounds: 10, emom_round_duration: 60, subExercises: [
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null }
+        id: crypto.randomUUID(), type: 'emom', name: '', instruction_note: '', sets: 1, reps: 0, duration_seconds: 0, rest_seconds: 60, weight_kg: null, emom_rounds: 10, emom_round_duration: 60, subExercises: [
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
         ]
       }
     ]);
@@ -507,7 +518,7 @@ const NewTrainPage: React.FC = () => {
   const addSubExercise = (supersetId: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === supersetId && ex.subExercises) {
-        return { ...ex, subExercises: [...ex.subExercises, { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null }] };
+        return { ...ex, subExercises: [...ex.subExercises, { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }] };
       }
       return ex;
     }));
@@ -524,6 +535,7 @@ const NewTrainPage: React.FC = () => {
             ...ex,
             type: only.type,
             name: only.name,
+            instruction_note: only.instruction_note || '',
             reps: only.type === 'reps' ? only.reps : ex.reps,
             duration_seconds: only.type === 'isometry' ? only.duration_seconds : ex.duration_seconds,
             weight_kg: only.weight_kg ?? null,
@@ -678,6 +690,7 @@ const NewTrainPage: React.FC = () => {
               set_num: Math.max(1, ex.sets || 1),
               rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
               peso_kg: toDbWeight(sub.weight_kg),
+              note_esercizio: String(sub.instruction_note || '').trim() || null,
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
               reps: isIso ? null : Math.max(1, sub.reps || 1),
               durata_secondi: isIso ? Math.max(1, sub.duration_seconds || 1) : null,
@@ -714,6 +727,7 @@ const NewTrainPage: React.FC = () => {
               set_num: Math.max(1, ex.sets || 1),
               rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
               peso_kg: toDbWeight(sub.weight_kg),
+              note_esercizio: String(sub.instruction_note || '').trim() || null,
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
               reps: isIso ? null : Math.max(1, sub.reps || 1),
               durata_secondi: isIso ? Math.max(1, sub.duration_seconds || 1) : null,
@@ -749,6 +763,7 @@ const NewTrainPage: React.FC = () => {
               set_num: 1,
               rest_secondi: step.rest_seconds > 0 ? step.rest_seconds : null,
               peso_kg: toDbWeight(step.weight_kg),
+              note_esercizio: String(ex.instruction_note || '').trim() || null,
               tipo: 'REPS',
               reps: Math.max(1, step.reps || 1),
               durata_secondi: null,
@@ -775,6 +790,7 @@ const NewTrainPage: React.FC = () => {
           set_num: Math.max(1, ex.sets || 1),
           rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
           peso_kg: toDbWeight(ex.weight_kg),
+          note_esercizio: String(ex.instruction_note || '').trim() || null,
           tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
           reps: isIsometry ? null : Math.max(1, ex.reps || 1),
           durata_secondi: isIsometry ? Math.max(1, ex.duration_seconds || 1) : null,
@@ -988,6 +1004,18 @@ const NewTrainPage: React.FC = () => {
                             className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
                           />
                         </div>
+                        <div>
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                            Exercise Note (optional)
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={sub.instruction_note || ''}
+                            onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
+                            placeholder="E.g. fermo in buca 1 secondo"
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-400 outline-none resize-none"
+                          />
+                        </div>
                         {ex.subExercises && ex.subExercises.length > 1 && (
                           <button
                             onClick={() => removeSubExercise(ex.id, sIdx)}
@@ -1063,6 +1091,18 @@ const NewTrainPage: React.FC = () => {
                             className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
                           />
                         </div>
+                        <div>
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                            Exercise Note (optional)
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={sub.instruction_note || ''}
+                            onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
+                            placeholder="E.g. fermo a braccia stese"
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
+                          />
+                        </div>
                         {ex.subExercises && ex.subExercises.length > 1 && (
                           <button
                             onClick={() => removeSubExercise(ex.id, sIdx)}
@@ -1093,6 +1133,19 @@ const NewTrainPage: React.FC = () => {
                       onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
                       className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
                     />
+
+                    <div>
+                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                        Exercise Note (optional)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={ex.instruction_note || ''}
+                        onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
+                        placeholder="E.g. fermo in buca 1 secondo"
+                        className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
+                      />
+                    </div>
 
                     {ex.pyramid_steps?.map((step, stepIdx) => (
                       <div key={stepIdx} className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2 relative pr-8">
@@ -1198,6 +1251,19 @@ const NewTrainPage: React.FC = () => {
                         value={ex.name}
                         onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
                         className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white font-semibold focus:border-brand-orange focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                        Exercise Note (optional)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={ex.instruction_note || ''}
+                        onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
+                        placeholder="E.g. fermo a braccia stese"
+                        className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
                       />
                     </div>
                   </>

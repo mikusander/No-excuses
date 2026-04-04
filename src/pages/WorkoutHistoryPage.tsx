@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, ChevronRight, Dumbbell } from 'lucide-react';
+import { Calendar, ChevronRight, Dumbbell, Loader2, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
@@ -17,6 +17,7 @@ const WorkoutHistoryPage: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [historyItems, setHistoryItems] = useState<WorkoutHistoryItem[]>([]);
+  const [deletingWorkoutId, setDeletingWorkoutId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -74,6 +75,38 @@ const WorkoutHistoryPage: React.FC = () => {
     });
   };
 
+  const deleteHistoryWorkout = async (workoutRunId: string) => {
+    if (!user?.id || deletingWorkoutId != null) return;
+    if (!window.confirm('Delete this completed workout from history?')) return;
+
+    const workoutRunNumericId = Number(workoutRunId);
+    if (Number.isNaN(workoutRunNumericId)) return;
+
+    try {
+      setDeletingWorkoutId(workoutRunId);
+
+      const { error: notesDeleteError } = await supabase
+        .from('note_workout')
+        .delete()
+        .eq('id_workout', workoutRunNumericId);
+      if (notesDeleteError) throw notesDeleteError;
+
+      const { error: workoutDeleteError } = await supabase
+        .from('workout_run')
+        .delete()
+        .eq('id_workout', workoutRunNumericId)
+        .eq('id_utente', user.id);
+      if (workoutDeleteError) throw workoutDeleteError;
+
+      setHistoryItems((prev) => prev.filter((item) => item.id !== workoutRunId));
+    } catch (deleteError) {
+      console.error('Error deleting workout from history:', deleteError);
+      alert('Unable to delete workout history entry.');
+    } finally {
+      setDeletingWorkoutId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
       <header className="p-4 relative flex items-center justify-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
@@ -99,29 +132,48 @@ const WorkoutHistoryPage: React.FC = () => {
           </div>
         ) : (
           historyItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => navigate(`/workout-history/${item.id}`)}
-              aria-label={`Open details for ${item.workoutName}`}
-              className="w-full text-left bg-brand-darkGrey/40 hover:bg-brand-darkGrey border border-brand-grey/20 hover:border-brand-orange/40 rounded-3xl p-5 shadow-xl transition-colors group"
-            >
-              <div className="flex items-start justify-between min-w-0 gap-4">
-                <div className="flex items-start min-w-0">
-                  <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 mt-1">
-                    <Calendar className="text-brand-orange" size={24} />
+            <div key={item.id} className="relative">
+              <button
+                onClick={() => navigate(`/workout-history/${item.id}`)}
+                aria-label={`Open details for ${item.workoutName}`}
+                className="w-full text-left bg-brand-darkGrey/40 hover:bg-brand-darkGrey border border-brand-grey/20 hover:border-brand-orange/40 rounded-3xl p-5 pr-16 shadow-xl transition-colors group"
+                disabled={deletingWorkoutId === item.id}
+              >
+                <div className="flex items-start justify-between min-w-0 gap-4">
+                  <div className="flex items-start min-w-0">
+                    <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 mt-1">
+                      <Calendar className="text-brand-orange" size={24} />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-lg font-bold text-white leading-tight break-words">{item.workoutName}</h2>
+                      <p className="text-sm text-brand-grey mt-1">{formatExecutedAt(item.executedAt)}</p>
+                      <p className="text-xs text-brand-orange/90 mt-2 uppercase tracking-wide font-bold">Tap to view details</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h2 className="text-lg font-bold text-white leading-tight break-words">{item.workoutName}</h2>
-                    <p className="text-sm text-brand-grey mt-1">{formatExecutedAt(item.executedAt)}</p>
-                    <p className="text-xs text-brand-orange/90 mt-2 uppercase tracking-wide font-bold">Tap to view details</p>
-                  </div>
-                </div>
 
-                <div className="shrink-0 mt-1 text-brand-grey/70 group-hover:text-brand-orange transition-colors">
-                  <ChevronRight size={22} />
+                  <div className="shrink-0 mt-1 text-brand-grey/70 group-hover:text-brand-orange transition-colors">
+                    <ChevronRight size={22} />
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void deleteHistoryWorkout(item.id);
+                }}
+                disabled={deletingWorkoutId != null}
+                className="absolute top-4 right-4 p-2 rounded-lg bg-black/30 border border-white/10 text-brand-grey/70 hover:text-red-300 hover:border-red-400/40 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Delete completed workout"
+                aria-label={`Delete ${item.workoutName}`}
+              >
+                {deletingWorkoutId === item.id ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Trash2 size={16} />
+                )}
+              </button>
+            </div>
           ))
         )}
       </main>

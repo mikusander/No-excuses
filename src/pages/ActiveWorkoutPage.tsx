@@ -2,13 +2,14 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface Exercise {
   id: string;
   type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
+  instruction_note?: string | null;
   sets: number;
   reps: number;
   duration_seconds: number;
@@ -24,6 +25,7 @@ interface Exercise {
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
+    instruction_note?: string | null;
   }[];
 }
 
@@ -41,6 +43,17 @@ interface ExerciseNoteEntry {
 interface NoteModalContext {
   key: string;
   name: string;
+}
+
+interface InstructionModalItem {
+  name: string;
+  note: string;
+}
+
+interface InstructionModalContext {
+  exerciseName: string;
+  note: string | null;
+  items: InstructionModalItem[];
 }
 
 interface ExerciseEditDraft {
@@ -86,6 +99,7 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
               reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.reps, 0))),
               duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.duration_seconds, 0))),
               weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
+              instruction_note: String(sub.instruction_note || '').trim() || null,
             };
           })
         : undefined;
@@ -102,6 +116,7 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
         id: String(item.id || `snapshot-${idx}`),
         type,
         name: String(item.name || `Exercise ${idx + 1}`),
+        instruction_note: String(item.instruction_note || '').trim() || null,
         sets: Math.max(1, Math.trunc(toSafeSnapshotNumber(item.sets, 1))),
         reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.reps, 0))),
         duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.duration_seconds, 0))),
@@ -138,17 +153,20 @@ const ActiveWorkoutPage: React.FC = () => {
   // Timer State for Rest
   const [isResting, setIsResting] = useState(false);
   const [restRemaining, setRestRemaining] = useState(0);
+  const [restInitialDuration, setRestInitialDuration] = useState(0);
+  const [restEndsAtMs, setRestEndsAtMs] = useState<number | null>(null);
 
   // Timer State for Isometry
   const [isometryActive, setIsometryActive] = useState(false);
   const [isometryRemaining, setIsometryRemaining] = useState(0);
+  const [isometryEndsAtMs, setIsometryEndsAtMs] = useState<number | null>(null);
 
   // Timer State for EMOM
   const [emomActive, setEmomActive] = useState(false);
   const [emomRoundRemaining, setEmomRoundRemaining] = useState(0);
+  const [emomRoundEndsAtMs, setEmomRoundEndsAtMs] = useState<number | null>(null);
   const [currentEmomRoundIdx, setCurrentEmomRoundIdx] = useState(0);
-  
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const wasRestingRef = useRef(false);
   const wasEmomActiveRef = useRef(false);
   const wasIsometryActiveRef = useRef(false);
@@ -168,6 +186,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [noteModalDraft, setNoteModalDraft] = useState('');
   const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
+  const [isInstructionModalOpen, setIsInstructionModalOpen] = useState(false);
+  const [instructionModalContext, setInstructionModalContext] = useState<InstructionModalContext | null>(null);
   const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
   const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
     sets: '',
@@ -192,6 +212,11 @@ const ActiveWorkoutPage: React.FC = () => {
   const handleVoiceNextExerciseRef = useRef<(() => void) | null>(null);
   const handleVoicePrevExerciseRef = useRef<(() => void) | null>(null);
   const handleVoiceEndWorkoutRef = useRef<(() => void) | null>(null);
+  const handleVoiceStartTimerRef = useRef<(() => void) | null>(null);
+  const handleVoiceStopTimerRef = useRef<(() => void) | null>(null);
+  const handleVoiceResetTimerRef = useRef<(() => void) | null>(null);
+  const timerLongPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerLongPressTriggeredRef = useRef(false);
   const voiceHelpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canPersistExerciseEdits = sourceSchedaId != null;
 
@@ -237,6 +262,257 @@ const ActiveWorkoutPage: React.FC = () => {
     synth.speak(utterance);
   };
 
+  const normalizeDurationSeconds = (value: number) => {
+    const normalized = Math.trunc(Number(value));
+    if (!Number.isFinite(normalized) || normalized < 0) return 0;
+    return normalized;
+  };
+
+  const computeRemainingFromEndsAt = (endsAtMs: number | null) => {
+    if (endsAtMs == null) return 0;
+    return Math.max(0, Math.ceil((endsAtMs - Date.now()) / 1000));
+  };
+
+  const buildRecoveryCue = (totalSeconds: number) => {
+    const safe = Math.max(0, normalizeDurationSeconds(totalSeconds));
+    const minutes = Math.floor(safe / 60);
+    const seconds = safe % 60;
+
+    if (minutes > 0 && seconds > 0) {
+      return `recovery ${minutes} minute${minutes === 1 ? '' : 's'} ${seconds} second${seconds === 1 ? '' : 's'}`;
+    }
+    if (minutes > 0) {
+      return `recovery ${minutes} minute${minutes === 1 ? '' : 's'}`;
+    }
+    return `recovery ${seconds} second${seconds === 1 ? '' : 's'}`;
+  };
+
+  const startRestCountdown = (durationSeconds: number) => {
+    const safe = normalizeDurationSeconds(durationSeconds);
+    setRestInitialDuration(safe);
+    setRestRemaining(safe);
+    setRestEndsAtMs(Date.now() + (safe * 1000));
+    setIsResting(true);
+  };
+
+  const stopRestCountdown = () => {
+    setIsResting(false);
+    setRestEndsAtMs(null);
+  };
+
+  const pauseRestCountdown = () => {
+    setRestRemaining(computeRemainingFromEndsAt(restEndsAtMs));
+    setRestEndsAtMs(null);
+  };
+
+  const resumeRestCountdown = () => {
+    const currentExerciseForRest = workout?.exercises[currentExerciseIdx];
+    const fallbackRestDuration =
+      currentExerciseForRest?.type === 'pyramid' && pendingPyramidAdvance
+        ? Math.max(0, Math.trunc(currentExerciseForRest.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0))
+        : Math.max(0, Math.trunc(currentExerciseForRest?.rest_seconds || 0));
+
+    const nextDuration = restRemaining > 0
+      ? restRemaining
+      : (restInitialDuration > 0 ? restInitialDuration : fallbackRestDuration);
+
+    if (nextDuration <= 0) return;
+    setRestRemaining(nextDuration);
+    setRestEndsAtMs(Date.now() + (nextDuration * 1000));
+    setIsResting(true);
+  };
+
+  const resetRestCountdown = () => {
+    const currentExerciseForRest = workout?.exercises[currentExerciseIdx];
+    const fallbackRestDuration =
+      currentExerciseForRest?.type === 'pyramid' && pendingPyramidAdvance
+        ? Math.max(0, Math.trunc(currentExerciseForRest.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0))
+        : Math.max(0, Math.trunc(currentExerciseForRest?.rest_seconds || 0));
+
+    const targetDuration = restInitialDuration > 0 ? restInitialDuration : fallbackRestDuration;
+    if (targetDuration <= 0) return;
+    startRestCountdown(targetDuration);
+  };
+
+  const handleRestTimerTap = () => {
+    if (restEndsAtMs != null) {
+      pauseRestCountdown();
+      return;
+    }
+    resumeRestCountdown();
+  };
+
+  const startEmomCountdown = (durationSeconds: number) => {
+    const safe = Math.max(1, normalizeDurationSeconds(durationSeconds));
+    setEmomRoundRemaining(safe);
+    setEmomRoundEndsAtMs(Date.now() + (safe * 1000));
+    setEmomActive(true);
+  };
+
+  const pauseEmomCountdown = () => {
+    setEmomRoundRemaining(computeRemainingFromEndsAt(emomRoundEndsAtMs));
+    setEmomRoundEndsAtMs(null);
+    setEmomActive(false);
+  };
+
+  const stopEmomCountdown = () => {
+    setEmomRoundEndsAtMs(null);
+    setEmomActive(false);
+  };
+
+  const setEmomRoundRemainingWithSync = (nextSeconds: number) => {
+    const safe = Math.max(0, normalizeDurationSeconds(nextSeconds));
+    setEmomRoundRemaining(safe);
+    if (emomActive) {
+      if (safe > 0) {
+        setEmomRoundEndsAtMs(Date.now() + (safe * 1000));
+      } else {
+        setEmomRoundEndsAtMs(null);
+        setEmomActive(false);
+      }
+    }
+  };
+
+  const resetEmomCountdown = () => {
+    const currentExerciseForEmom = workout?.exercises[currentExerciseIdx];
+    const defaultDuration = currentExerciseForEmom?.type === 'emom'
+      ? (currentExerciseForEmom.emom_round_duration || 60)
+      : 60;
+    setEmomRoundRemainingWithSync(defaultDuration);
+  };
+
+  const startIsometryCountdown = (durationSeconds: number) => {
+    const safe = Math.max(1, normalizeDurationSeconds(durationSeconds));
+    setIsometryRemaining(safe);
+    setIsometryEndsAtMs(Date.now() + (safe * 1000));
+    setIsometryActive(true);
+  };
+
+  const pauseIsometryCountdown = () => {
+    setIsometryRemaining(computeRemainingFromEndsAt(isometryEndsAtMs));
+    setIsometryEndsAtMs(null);
+    setIsometryActive(false);
+  };
+
+  const stopIsometryCountdown = () => {
+    setIsometryEndsAtMs(null);
+    setIsometryActive(false);
+  };
+
+  const setIsometryRemainingWithSync = (nextSeconds: number) => {
+    const safe = Math.max(0, normalizeDurationSeconds(nextSeconds));
+    setIsometryRemaining(safe);
+    if (isometryActive) {
+      if (safe > 0) {
+        setIsometryEndsAtMs(Date.now() + (safe * 1000));
+      } else {
+        setIsometryEndsAtMs(null);
+        setIsometryActive(false);
+      }
+    }
+  };
+
+  const resetIsometryCountdown = () => {
+    const currentExerciseForIso = workout?.exercises[currentExerciseIdx];
+    if (!currentExerciseForIso) return;
+
+    let targetDuration = 0;
+    if (currentExerciseForIso.type === 'isometry') {
+      targetDuration = Math.max(1, normalizeDurationSeconds(currentExerciseForIso.duration_seconds));
+    } else if (currentExerciseForIso.type === 'superset') {
+      const currentSub = currentExerciseForIso.subExercises?.[currentSubExerciseIdx];
+      if (currentSub?.type === 'isometry') {
+        targetDuration = Math.max(1, normalizeDurationSeconds(currentSub.duration_seconds));
+      }
+    }
+
+    if (targetDuration <= 0) return;
+    setIsometryRemainingWithSync(targetDuration);
+  };
+
+  const resetCurrentTimerFromContext = () => {
+    if (isResting) {
+      resetRestCountdown();
+      return;
+    }
+
+    const currentExerciseForReset = workout?.exercises[currentExerciseIdx];
+    if (!currentExerciseForReset) return;
+
+    if (currentExerciseForReset.type === 'emom') {
+      resetEmomCountdown();
+      return;
+    }
+
+    if (
+      currentExerciseForReset.type === 'isometry' ||
+      (currentExerciseForReset.type === 'superset' && currentExerciseForReset.subExercises?.[currentSubExerciseIdx]?.type === 'isometry')
+    ) {
+      resetIsometryCountdown();
+    }
+  };
+
+  const handleEmomTimerTap = () => {
+    const currentExerciseForEmom = workout?.exercises[currentExerciseIdx];
+    if (!currentExerciseForEmom || currentExerciseForEmom.type !== 'emom') return;
+
+    if (emomActive) {
+      pauseEmomCountdown();
+      return;
+    }
+
+    const emomRoundDuration = currentExerciseForEmom.emom_round_duration || 60;
+    const nextEmomDuration = emomRoundRemaining > 0 ? emomRoundRemaining : emomRoundDuration;
+    startEmomCountdown(nextEmomDuration);
+  };
+
+  const handleIsometryTimerTap = () => {
+    if (isometryActive) {
+      pauseIsometryCountdown();
+      return;
+    }
+
+    const currentExerciseForIso = workout?.exercises[currentExerciseIdx];
+    if (!currentExerciseForIso) return;
+    const currentSub = currentExerciseForIso.type === 'superset'
+      ? currentExerciseForIso.subExercises?.[currentSubExerciseIdx]
+      : null;
+    const fallbackTarget = getTargetIsometry(currentExerciseForIso, currentSub);
+    const nextIsometryDuration = isometryRemaining > 0 ? isometryRemaining : fallbackTarget;
+    if (nextIsometryDuration > 0) {
+      startIsometryCountdown(nextIsometryDuration);
+    }
+  };
+
+  const clearTimerLongPressState = () => {
+    if (timerLongPressTimeoutRef.current) {
+      clearTimeout(timerLongPressTimeoutRef.current);
+      timerLongPressTimeoutRef.current = null;
+    }
+    timerLongPressTriggeredRef.current = false;
+  };
+
+  const startTimerLongPress = (onLongPress: () => void) => {
+    clearTimerLongPressState();
+    timerLongPressTimeoutRef.current = setTimeout(() => {
+      timerLongPressTimeoutRef.current = null;
+      timerLongPressTriggeredRef.current = true;
+      onLongPress();
+    }, 700);
+  };
+
+  const finishTimerLongPress = (onShortPress?: () => void) => {
+    const wasLongPress = timerLongPressTriggeredRef.current;
+    if (timerLongPressTimeoutRef.current) {
+      clearTimeout(timerLongPressTimeoutRef.current);
+      timerLongPressTimeoutRef.current = null;
+    }
+    timerLongPressTriggeredRef.current = false;
+    if (!wasLongPress && onShortPress) {
+      onShortPress();
+    }
+  };
+
   useEffect(() => {
     const saved = localStorage.getItem(VOICE_ASSIST_KEY);
     setVoiceAssistanceEnabled(saved !== 'false');
@@ -270,6 +546,7 @@ const ActiveWorkoutPage: React.FC = () => {
         clearTimeout(voiceHelpTimeoutRef.current);
         voiceHelpTimeoutRef.current = null;
       }
+      clearTimerLongPressState();
     };
   }, []);
 
@@ -280,14 +557,13 @@ const ActiveWorkoutPage: React.FC = () => {
       if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
           speakCue('next round');
           setCurrentEmomRoundIdx(prev => prev + 1);
-          setEmomRoundRemaining(ex.emom_round_duration || 60);
+          setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
       } else {
-        setEmomActive(false);
+        stopEmomCountdown();
         if (currentSetIdx === ex.sets - 1) {
           handleNextExercise();
         } else {
-          setRestRemaining(ex.rest_seconds);
-          setIsResting(true);
+          startRestCountdown(ex.rest_seconds);
         }
       }
     }
@@ -302,7 +578,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (currentEx.type === 'emom') {
         if (currentEmomRoundIdx > 0) {
           setCurrentEmomRoundIdx(prev => prev - 1);
-          setEmomRoundRemaining(currentEx.emom_round_duration || 60);
+          setEmomRoundRemainingWithSync(currentEx.emom_round_duration || 60);
         } else {
           handlePrevExercise();
         }
@@ -319,8 +595,8 @@ const ActiveWorkoutPage: React.FC = () => {
     }
 
     if (isResting) {
-      setIsResting(false);
-      setIsometryRemaining(getTargetIsometry(currentEx, currentEx.subExercises?.[currentSubExerciseIdx]));
+      stopRestCountdown();
+      setIsometryRemainingWithSync(getTargetIsometry(currentEx, currentEx.subExercises?.[currentSubExerciseIdx]));
       return;
     }
     
@@ -328,7 +604,7 @@ const ActiveWorkoutPage: React.FC = () => {
       const prevSubIdx = currentSubExerciseIdx - 1;
       setCurrentSubExerciseIdx(prevSubIdx);
       const prevSubEx = currentEx.subExercises![prevSubIdx];
-      setIsometryRemaining(prevSubEx.type === 'isometry' ? prevSubEx.duration_seconds : 0);
+      setIsometryRemainingWithSync(prevSubEx.type === 'isometry' ? prevSubEx.duration_seconds : 0);
       return;
     }
 
@@ -340,9 +616,9 @@ const ActiveWorkoutPage: React.FC = () => {
         const lastSubIdx = ex.subExercises.length - 1;
         setCurrentSubExerciseIdx(lastSubIdx);
         const lastSubEx = ex.subExercises[lastSubIdx];
-        setIsometryRemaining(lastSubEx.type === 'isometry' ? lastSubEx.duration_seconds : 0);
+        setIsometryRemainingWithSync(lastSubEx.type === 'isometry' ? lastSubEx.duration_seconds : 0);
       } else if (ex) {
-        setIsometryRemaining(getTargetIsometry(ex, null));
+        setIsometryRemainingWithSync(getTargetIsometry(ex, null));
       }
       return;
     }
@@ -376,6 +652,35 @@ const ActiveWorkoutPage: React.FC = () => {
     void completeWorkoutNow();
   };
 
+  handleVoiceStartTimerRef.current = () => {
+    const currentVoiceExercise = workout?.exercises[currentExerciseIdx];
+    if (currentVoiceExercise?.type === 'emom') {
+      const nextEmomDuration = emomRoundRemaining > 0
+        ? emomRoundRemaining
+        : (currentVoiceExercise.emom_round_duration || 60);
+      startEmomCountdown(nextEmomDuration);
+      return;
+    }
+
+    if (!currentVoiceExercise) return;
+
+    const nextIsoDuration = isometryRemaining > 0
+      ? isometryRemaining
+      : getTargetIsometry(currentVoiceExercise, currentVoiceExercise.subExercises?.[currentSubExerciseIdx]);
+    if (nextIsoDuration > 0) {
+      startIsometryCountdown(nextIsoDuration);
+    }
+  };
+
+  handleVoiceStopTimerRef.current = () => {
+    if (workout?.exercises[currentExerciseIdx]?.type === 'emom') pauseEmomCountdown();
+    else pauseIsometryCountdown();
+  };
+
+  handleVoiceResetTimerRef.current = () => {
+    resetCurrentTimerFromContext();
+  };
+
   // Voice Recognition logic
   useEffect(() => {
     let recognition: any = null;
@@ -394,6 +699,7 @@ const ActiveWorkoutPage: React.FC = () => {
           const isNextExerciseCommand = transcript.includes('next exercise') || transcript.includes('prossimo esercizio');
           const isPrevExerciseCommand = transcript.includes('previous exercise') || transcript.includes('esercizio precedente');
           const isEndWorkoutCommand = transcript.includes('end workout') || transcript.includes('termina workout');
+          const isResetTimerCommand = transcript.includes('reset') || transcript.includes('resetta');
           
           if (isNextExerciseCommand) {
             setVoiceStatus('success');
@@ -413,16 +719,24 @@ const ActiveWorkoutPage: React.FC = () => {
             if (handleVoiceEndWorkoutRef.current) {
               handleVoiceEndWorkoutRef.current();
             }
+          } else if (isResetTimerCommand) {
+            setVoiceStatus('success');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
+            if (handleVoiceResetTimerRef.current) {
+              handleVoiceResetTimerRef.current();
+            }
           } else if (transcript.includes('vai') || transcript.includes('go')) {
             setVoiceStatus('success');
             setTimeout(() => setVoiceStatus('idle'), 1500);
-            if (workout?.exercises[currentExerciseIdx]?.type === 'emom') setEmomActive(true);
-            else setIsometryActive(true);
+            if (handleVoiceStartTimerRef.current) {
+              handleVoiceStartTimerRef.current();
+            }
           } else if (transcript.includes('stop') || transcript.includes('fermo')) {
              setVoiceStatus('success');
              setTimeout(() => setVoiceStatus('idle'), 1500);
-             if (workout?.exercises[currentExerciseIdx]?.type === 'emom') setEmomActive(false);
-             else setIsometryActive(false);
+             if (handleVoiceStopTimerRef.current) {
+               handleVoiceStopTimerRef.current();
+             }
           } else if (transcript.includes('next') || transcript.includes('avanti')) {
             setVoiceStatus('success');
             setTimeout(() => setVoiceStatus('idle'), 1500);
@@ -494,10 +808,19 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentPyramidStepIdx(0);
       setPendingPyramidAdvance(false);
       setIsResting(false);
+      setRestRemaining(0);
+      setRestInitialDuration(0);
+      setRestEndsAtMs(null);
+      setIsometryActive(false);
+      setIsometryEndsAtMs(null);
+      setEmomActive(false);
+      setEmomRoundEndsAtMs(null);
       setExerciseNotesByKey({});
       setIsNoteModalOpen(false);
       setNoteModalDraft('');
       setNoteModalContext(null);
+      setIsInstructionModalOpen(false);
+      setInstructionModalContext(null);
       setIsEditExerciseModalOpen(false);
       setExerciseEditError(null);
       setIsSavingExerciseEdit(false);
@@ -509,11 +832,14 @@ const ActiveWorkoutPage: React.FC = () => {
       const firstEx = nextWorkout.exercises[0];
       if (firstEx) {
         if (firstEx.type === 'isometry') {
-          setIsometryRemaining(firstEx.duration_seconds);
+          setIsometryRemainingWithSync(firstEx.duration_seconds);
         } else if (firstEx.type === 'superset' && firstEx.subExercises?.[0]?.type === 'isometry') {
-          setIsometryRemaining(firstEx.subExercises[0].duration_seconds);
+          setIsometryRemainingWithSync(firstEx.subExercises[0].duration_seconds);
         } else if (firstEx.type === 'emom') {
-          setEmomRoundRemaining(firstEx.emom_round_duration || 60);
+          setEmomRoundRemainingWithSync(firstEx.emom_round_duration || 60);
+        } else {
+          setIsometryRemainingWithSync(0);
+          setEmomRoundRemaining(0);
         }
       }
     };
@@ -530,6 +856,7 @@ const ActiveWorkoutPage: React.FC = () => {
             set_num,
             rest_secondi,
             peso_kg,
+            note_esercizio,
             tipo,
             reps,
             durata_secondi,
@@ -748,20 +1075,40 @@ const ActiveWorkoutPage: React.FC = () => {
 
   // Timer logic for REST
   useEffect(() => {
-    if (isResting && restRemaining > 0) {
-      timerRef.current = setInterval(() => {
-        setRestRemaining((prev) => (prev > 0 ? prev - 1 : prev));
-      }, 1000);
-    } else if (isResting && restRemaining <= 0) {
-      // End of rest
-      setIsResting(false);
-      finishRestAndNextSet();
-    }
-    
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+    if (!isResting || restEndsAtMs == null) return;
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const syncRestCountdown = () => {
+      const nextRemaining = computeRemainingFromEndsAt(restEndsAtMs);
+      setRestRemaining((prev) => (prev === nextRemaining ? prev : nextRemaining));
+
+      if (nextRemaining <= 0) {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        setRestEndsAtMs(null);
+        setIsResting(false);
+        finishRestAndNextSet();
+      }
     };
-  }, [isResting, restRemaining]);
+
+    const handleWakeSync = () => {
+      if (document.visibilityState === 'hidden') return;
+      syncRestCountdown();
+    };
+
+    intervalId = setInterval(syncRestCountdown, 250);
+    syncRestCountdown();
+    document.addEventListener('visibilitychange', handleWakeSync);
+    window.addEventListener('focus', handleWakeSync);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleWakeSync);
+      window.removeEventListener('focus', handleWakeSync);
+    };
+  }, [isResting, restEndsAtMs]);
 
   useEffect(() => {
     if (!isResting || restRemaining > 3 || restRemaining <= 0) {
@@ -774,41 +1121,65 @@ const ActiveWorkoutPage: React.FC = () => {
   }, [isResting, restRemaining]);
 
   useEffect(() => {
-    if (!wasRestingRef.current && isResting && restRemaining > 0) {
-      speakCue('start');
+    const isRestTimerRunning = isResting && restEndsAtMs != null && restRemaining > 0;
+    if (!wasRestingRef.current && isRestTimerRunning) {
+      speakCue(buildRecoveryCue(restRemaining));
     }
-    wasRestingRef.current = isResting;
-  }, [isResting, restRemaining]);
+    wasRestingRef.current = isRestTimerRunning;
+  }, [isResting, restEndsAtMs, restRemaining]);
 
   // Timer logic for EMOM
   useEffect(() => {
-    if (emomActive && emomRoundRemaining > 0) {
-      timerRef.current = setInterval(() => {
-        setEmomRoundRemaining((prev) => (prev > 0 ? prev - 1 : prev));
-      }, 1000);
-    } else if (emomActive && emomRoundRemaining <= 0) {
-      const ex = workout?.exercises[currentExerciseIdx];
-      if (ex && ex.type === 'emom') {
+    if (!emomActive || emomRoundEndsAtMs == null) return;
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const syncEmomCountdown = () => {
+      const nextRemaining = computeRemainingFromEndsAt(emomRoundEndsAtMs);
+      setEmomRoundRemaining((prev) => (prev === nextRemaining ? prev : nextRemaining));
+
+      if (nextRemaining <= 0) {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+
+        const ex = workout?.exercises[currentExerciseIdx];
+        if (ex && ex.type === 'emom') {
           if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
             speakCue('next round');
             setCurrentEmomRoundIdx(prev => prev + 1);
-            setEmomRoundRemaining(ex.emom_round_duration || 60);
+            setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
           } else {
-            setEmomActive(false);
-            const isLSet = currentSetIdx === ex.sets - 1;
-            if (isLSet) {
-               handleNextExercise();
+            stopEmomCountdown();
+            const isLastSetInEmomExercise = currentSetIdx === ex.sets - 1;
+            if (isLastSetInEmomExercise) {
+              handleNextExercise();
             } else {
-               setRestRemaining(ex.rest_seconds);
-               setIsResting(true);
+              startRestCountdown(ex.rest_seconds);
             }
           }
+        } else {
+          stopEmomCountdown();
+        }
       }
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [emomActive, emomRoundRemaining, currentSetIdx, currentEmomRoundIdx, workout, currentExerciseIdx]);
+
+    const handleWakeSync = () => {
+      if (document.visibilityState === 'hidden') return;
+      syncEmomCountdown();
+    };
+
+    intervalId = setInterval(syncEmomCountdown, 250);
+    syncEmomCountdown();
+    document.addEventListener('visibilitychange', handleWakeSync);
+    window.addEventListener('focus', handleWakeSync);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleWakeSync);
+      window.removeEventListener('focus', handleWakeSync);
+    };
+  }, [emomActive, emomRoundEndsAtMs, currentSetIdx, currentEmomRoundIdx, workout, currentExerciseIdx]);
 
   useEffect(() => {
     if (!emomActive || emomRoundRemaining > 3 || emomRoundRemaining <= 0) {
@@ -829,19 +1200,39 @@ const ActiveWorkoutPage: React.FC = () => {
 
   // Timer logic for ISOMETRY
   useEffect(() => {
-    if (isometryActive && isometryRemaining > 0) {
-      timerRef.current = setInterval(() => {
-        setIsometryRemaining((prev) => (prev > 0 ? prev - 1 : prev));
-      }, 1000);
-    } else if (isometryActive && isometryRemaining <= 0) {
-      setIsometryActive(false);
-      // Optional: Auto-complete set when isometry finishes, or wait for user to click "FINISH SET"
-    }
+    if (!isometryActive || isometryEndsAtMs == null) return;
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const syncIsometryCountdown = () => {
+      const nextRemaining = computeRemainingFromEndsAt(isometryEndsAtMs);
+      setIsometryRemaining((prev) => (prev === nextRemaining ? prev : nextRemaining));
+
+      if (nextRemaining <= 0) {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        setIsometryEndsAtMs(null);
+        setIsometryActive(false);
+      }
+    };
+
+    const handleWakeSync = () => {
+      if (document.visibilityState === 'hidden') return;
+      syncIsometryCountdown();
+    };
+
+    intervalId = setInterval(syncIsometryCountdown, 250);
+    syncIsometryCountdown();
+    document.addEventListener('visibilitychange', handleWakeSync);
+    window.addEventListener('focus', handleWakeSync);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleWakeSync);
+      window.removeEventListener('focus', handleWakeSync);
     };
-  }, [isometryActive, isometryRemaining]);
+  }, [isometryActive, isometryEndsAtMs]);
 
   useEffect(() => {
     if (!isometryActive || isometryRemaining > 3 || isometryRemaining <= 0) {
@@ -907,7 +1298,57 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const currentExerciseNoteContext = getCurrentExerciseNoteContext();
-  const hasCurrentExerciseNote = Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim());
+  const hasCurrentWorkoutNote = Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim());
+
+  const getCurrentInstructionContext = (): InstructionModalContext | null => {
+    if (isSuperset && subExercise) {
+      const subName = String(subExercise.name || '').trim() || `Superset Exercise ${currentSubExerciseIdx + 1}`;
+      const subNote = String(subExercise.instruction_note || '').trim();
+
+      if (!subNote) return null;
+      return {
+        exerciseName: subName,
+        note: subNote,
+        items: [],
+      };
+    }
+
+    if (isEmom) {
+      const emomName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
+      const rawEmomNote = String(currentExercise.instruction_note || '').trim();
+      const emomItems = (currentExercise.subExercises || [])
+        .map((item, idx) => {
+          const note = String(item.instruction_note || '').trim();
+          if (!note) return null;
+          return {
+            name: String(item.name || '').trim() || `Exercise ${idx + 1}`,
+            note,
+          };
+        })
+        .filter((item): item is InstructionModalItem => item !== null);
+
+      const emomNote = emomItems.length === 0 && rawEmomNote ? rawEmomNote : null;
+
+      if (!emomNote && emomItems.length === 0) return null;
+      return {
+        exerciseName: emomName,
+        note: emomNote,
+        items: emomItems,
+      };
+    }
+
+    const baseNote = String(currentExercise.instruction_note || '').trim();
+    if (!baseNote) return null;
+
+    return {
+      exerciseName: String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`,
+      note: baseNote,
+      items: [],
+    };
+  };
+
+  const currentInstructionContext = getCurrentInstructionContext();
+  const hasCurrentInstructionNote = currentInstructionContext !== null;
 
   const formatWeightDraft = (value?: number | null) => {
     const n = Number(value);
@@ -1008,6 +1449,17 @@ const ActiveWorkoutPage: React.FC = () => {
     setNoteModalContext(null);
   };
 
+  const openCurrentInstructionModal = () => {
+    if (!currentInstructionContext) return;
+    setInstructionModalContext(currentInstructionContext);
+    setIsInstructionModalOpen(true);
+  };
+
+  const closeCurrentInstructionModal = () => {
+    setIsInstructionModalOpen(false);
+    setInstructionModalContext(null);
+  };
+
   const saveCurrentExerciseNote = () => {
     if (!noteModalContext) return;
 
@@ -1091,7 +1543,7 @@ const ActiveWorkoutPage: React.FC = () => {
           return { ...prev, exercises };
         });
 
-        setEmomRoundRemaining((prev) => Math.min(prev, nextRoundDuration));
+        setEmomRoundRemainingWithSync(Math.min(emomRoundRemaining, nextRoundDuration));
       } else if (currentExercise.type === 'superset') {
         const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Rounds');
         const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
@@ -1175,7 +1627,7 @@ const ActiveWorkoutPage: React.FC = () => {
         });
 
         if (currentSub.type === 'isometry') {
-          setIsometryRemaining((prev) => Math.min(prev, nextSubDuration));
+          setIsometryRemainingWithSync(Math.min(isometryRemaining, nextSubDuration));
         }
       } else if (currentExercise.type === 'pyramid') {
         const nextStepReps = parseStrictInt(exerciseEditDraft.currentStepReps, 'Step reps');
@@ -1254,7 +1706,7 @@ const ActiveWorkoutPage: React.FC = () => {
         });
 
         if (isIso) {
-          setIsometryRemaining((prev) => Math.min(prev, nextDuration));
+          setIsometryRemainingWithSync(Math.min(isometryRemaining, nextDuration));
         }
       }
 
@@ -1361,11 +1813,12 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentEmomRoundIdx(0);
       setCurrentPyramidStepIdx(0);
       setPendingPyramidAdvance(false);
-      setEmomActive(false);
-      setIsResting(false);
-      setIsometryActive(false);
-      setIsometryRemaining(getTargetIsometry(nextEx, nextEx.subExercises?.[0]));
-      if (nextEx.type === 'emom') setEmomRoundRemaining(nextEx.emom_round_duration || 60);
+      stopEmomCountdown();
+      stopRestCountdown();
+      stopIsometryCountdown();
+      setIsometryRemainingWithSync(getTargetIsometry(nextEx, nextEx.subExercises?.[0]));
+      if (nextEx.type === 'emom') setEmomRoundRemainingWithSync(nextEx.emom_round_duration || 60);
+      else setEmomRoundRemaining(0);
     } else {
       if (window.confirm("Workout completed! Do you want to return to home?")) {
         void completeWorkoutNow();
@@ -1385,11 +1838,12 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentEmomRoundIdx(0);
       setCurrentPyramidStepIdx(0);
       setPendingPyramidAdvance(false);
-      setEmomActive(false);
-      setIsResting(false);
-      setIsometryActive(false);
-      setIsometryRemaining(getTargetIsometry(prevEx, prevEx.subExercises?.[0]));
-      if (prevEx.type === 'emom') setEmomRoundRemaining(prevEx.emom_round_duration || 60);
+      stopEmomCountdown();
+      stopRestCountdown();
+      stopIsometryCountdown();
+      setIsometryRemainingWithSync(getTargetIsometry(prevEx, prevEx.subExercises?.[0]));
+      if (prevEx.type === 'emom') setEmomRoundRemainingWithSync(prevEx.emom_round_duration || 60);
+      else setEmomRoundRemaining(0);
     }
   };
 
@@ -1399,11 +1853,11 @@ const ActiveWorkoutPage: React.FC = () => {
         if (currentEmomRoundIdx < (currentExercise.emom_rounds || 1) - 1) {
           speakCue('next round');
           setCurrentEmomRoundIdx(prev => prev + 1);
-          setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
+          setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
         } else {
-          setEmomActive(false);
+          stopEmomCountdown();
           if (isLastSet) handleNextExercise();
-          else { setRestRemaining(currentExercise.rest_seconds); setIsResting(true); }
+          else { startRestCountdown(currentExercise.rest_seconds); }
         }
         return;
       }
@@ -1419,8 +1873,7 @@ const ActiveWorkoutPage: React.FC = () => {
         const stepRest = Math.max(0, currentStep?.rest_seconds || 0);
         if (stepRest > 0) {
           setPendingPyramidAdvance(true);
-          setRestRemaining(stepRest);
-          setIsResting(true);
+          startRestCountdown(stepRest);
         } else {
           setCurrentPyramidStepIdx(prev => prev + 1);
         }
@@ -1432,10 +1885,10 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1) {
        const nextSubIdx = currentSubExerciseIdx + 1;
        setCurrentSubExerciseIdx(nextSubIdx);
-       setIsometryActive(false);
+       stopIsometryCountdown();
        const nextSubEx = currentExercise.subExercises[nextSubIdx];
        if (nextSubEx.type === 'isometry') {
-          setIsometryRemaining(nextSubEx.duration_seconds);
+         setIsometryRemainingWithSync(nextSubEx.duration_seconds);
        }
        return;
     }
@@ -1444,14 +1897,13 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isLastSet) {
       handleNextExercise();
     } else {
-      setIsometryActive(false);
-      setRestRemaining(currentExercise.rest_seconds);
-      setIsResting(true);
+      stopIsometryCountdown();
+      startRestCountdown(currentExercise.rest_seconds);
     }
   };
 
   const finishRestAndNextSet = () => {
-    setIsResting(false);
+    stopRestCountdown();
 
     if (currentExercise.type === 'pyramid' && pendingPyramidAdvance) {
       setPendingPyramidAdvance(false);
@@ -1465,14 +1917,15 @@ const ActiveWorkoutPage: React.FC = () => {
     setCurrentSubExerciseIdx(0);
     if (currentExercise.type === 'emom') {
       setCurrentEmomRoundIdx(0);
-      setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
+      setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
     }
     
     // Reset isometry timer if needed
-    setIsometryRemaining(getTargetIsometry(currentExercise, currentExercise.subExercises?.[0]));
+    setIsometryRemainingWithSync(getTargetIsometry(currentExercise, currentExercise.subExercises?.[0]));
   };
 
   const skipRest = () => {
+    stopRestCountdown();
     setRestRemaining(0);
     finishRestAndNextSet();
   };
@@ -1490,10 +1943,9 @@ const ActiveWorkoutPage: React.FC = () => {
     workoutCompletionHandledRef.current = true;
 
     speakCue('workout complete');
-    setEmomActive(false);
-    setIsometryActive(false);
-    setIsResting(false);
-    if (timerRef.current) clearInterval(timerRef.current);
+    stopEmomCountdown();
+    stopIsometryCountdown();
+    stopRestCountdown();
 
     const workoutRunId = await saveWorkoutRun();
     if (workoutRunId) {
@@ -1518,17 +1970,16 @@ const ActiveWorkoutPage: React.FC = () => {
       if (!isLastEmomRound) {
         speakCue('next round');
         setCurrentEmomRoundIdx(prev => prev + 1);
-        setEmomRoundRemaining(currentExercise.emom_round_duration || 60);
+        setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
         return;
       }
 
       // FINISH SET must close the current set even if timer is still running.
-      setEmomActive(false);
+      stopEmomCountdown();
       if (isLastSet) {
         handleNextExercise();
       } else {
-        setRestRemaining(currentExercise.rest_seconds);
-        setIsResting(true);
+        startRestCountdown(currentExercise.rest_seconds);
       }
       return;
     }
@@ -1544,6 +1995,7 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="space-y-1 text-xs leading-relaxed text-white/90">
           <p><span className="font-bold text-brand-orange">go / vai</span> - start timer</p>
           <p><span className="font-bold text-brand-orange">stop / fermo</span> - pause timer</p>
+          <p><span className="font-bold text-brand-orange">reset / resetta</span> - reset active timer</p>
           <p><span className="font-bold text-brand-orange">next / avanti</span> - next set or round</p>
           <p><span className="font-bold text-brand-orange">back / indietro</span> - previous step</p>
           <p><span className="font-bold text-brand-orange">next exercise / prossimo esercizio</span> - jump to next exercise</p>
@@ -1578,11 +2030,17 @@ const ActiveWorkoutPage: React.FC = () => {
           </div>
         </div>
         
-        <div className="w-64 h-64 rounded-full border-8 border-brand-darkGrey flex flex-col justify-center items-center shadow-[0_0_50px_rgba(255,107,0,0.1)] mb-12 relative overflow-hidden">
+        <div
+          className="w-64 h-64 rounded-full border-8 border-brand-darkGrey flex flex-col justify-center items-center shadow-[0_0_50px_rgba(255,107,0,0.1)] mb-12 relative overflow-hidden cursor-pointer"
+          onPointerDown={() => startTimerLongPress(resetRestCountdown)}
+          onPointerUp={() => finishTimerLongPress(handleRestTimerTap)}
+          onPointerCancel={clearTimerLongPressState}
+          onPointerLeave={clearTimerLongPressState}
+        >
            {/* Animated Fill (approximate) */}
            <div 
              className="absolute bottom-0 left-0 right-0 bg-brand-orange/20 transition-all duration-1000 ease-linear"
-             style={{ height: `${(restRemaining / currentExercise.rest_seconds) * 100}%` }}
+             style={{ height: `${(restRemaining / Math.max(1, restInitialDuration || currentExercise.rest_seconds || 1)) * 100}%` }}
            />
            
            <Timer size={32} className="text-brand-orange mb-2" />
@@ -1591,6 +2049,10 @@ const ActiveWorkoutPage: React.FC = () => {
            </span>
            <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2 z-10">REST</span>
         </div>
+
+        <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold -mt-8 mb-8 text-center">
+          Tap to {restEndsAtMs != null ? 'pause' : 'start'} / hold to reset / say 'reset'
+        </p>
 
         <div className="text-center space-y-2 mb-12">
           <p className="text-white text-xl font-bold">{currentExercise.name}</p>
@@ -1704,7 +2166,10 @@ const ActiveWorkoutPage: React.FC = () => {
           {currentExercise.type === 'emom' ? (
             <div className="text-center w-full max-w-sm flex flex-col items-center">
                   <div className={`relative group w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${emomActive ? 'border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]' : 'border-brand-darkGrey'}`}
-                   onClick={() => setEmomActive(!emomActive)}>
+                       onPointerDown={() => startTimerLongPress(resetEmomCountdown)}
+                       onPointerUp={() => finishTimerLongPress(handleEmomTimerTap)}
+                       onPointerCancel={clearTimerLongPressState}
+                       onPointerLeave={clearTimerLongPressState}>
                  <span className={`text-[60px] font-mono tracking-tighter ${emomActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
                    {emomRoundRemaining}
                  </span>
@@ -1714,7 +2179,7 @@ const ActiveWorkoutPage: React.FC = () => {
                  </div>
               </div>
               <p className="text-center text-[10px] text-brand-grey mt-2 uppercase tracking-wider font-bold mb-4">
-                Tap timer or say '{emomActive ? 'stop' : 'go'}'
+                Tap to {emomActive ? 'pause' : 'start'} / hold to reset / say 'reset'
               </p>
 
               <div className="w-full max-w-xs mb-4 grid grid-cols-2 gap-2">
@@ -1774,12 +2239,13 @@ const ActiveWorkoutPage: React.FC = () => {
               </p>
             </div>
           ) : (isSuperset ? subExercise?.type : currentExercise.type) === 'isometry' ? (
-            <div className="text-center w-full max-w-xs relative group cursor-pointer" onClick={() => {
-              if (isometryRemaining <= 0) {
-                 setIsometryRemaining(getTargetIsometry(currentExercise, subExercise));
-              }
-              setIsometryActive(!isometryActive);
-            }}>
+            <div
+              className="text-center w-full max-w-xs relative group cursor-pointer"
+              onPointerDown={() => startTimerLongPress(resetIsometryCountdown)}
+              onPointerUp={() => finishTimerLongPress(handleIsometryTimerTap)}
+              onPointerCancel={clearTimerLongPressState}
+              onPointerLeave={clearTimerLongPressState}
+            >
               <div className={`w-64 h-64 mx-auto rounded-full border-[12px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl ${isometryActive ? 'border-brand-orange shadow-[0_0_40px_rgba(255,107,0,0.3)]' : 'border-brand-darkGrey'}`}>
                  <span className={`text-[80px] font-mono tracking-tighter ${isometryActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
                    {isometryRemaining}
@@ -1791,7 +2257,7 @@ const ActiveWorkoutPage: React.FC = () => {
                  </div>
               </div>
               <p className="text-center text-xs text-brand-grey mt-6 uppercase tracking-wider font-bold">
-                 Tap timer to {isometryActive ? 'pause' : 'start'}
+                  Tap to {isometryActive ? 'pause' : 'start'} / hold to reset / say 'reset'
               </p>
               <div className={`mt-4 w-full max-w-sm grid ${isSuperset ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
@@ -1864,7 +2330,7 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             onClick={openCurrentExerciseNoteModal}
             className={`w-[70px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${
-              hasCurrentExerciseNote
+              hasCurrentWorkoutNote
                 ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
                 : 'bg-brand-darkGrey/40 border-brand-grey/20 text-brand-grey hover:text-white hover:border-brand-grey/40'
             }`}
@@ -1872,6 +2338,16 @@ const ActiveWorkoutPage: React.FC = () => {
           >
             <FileText size={24} />
           </button>
+
+          {hasCurrentInstructionNote && (
+            <button
+              onClick={openCurrentInstructionModal}
+              className="w-[70px] rounded-2xl border bg-blue-500/15 border-blue-400/40 text-blue-300 hover:text-white hover:border-blue-300/60 transition-all active:scale-95 flex items-center justify-center"
+              title="Exercise Instructions"
+            >
+              <Info size={24} />
+            </button>
+          )}
 
           <button
             onClick={handlePrimaryAction}
@@ -1941,6 +2417,51 @@ const ActiveWorkoutPage: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black"
               >
                 Save Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isInstructionModalOpen && instructionModalContext && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-md bg-brand-darkGrey/95 border border-blue-300/20 rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Exercise Instructions</h3>
+                <p className="text-xs text-brand-grey mt-1">{instructionModalContext.exerciseName}</p>
+              </div>
+              <button
+                onClick={closeCurrentInstructionModal}
+                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
+                title="Close instructions"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+              {instructionModalContext.note && (
+                <div className="bg-black/40 border border-blue-300/20 rounded-xl px-4 py-3">
+                  <p className="text-xs uppercase tracking-wider font-bold text-blue-300/80 mb-2">Primary Note</p>
+                  <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{instructionModalContext.note}</p>
+                </div>
+              )}
+
+              {instructionModalContext.items.map((item, idx) => (
+                <div key={`${item.name}-${idx}`} className="bg-black/40 border border-white/10 rounded-xl px-4 py-3">
+                  <p className="text-xs uppercase tracking-wider font-bold text-brand-orange/90 mb-2">{item.name}</p>
+                  <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{item.note}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end">
+              <button
+                onClick={closeCurrentInstructionModal}
+                className="px-4 py-2 rounded-xl bg-blue-500/80 hover:bg-blue-400 text-black transition-colors text-sm font-black"
+              >
+                Close
               </button>
             </div>
           </div>

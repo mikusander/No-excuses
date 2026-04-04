@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, PlayCircle, Repeat, Timer } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
@@ -122,6 +122,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkoutHistoryDetail | null>(null);
   const [exercises, setExercises] = useState<UiExercise[]>([]);
+  const [isDeletingHistoryEntry, setIsDeletingHistoryEntry] = useState(false);
 
   useEffect(() => {
     const fetchWorkoutHistoryDetail = async () => {
@@ -264,6 +265,41 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
   const getNotesForName = (name: string) => {
     return notesGrouped.notesMap.get(normalizeNoteKey(name)) || [];
+  };
+
+  const deleteCurrentHistoryEntry = async () => {
+    if (!user?.id || !detail || isDeletingHistoryEntry) return;
+    if (!window.confirm('Delete this completed workout from history?')) return;
+
+    const workoutRunNumericId = Number(detail.id);
+    if (Number.isNaN(workoutRunNumericId)) {
+      alert('Invalid workout id.');
+      return;
+    }
+
+    try {
+      setIsDeletingHistoryEntry(true);
+
+      const { error: notesDeleteError } = await supabase
+        .from('note_workout')
+        .delete()
+        .eq('id_workout', workoutRunNumericId);
+      if (notesDeleteError) throw notesDeleteError;
+
+      const { error: workoutDeleteError } = await supabase
+        .from('workout_run')
+        .delete()
+        .eq('id_workout', workoutRunNumericId)
+        .eq('id_utente', user.id);
+      if (workoutDeleteError) throw workoutDeleteError;
+
+      navigate('/workout-history');
+    } catch (deleteError) {
+      console.error('Error deleting workout history entry:', deleteError);
+      alert('Unable to delete workout history entry.');
+    } finally {
+      setIsDeletingHistoryEntry(false);
+    }
   };
 
   if (loading) {
@@ -542,6 +578,21 @@ const WorkoutHistoryDetailPage: React.FC = () => {
             This workout template was deleted and no exercise snapshot is available for replay.
           </div>
         )}
+
+        <button
+          onClick={() => {
+            void deleteCurrentHistoryEntry();
+          }}
+          disabled={isDeletingHistoryEntry}
+          className="w-full bg-red-500/15 hover:bg-red-500/20 border border-red-400/40 text-red-200 font-black py-4 px-5 rounded-full flex items-center justify-center transition-colors mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {isDeletingHistoryEntry ? (
+            <Loader2 size={18} className="mr-2 animate-spin" />
+          ) : (
+            <Trash2 size={18} className="mr-2" />
+          )}
+          Delete from history
+        </button>
       </main>
 
       <BottomNavigation />

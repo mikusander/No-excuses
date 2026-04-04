@@ -6,6 +6,7 @@ export interface UiSubExercise {
   reps: number;
   duration_seconds: number;
   weight_kg?: number | null;
+  instruction_note?: string | null;
 }
 
 export interface UiPyramidStep {
@@ -28,6 +29,7 @@ export interface UiExercise {
   emom_round_duration?: number;
   pyramid_steps?: UiPyramidStep[];
   subExercises?: UiSubExercise[];
+  instruction_note?: string | null;
 }
 
 const toSafeInt = (value: unknown, fallback: number) => {
@@ -38,6 +40,11 @@ const toSafeInt = (value: unknown, fallback: number) => {
 const toSafeDecimal = (value: unknown, fallback: number | null) => {
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : fallback;
+};
+
+const toOptionalNote = (value: unknown) => {
+  const note = String(value || '').trim();
+  return note.length > 0 ? note : null;
 };
 
 const stripStorageMeta = (name: string) => name.replace(/@@@meta:.*$/, '').trim();
@@ -81,6 +88,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             subExercises: [],
+            instruction_note: toOptionalNote(row.note_esercizio),
           },
           order: orderIndex,
           subs: [],
@@ -95,8 +103,12 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         g.ex.subExercises = (jsonPayload as UiSubExercise[]).map((item) => ({
           ...item,
           weight_kg: toSafeDecimal((item as { weight_kg?: unknown }).weight_kg, null),
+          instruction_note: toOptionalNote((item as { instruction_note?: unknown }).instruction_note),
         }));
       } else {
+        if (!g.ex.instruction_note) {
+          g.ex.instruction_note = toOptionalNote(row.note_esercizio);
+        }
         g.subs.push({
           idx,
           item: {
@@ -105,6 +117,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: Math.max(1, toSafeInt(row.reps, 1)),
             duration_seconds: Math.max(1, toSafeInt(row.durata_secondi, 1)),
             weight_kg: toSafeDecimal(row.peso_kg, null),
+            instruction_note: toOptionalNote(row.note_esercizio),
           },
         });
       }
@@ -128,6 +141,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             emom_rounds: Math.max(1, toSafeInt(row?.emom?.round_totali, 1)),
             emom_round_duration: Math.max(1, toSafeInt(row?.emom?.durata_round_secondi, 60)),
             subExercises: [],
+            instruction_note: toOptionalNote(row.note_esercizio),
           },
           order: orderIndex,
           subs: [],
@@ -142,16 +156,22 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         g.ex.subExercises = (jsonPayload as UiSubExercise[]).map((item) => ({
           ...item,
           weight_kg: toSafeDecimal((item as { weight_kg?: unknown }).weight_kg, null),
+          instruction_note: toOptionalNote((item as { instruction_note?: unknown }).instruction_note),
         }));
       } else if (jsonPayload?.subExercises && Array.isArray(jsonPayload.subExercises)) {
         g.ex.subExercises = (jsonPayload.subExercises as UiSubExercise[]).map((item) => ({
           ...item,
           weight_kg: toSafeDecimal((item as { weight_kg?: unknown }).weight_kg, null),
+          instruction_note: toOptionalNote((item as { instruction_note?: unknown }).instruction_note),
         }));
         g.ex.emom_rounds = Math.max(1, toSafeInt(jsonPayload.emom_rounds, g.ex.emom_rounds || 1));
         g.ex.emom_round_duration = Math.max(1, toSafeInt(jsonPayload.emom_round_duration, g.ex.emom_round_duration || 60));
         g.ex.duration_seconds = g.ex.emom_round_duration;
+        g.ex.instruction_note = toOptionalNote((jsonPayload as { instruction_note?: unknown }).instruction_note) || g.ex.instruction_note;
       } else {
+        if (!g.ex.instruction_note) {
+          g.ex.instruction_note = toOptionalNote(row.note_esercizio);
+        }
         g.subs.push({
           idx: Math.max(0, toSafeInt(row.stepindex_emom, idx + 1)),
           item: {
@@ -160,6 +180,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: Math.max(1, toSafeInt(row.reps, 1)),
             duration_seconds: Math.max(1, toSafeInt(row.durata_secondi, 1)),
             weight_kg: toSafeDecimal(row.peso_kg, null),
+            instruction_note: toOptionalNote(row.note_esercizio),
           },
         });
       }
@@ -181,6 +202,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             pyramid_steps: [],
+            instruction_note: toOptionalNote(row.note_esercizio),
           },
           order: orderIndex,
           subs: [],
@@ -200,10 +222,14 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         }));
         g.ex.name = jsonPayload.name || g.ex.name;
         g.ex.weight_kg = payloadWeight;
+        g.ex.instruction_note = toOptionalNote((jsonPayload as { instruction_note?: unknown }).instruction_note) || g.ex.instruction_note;
       } else {
         if (!g.ex.name && dictName) g.ex.name = dictName;
         if (g.ex.weight_kg == null) {
           g.ex.weight_kg = toSafeDecimal(row.peso_kg, null);
+        }
+        if (!g.ex.instruction_note) {
+          g.ex.instruction_note = toOptionalNote(row.note_esercizio);
         }
         g.steps.push({
           idx: Math.max(0, toSafeInt(row.stepindex_piramide, g.steps.length + 1)),
@@ -227,6 +253,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       rest_seconds: restSeconds,
       weight_kg: toSafeDecimal(row.peso_kg, null),
       order_index: orderIndex,
+      instruction_note: toOptionalNote(row.note_esercizio),
     });
   });
 
