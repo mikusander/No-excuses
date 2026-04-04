@@ -2195,6 +2195,16 @@ const ActiveWorkoutPage: React.FC = () => {
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
                   <span className="text-brand-orange font-black text-xs block">{currentExecutionWeightLabel}</span>
                 </div>
+                {hasCurrentInstructionNote && (
+                  <button
+                    onClick={openCurrentInstructionModal}
+                    className="col-span-2 bg-brand-darkGrey/40 border border-brand-orange/35 rounded-lg py-2 px-3 text-center text-brand-orange hover:text-brand-lightOrange hover:border-brand-orange/70 hover:bg-brand-orange/10 transition-colors flex items-center justify-center gap-2"
+                    title="Exercise Instructions"
+                  >
+                    <Info size={14} />
+                    <span className="text-[10px] uppercase tracking-widest font-bold">Exercise Instructions</span>
+                  </button>
+                )}
               </div>
 
               {nextRecoveryLabel && (
@@ -2233,6 +2243,16 @@ const ActiveWorkoutPage: React.FC = () => {
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
                   <span className="text-brand-orange font-black text-xs truncate block">{currentExecutionWeightLabel}</span>
                 </div>
+                {hasCurrentInstructionNote && (
+                  <button
+                    onClick={openCurrentInstructionModal}
+                    className="col-span-2 bg-brand-darkGrey/40 border border-brand-orange/35 rounded-lg py-2 px-3 text-center text-brand-orange hover:text-brand-lightOrange hover:border-brand-orange/70 hover:bg-brand-orange/10 transition-colors flex items-center justify-center gap-2"
+                    title="Exercise Instructions"
+                  >
+                    <Info size={14} />
+                    <span className="text-[10px] uppercase tracking-widest font-bold">Exercise Instructions</span>
+                  </button>
+                )}
               </div>
               <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-3">
                 Upcoming Recovery: {nextRecoveryLabel}
@@ -2282,6 +2302,16 @@ const ActiveWorkoutPage: React.FC = () => {
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
                   <span className="text-brand-orange font-black text-xs truncate block">{currentExecutionWeightLabel}</span>
                 </div>
+                {hasCurrentInstructionNote && (
+                  <button
+                    onClick={openCurrentInstructionModal}
+                    className={`${isSuperset ? 'col-span-3' : 'col-span-2'} bg-brand-darkGrey/40 border border-brand-orange/35 rounded-lg py-2 px-3 text-center text-brand-orange hover:text-brand-lightOrange hover:border-brand-orange/70 hover:bg-brand-orange/10 transition-colors flex items-center justify-center gap-2`}
+                    title="Exercise Instructions"
+                  >
+                    <Info size={14} />
+                    <span className="text-[10px] uppercase tracking-widest font-bold">Exercise Instructions</span>
+                  </button>
+                )}
               </div>
               <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-2">
                 Upcoming Recovery: {nextRecoveryLabel}
@@ -2308,6 +2338,16 @@ const ActiveWorkoutPage: React.FC = () => {
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
                   <span className="text-brand-orange font-black text-xs truncate block">{currentExecutionWeightLabel}</span>
                 </div>
+                {hasCurrentInstructionNote && (
+                  <button
+                    onClick={openCurrentInstructionModal}
+                    className={`${isSuperset ? 'col-span-3' : 'col-span-2'} bg-brand-darkGrey/40 border border-brand-orange/35 rounded-lg py-2 px-3 text-center text-brand-orange hover:text-brand-lightOrange hover:border-brand-orange/70 hover:bg-brand-orange/10 transition-colors flex items-center justify-center gap-2`}
+                    title="Exercise Instructions"
+                  >
+                    <Info size={14} />
+                    <span className="text-[10px] uppercase tracking-widest font-bold">Exercise Instructions</span>
+                  </button>
+                )}
               </div>
               <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-2">
                 Upcoming Recovery: {nextRecoveryLabel}
@@ -2338,16 +2378,6 @@ const ActiveWorkoutPage: React.FC = () => {
           >
             <FileText size={24} />
           </button>
-
-          {hasCurrentInstructionNote && (
-            <button
-              onClick={openCurrentInstructionModal}
-              className="w-[70px] rounded-2xl border bg-blue-500/15 border-blue-400/40 text-blue-300 hover:text-white hover:border-blue-300/60 transition-all active:scale-95 flex items-center justify-center"
-              title="Exercise Instructions"
-            >
-              <Info size={24} />
-            </button>
-          )}
 
           <button
             onClick={handlePrimaryAction}
@@ -2425,7 +2455,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
       {isInstructionModalOpen && instructionModalContext && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="w-full max-w-md bg-brand-darkGrey/95 border border-blue-300/20 rounded-3xl p-5 shadow-2xl">
+          <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-bold text-white">Exercise Instructions</h3>
@@ -2442,8 +2472,8 @@ const ActiveWorkoutPage: React.FC = () => {
 
             <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
               {instructionModalContext.note && (
-                <div className="bg-black/40 border border-blue-300/20 rounded-xl px-4 py-3">
-                  <p className="text-xs uppercase tracking-wider font-bold text-blue-300/80 mb-2">Primary Note</p>
+                <div className="bg-black/40 border border-brand-orange/25 rounded-xl px-4 py-3">
+                  <p className="text-xs uppercase tracking-wider font-bold text-brand-orange/90 mb-2">Primary Note</p>
                   <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{instructionModalContext.note}</p>
                 </div>
               )}
@@ -2459,7 +2489,7 @@ const ActiveWorkoutPage: React.FC = () => {
             <div className="mt-4 flex items-center justify-end">
               <button
                 onClick={closeCurrentInstructionModal}
-                className="px-4 py-2 rounded-xl bg-blue-500/80 hover:bg-blue-400 text-black transition-colors text-sm font-black"
+                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black"
               >
                 Close
               </button>
