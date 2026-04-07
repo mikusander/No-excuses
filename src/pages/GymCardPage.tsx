@@ -89,6 +89,7 @@ const GymCardPage: React.FC = () => {
             ordine,
             set_num,
             rest_secondi,
+            peso_kg,
             tipo,
             reps,
             durata_secondi,
@@ -566,6 +567,28 @@ const GymCardPage: React.FC = () => {
     return `${m}m ${s}s`;
   };
 
+  const formatWeightLabel = (weight?: number | null) => {
+    const n = Number(weight);
+    if (!Number.isFinite(n) || n <= 0) return 'Body Weight';
+    return `${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg`;
+  };
+
+  const getExerciseWeightLabel = (exercise: Exercise) => {
+    if (exercise.type === 'pyramid') {
+      const labels = Array.from(new Set((exercise.pyramid_steps || []).map((step) => formatWeightLabel(step.weight_kg))));
+      if (labels.length === 0) return 'Body Weight';
+      return labels.length === 1 ? labels[0] : 'Varies';
+    }
+
+    if ((exercise.type === 'superset' || exercise.type === 'emom') && exercise.subExercises?.length) {
+      const labels = Array.from(new Set(exercise.subExercises.map((sub) => formatWeightLabel(sub.weight_kg))));
+      if (labels.length === 0) return 'Body Weight';
+      return labels.length === 1 ? labels[0] : 'Varies';
+    }
+
+    return formatWeightLabel(exercise.weight_kg);
+  };
+
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
       <header className="p-4 relative flex items-center justify-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
@@ -681,7 +704,11 @@ const GymCardPage: React.FC = () => {
             </div>
 
             <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(88vh-102px)]">
-              {selectedWorkout.exercises && selectedWorkout.exercises.map((ex, i) => (
+              {selectedWorkout.exercises && selectedWorkout.exercises.map((ex, i) => {
+                const showInlineWeightNearName =
+                  (ex.type === 'superset' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
+
+                return (
                 <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <span className="text-[10px] uppercase tracking-wider font-bold text-brand-grey/60">
@@ -711,6 +738,9 @@ const GymCardPage: React.FC = () => {
                          )) : ex.subExercises?.map((sub, sIdx) => (
                            <div key={sIdx} className="text-sm font-semibold text-white/80">
                              {sub.name} <span className="text-brand-orange ml-1 text-xs">({sub.type === 'reps' ? `${sub.reps} reps` : `${sub.duration_seconds} s`})</span>
+                             {showInlineWeightNearName && (
+                               <span className="text-brand-grey/70 text-xs ml-1">{formatWeightLabel(sub.weight_kg)}</span>
+                             )}
                            </div>
                          ))}
                        </div>
@@ -751,9 +781,16 @@ const GymCardPage: React.FC = () => {
                         <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>
                       </div>
                     )}
+
+                    {!showInlineWeightNearName && (
+                      <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
+                        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Weights</span>
+                        <span className="text-sm text-brand-lightOrange truncate">{getExerciseWeightLabel(ex)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
+              )})}
 
               {(!selectedWorkout.exercises || selectedWorkout.exercises.length === 0) && (
                 <p className="text-sm text-brand-grey/50 italic text-center py-4 bg-black/20 rounded-2xl">No exercises in this workout.</p>
@@ -809,7 +846,7 @@ const GymCardPage: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Sets
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.sets}
                         onChange={(e) => updateQuickEditField('sets', e.target.value)}
@@ -822,7 +859,7 @@ const GymCardPage: React.FC = () => {
                       <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                         <div className="relative flex-1 border-r border-brand-grey/10">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             value={toRestParts(exerciseQuickEditDraft.rest_seconds).minutes}
                             onChange={(e) => updateQuickEditRestPart('min', e.target.value)}
@@ -832,7 +869,7 @@ const GymCardPage: React.FC = () => {
                         </div>
                         <div className="relative flex-1">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             max={59}
                             value={toRestParts(exerciseQuickEditDraft.rest_seconds).seconds}
@@ -848,7 +885,7 @@ const GymCardPage: React.FC = () => {
                   {exerciseQuickEditDraft.type === 'reps' ? (
                     <label className="text-sm text-brand-grey">Reps
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.reps}
                         onChange={(e) => updateQuickEditField('reps', e.target.value)}
@@ -858,7 +895,7 @@ const GymCardPage: React.FC = () => {
                   ) : (
                     <label className="text-sm text-brand-grey">Duration (sec)
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.duration_seconds}
                         onChange={(e) => updateQuickEditField('duration_seconds', e.target.value)}
@@ -884,7 +921,7 @@ const GymCardPage: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Rounds
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.sets}
                         onChange={(e) => updateQuickEditField('sets', e.target.value)}
@@ -897,7 +934,7 @@ const GymCardPage: React.FC = () => {
                       <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                         <div className="relative flex-1 border-r border-brand-grey/10">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             value={toRestParts(exerciseQuickEditDraft.rest_seconds).minutes}
                             onChange={(e) => updateQuickEditRestPart('min', e.target.value)}
@@ -907,7 +944,7 @@ const GymCardPage: React.FC = () => {
                         </div>
                         <div className="relative flex-1">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             max={59}
                             value={toRestParts(exerciseQuickEditDraft.rest_seconds).seconds}
@@ -941,7 +978,7 @@ const GymCardPage: React.FC = () => {
                         {sub.type === 'reps' ? (
                           <label className="text-sm text-brand-grey">Reps
                             <input
-                              type="number"
+                              type="number" inputMode="numeric"
                               min={1}
                               value={sub.reps}
                               onChange={(e) => updateQuickEditSubField(subIdx, 'reps', e.target.value)}
@@ -951,7 +988,7 @@ const GymCardPage: React.FC = () => {
                         ) : (
                           <label className="text-sm text-brand-grey">Duration (sec)
                             <input
-                              type="number"
+                              type="number" inputMode="numeric"
                               min={1}
                               value={sub.duration_seconds}
                               onChange={(e) => updateQuickEditSubField(subIdx, 'duration_seconds', e.target.value)}
@@ -979,7 +1016,7 @@ const GymCardPage: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Sets
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.sets}
                         onChange={(e) => updateQuickEditField('sets', e.target.value)}
@@ -989,7 +1026,7 @@ const GymCardPage: React.FC = () => {
 
                     <label className="text-sm text-brand-grey">Rounds
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.emom_rounds}
                         onChange={(e) => updateQuickEditField('emom_rounds', e.target.value)}
@@ -1004,7 +1041,7 @@ const GymCardPage: React.FC = () => {
                       <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                         <div className="relative flex-1 border-r border-brand-grey/10">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             value={toRestParts(exerciseQuickEditDraft.emom_round_duration).minutes}
                             onChange={(e) => updateQuickEditRoundDurationPart('min', e.target.value)}
@@ -1014,7 +1051,7 @@ const GymCardPage: React.FC = () => {
                         </div>
                         <div className="relative flex-1">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             max={59}
                             value={toRestParts(exerciseQuickEditDraft.emom_round_duration).seconds}
@@ -1031,7 +1068,7 @@ const GymCardPage: React.FC = () => {
                       <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                         <div className="relative flex-1 border-r border-brand-grey/10">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             value={toRestParts(exerciseQuickEditDraft.rest_seconds).minutes}
                             onChange={(e) => updateQuickEditRestPart('min', e.target.value)}
@@ -1041,7 +1078,7 @@ const GymCardPage: React.FC = () => {
                         </div>
                         <div className="relative flex-1">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             max={59}
                             value={toRestParts(exerciseQuickEditDraft.rest_seconds).seconds}
@@ -1075,7 +1112,7 @@ const GymCardPage: React.FC = () => {
                         {sub.type === 'reps' ? (
                           <label className="text-sm text-brand-grey">Reps
                             <input
-                              type="number"
+                              type="number" inputMode="numeric"
                               min={1}
                               value={sub.reps}
                               onChange={(e) => updateQuickEditSubField(subIdx, 'reps', e.target.value)}
@@ -1085,7 +1122,7 @@ const GymCardPage: React.FC = () => {
                         ) : (
                           <label className="text-sm text-brand-grey">Duration (sec)
                             <input
-                              type="number"
+                              type="number" inputMode="numeric"
                               min={1}
                               value={sub.duration_seconds}
                               onChange={(e) => updateQuickEditSubField(subIdx, 'duration_seconds', e.target.value)}
@@ -1117,7 +1154,7 @@ const GymCardPage: React.FC = () => {
                       <div className="grid grid-cols-2 gap-3">
                         <label className="text-sm text-brand-grey">Reps
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={1}
                             value={step.reps}
                             onChange={(e) => updateQuickEditPyramidStepField(stepIdx, 'reps', e.target.value)}
@@ -1130,7 +1167,7 @@ const GymCardPage: React.FC = () => {
                           <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                             <div className="relative flex-1 border-r border-brand-grey/10">
                               <input
-                                type="number"
+                                type="number" inputMode="numeric"
                                 min={0}
                                 value={toRestParts(step.rest_seconds).minutes}
                                 onChange={(e) => updateQuickEditPyramidStepRestPart(stepIdx, 'min', e.target.value)}
@@ -1140,7 +1177,7 @@ const GymCardPage: React.FC = () => {
                             </div>
                             <div className="relative flex-1">
                               <input
-                                type="number"
+                                type="number" inputMode="numeric"
                                 min={0}
                                 max={59}
                                 value={toRestParts(step.rest_seconds).seconds}

@@ -14,6 +14,7 @@ interface Exercise {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  transition_rest_seconds?: number;
   weight_kg?: number | null;
   emom_rounds?: number;
   emom_round_duration?: number;
@@ -121,6 +122,7 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
         reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.reps, 0))),
         duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.duration_seconds, 0))),
         rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.rest_seconds, 0))),
+        transition_rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.transition_rest_seconds, 0))),
         weight_kg: Number.isFinite(Number(item.weight_kg)) ? Number(item.weight_kg) : null,
         order_index: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.order_index, idx))),
         emom_rounds: item.emom_rounds == null ? undefined : Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_rounds, 1))),
@@ -149,6 +151,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [currentSubExerciseIdx, setCurrentSubExerciseIdx] = useState(0);
   const [currentPyramidStepIdx, setCurrentPyramidStepIdx] = useState(0);
   const [pendingPyramidAdvance, setPendingPyramidAdvance] = useState(false);
+  const [pendingExerciseAdvance, setPendingExerciseAdvance] = useState(false);
 
   // Timer State for Rest
   const [isResting, setIsResting] = useState(false);
@@ -177,6 +180,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const workoutRunIdRef = useRef<number | null>(null);
   const workoutNotesSavedRef = useRef(false);
   const workoutCompletionHandledRef = useRef(false);
+  const workoutStartedAtMsRef = useRef<number | null>(null);
 
   // Voice Command State
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
@@ -308,9 +312,11 @@ const ActiveWorkoutPage: React.FC = () => {
   const resumeRestCountdown = () => {
     const currentExerciseForRest = workout?.exercises[currentExerciseIdx];
     const fallbackRestDuration =
-      currentExerciseForRest?.type === 'pyramid' && pendingPyramidAdvance
-        ? Math.max(0, Math.trunc(currentExerciseForRest.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0))
-        : Math.max(0, Math.trunc(currentExerciseForRest?.rest_seconds || 0));
+      pendingExerciseAdvance
+        ? Math.max(0, Math.trunc(currentExerciseForRest?.transition_rest_seconds || 0))
+        : currentExerciseForRest?.type === 'pyramid' && pendingPyramidAdvance
+          ? Math.max(0, Math.trunc(currentExerciseForRest.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0))
+          : Math.max(0, Math.trunc(currentExerciseForRest?.rest_seconds || 0));
 
     const nextDuration = restRemaining > 0
       ? restRemaining
@@ -325,9 +331,11 @@ const ActiveWorkoutPage: React.FC = () => {
   const resetRestCountdown = () => {
     const currentExerciseForRest = workout?.exercises[currentExerciseIdx];
     const fallbackRestDuration =
-      currentExerciseForRest?.type === 'pyramid' && pendingPyramidAdvance
-        ? Math.max(0, Math.trunc(currentExerciseForRest.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0))
-        : Math.max(0, Math.trunc(currentExerciseForRest?.rest_seconds || 0));
+      pendingExerciseAdvance
+        ? Math.max(0, Math.trunc(currentExerciseForRest?.transition_rest_seconds || 0))
+        : currentExerciseForRest?.type === 'pyramid' && pendingPyramidAdvance
+          ? Math.max(0, Math.trunc(currentExerciseForRest.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0))
+          : Math.max(0, Math.trunc(currentExerciseForRest?.rest_seconds || 0));
 
     const targetDuration = restInitialDuration > 0 ? restInitialDuration : fallbackRestDuration;
     if (targetDuration <= 0) return;
@@ -561,7 +569,7 @@ const ActiveWorkoutPage: React.FC = () => {
       } else {
         stopEmomCountdown();
         if (currentSetIdx === ex.sets - 1) {
-          handleNextExercise();
+          queueNextExerciseFlow(ex);
         } else {
           startRestCountdown(ex.rest_seconds);
         }
@@ -596,6 +604,8 @@ const ActiveWorkoutPage: React.FC = () => {
 
     if (isResting) {
       stopRestCountdown();
+      setPendingExerciseAdvance(false);
+      setPendingPyramidAdvance(false);
       setIsometryRemainingWithSync(getTargetIsometry(currentEx, currentEx.subExercises?.[currentSubExerciseIdx]));
       return;
     }
@@ -807,6 +817,7 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentEmomRoundIdx(0);
       setCurrentPyramidStepIdx(0);
       setPendingPyramidAdvance(false);
+      setPendingExerciseAdvance(false);
       setIsResting(false);
       setRestRemaining(0);
       setRestInitialDuration(0);
@@ -828,6 +839,7 @@ const ActiveWorkoutPage: React.FC = () => {
       workoutRunIdRef.current = null;
       workoutNotesSavedRef.current = false;
       workoutCompletionHandledRef.current = false;
+      workoutStartedAtMsRef.current = Date.now();
 
       const firstEx = nextWorkout.exercises[0];
       if (firstEx) {
@@ -855,6 +867,7 @@ const ActiveWorkoutPage: React.FC = () => {
             ordine,
             set_num,
             rest_secondi,
+            rest_tra_esercizi,
             peso_kg,
             note_esercizio,
             tipo,
@@ -976,6 +989,14 @@ const ActiveWorkoutPage: React.FC = () => {
     if (workoutRunSavedRef.current) return workoutRunIdRef.current;
     if (!user?.id) return null;
 
+    const workoutDurationSeconds = (() => {
+      const startedAtMs = workoutStartedAtMsRef.current;
+      if (startedAtMs == null) return null;
+      const elapsedSeconds = Math.trunc((Date.now() - startedAtMs) / 1000);
+      if (!Number.isFinite(elapsedSeconds)) return null;
+      return Math.max(0, elapsedSeconds);
+    })();
+
     const fallbackSchedaId = Number(id);
     const computedSchedaId = sourceSchedaId != null
       ? sourceSchedaId
@@ -1008,6 +1029,7 @@ const ActiveWorkoutPage: React.FC = () => {
         {
           id_utente: user.id,
           id_scheda: computedSchedaId,
+          durata_totale_secondi: workoutDurationSeconds,
           workout_name_snapshot: workoutNameSnapshot,
           exercises_snapshot: exercisesSnapshot,
         },
@@ -1017,6 +1039,28 @@ const ActiveWorkoutPage: React.FC = () => {
 
     data = firstAttempt.data as { id_workout?: number } | null;
     error = firstAttempt.error as { message?: string } | null;
+
+    const needsDurationFallback =
+      Boolean(error) &&
+      /durata_totale_secondi/i.test(String(error?.message || ''));
+
+    if (needsDurationFallback) {
+      const noDurationAttempt = await supabase
+        .from('workout_run')
+        .insert([
+          {
+            id_utente: user.id,
+            id_scheda: computedSchedaId,
+            workout_name_snapshot: workoutNameSnapshot,
+            exercises_snapshot: exercisesSnapshot,
+          },
+        ])
+        .select('id_workout')
+        .single();
+
+      data = noDurationAttempt.data as { id_workout?: number } | null;
+      error = noDurationAttempt.error as { message?: string } | null;
+    }
 
     const needsLegacyFallback =
       Boolean(error) &&
@@ -1153,7 +1197,7 @@ const ActiveWorkoutPage: React.FC = () => {
             stopEmomCountdown();
             const isLastSetInEmomExercise = currentSetIdx === ex.sets - 1;
             if (isLastSetInEmomExercise) {
-              handleNextExercise();
+              queueNextExerciseFlow(ex);
             } else {
               startRestCountdown(ex.rest_seconds);
             }
@@ -1278,15 +1322,14 @@ const ActiveWorkoutPage: React.FC = () => {
   
   const isSuperset = currentExercise.type === 'superset';
   const subExercise = isSuperset && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
-  const isLastSupersetSub = !isSuperset || currentSubExerciseIdx === (currentExercise.subExercises?.length || 1) - 1;
-  const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : isPyramid ? isLastPyramidStep : (isLastSet && isLastSupersetSub));
+  const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : isPyramid ? isLastPyramidStep : isLastSet);
 
   const getCurrentExerciseNoteContext = () => {
-    if (isSuperset && subExercise) {
-      const subName = String(subExercise.name || '').trim() || `Superset Exercise ${currentSubExerciseIdx + 1}`;
+    if (isSuperset) {
+      const supersetName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
       return {
-        key: `${currentExercise.id}:superset:${currentSubExerciseIdx}`,
-        name: subName,
+        key: currentExercise.id,
+        name: supersetName,
       };
     }
 
@@ -1301,15 +1344,25 @@ const ActiveWorkoutPage: React.FC = () => {
   const hasCurrentWorkoutNote = Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim());
 
   const getCurrentInstructionContext = (): InstructionModalContext | null => {
-    if (isSuperset && subExercise) {
-      const subName = String(subExercise.name || '').trim() || `Superset Exercise ${currentSubExerciseIdx + 1}`;
-      const subNote = String(subExercise.instruction_note || '').trim();
+    if (isSuperset) {
+      const supersetName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
+      const supersetNote = String(currentExercise.instruction_note || '').trim() || null;
+      const supersetItems = (currentExercise.subExercises || [])
+        .map((item, idx) => {
+          const note = String(item.instruction_note || '').trim();
+          if (!note) return null;
+          return {
+            name: String(item.name || '').trim() || `Exercise ${idx + 1}`,
+            note,
+          };
+        })
+        .filter((item): item is InstructionModalItem => item !== null);
 
-      if (!subNote) return null;
+      if (!supersetNote && supersetItems.length === 0) return null;
       return {
-        exerciseName: subName,
-        note: subNote,
-        items: [],
+        exerciseName: supersetName,
+        note: supersetNote,
+        items: supersetItems,
       };
     }
 
@@ -1731,13 +1784,19 @@ const ActiveWorkoutPage: React.FC = () => {
     return `${n.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg`;
   };
 
+  const getSupersetWeightLabel = () => {
+    const labels = Array.from(new Set((currentExercise.subExercises || []).map((sub) => formatWeightLabel(sub.weight_kg))));
+    if (labels.length === 0) return 'Body Weight';
+    return labels.length === 1 ? labels[0] : 'Varies';
+  };
+
   const getCurrentExecutionWeightLabel = () => {
     if (currentExercise.type === 'pyramid') {
       const stepWeight = currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.weight_kg;
       return formatWeightLabel(stepWeight);
     }
-    if (currentExercise.type === 'superset' && subExercise) {
-      return formatWeightLabel(subExercise.weight_kg);
+    if (currentExercise.type === 'superset') {
+      return getSupersetWeightLabel();
     }
     return formatWeightLabel(currentExercise.weight_kg);
   };
@@ -1777,26 +1836,39 @@ const ActiveWorkoutPage: React.FC = () => {
           ? 'border-amber-300/60 bg-amber-300/10 text-amber-300'
           : '';
 
-  const getNextRecoveryLabel = () => {
-    if (currentExercise.type === 'emom') {
-      const hasNextExercise = currentExerciseIdx < workout.exercises.length - 1;
-      if (!hasNextExercise) return null;
+  const queueNextExerciseFlow = (sourceExercise: Exercise) => {
+    const transitionRestSeconds = Math.max(0, Math.trunc(sourceExercise.transition_rest_seconds || 0));
+    if (!isLastExercise && transitionRestSeconds > 0) {
+      setPendingExerciseAdvance(true);
+      startRestCountdown(transitionRestSeconds);
+      return;
+    }
+    handleNextExercise();
+  };
 
-      const hasMultipleSets = currentExercise.sets > 1;
-      if (hasMultipleSets) {
+  const getNextRecoveryLabel = () => {
+    const transitionRestSeconds = Math.max(0, Math.trunc(currentExercise.transition_rest_seconds || 0));
+
+    if (currentExercise.type === 'emom') {
+      const hasUpcomingSetRest = currentSetIdx < currentExercise.sets - 1;
+      if (hasUpcomingSetRest) {
         return formatTime(currentExercise.rest_seconds || 0);
       }
-
-      const nextExercise = workout.exercises[currentExerciseIdx + 1];
-      return formatTime(nextExercise?.rest_seconds || 0);
+      return transitionRestSeconds > 0 ? formatTime(transitionRestSeconds) : formatTime(0);
     }
 
     if (currentExercise.type === 'pyramid') {
-      return formatTime(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0);
+      const stepRest = Math.max(0, Math.trunc(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.rest_seconds || 0));
+      if (!isLastPyramidStep && stepRest > 0) return formatTime(stepRest);
+      return transitionRestSeconds > 0 ? formatTime(transitionRestSeconds) : formatTime(0);
     }
 
     const hasUpcomingRest = currentSetIdx < currentExercise.sets - 1;
-    return formatTime(hasUpcomingRest ? (currentExercise.rest_seconds || 0) : 0);
+    if (hasUpcomingRest) {
+      return formatTime(currentExercise.rest_seconds || 0);
+    }
+
+    return transitionRestSeconds > 0 ? formatTime(transitionRestSeconds) : formatTime(0);
   };
 
   const handleNextExercise = () => {
@@ -1813,6 +1885,7 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentEmomRoundIdx(0);
       setCurrentPyramidStepIdx(0);
       setPendingPyramidAdvance(false);
+      setPendingExerciseAdvance(false);
       stopEmomCountdown();
       stopRestCountdown();
       stopIsometryCountdown();
@@ -1838,6 +1911,7 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentEmomRoundIdx(0);
       setCurrentPyramidStepIdx(0);
       setPendingPyramidAdvance(false);
+      setPendingExerciseAdvance(false);
       stopEmomCountdown();
       stopRestCountdown();
       stopIsometryCountdown();
@@ -1856,7 +1930,7 @@ const ActiveWorkoutPage: React.FC = () => {
           setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
         } else {
           stopEmomCountdown();
-          if (isLastSet) handleNextExercise();
+          if (isLastSet) queueNextExerciseFlow(currentExercise);
           else { startRestCountdown(currentExercise.rest_seconds); }
         }
         return;
@@ -1868,7 +1942,7 @@ const ActiveWorkoutPage: React.FC = () => {
       const isLastStep = currentPyramidStepIdx >= steps.length - 1;
 
       if (isLastStep) {
-        handleNextExercise();
+        queueNextExerciseFlow(currentExercise);
       } else {
         const stepRest = Math.max(0, currentStep?.rest_seconds || 0);
         if (stepRest > 0) {
@@ -1881,21 +1955,19 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    // Se siamo dentro a un superset e non abbiamo finito i sub-esercizi
-    if (isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1) {
-       const nextSubIdx = currentSubExerciseIdx + 1;
-       setCurrentSubExerciseIdx(nextSubIdx);
-       stopIsometryCountdown();
-       const nextSubEx = currentExercise.subExercises[nextSubIdx];
-       if (nextSubEx.type === 'isometry') {
-         setIsometryRemainingWithSync(nextSubEx.duration_seconds);
-       }
-       return;
+    if (isSuperset) {
+      stopIsometryCountdown();
+      if (isLastSet) {
+        queueNextExerciseFlow(currentExercise);
+      } else {
+        startRestCountdown(currentExercise.rest_seconds);
+      }
+      return;
     }
 
     // Altrimenti, abbiamo finito l'esercizio (o l'intero giro del superset)
     if (isLastSet) {
-      handleNextExercise();
+      queueNextExerciseFlow(currentExercise);
     } else {
       stopIsometryCountdown();
       startRestCountdown(currentExercise.rest_seconds);
@@ -1904,6 +1976,12 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const finishRestAndNextSet = () => {
     stopRestCountdown();
+
+    if (pendingExerciseAdvance) {
+      setPendingExerciseAdvance(false);
+      handleNextExercise();
+      return;
+    }
 
     if (currentExercise.type === 'pyramid' && pendingPyramidAdvance) {
       setPendingPyramidAdvance(false);
@@ -1977,7 +2055,7 @@ const ActiveWorkoutPage: React.FC = () => {
       // FINISH SET must close the current set even if timer is still running.
       stopEmomCountdown();
       if (isLastSet) {
-        handleNextExercise();
+        queueNextExerciseFlow(currentExercise);
       } else {
         startRestCountdown(currentExercise.rest_seconds);
       }
@@ -2006,6 +2084,10 @@ const ActiveWorkoutPage: React.FC = () => {
       </div>
     </div>
   ) : null;
+
+  const transitionNextExercise = pendingExerciseAdvance && !isLastExercise
+    ? workout.exercises[currentExerciseIdx + 1]
+    : null;
 
   // ----------------------------------------------------------------------
   // RENDER REST VIEW
@@ -2055,15 +2137,17 @@ const ActiveWorkoutPage: React.FC = () => {
         </p>
 
         <div className="text-center space-y-2 mb-12">
-          <p className="text-white text-xl font-bold">{currentExercise.name}</p>
-          <p className="text-brand-grey text-xs">Weights: {currentExecutionWeightLabel}</p>
-          {isSuperset && currentExercise.subExercises && (
+          <p className="text-white text-xl font-bold">{transitionNextExercise ? transitionNextExercise.name : currentExercise.name}</p>
+          {!transitionNextExercise && <p className="text-brand-grey text-xs">Weights: {currentExecutionWeightLabel}</p>}
+          {!transitionNextExercise && isSuperset && currentExercise.subExercises && (
             <p className="text-brand-orange/80 text-sm font-semibold">{currentExercise.subExercises.map((s:any) => s.name).join(' + ')}</p>
           )}
           <p className="text-brand-orange font-bold font-mono">
-            {currentExercise.type === 'pyramid'
-              ? `Step ${currentPyramidStepIdx + 2} of ${currentExercise.pyramid_steps?.length || 1}`
-              : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} of ${currentExercise.sets}`}
+            {transitionNextExercise
+              ? `Transition to Exercise ${currentExerciseIdx + 2} of ${workout.exercises.length}`
+              : currentExercise.type === 'pyramid'
+                ? `Step ${currentPyramidStepIdx + 2} of ${currentExercise.pyramid_steps?.length || 1}`
+                : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} of ${currentExercise.sets}`}
           </p>
         </div>
 
@@ -2127,7 +2211,7 @@ const ActiveWorkoutPage: React.FC = () => {
                EXERCISE {currentExerciseIdx + 1} OF {workout.exercises.length}
              </span>
              <h2 className="text-3xl font-black text-white leading-tight drop-shadow-md">
-               {isSuperset && subExercise ? subExercise.name : currentExercise.name}
+               {currentExercise.name}
              </h2>
              {specialExerciseLabel && (
                <div className="mt-2 flex flex-col items-center gap-1">
@@ -2258,7 +2342,63 @@ const ActiveWorkoutPage: React.FC = () => {
                 Upcoming Recovery: {nextRecoveryLabel}
               </p>
             </div>
-          ) : (isSuperset ? subExercise?.type : currentExercise.type) === 'isometry' ? (
+          ) : isSuperset ? (
+            <div className="text-center w-full max-w-md flex flex-col items-center">
+              <div className="w-full max-w-sm grid grid-cols-3 gap-2 mb-4">
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Round</span>
+                  <span className="text-brand-orange font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
+                </div>
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Exercises</span>
+                  <span className="text-brand-orange font-black">{currentExercise.subExercises?.length || 0}</span>
+                </div>
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Rest</span>
+                  <span className="text-brand-orange font-black">{formatTime(currentExercise.rest_seconds || 0)}</span>
+                </div>
+              </div>
+
+              <div className="w-full max-h-[28vh] overflow-y-auto space-y-2 px-1">
+                {(currentExercise.subExercises || []).map((sub, idx) => (
+                  <div
+                    key={`${currentExercise.id}:superset:${idx}`}
+                    className="bg-brand-darkGrey/30 p-3 rounded-xl border border-white/5 flex justify-between items-start gap-3"
+                  >
+                    <div className="text-left min-w-0">
+                      <p className="text-white font-bold text-sm truncate">{idx + 1}. {sub.name || `Exercise ${idx + 1}`}</p>
+                      <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
+                        {sub.type === 'reps' ? `${sub.reps} reps` : `${sub.duration_seconds}s hold`}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weight</span>
+                      <span className="text-xs text-brand-lightOrange font-bold block">{formatWeightLabel(sub.weight_kg)}</span>
+                    </div>
+                  </div>
+                ))}
+
+                {(!currentExercise.subExercises || currentExercise.subExercises.length === 0) && (
+                  <p className="text-sm text-brand-grey/70">No exercises configured for this superset.</p>
+                )}
+              </div>
+
+              {hasCurrentInstructionNote && (
+                <button
+                  onClick={openCurrentInstructionModal}
+                  className="mt-3 w-full max-w-sm bg-brand-darkGrey/40 border border-brand-orange/35 rounded-lg py-2 px-3 text-center text-brand-orange hover:text-brand-lightOrange hover:border-brand-orange/70 hover:bg-brand-orange/10 transition-colors flex items-center justify-center gap-2"
+                  title="Exercise Instructions"
+                >
+                  <Info size={14} />
+                  <span className="text-[10px] uppercase tracking-widest font-bold">Exercise Instructions</span>
+                </button>
+              )}
+
+              <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-3">
+                Upcoming Recovery: {nextRecoveryLabel}
+              </p>
+            </div>
+          ) : currentExercise.type === 'isometry' ? (
             <div
               className="text-center w-full max-w-xs relative group cursor-pointer"
               onPointerDown={() => startTimerLongPress(resetIsometryCountdown)}
@@ -2392,8 +2532,6 @@ const ActiveWorkoutPage: React.FC = () => {
                  <CheckCircle2 size={28} className="mr-2" strokeWidth={3} />
                  COMPLETE WORKOUT
                </>
-             ) : isSuperset && currentExercise.subExercises && currentSubExerciseIdx < currentExercise.subExercises.length - 1 ? (
-               <>NEXT IN SUPERSET <ArrowRight size={24} className="ml-2" /></>
              ) : isEmom && !isLastEmomRound ? (
                <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
              ) : isEmom && isLastEmomRound ? (
@@ -2405,7 +2543,9 @@ const ActiveWorkoutPage: React.FC = () => {
                  ? <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
                  : <>FINISH EXERCISE <ArrowRight size={24} className="ml-2" /></>
              ) : (
-               <>FINISH {isSuperset ? 'ROUND' : 'SET'}</>
+               isSuperset
+                 ? <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
+                 : <>FINISH SET</>
              )}
           </button>
         </div>
@@ -2505,7 +2645,7 @@ const ActiveWorkoutPage: React.FC = () => {
               <div>
                 <h3 className="text-lg font-bold text-white">Edit Current Exercise</h3>
                 <p className="text-xs text-brand-grey mt-1">
-                  {isSuperset && subExercise ? `${currentExercise.name} - ${subExercise.name}` : currentExercise.name}
+                  {currentExercise.name}
                 </p>
               </div>
               <button
@@ -2524,7 +2664,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Sets
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.sets}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
@@ -2533,7 +2673,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     </label>
                     <label className="text-sm text-brand-grey">Rounds
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.emomRounds}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, emomRounds: e.target.value }))}
@@ -2548,7 +2688,7 @@ const ActiveWorkoutPage: React.FC = () => {
                       <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                         <div className="relative flex-1 border-r border-brand-grey/10">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             value={toDurationParts(exerciseEditDraft.emomRoundDuration).minutes}
                             onChange={(e) => updateEmomRoundDurationPart('min', e.target.value)}
@@ -2558,7 +2698,7 @@ const ActiveWorkoutPage: React.FC = () => {
                         </div>
                         <div className="relative flex-1">
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min={0}
                             max={59}
                             value={toDurationParts(exerciseEditDraft.emomRoundDuration).seconds}
@@ -2571,7 +2711,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     </div>
                     <label className="text-sm text-brand-grey">Rest Between Sets (sec)
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={0}
                         value={exerciseEditDraft.restSeconds}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
@@ -2587,7 +2727,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Rounds
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.sets}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
@@ -2596,7 +2736,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     </label>
                     <label className="text-sm text-brand-grey">Rest Between Rounds (sec)
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={0}
                         value={exerciseEditDraft.restSeconds}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
@@ -2608,7 +2748,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   {subExercise?.type === 'isometry' ? (
                     <label className="text-sm text-brand-grey">Current Exercise Duration (sec)
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.currentSubDuration}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubDuration: e.target.value }))}
@@ -2618,7 +2758,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   ) : (
                     <label className="text-sm text-brand-grey">Current Exercise Reps
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.currentSubReps}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubReps: e.target.value }))}
@@ -2644,7 +2784,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Current Step Reps
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.currentStepReps}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepReps: e.target.value }))}
@@ -2653,7 +2793,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     </label>
                     <label className="text-sm text-brand-grey">Current Step Rest (sec)
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={0}
                         value={exerciseEditDraft.currentStepRestSeconds}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepRestSeconds: e.target.value }))}
@@ -2678,7 +2818,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Sets
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.sets}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
@@ -2687,7 +2827,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     </label>
                     <label className="text-sm text-brand-grey">Rest (sec)
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={0}
                         value={exerciseEditDraft.restSeconds}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
@@ -2699,7 +2839,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   {currentExercise.type === 'isometry' ? (
                     <label className="text-sm text-brand-grey">Duration (sec)
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.durationSeconds}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, durationSeconds: e.target.value }))}
@@ -2709,7 +2849,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   ) : (
                     <label className="text-sm text-brand-grey">Reps
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min={1}
                         value={exerciseEditDraft.reps}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, reps: e.target.value }))}

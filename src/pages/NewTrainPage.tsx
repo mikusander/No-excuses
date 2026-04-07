@@ -14,6 +14,7 @@ interface ExerciseDraft {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  transition_rest_seconds?: number;
   weight_kg?: number | null;
   emom_rounds?: number;
   emom_round_duration?: number;
@@ -46,6 +47,7 @@ const NewTrainPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [numberDrafts, setNumberDrafts] = useState<Record<string, string>>({});
+  const [editingTransitionForExerciseId, setEditingTransitionForExerciseId] = useState<string | null>(null);
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [didAutoFocusExercise, setDidAutoFocusExercise] = useState(false);
   const exerciseRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
@@ -108,6 +110,7 @@ const NewTrainPage: React.FC = () => {
             ordine,
             set_num,
             rest_secondi,
+            rest_tra_esercizi,
             peso_kg,
             note_esercizio,
             tipo,
@@ -134,6 +137,9 @@ const NewTrainPage: React.FC = () => {
           ...ex,
           id: crypto.randomUUID(),
           instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
+          transition_rest_seconds: Number.isFinite(Number(ex.transition_rest_seconds))
+            ? Math.max(0, Math.trunc(Number(ex.transition_rest_seconds)))
+            : 0,
           subExercises: Array.isArray(ex.subExercises)
             ? ex.subExercises.map((sub: any) => ({
                 ...sub,
@@ -154,7 +160,18 @@ const NewTrainPage: React.FC = () => {
   const addExercise = () => {
     setExercises([
       ...exercises,
-      { id: crypto.randomUUID(), type: 'reps', name: '', instruction_note: '', sets: 3, reps: 10, duration_seconds: 30, rest_seconds: 60, weight_kg: null }
+      {
+        id: crypto.randomUUID(),
+        type: 'reps',
+        name: '',
+        instruction_note: '',
+        sets: 3,
+        reps: 10,
+        duration_seconds: 30,
+        rest_seconds: 60,
+        transition_rest_seconds: 0,
+        weight_kg: null,
+      }
     ]);
   };
 
@@ -208,7 +225,7 @@ const NewTrainPage: React.FC = () => {
     setExercises([
       ...exercises,
       {
-        id: crypto.randomUUID(), type: 'emom', name: '', instruction_note: '', sets: 1, reps: 0, duration_seconds: 0, rest_seconds: 60, weight_kg: null, emom_rounds: 10, emom_round_duration: 60, subExercises: [
+        id: crypto.randomUUID(), type: 'emom', name: '', instruction_note: '', sets: 1, reps: 0, duration_seconds: 0, rest_seconds: 60, transition_rest_seconds: 0, weight_kg: null, emom_rounds: 10, emom_round_duration: 60, subExercises: [
           { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
         ]
       }
@@ -216,6 +233,9 @@ const NewTrainPage: React.FC = () => {
   };
 
   const removeExercise = (id: string) => {
+    if (editingTransitionForExerciseId === id) {
+      setEditingTransitionForExerciseId(null);
+    }
     setExercises(exercises.filter(ex => ex.id !== id));
   };
 
@@ -494,6 +514,36 @@ const NewTrainPage: React.FC = () => {
     clearDraftValue(key);
   };
 
+  const commitTransitionRestPart = (
+    id: string,
+    part: 'min' | 'sec',
+    key: string,
+    currentTransitionRestSeconds: number
+  ) => {
+    const raw = (numberDrafts[key] ?? '').trim();
+    let parsed = raw === '' ? 0 : parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = 0;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
+    const safeCurrent = Number.isFinite(currentTransitionRestSeconds)
+      ? Math.max(0, Math.trunc(currentTransitionRestSeconds))
+      : 0;
+    const minutes = Math.floor(safeCurrent / 60);
+    const seconds = safeCurrent % 60;
+    const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
+
+    updateExercise(id, 'transition_rest_seconds', next);
+    clearDraftValue(key);
+  };
+
+  const formatTransitionRest = (totalSeconds?: number) => {
+    const safe = Number.isFinite(totalSeconds) ? Math.max(0, Math.trunc(totalSeconds || 0)) : 0;
+    const mins = Math.floor(safe / 60);
+    const secs = safe % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const commitEmomRoundDurationPart = (
     id: string,
     part: 'min' | 'sec',
@@ -669,6 +719,10 @@ const NewTrainPage: React.FC = () => {
 
       for (let idx = 0; idx < exercises.length; idx += 1) {
         const ex = exercises[idx];
+        const transitionRestToPersist =
+          idx < exercises.length - 1 && (ex.transition_rest_seconds || 0) > 0
+            ? Math.max(0, Math.trunc(ex.transition_rest_seconds || 0))
+            : null;
 
         if (ex.type === 'superset') {
           const { data, error: supersetError } = await supabase
@@ -689,6 +743,7 @@ const NewTrainPage: React.FC = () => {
               ordine: orderCounter,
               set_num: Math.max(1, ex.sets || 1),
               rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+              rest_tra_esercizi: transitionRestToPersist,
               peso_kg: toDbWeight(sub.weight_kg),
               note_esercizio: String(sub.instruction_note || '').trim() || null,
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
@@ -726,6 +781,7 @@ const NewTrainPage: React.FC = () => {
               ordine: orderCounter,
               set_num: Math.max(1, ex.sets || 1),
               rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+              rest_tra_esercizi: transitionRestToPersist,
               peso_kg: toDbWeight(sub.weight_kg),
               note_esercizio: String(sub.instruction_note || '').trim() || null,
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
@@ -762,6 +818,7 @@ const NewTrainPage: React.FC = () => {
               ordine: orderCounter,
               set_num: 1,
               rest_secondi: step.rest_seconds > 0 ? step.rest_seconds : null,
+              rest_tra_esercizi: transitionRestToPersist,
               peso_kg: toDbWeight(step.weight_kg),
               note_esercizio: String(ex.instruction_note || '').trim() || null,
               tipo: 'REPS',
@@ -789,6 +846,7 @@ const NewTrainPage: React.FC = () => {
           ordine: orderCounter,
           set_num: Math.max(1, ex.sets || 1),
           rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+          rest_tra_esercizi: transitionRestToPersist,
           peso_kg: toDbWeight(ex.weight_kg),
           note_esercizio: String(ex.instruction_note || '').trim() || null,
           tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
@@ -863,8 +921,8 @@ const NewTrainPage: React.FC = () => {
             </div>
           ) : (
             exercises.map((ex, index) => (
+              <React.Fragment key={ex.id}>
               <div
-                key={ex.id}
                 ref={(node) => {
                   exerciseRefs.current[ex.id] = node;
                 }}
@@ -910,7 +968,7 @@ const NewTrainPage: React.FC = () => {
                       <div className="flex flex-col">
                         <label className="text-xs text-brand-grey mb-1">Total Rounds</label>
                         <input
-                          type="number"
+                          type="number" inputMode="numeric"
                           min="1"
                           value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
                           onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
@@ -924,7 +982,7 @@ const NewTrainPage: React.FC = () => {
                         <div className="flex bg-black/40 border border-brand-grey/20 rounded-lg overflow-hidden focus-within:border-blue-400 transition-colors h-[42px]">
                           <div className="relative flex-1 border-r border-brand-grey/10">
                             <input
-                              type="number"
+                              type="number" inputMode="numeric"
                               min="0"
                               value={getDraftOrValue(`${ex.id}:emom_round_duration:min`, Math.floor((ex.emom_round_duration || 60) / 60))}
                               onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:min`, e.target.value)}
@@ -936,7 +994,7 @@ const NewTrainPage: React.FC = () => {
                           </div>
                           <div className="relative flex-1">
                             <input
-                              type="number"
+                              type="number" inputMode="numeric"
                               min="0"
                               max="59"
                               value={getDraftOrValue(`${ex.id}:emom_round_duration:sec`, (ex.emom_round_duration || 60) % 60)}
@@ -979,7 +1037,7 @@ const NewTrainPage: React.FC = () => {
                             {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           </label>
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min="1"
                             value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds)}
                             onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
@@ -1066,7 +1124,7 @@ const NewTrainPage: React.FC = () => {
                             {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           </label>
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             min="1"
                             value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds)}
                             onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
@@ -1154,7 +1212,7 @@ const NewTrainPage: React.FC = () => {
                           <div>
                             <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Reps</label>
                             <input
-                              type="number"
+                              type="number" inputMode="numeric"
                               min="1"
                               value={Object.prototype.hasOwnProperty.call(numberDrafts, `${ex.id}:pyr:${stepIdx}:reps`) ? numberDrafts[`${ex.id}:pyr:${stepIdx}:reps`] : (Number.isFinite(step.reps) && step.reps > 0 ? String(step.reps) : '')}
                               onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:reps`, e.target.value)}
@@ -1171,7 +1229,7 @@ const NewTrainPage: React.FC = () => {
                             <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                               <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
                                 <input
-                                  type="number"
+                                  type="number" inputMode="numeric"
                                   min="0"
                                   value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:min`, Math.floor(step.rest_seconds / 60))}
                                   onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:min`, e.target.value)}
@@ -1183,7 +1241,7 @@ const NewTrainPage: React.FC = () => {
                               </div>
                               <div className="flex flex-col items-center justify-center w-1/2 relative">
                                 <input
-                                  type="number"
+                                  type="number" inputMode="numeric"
                                   min="0"
                                   max="59"
                                   value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds % 60)}
@@ -1277,7 +1335,7 @@ const NewTrainPage: React.FC = () => {
                       Sets
                     </label>
                     <input
-                      type="number"
+                      type="number" inputMode="numeric"
                       min="1"
                       value={getDraftOrValue(`${ex.id}:sets`, ex.sets)}
                       onChange={(e) => setDraftValue(`${ex.id}:sets`, e.target.value)}
@@ -1293,7 +1351,7 @@ const NewTrainPage: React.FC = () => {
                         {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
                       </label>
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min="1"
                         value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds)}
                         onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
@@ -1330,7 +1388,7 @@ const NewTrainPage: React.FC = () => {
                     <div className="flex bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[46px]">
                       <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
                         <input
-                          type="number"
+                          type="number" inputMode="numeric"
                           min="0"
                           value={getDraftOrValue(`${ex.id}:rest:min`, Math.floor(ex.rest_seconds / 60))}
                           onChange={(e) => setDraftValue(`${ex.id}:rest:min`, e.target.value)}
@@ -1342,7 +1400,7 @@ const NewTrainPage: React.FC = () => {
                       </div>
                       <div className="flex flex-col items-center justify-center w-1/2 relative">
                         <input
-                          type="number"
+                          type="number" inputMode="numeric"
                           min="0"
                           max="59"
                           value={getDraftOrValue(`${ex.id}:rest:sec`, ex.rest_seconds % 60)}
@@ -1375,6 +1433,81 @@ const NewTrainPage: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {index < exercises.length - 1 && (
+                <div className="relative -mt-1 mb-1 px-1">
+                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-brand-grey/25" />
+
+                  <div className="relative flex justify-center">
+                    <button
+                      onClick={() => setEditingTransitionForExerciseId((prev) => (prev === ex.id ? null : ex.id))}
+                      className="inline-flex items-center gap-2 rounded-full border border-brand-orange/30 bg-brand-dark px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-brand-orange hover:border-brand-orange/60 hover:text-brand-lightOrange transition-colors"
+                    >
+                      <Clock size={12} />
+                      {(ex.transition_rest_seconds || 0) > 0
+                        ? `Rest between exercises: ${formatTransitionRest(ex.transition_rest_seconds)}`
+                        : 'Add rest between exercises'}
+                    </button>
+                  </div>
+
+                  {editingTransitionForExerciseId === ex.id && (
+                    <div className="relative mt-2 bg-brand-darkGrey/30 border border-brand-grey/20 rounded-xl px-3 py-3">
+                      <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mb-2">
+                        Recovery between exercise {index + 1} and {index + 2}
+                      </p>
+
+                      <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
+                        <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
+                          <input
+                            type="number" inputMode="numeric"
+                            min="0"
+                            value={getDraftOrValue(`${ex.id}:transition_rest:min`, Math.floor((ex.transition_rest_seconds || 0) / 60))}
+                            onChange={(e) => setDraftValue(`${ex.id}:transition_rest:min`, e.target.value)}
+                            onBlur={() => commitTransitionRestPart(ex.id, 'min', `${ex.id}:transition_rest:min`, ex.transition_rest_seconds || 0)}
+                            onFocus={onNumberFocus}
+                            className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
+                          />
+                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                        </div>
+                        <div className="flex flex-col items-center justify-center w-1/2 relative">
+                          <input
+                            type="number" inputMode="numeric"
+                            min="0"
+                            max="59"
+                            value={getDraftOrValue(`${ex.id}:transition_rest:sec`, (ex.transition_rest_seconds || 0) % 60)}
+                            onChange={(e) => setDraftValue(`${ex.id}:transition_rest:sec`, e.target.value)}
+                            onBlur={() => commitTransitionRestPart(ex.id, 'sec', `${ex.id}:transition_rest:sec`, ex.transition_rest_seconds || 0)}
+                            onFocus={onNumberFocus}
+                            className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
+                          />
+                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            updateExercise(ex.id, 'transition_rest_seconds', 0);
+                            clearDraftValue(`${ex.id}:transition_rest:min`);
+                            clearDraftValue(`${ex.id}:transition_rest:sec`);
+                            setEditingTransitionForExerciseId(null);
+                          }}
+                          className="px-3 py-1.5 rounded-lg border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-xs font-bold"
+                        >
+                          Remove
+                        </button>
+                        <button
+                          onClick={() => setEditingTransitionForExerciseId(null)}
+                          className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-xs font-black"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              </React.Fragment>
             ))
           )}
 

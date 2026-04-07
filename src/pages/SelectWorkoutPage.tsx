@@ -14,6 +14,7 @@ interface Exercise {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  weight_kg?: number | null;
   order_index: number;
   emom_rounds?: number;
   emom_round_duration?: number;
@@ -77,6 +78,28 @@ const SelectWorkoutPage: React.FC = () => {
     const s = totalSecs % 60;
     if (m === 0) return `${s}s`;
     return `${m}m ${s}s`;
+  };
+
+  const formatWeightLabel = (weight?: number | null) => {
+    const n = Number(weight);
+    if (!Number.isFinite(n) || n <= 0) return 'Body Weight';
+    return `${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg`;
+  };
+
+  const getExerciseWeightLabel = (exercise: Exercise) => {
+    if (exercise.type === 'pyramid') {
+      const labels = Array.from(new Set((exercise.pyramid_steps || []).map((step) => formatWeightLabel(step.weight_kg))));
+      if (labels.length === 0) return 'Body Weight';
+      return labels.length === 1 ? labels[0] : 'Varies';
+    }
+
+    if ((exercise.type === 'superset' || exercise.type === 'emom') && exercise.subExercises?.length) {
+      const labels = Array.from(new Set(exercise.subExercises.map((sub) => formatWeightLabel(sub.weight_kg))));
+      if (labels.length === 0) return 'Body Weight';
+      return labels.length === 1 ? labels[0] : 'Varies';
+    }
+
+    return formatWeightLabel(exercise.weight_kg);
   };
 
   const closePreviewModal = () => {
@@ -250,7 +273,11 @@ const SelectWorkoutPage: React.FC = () => {
                   )}
 
                   <div className="space-y-4">
-                    {selectedWorkoutPreview?.exercises.map((ex, i) => (
+                    {selectedWorkoutPreview?.exercises.map((ex, i) => {
+                      const showInlineWeightNearName =
+                        (ex.type === 'superset' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
+
+                      return (
                       <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
                         {ex.type === 'superset' || ex.type === 'emom' || ex.type === 'pyramid' ? (
                           <div className="mb-3">
@@ -272,6 +299,9 @@ const SelectWorkoutPage: React.FC = () => {
                                       <span className="text-brand-orange ml-1 text-xs">
                                         ({sub.type === 'reps' ? `${sub.reps} reps` : `${sub.duration_seconds} s`})
                                       </span>
+                                      {showInlineWeightNearName && (
+                                        <span className="text-brand-grey/70 text-xs ml-1">{formatWeightLabel(sub.weight_kg)}</span>
+                                      )}
                                     </div>
                                   ))}
                             </div>
@@ -314,9 +344,16 @@ const SelectWorkoutPage: React.FC = () => {
                               <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>
                             </div>
                           )}
+
+                          {!showInlineWeightNearName && (
+                            <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
+                              <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Weights</span>
+                              <span className="text-sm text-brand-lightOrange truncate">{getExerciseWeightLabel(ex)}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    ))}
+                    )})}
 
                     {(!selectedWorkoutPreview || selectedWorkoutPreview.exercises.length === 0) && !previewError && (
                       <p className="text-sm text-brand-grey/50 italic text-center py-4 bg-black/20 rounded-2xl">No exercises in this workout.</p>

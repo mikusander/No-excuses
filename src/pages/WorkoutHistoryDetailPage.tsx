@@ -14,6 +14,7 @@ interface WorkoutHistoryDetail {
   canRestartFromSnapshot: boolean;
   workoutName: string;
   executedAt: string;
+  totalDurationSeconds: number | null;
   notes: string[];
 }
 
@@ -52,6 +53,23 @@ const formatSecs = (totalSecs: number) => {
   const seconds = safe % 60;
   if (minutes === 0) return `${seconds}s`;
   return `${minutes}m ${seconds}s`;
+};
+
+const formatWorkoutDuration = (totalSecs: number | null) => {
+  if (totalSecs == null || !Number.isFinite(totalSecs)) return 'Not available';
+
+  const safe = Math.max(0, Math.trunc(totalSecs));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+  }
+  return `${seconds}s`;
 };
 
 const toSafeNumber = (value: unknown, fallback: number) => {
@@ -139,9 +157,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        const { data: runData, error: runError } = await supabase
-          .from('workout_run')
-          .select(`
+        const runSelectBase = `
             id_workout,
             id_scheda,
             workout_name_snapshot,
@@ -149,10 +165,47 @@ const WorkoutHistoryDetailPage: React.FC = () => {
             data_esecuzione,
             schede ( id_scheda, nome ),
             note_workout ( testo, created_at )
-          `)
+          `;
+
+        const runSelectWithDuration = `
+            id_workout,
+            id_scheda,
+            workout_name_snapshot,
+            exercises_snapshot,
+            data_esecuzione,
+            durata_totale_secondi,
+            schede ( id_scheda, nome ),
+            note_workout ( testo, created_at )
+          `;
+
+        let runData: any = null;
+        let runError: any = null;
+
+        const firstRunAttempt = await supabase
+          .from('workout_run')
+          .select(runSelectWithDuration)
           .eq('id_workout', workoutRunNumericId)
           .eq('id_utente', user.id)
           .maybeSingle();
+
+        runData = firstRunAttempt.data;
+        runError = firstRunAttempt.error;
+
+        const needsDurationFallback =
+          Boolean(runError) &&
+          /durata_totale_secondi/i.test(String(runError?.message || ''));
+
+        if (needsDurationFallback) {
+          const fallbackRunAttempt = await supabase
+            .from('workout_run')
+            .select(runSelectBase)
+            .eq('id_workout', workoutRunNumericId)
+            .eq('id_utente', user.id)
+            .maybeSingle();
+
+          runData = fallbackRunAttempt.data;
+          runError = fallbackRunAttempt.error;
+        }
 
         if (runError) throw runError;
         if (!runData) {
@@ -166,6 +219,8 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         const linkedNotes = Array.isArray(runData.note_workout) ? runData.note_workout : [];
         const workoutNameSnapshot = String((runData as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
         const snapshotExercises = toSnapshotExercises((runData as { exercises_snapshot?: unknown }).exercises_snapshot);
+        const totalDurationRaw = Number((runData as { durata_totale_secondi?: unknown }).durata_totale_secondi);
+        const totalDurationSeconds = Number.isFinite(totalDurationRaw) ? Math.max(0, Math.trunc(totalDurationRaw)) : null;
         const canRestartFromTemplate = runData.id_scheda != null && Boolean(linkedScheda?.id_scheda);
         const canRestartFromSnapshot = snapshotExercises.length > 0;
 
@@ -179,6 +234,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
             linkedScheda?.nome ||
             (runData.id_scheda != null ? `Workout #${runData.id_scheda}` : `Workout #${runData.id_workout}`),
           executedAt: runData.data_esecuzione,
+          totalDurationSeconds,
           notes: linkedNotes
             .map((note: { testo?: unknown }) => String(note?.testo || '').trim())
             .filter((note: string) => note.length > 0),
@@ -344,6 +400,10 @@ const WorkoutHistoryDetailPage: React.FC = () => {
               <p className="text-sm text-brand-grey mt-2 flex items-center">
                 <Calendar size={15} className="mr-2 text-brand-orange" />
                 {formatExecutedAt(detail.executedAt)}
+              </p>
+              <p className="text-sm text-brand-grey mt-1 flex items-center">
+                <Clock size={15} className="mr-2 text-brand-orange" />
+                Duration: {formatWorkoutDuration(detail.totalDurationSeconds)}
               </p>
             </div>
             <div className="bg-brand-orange/20 p-3 rounded-2xl shrink-0">

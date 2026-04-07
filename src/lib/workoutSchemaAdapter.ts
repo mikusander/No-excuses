@@ -23,6 +23,7 @@ export interface UiExercise {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  transition_rest_seconds?: number;
   weight_kg?: number | null;
   order_index: number;
   emom_rounds?: number;
@@ -71,6 +72,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
     const orderIndex = Math.max(0, toSafeInt(row.ordine, 1) - 1);
     const sets = Math.max(1, toSafeInt(row.set_num, 1));
     const restSeconds = Math.max(0, toSafeInt(row.rest_secondi, 0));
+    const transitionRestSeconds = Math.max(0, toSafeInt(row.rest_tra_esercizi, 0));
     const rowType = String(row.tipo || '').toUpperCase() === 'ISOMETRIA' ? 'isometry' : 'reps';
 
     if (row.id_superset) {
@@ -85,6 +87,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: 0,
             duration_seconds: 0,
             rest_seconds: restSeconds,
+            transition_rest_seconds: transitionRestSeconds,
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             subExercises: [],
@@ -98,6 +101,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       const g = grouped.get(key)!;
       g.order = Math.min(g.order, orderIndex);
       g.ex.order_index = g.order;
+      g.ex.transition_rest_seconds = Math.max(0, Math.max(g.ex.transition_rest_seconds || 0, transitionRestSeconds));
 
       if (Array.isArray(jsonPayload)) {
         g.ex.subExercises = (jsonPayload as UiSubExercise[]).map((item) => ({
@@ -136,6 +140,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: 0,
             duration_seconds: Math.max(1, toSafeInt(row?.emom?.durata_round_secondi, 60)),
             rest_seconds: restSeconds,
+            transition_rest_seconds: transitionRestSeconds,
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             emom_rounds: Math.max(1, toSafeInt(row?.emom?.round_totali, 1)),
@@ -151,6 +156,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       const g = grouped.get(key)!;
       g.order = Math.min(g.order, orderIndex);
       g.ex.order_index = g.order;
+      g.ex.transition_rest_seconds = Math.max(0, Math.max(g.ex.transition_rest_seconds || 0, transitionRestSeconds));
 
       if (Array.isArray(jsonPayload)) {
         g.ex.subExercises = (jsonPayload as UiSubExercise[]).map((item) => ({
@@ -199,6 +205,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: 0,
             duration_seconds: 0,
             rest_seconds: 0,
+            transition_rest_seconds: transitionRestSeconds,
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             pyramid_steps: [],
@@ -212,6 +219,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       const g = grouped.get(key)!;
       g.order = Math.min(g.order, orderIndex);
       g.ex.order_index = g.order;
+      g.ex.transition_rest_seconds = Math.max(0, Math.max(g.ex.transition_rest_seconds || 0, transitionRestSeconds));
 
       if (jsonPayload?.steps && Array.isArray(jsonPayload.steps)) {
         const payloadWeight = toSafeDecimal((jsonPayload as { weight_kg?: unknown }).weight_kg, null);
@@ -251,6 +259,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       reps: Math.max(0, toSafeInt(row.reps, 0)),
       duration_seconds: Math.max(0, toSafeInt(row.durata_secondi, 0)),
       rest_seconds: restSeconds,
+      transition_rest_seconds: transitionRestSeconds,
       weight_kg: toSafeDecimal(row.peso_kg, null),
       order_index: orderIndex,
       instruction_note: toOptionalNote(row.note_esercizio),
