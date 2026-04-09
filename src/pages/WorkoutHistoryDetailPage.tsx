@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
@@ -16,6 +16,10 @@ interface WorkoutHistoryDetail {
   executedAt: string;
   totalDurationSeconds: number | null;
   notes: string[];
+}
+
+interface ExerciseNoteModalContext {
+  exerciseName: string;
 }
 
 const formatExecutedAt = (value: string) => {
@@ -141,6 +145,10 @@ const WorkoutHistoryDetailPage: React.FC = () => {
   const [detail, setDetail] = useState<WorkoutHistoryDetail | null>(null);
   const [exercises, setExercises] = useState<UiExercise[]>([]);
   const [isDeletingHistoryEntry, setIsDeletingHistoryEntry] = useState(false);
+  const [isExerciseNoteModalOpen, setIsExerciseNoteModalOpen] = useState(false);
+  const [exerciseNoteModalContext, setExerciseNoteModalContext] = useState<ExerciseNoteModalContext | null>(null);
+  const [exerciseNoteDraft, setExerciseNoteDraft] = useState('');
+  const [isSavingExerciseNote, setIsSavingExerciseNote] = useState(false);
 
   useEffect(() => {
     const fetchWorkoutHistoryDetail = async () => {
@@ -323,6 +331,95 @@ const WorkoutHistoryDetailPage: React.FC = () => {
     return notesGrouped.notesMap.get(normalizeNoteKey(name)) || [];
   };
 
+  const getNoteTextsForExercise = (exerciseName: string, sourceNotes: string[]) => {
+    const targetKey = normalizeNoteKey(exerciseName);
+    return sourceNotes
+      .map((rawNote) => parseTaggedNote(rawNote))
+      .filter((parsed): parsed is { exerciseName: string; text: string } => {
+        if (!parsed || !parsed.exerciseName || !parsed.text) return false;
+        return normalizeNoteKey(parsed.exerciseName) === targetKey;
+      })
+      .map((parsed) => parsed.text);
+  };
+
+  const openExerciseNoteModal = (exerciseName: string) => {
+    const initialNotes = getNoteTextsForExercise(exerciseName, detail?.notes || []);
+    setExerciseNoteModalContext({ exerciseName });
+    setExerciseNoteDraft(initialNotes.join('\n'));
+    setIsExerciseNoteModalOpen(true);
+  };
+
+  const closeExerciseNoteModal = () => {
+    if (isSavingExerciseNote) return;
+    setIsExerciseNoteModalOpen(false);
+    setExerciseNoteModalContext(null);
+    setExerciseNoteDraft('');
+  };
+
+  const saveExerciseNote = async () => {
+    if (!detail || !exerciseNoteModalContext || !user?.id || isSavingExerciseNote) return;
+
+    const workoutRunNumericId = Number(detail.id);
+    if (Number.isNaN(workoutRunNumericId)) {
+      alert('Invalid workout id.');
+      return;
+    }
+
+    const trimmedNote = exerciseNoteDraft.trim();
+    const currentNotes = detail.notes || [];
+    const targetExerciseName = exerciseNoteModalContext.exerciseName;
+    const notesWithoutCurrentExercise = currentNotes.filter((rawNote) => {
+      const parsed = parseTaggedNote(rawNote);
+      if (!parsed || !parsed.exerciseName) return true;
+      return normalizeNoteKey(parsed.exerciseName) !== normalizeNoteKey(targetExerciseName);
+    });
+
+    const nextNotes = trimmedNote
+      ? [...notesWithoutCurrentExercise, `[${targetExerciseName}] ${trimmedNote}`]
+      : notesWithoutCurrentExercise;
+
+    try {
+      setIsSavingExerciseNote(true);
+
+      const { error: deleteNotesError } = await supabase
+        .from('note_workout')
+        .delete()
+        .eq('id_workout', workoutRunNumericId);
+
+      if (deleteNotesError) throw deleteNotesError;
+
+      if (nextNotes.length > 0) {
+        const rowsToInsert = nextNotes.map((note) => ({
+          id_workout: workoutRunNumericId,
+          testo: note,
+        }));
+
+        const { error: insertNotesError } = await supabase
+          .from('note_workout')
+          .insert(rowsToInsert);
+
+        if (insertNotesError) throw insertNotesError;
+      }
+
+      setDetail((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          notes: nextNotes,
+        };
+      });
+
+      setIsExerciseNoteModalOpen(false);
+      setExerciseNoteModalContext(null);
+      setExerciseNoteDraft('');
+    } catch (saveError) {
+      console.error('Error saving workout exercise note:', saveError);
+      alert('Unable to save exercise note.');
+    } finally {
+      setIsSavingExerciseNote(false);
+    }
+  };
+
   const deleteCurrentHistoryEntry = async () => {
     if (!user?.id || !detail || isDeletingHistoryEntry) return;
     if (!window.confirm('Delete this completed workout from history?')) return;
@@ -421,6 +518,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         ) : (
           exercises.map((exercise, idx) => {
             const directNotes = getNotesForName(exercise.name);
+            const hasDirectExerciseNote = directNotes.length > 0;
             const typeLabel =
               exercise.type === 'reps'
                 ? 'REPS'
@@ -455,6 +553,20 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                       )}
                       {typeLabel}
                     </div>
+                  </div>
+
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      onClick={() => openExerciseNoteModal(exercise.name)}
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wide transition-colors border ${
+                        hasDirectExerciseNote
+                          ? 'bg-brand-orange/20 text-brand-orange border-brand-orange/40 hover:bg-brand-orange/25'
+                          : 'bg-brand-darkGrey/40 text-brand-grey border-brand-grey/30 hover:text-white hover:border-brand-grey/50'
+                      }`}
+                    >
+                      <FileText size={12} />
+                      {hasDirectExerciseNote ? 'Edit note' : 'Add note'}
+                    </button>
                   </div>
 
                   {isComplexType && (
@@ -654,6 +766,60 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           Delete from history
         </button>
       </main>
+
+      {isExerciseNoteModalOpen && exerciseNoteModalContext && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Exercise Note</h3>
+                <p className="text-xs text-brand-grey mt-1 break-words">{exerciseNoteModalContext.exerciseName}</p>
+              </div>
+              <button
+                onClick={closeExerciseNoteModal}
+                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
+                title="Close note editor"
+                disabled={isSavingExerciseNote}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <textarea
+              value={exerciseNoteDraft}
+              onChange={(event) => setExerciseNoteDraft(event.target.value)}
+              placeholder="Write your note for this exercise..."
+              className="w-full min-h-[150px] bg-black/40 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none"
+            />
+
+            <div className="mt-4 flex items-center justify-end gap-3">
+              <button
+                onClick={closeExerciseNoteModal}
+                className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold"
+                disabled={isSavingExerciseNote}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  void saveExerciseNote();
+                }}
+                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={isSavingExerciseNote}
+              >
+                {isSavingExerciseNote ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin" />
+                    Saving...
+                  </span>
+                ) : (
+                  'Save note'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNavigation />
     </div>

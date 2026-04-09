@@ -521,6 +521,31 @@ const ActiveWorkoutPage: React.FC = () => {
     }
   };
 
+  const clearNativeTextSelection = () => {
+    if (typeof window === 'undefined') return;
+    const selection = window.getSelection?.();
+    if (!selection || selection.rangeCount === 0) return;
+    selection.removeAllRanges();
+  };
+
+  const handleTimerPointerDown = (event: React.PointerEvent<HTMLElement>, onLongPress: () => void) => {
+    event.preventDefault();
+    clearNativeTextSelection();
+    startTimerLongPress(onLongPress);
+  };
+
+  const handleTimerPointerUp = (event: React.PointerEvent<HTMLElement>, onShortPress?: () => void) => {
+    event.preventDefault();
+    clearNativeTextSelection();
+    finishTimerLongPress(onShortPress);
+  };
+
+  const handleTimerPointerAbort = (event: React.PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    clearNativeTextSelection();
+    clearTimerLongPressState();
+  };
+
   useEffect(() => {
     const saved = localStorage.getItem(VOICE_ASSIST_KEY);
     setVoiceAssistanceEnabled(saved !== 'false');
@@ -2113,11 +2138,11 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
         
         <div
-          className="w-64 h-64 rounded-full border-8 border-brand-darkGrey flex flex-col justify-center items-center shadow-[0_0_50px_rgba(255,107,0,0.1)] mb-12 relative overflow-hidden cursor-pointer"
-          onPointerDown={() => startTimerLongPress(resetRestCountdown)}
-          onPointerUp={() => finishTimerLongPress(handleRestTimerTap)}
-          onPointerCancel={clearTimerLongPressState}
-          onPointerLeave={clearTimerLongPressState}
+          className="w-64 h-64 rounded-full border-8 border-brand-darkGrey flex flex-col justify-center items-center shadow-[0_0_50px_rgba(255,107,0,0.1)] mb-12 relative overflow-hidden cursor-pointer select-none"
+          onPointerDown={(event) => handleTimerPointerDown(event, resetRestCountdown)}
+          onPointerUp={(event) => handleTimerPointerUp(event, handleRestTimerTap)}
+          onPointerCancel={handleTimerPointerAbort}
+          onPointerLeave={handleTimerPointerAbort}
         >
            {/* Animated Fill (approximate) */}
            <div 
@@ -2133,7 +2158,7 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
 
         <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold -mt-8 mb-8 text-center">
-          Tap to {restEndsAtMs != null ? 'pause' : 'start'} / hold to reset / say 'reset'
+          Tap to {restEndsAtMs != null ? 'pause' : 'start'} / hold to reset
         </p>
 
         <div className="text-center space-y-2 mb-12">
@@ -2249,11 +2274,11 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center">
           {currentExercise.type === 'emom' ? (
             <div className="text-center w-full max-w-sm flex flex-col items-center">
-                  <div className={`relative group w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${emomActive ? 'border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]' : 'border-brand-darkGrey'}`}
-                       onPointerDown={() => startTimerLongPress(resetEmomCountdown)}
-                       onPointerUp={() => finishTimerLongPress(handleEmomTimerTap)}
-                       onPointerCancel={clearTimerLongPressState}
-                       onPointerLeave={clearTimerLongPressState}>
+                     <div className={`relative group w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer select-none ${emomActive ? 'border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]' : 'border-brand-darkGrey'}`}
+                       onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
+                       onPointerUp={(event) => handleTimerPointerUp(event, handleEmomTimerTap)}
+                       onPointerCancel={handleTimerPointerAbort}
+                       onPointerLeave={handleTimerPointerAbort}>
                  <span className={`text-[60px] font-mono tracking-tighter ${emomActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
                    {emomRoundRemaining}
                  </span>
@@ -2263,7 +2288,7 @@ const ActiveWorkoutPage: React.FC = () => {
                  </div>
               </div>
               <p className="text-center text-[10px] text-brand-grey mt-2 uppercase tracking-wider font-bold mb-4">
-                Tap to {emomActive ? 'pause' : 'start'} / hold to reset / say 'reset'
+                Tap to {emomActive ? 'pause' : 'start'} / hold to reset
               </p>
 
               <div className="w-full max-w-xs mb-4 grid grid-cols-2 gap-2">
@@ -2400,11 +2425,11 @@ const ActiveWorkoutPage: React.FC = () => {
             </div>
           ) : currentExercise.type === 'isometry' ? (
             <div
-              className="text-center w-full max-w-xs relative group cursor-pointer"
-              onPointerDown={() => startTimerLongPress(resetIsometryCountdown)}
-              onPointerUp={() => finishTimerLongPress(handleIsometryTimerTap)}
-              onPointerCancel={clearTimerLongPressState}
-              onPointerLeave={clearTimerLongPressState}
+              className="text-center w-full max-w-xs relative group cursor-pointer select-none"
+              onPointerDown={(event) => handleTimerPointerDown(event, resetIsometryCountdown)}
+              onPointerUp={(event) => handleTimerPointerUp(event, handleIsometryTimerTap)}
+              onPointerCancel={handleTimerPointerAbort}
+              onPointerLeave={handleTimerPointerAbort}
             >
               <div className={`w-64 h-64 mx-auto rounded-full border-[12px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl ${isometryActive ? 'border-brand-orange shadow-[0_0_40px_rgba(255,107,0,0.3)]' : 'border-brand-darkGrey'}`}>
                  <span className={`text-[80px] font-mono tracking-tighter ${isometryActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
@@ -2417,7 +2442,7 @@ const ActiveWorkoutPage: React.FC = () => {
                  </div>
               </div>
               <p className="text-center text-xs text-brand-grey mt-6 uppercase tracking-wider font-bold">
-                  Tap to {isometryActive ? 'pause' : 'start'} / hold to reset / say 'reset'
+                  Tap to {isometryActive ? 'pause' : 'start'} / hold to reset
               </p>
               <div className={`mt-4 w-full max-w-sm grid ${isSuperset ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
