@@ -6,6 +6,7 @@ export const usePoseLandmarker = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let isCancelled = false;
     const initPoseLandmarker = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
@@ -21,6 +22,11 @@ export const usePoseLandmarker = () => {
           numPoses: 1
         });
         
+        if (isCancelled) {
+          poseLandmarker.close();
+          return;
+        }
+
         poseLandmarkerRef.current = poseLandmarker;
         setIsLoading(false);
       } catch (error) {
@@ -31,6 +37,7 @@ export const usePoseLandmarker = () => {
     initPoseLandmarker();
 
     return () => {
+      isCancelled = true;
       poseLandmarkerRef.current?.close();
     };
   }, []);

@@ -182,23 +182,41 @@ export class ExerciseTracker {
 
     let warning: string | undefined;
 
-    // Hip sagging check
+    // Posture and Hip sagging checks
     if (lHip && lAnkle && rHip && rAnkle) {
        // use the most visible side
        const side = (lShoulder.visibility || 0) > (rShoulder.visibility || 0) ? 'L' : 'R';
-       let spineAngle = 180;
        
+       const activeShoulder = side === 'L' ? lShoulder : rShoulder;
+       const activeAnkle = side === 'L' ? lAnkle : rAnkle;
+       
+       let spineAngle = 180;
        if (side === 'L') {
           spineAngle = calculateAngle(lShoulder, lHip, lAnkle);
        } else {
           spineAngle = calculateAngle(rShoulder, rHip, rAnkle);
        }
 
-       if (spineAngle < 155) {
+       // Inclinazione del corpo rispetto al suolo: 90° = in piedi, 0° = sdraiato
+       const bodyIncline = Math.atan2(
+         Math.abs(activeShoulder.y - activeAnkle.y), 
+         Math.abs(activeShoulder.x - activeAnkle.x)
+       ) * (180 / Math.PI);
+
+       let isPostureBad = false;
+
+       if (bodyIncline > 50) {
+         warning = "Mettiti a terra!";
+         isPostureBad = true;
+       } else if (spineAngle < 155) {
          warning = "Alza il bacino!";
+         isPostureBad = true;
+       }
+
+       if (isPostureBad) {
          this.isInvalidated = true;
-         this.triggerWarning(warning);
-       } else if (spineAngle > 165) {
+         if (warning) this.triggerWarning(warning);
+       } else if (spineAngle > 165 && bodyIncline <= 50) {
          this.isInvalidated = false;
        }
     }

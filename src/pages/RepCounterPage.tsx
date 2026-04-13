@@ -66,14 +66,22 @@ const RepCounterPage: React.FC = () => {
     if (!selectedExercise) return;
 
     let stream: MediaStream | null = null;
+    let isCancelled = false;
 
     const startCamera = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ 
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: 'user', width: 640, height: 480 } 
         });
+
+        if (isCancelled) {
+          mediaStream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        stream = mediaStream;
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = mediaStream;
           videoRef.current.onloadedmetadata = () => {
             if (videoRef.current) {
               setVideoSize({ 
@@ -94,6 +102,7 @@ const RepCounterPage: React.FC = () => {
     const hintTimer = setTimeout(() => setShowHint(false), 8000);
 
     return () => {
+      isCancelled = true;
       clearTimeout(hintTimer);
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
