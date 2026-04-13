@@ -66,7 +66,7 @@ const PoseOverlay: React.FC<Props> = ({ results, width, height }) => {
       ref={canvasRef}
       width={width}
       height={height}
-      className="absolute top-0 left-0 w-full h-full pointer-events-none"
+      className="absolute min-w-full min-h-full object-cover scale-x-[-1] pointer-events-none"
     />
   );
 };
