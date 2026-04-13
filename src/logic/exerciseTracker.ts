@@ -22,6 +22,10 @@ const applyEMA = (current: number, prev: number | null, alpha = 0.4): number => 
   return alpha * current + (1 - alpha) * prev;
 };
 
+const isSideVisible = (p1: NormalizedLandmark, p2: NormalizedLandmark, p3: NormalizedLandmark, threshold = 0.65) => {
+  return (p1.visibility ?? 0) > threshold && (p2.visibility ?? 0) > threshold && (p3.visibility ?? 0) > threshold;
+};
+
 export class ExerciseTracker {
   private stage: 'UP' | 'DOWN' | null = null;
   private count: number = 0;
@@ -91,6 +95,11 @@ export class ExerciseTracker {
 
     if (!lShoulder || !rShoulder || !lElbow || !rElbow || !lWrist || !rWrist) return;
 
+    // Controllo di visibilità: se nessuna delle due braccia è ben visibile, non calcolare nulla
+    const isLeftArmVisible = isSideVisible(lShoulder, lElbow, lWrist, 0.65);
+    const isRightArmVisible = isSideVisible(rShoulder, rElbow, rWrist, 0.65);
+    if (!isLeftArmVisible && !isRightArmVisible) return;
+
     let angleL = calculateAngle(lShoulder, lElbow, lWrist);
     let angleR = calculateAngle(rShoulder, rElbow, rWrist);
 
@@ -151,6 +160,11 @@ export class ExerciseTracker {
     const lAnkle = landmarks[27], rAnkle = landmarks[28];
 
     if (!lShoulder || !rShoulder || !lElbow || !rElbow || !lWrist || !rWrist) return;
+
+    // Controllo di visibilità: se nessuna delle due braccia è ben visibile, non calcolare nulla
+    const isLeftArmVisible = isSideVisible(lShoulder, lElbow, lWrist, 0.65);
+    const isRightArmVisible = isSideVisible(rShoulder, rElbow, rWrist, 0.65);
+    if (!isLeftArmVisible && !isRightArmVisible) return;
 
     let angleL = calculateAngle(lShoulder, lElbow, lWrist);
     let angleR = calculateAngle(rShoulder, rElbow, rWrist);
@@ -214,6 +228,11 @@ export class ExerciseTracker {
     const lShoulder = landmarks[11], rShoulder = landmarks[12];
 
     if (!lHip || !rHip || !lKnee || !rKnee || !lAnkle || !rAnkle || !lShoulder || !rShoulder) return;
+
+    // Controllo di visibilità: se nessuna delle due gambe è ben visibile, non calcolare nulla
+    const isLeftLegVisible = isSideVisible(lHip, lKnee, lAnkle, 0.65);
+    const isRightLegVisible = isSideVisible(rHip, rKnee, rAnkle, 0.65);
+    if (!isLeftLegVisible && !isRightLegVisible) return;
 
     let kneeAngleL = calculateAngle(lHip, lKnee, lAnkle);
     let kneeAngleR = calculateAngle(rHip, rKnee, rAnkle);
