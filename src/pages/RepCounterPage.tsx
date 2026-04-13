@@ -35,7 +35,7 @@ const RepCounterPage: React.FC = () => {
   // Sync ref for the animation frame
   useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
 
-  const initTracker = (type: ExerciseType) => {
+  const initTracker = () => {
     // In un contesto reale potresti voler limitare il target (es. 10), ma qui facciamo infinito (Infinity)
     // Finché l'utente non decide di terminare
     trackerRef.current = new ExerciseTracker(
@@ -137,7 +137,7 @@ const RepCounterPage: React.FC = () => {
   const handleSelectExercise = (type: ExerciseType) => {
     setCount(0);
     setPoseResults(null);
-    initTracker(type);
+    initTracker();
     setSelectedExercise(type);
   };
 
