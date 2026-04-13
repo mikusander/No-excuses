@@ -81,7 +81,6 @@ const RepCounterPage: React.FC = () => {
 
         stream = mediaStream;
         if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
           videoRef.current.onloadedmetadata = () => {
             if (videoRef.current) {
               setVideoSize({ 
@@ -89,8 +88,10 @@ const RepCounterPage: React.FC = () => {
                 height: videoRef.current.videoHeight 
               });
               setIsCameraReady(true);
+              videoRef.current.play().catch((e) => console.error("Play error:", e));
             }
           };
+          videoRef.current.srcObject = mediaStream;
         }
       } catch (err) {
         console.error("Camera access error:", err);
@@ -146,12 +147,16 @@ const RepCounterPage: React.FC = () => {
   const handleSelectExercise = (type: ExerciseType) => {
     setCount(0);
     setPoseResults(null);
+    setIsCameraReady(false);
+    setPaused(false);
     initTracker();
     setSelectedExercise(type);
   };
 
   const cancelWorkout = () => {
     setSelectedExercise(null);
+    setIsCameraReady(false);
+    setPaused(false);
     setCount(0);
     trackerRef.current?.reset();
   };
