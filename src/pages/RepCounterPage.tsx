@@ -21,7 +21,7 @@ const RepCounterPage: React.FC = () => {
   
   // Tracking states
   const [count, setCount] = useState(0);
-  const [debugData, setDebugData] = useState<{ angle: number; stage: string | null; error?: boolean; warning?: string }>({ angle: 0, stage: null });
+  const [debugData, setDebugData] = useState<{ angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }>({ angle: 0, stage: null });
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [paused, setPaused] = useState(false);
   const [showHint, setShowHint] = useState(false);
@@ -319,6 +319,13 @@ const RepCounterPage: React.FC = () => {
             <div className="bg-yellow-500/20 backdrop-blur-md p-2 rounded-xl border border-yellow-500/30 flex items-center gap-2 animate-bounce">
               <AlertTriangle className="w-4 h-4 text-yellow-500" />
               <span className="text-[10px] font-bold text-yellow-500 uppercase">{debugData.warning}</span>
+            </div>
+          )}
+
+          {debugData.okMsg && !debugData.warning && (
+            <div className="bg-green-500/20 backdrop-blur-md p-2 rounded-xl border border-green-500/30 flex items-center gap-2 animate-pulse shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+              <Target className="w-4 h-4 text-green-500" />
+              <span className="text-[10px] font-bold text-green-500 uppercase">{debugData.okMsg}</span>
             </div>
           )}
         </div>

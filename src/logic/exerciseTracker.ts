@@ -39,7 +39,7 @@ export class ExerciseTracker {
   
   private onCount: (count: number) => void;
   private onAnnounce: (msg: string) => void;
-  private onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string }) => void;
+  private onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void;
   private onAsymmetry?: () => void;
   
   private lastAsymmetryTime: number = 0;
@@ -54,7 +54,7 @@ export class ExerciseTracker {
     target: number, 
     onCount: (count: number) => void, 
     onAnnounce: (msg: string) => void,
-    onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string }) => void,
+    onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void,
     onAsymmetry?: () => void
   ) {
     this.target = target;
@@ -157,73 +157,80 @@ export class ExerciseTracker {
   updatePushup(landmarks: NormalizedLandmark[]) {
     const lShoulder = landmarks[11], rShoulder = landmarks[12];
     const lElbow = landmarks[13], rElbow = landmarks[14];
-    const lWrist = landmarks[15], rWrist = landmarks[16];
-    
-    // Core check
     const lHip = landmarks[23], rHip = landmarks[24];
+    const lKnee = landmarks[25];
+    const lAnkle = landmarks[27], rAnkle = landmarks[28];
 
-    if (!lShoulder || !rShoulder || !lElbow || !rElbow || !lWrist || !rWrist) return;
+    if (!lShoulder || !rShoulder || !lElbow || !rElbow) return;
 
-    // Controllo di visibilità: se nessuna delle due braccia è ben visibile, non calcolare nulla
-    const isLeftArmVisible = isSideVisible(lShoulder, lElbow, lWrist, 0.65);
-    const isRightArmVisible = isSideVisible(rShoulder, rElbow, rWrist, 0.65);
+    // Check visibilities
+    const isLeftArmVisible = (lShoulder.visibility ?? 0) > 0.5 && (lElbow.visibility ?? 0) > 0.5;
+    const isRightArmVisible = (rShoulder.visibility ?? 0) > 0.5 && (rElbow.visibility ?? 0) > 0.5;
     if (!isLeftArmVisible && !isRightArmVisible) return;
 
-    let angleL = calculateAngle(lShoulder, lElbow, lWrist);
-    let angleR = calculateAngle(rShoulder, rElbow, rWrist);
-
-    angleL = applyEMA(angleL, this.lastAngles.L);
-    angleR = applyEMA(angleR, this.lastAngles.R);
-    this.lastAngles.L = angleL;
-    this.lastAngles.R = angleR;
-
-    const isAsymmetric = this.checkAsymmetry(angleL, angleR, landmarks);
-
-    const visL = (lShoulder.visibility ?? 0) + (lElbow.visibility ?? 0) + (lWrist.visibility ?? 0);
-    const visR = (rShoulder.visibility ?? 0) + (rElbow.visibility ?? 0) + (rWrist.visibility ?? 0);
+    const shoulderY = (lShoulder.y + rShoulder.y) / 2;
+    const elbowY = (lElbow.y + rElbow.y) / 2;
     
-    // In frontal views one arm could be randomly slightly less visible. Average them if both are visible, else pick best.
-    let avgAngle = (angleL * visL + angleR * visR) / ((visL + visR) || 1);
-    
-    // Se siamo chiaramente laterali (un braccio coperto), affidiamoci a quello più visibile per non inquinare la media
-    if (visL > visR * 1.5) avgAngle = angleL;
-    if (visR > visL * 1.5) avgAngle = angleR;
+    // Distanza verticale braccio: >0 = spalle più in alto dei gomiti
+    const armExtensionY = elbowY - shoulderY;
 
     let warning: string | undefined;
+    let okMsg: string | undefined;
 
-    // Posture block logic has been softened. We don't want to completely block the user if the 3D projection 
-    // evaluates a bad posture, because extreme angles (frontal/bottom-up) make landmarks skew.
+    // Controllo "A Terra": anca, ginocchia e piedi ravvicinati (oppure laterale con anca altezza spalle)
+    let isStanding = false;
     
-    const shoulderHeight = Math.min(lShoulder.y, rShoulder.y);
-    const hipHeight = Math.min(lHip?.y ?? 1, rHip?.y ?? 1);
+    const isHipVis = (lHip.visibility ?? 0) > 0.5;
+    const isKneeVis = (lKnee.visibility ?? 0) > 0.5;
+    const isAnkleVis = (lAnkle.visibility ?? 0) > 0.5;
 
-    // If completely upright, it's not a pushup
-    if (hipHeight > shoulderHeight + 0.3) {
-      warning = "Mettiti a terra!";
+    if (isHipVis && isKneeVis && isAnkleVis) {
+       const isLateral = Math.abs(lShoulder.x - lHip.x) > 0.25 || Math.abs(rShoulder.x - rHip.x) > 0.25;
+       
+       if (!isLateral) {
+           // Visuale Frontale
+           const hipY = (lHip.y + rHip.y) / 2;
+           const ankleY = (lAnkle.y + rAnkle.y) / 2;
+           
+           // In prospettiva se sei sdraiato frontalmente l'anca e la caviglia si sovrappongono y quasi identica.
+           // Se stai in piedi, spazieranno parecchio sullo schermo.
+           if (Math.abs(hipY - ankleY) > 0.35) {
+               isStanding = true;
+           }
+       } else {
+           // Visuale Laterale
+           const hipY = (lHip.y + rHip.y) / 2;
+           // Torso dovrebbe essere parallelo a terra (escludendo l'inclinazione camera, diamo 0.35 di scarto).
+           if (Math.abs(hipY - shoulderY) > 0.35) {
+               isStanding = true;
+           }
+       }
     }
 
-    this.onDebug?.({ angle: avgAngle, stage: this.stage, error: isAsymmetric, warning });
-
-    if (warning === "Mettiti a terra!") {
-       // Stop counting entirely if the user stands up
-       this.stage = null;
-       return;
+    if (isStanding) {
+        this.stage = null;
+        this.onDebug?.({ angle: armExtensionY, stage: null, error: false, warning: "Mettiti a terra!" });
+        return;
     }
 
-    // UP Threshold slightly lowered to 150 to account for 3D variations and different arm spans
-    if (avgAngle > 150) {
-      if (this.stage === 'DOWN') {
-        this.count++;
-        this.onCount(this.count);
-        this.checkAnnouncements();
-      }
-      this.stage = 'UP';
+    // "All'inizio dell'esecuzione le braccia devono essere distese"
+    // (spalla molto più in alto del gomito)
+    if (armExtensionY > 0.08) {
+       this.stage = 'UP';
+       okMsg = "OK";
     }
 
-    // DOWN threshold increased to 100 so partial horizontal planes count
-    if (avgAngle < 100) {
-      this.stage = 'DOWN';
+    // "quando si scende nel momento in cui le spalle arrivano indicativamente alla stessa altezza dei gomiti la ripetizione è considerabile valida."
+    if (armExtensionY <= 0.02) {
+       if (this.stage === 'UP') {
+          this.count++;
+          this.onCount(this.count);
+          this.checkAnnouncements();
+       }
+       this.stage = 'DOWN';
     }
+
+    this.onDebug?.({ angle: armExtensionY, stage: this.stage, error: false, warning, okMsg });
   }
 
   updateSquat(landmarks: NormalizedLandmark[]) {
