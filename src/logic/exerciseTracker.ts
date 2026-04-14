@@ -44,6 +44,7 @@ export class ExerciseTracker {
   
   private lastAsymmetryTime: number = 0;
   private lastWarningTime: number = 0;
+  private hasStarted: boolean = false;
 
   // EMA state
   private lastAngles: { L: number | null; R: number | null; Primary: number | null } = {
@@ -159,7 +160,6 @@ export class ExerciseTracker {
     const lElbow = landmarks[13], rElbow = landmarks[14];
     const lWrist = landmarks[15], rWrist = landmarks[16];
     const lHip = landmarks[23], rHip = landmarks[24];
-    const lKnee = landmarks[25], rKnee = landmarks[26];
     const lAnkle = landmarks[27], rAnkle = landmarks[28];
 
     if (!lShoulder || !rShoulder || !lElbow || !rElbow) return;
@@ -182,19 +182,15 @@ export class ExerciseTracker {
     let isStanding = false;
     
     const hipY = (lHip.y + rHip.y) / 2;
-    const kneeY = (lKnee.y + rKnee.y) / 2;
     const ankleY = (lAnkle.y + rAnkle.y) / 2;
 
     const isLateral = Math.abs(lShoulder.x - lHip.x) > 0.25 || Math.abs(rShoulder.x - rHip.x) > 0.25;
 
     if (!isLateral) {
          // Visuale Frontale
-         const diffHipKnee = Math.abs(hipY - kneeY);
-         const diffKneeAnkle = Math.abs(kneeY - ankleY);
-         
-         // Se si sta in piedi frontali, le gambe si distendono verticalmente sull'immagine (spazio distanziato).
-         // Se si è per terra verso la telecamera ("ravvicinati uno consecutivo all'altro"), la prospettiva li schiaccia.
-         if (diffHipKnee > 0.18 || diffKneeAnkle > 0.18) {
+         // Se si è per terra verso la telecamera ("ravvicinati uno consecutivo all'altro"), la prospettiva li schiaccia e occupano pochissimo spazio su Y.
+         // Se la distanza assoluta tra anca e piede è maggiore di 0.15 (che è piccolissima per uno in piedi ma enorme per uno sdraiato frontalmente), sei in piedi!
+         if (Math.abs(hipY - ankleY) > 0.15) {
              isStanding = true;
          }
     } else {
@@ -207,11 +203,25 @@ export class ExerciseTracker {
 
     if (isStanding) {
         this.stage = null;
+        this.hasStarted = false; // Hai rotto la posizione, devi ricominciare
         this.onDebug?.({ angle: armExtensionY, stage: null, error: false, warning: "Mettiti a terra!" });
         return;
     }
 
-    // "All'inizio dell'esecuzione le braccia devono essere distese"
+    // "Vorrei che il sistema inizi a contare solo quando l'utente è in posizione, braccia distese e anca ginocchia piedi in posizione"
+    if (!this.hasStarted) {
+        if (armExtensionY > 0.08) {
+             // Entrato in posizione iniziale valida! (Braccia distese e non sei in piedi)
+             this.hasStarted = true;
+             this.stage = 'UP';
+             this.onDebug?.({ angle: armExtensionY, stage: this.stage, error: false, warning: undefined, okMsg: "OK" });
+        } else {
+             this.onDebug?.({ angle: armExtensionY, stage: null, error: false, warning: "Iniziamo! Distendi le braccia." });
+        }
+        return; // Blocca eventuali conteggi fantasma se ti assembles la postura
+    }
+
+    // Siamo in posizione valida e abbiamo iniziato.
     // (spalla più in alto del gomito)
     if (armExtensionY > 0.08) {
        this.stage = 'UP';
@@ -317,6 +327,7 @@ export class ExerciseTracker {
   reset() {
     this.count = 0;
     this.stage = null;
+    this.hasStarted = false;
     this.lastAnnouncement = -1;
     this.lastAngles = { L: null, R: null, Primary: null };
   }
