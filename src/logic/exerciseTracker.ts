@@ -157,8 +157,9 @@ export class ExerciseTracker {
   updatePushup(landmarks: NormalizedLandmark[]) {
     const lShoulder = landmarks[11], rShoulder = landmarks[12];
     const lElbow = landmarks[13], rElbow = landmarks[14];
+    const lWrist = landmarks[15], rWrist = landmarks[16];
     const lHip = landmarks[23], rHip = landmarks[24];
-    const lKnee = landmarks[25];
+    const lKnee = landmarks[25], rKnee = landmarks[26];
     const lAnkle = landmarks[27], rAnkle = landmarks[28];
 
     if (!lShoulder || !rShoulder || !lElbow || !rElbow) return;
@@ -177,34 +178,31 @@ export class ExerciseTracker {
     let warning: string | undefined;
     let okMsg: string | undefined;
 
-    // Controllo "A Terra": anca, ginocchia e piedi ravvicinati (oppure laterale con anca altezza spalle)
+    // Controllo "A Terra" STRETTO
     let isStanding = false;
     
-    const isHipVis = (lHip.visibility ?? 0) > 0.5;
-    const isKneeVis = (lKnee.visibility ?? 0) > 0.5;
-    const isAnkleVis = (lAnkle.visibility ?? 0) > 0.5;
+    const hipY = (lHip.y + rHip.y) / 2;
+    const kneeY = (lKnee.y + rKnee.y) / 2;
+    const ankleY = (lAnkle.y + rAnkle.y) / 2;
 
-    if (isHipVis && isKneeVis && isAnkleVis) {
-       const isLateral = Math.abs(lShoulder.x - lHip.x) > 0.25 || Math.abs(rShoulder.x - rHip.x) > 0.25;
-       
-       if (!isLateral) {
-           // Visuale Frontale
-           const hipY = (lHip.y + rHip.y) / 2;
-           const ankleY = (lAnkle.y + rAnkle.y) / 2;
-           
-           // In prospettiva se sei sdraiato frontalmente l'anca e la caviglia si sovrappongono y quasi identica.
-           // Se stai in piedi, spazieranno parecchio sullo schermo.
-           if (Math.abs(hipY - ankleY) > 0.35) {
-               isStanding = true;
-           }
-       } else {
-           // Visuale Laterale
-           const hipY = (lHip.y + rHip.y) / 2;
-           // Torso dovrebbe essere parallelo a terra (escludendo l'inclinazione camera, diamo 0.35 di scarto).
-           if (Math.abs(hipY - shoulderY) > 0.35) {
-               isStanding = true;
-           }
-       }
+    const isLateral = Math.abs(lShoulder.x - lHip.x) > 0.25 || Math.abs(rShoulder.x - rHip.x) > 0.25;
+
+    if (!isLateral) {
+         // Visuale Frontale
+         const diffHipKnee = Math.abs(hipY - kneeY);
+         const diffKneeAnkle = Math.abs(kneeY - ankleY);
+         
+         // Se si sta in piedi frontali, le gambe si distendono verticalmente sull'immagine (spazio distanziato).
+         // Se si è per terra verso la telecamera ("ravvicinati uno consecutivo all'altro"), la prospettiva li schiaccia.
+         if (diffHipKnee > 0.18 || diffKneeAnkle > 0.18) {
+             isStanding = true;
+         }
+    } else {
+         // Visuale Laterale
+         // Se in posizione laterale pushup, bisogna essere paralleli a terra
+         if (Math.abs(hipY - shoulderY) > 0.25) {
+             isStanding = true;
+         }
     }
 
     if (isStanding) {
@@ -214,14 +212,24 @@ export class ExerciseTracker {
     }
 
     // "All'inizio dell'esecuzione le braccia devono essere distese"
-    // (spalla molto più in alto del gomito)
+    // (spalla più in alto del gomito)
     if (armExtensionY > 0.08) {
        this.stage = 'UP';
        okMsg = "OK";
     }
 
-    // "quando si scende nel momento in cui le spalle arrivano indicativamente alla stessa altezza dei gomiti la ripetizione è considerabile valida."
+    // "quando si scende nel momento in cui le spalle arrivano indicativamente alla stessa altezza dei gomiti..."
     if (armExtensionY <= 0.02) {
+       // PREVENZIONE FALSI POSITIVI: "...solo quando spalle e gomiti sono vicini ma mani più lontane"
+       // Calcoliamo la distanza 2D tra spalla e mani. In piedi muovendo le braccia a vuoto, le mani vengono vicine al petto.
+       const distWristShoulderL = Math.sqrt(Math.pow(lWrist.x - lShoulder.x, 2) + Math.pow(lWrist.y - lShoulder.y, 2));
+       const distWristShoulderR = Math.sqrt(Math.pow(rWrist.x - rShoulder.x, 2) + Math.pow(rWrist.y - rShoulder.y, 2));
+
+       if (distWristShoulderL < 0.15 || distWristShoulderR < 0.15) {
+          // Mani troppo vicine alle spalle (air pushups). Non è una discesa di pushup valida.
+          return; 
+       }
+
        if (this.stage === 'UP') {
           this.count++;
           this.onCount(this.count);
