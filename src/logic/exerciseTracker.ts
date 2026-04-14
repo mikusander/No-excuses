@@ -7,14 +7,19 @@ export interface Point {
 }
 
 export const calculateAngle = (a: Point, b: Point, c: Point): number => {
-  const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-  let angle = Math.abs((radians * 180.0) / Math.PI);
-
-  if (angle > 180.0) {
-    angle = 360 - angle;
-  }
-
-  return angle;
+  // Use 3D angle calculation to be invariant to camera perspective (frontal vs lateral)
+  const v1 = { x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) };
+  const v2 = { x: c.x - b.x, y: c.y - b.y, z: (c.z || 0) - (b.z || 0) };
+  
+  const dot = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+  const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z);
+  const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y + v2.z * v2.z);
+  
+  if (mag1 === 0 || mag2 === 0) return 0;
+  
+  // Math.acos expects value between -1 and 1
+  const angleRad = Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2))));
+  return angleRad * (180.0 / Math.PI);
 };
 
 const applyEMA = (current: number, prev: number | null, alpha = 0.4): number => {
@@ -39,7 +44,6 @@ export class ExerciseTracker {
   
   private lastAsymmetryTime: number = 0;
   private lastWarningTime: number = 0;
-  private isInvalidated: boolean = false;
 
   // EMA state
   private lastAngles: { L: number | null; R: number | null; Primary: number | null } = {
@@ -157,7 +161,6 @@ export class ExerciseTracker {
     
     // Core check
     const lHip = landmarks[23], rHip = landmarks[24];
-    const lAnkle = landmarks[27], rAnkle = landmarks[28];
 
     if (!lShoulder || !rShoulder || !lElbow || !rElbow || !lWrist || !rWrist) return;
 
@@ -176,56 +179,38 @@ export class ExerciseTracker {
 
     const isAsymmetric = this.checkAsymmetry(angleL, angleR, landmarks);
 
-    const visL = (lShoulder.visibility || 0) + (lElbow.visibility || 0) + (lWrist.visibility || 0);
-    const visR = (rShoulder.visibility || 0) + (rElbow.visibility || 0) + (rWrist.visibility || 0);
-    const avgAngle = (angleL * visL + angleR * visR) / (visL + visR || 1);
+    const visL = (lShoulder.visibility ?? 0) + (lElbow.visibility ?? 0) + (lWrist.visibility ?? 0);
+    const visR = (rShoulder.visibility ?? 0) + (rElbow.visibility ?? 0) + (rWrist.visibility ?? 0);
+    
+    // In frontal views one arm could be randomly slightly less visible. Average them if both are visible, else pick best.
+    let avgAngle = (angleL * visL + angleR * visR) / ((visL + visR) || 1);
+    
+    // Se siamo chiaramente laterali (un braccio coperto), affidiamoci a quello più visibile per non inquinare la media
+    if (visL > visR * 1.5) avgAngle = angleL;
+    if (visR > visL * 1.5) avgAngle = angleR;
 
     let warning: string | undefined;
 
-    // Posture and Hip sagging checks
-    if (lHip && lAnkle && rHip && rAnkle) {
-       // use the most visible side
-       const side = (lShoulder.visibility || 0) > (rShoulder.visibility || 0) ? 'L' : 'R';
-       
-       const activeShoulder = side === 'L' ? lShoulder : rShoulder;
-       const activeAnkle = side === 'L' ? lAnkle : rAnkle;
-       
-       let spineAngle = 180;
-       if (side === 'L') {
-          spineAngle = calculateAngle(lShoulder, lHip, lAnkle);
-       } else {
-          spineAngle = calculateAngle(rShoulder, rHip, rAnkle);
-       }
+    // Posture block logic has been softened. We don't want to completely block the user if the 3D projection 
+    // evaluates a bad posture, because extreme angles (frontal/bottom-up) make landmarks skew.
+    
+    const shoulderHeight = Math.min(lShoulder.y, rShoulder.y);
+    const hipHeight = Math.min(lHip?.y ?? 1, rHip?.y ?? 1);
 
-       // Inclinazione del corpo rispetto al suolo: 90° = in piedi, 0° = sdraiato
-       const bodyIncline = Math.atan2(
-         Math.abs(activeShoulder.y - activeAnkle.y), 
-         Math.abs(activeShoulder.x - activeAnkle.x)
-       ) * (180 / Math.PI);
-
-       let isPostureBad = false;
-
-       if (bodyIncline > 50) {
-         warning = "Mettiti a terra!";
-         isPostureBad = true;
-       } else if (spineAngle < 155) {
-         warning = "Alza il bacino!";
-         isPostureBad = true;
-       }
-
-       if (isPostureBad) {
-         this.isInvalidated = true;
-         if (warning) this.triggerWarning(warning);
-       } else if (spineAngle > 165 && bodyIncline <= 50) {
-         this.isInvalidated = false;
-       }
+    // If completely upright, it's not a pushup
+    if (hipHeight > shoulderHeight + 0.3) {
+      warning = "Mettiti a terra!";
     }
 
     this.onDebug?.({ angle: avgAngle, stage: this.stage, error: isAsymmetric, warning });
 
-    if (this.isInvalidated) return; // Block state progression if form is bad
+    if (warning && !this.stage) {
+       // Only block INITIAL stage setting if they are literally standing up
+       return;
+    }
 
-    if (avgAngle > 155) {
+    // UP Threshold slightly lowered to 150 to account for 3D variations and different arm spans
+    if (avgAngle > 150) {
       if (this.stage === 'DOWN') {
         this.count++;
         this.onCount(this.count);
@@ -234,7 +219,8 @@ export class ExerciseTracker {
       this.stage = 'UP';
     }
 
-    if (avgAngle < 90) {
+    // DOWN threshold increased to 100 so partial horizontal planes count
+    if (avgAngle < 100) {
       this.stage = 'DOWN';
     }
   }
@@ -275,23 +261,20 @@ export class ExerciseTracker {
        torsoAngle = Math.atan2(Math.abs(rShoulder.x - rHip.x), Math.abs(rHip.y - rShoulder.y)) * (180 / Math.PI);
     }
 
-    if (torsoAngle > 45) {
+    if (torsoAngle > 60) {
         warning = "Tieni il petto in alto!";
         this.triggerWarning(warning);
-        this.isInvalidated = true;
-    } else if (torsoAngle < 40) {
-        this.isInvalidated = false;
     }
 
     this.onDebug?.({ angle: avgKneeAngle, stage: this.stage, error: false, warning });
 
-    if (this.isInvalidated) return; // Block count if form is heavily wrong
-
-    if (avgKneeAngle < 75) {
+    // Squat DOWN threshold
+    if (avgKneeAngle < 110) {
       this.stage = 'DOWN';
     }
 
-    if (this.stage === 'DOWN' && avgKneeAngle > 160) {
+    // Squat UP threshold
+    if (this.stage === 'DOWN' && avgKneeAngle > 150) {
       this.stage = 'UP';
       this.count++;
       this.onCount(this.count);
@@ -319,7 +302,6 @@ export class ExerciseTracker {
     this.count = 0;
     this.stage = null;
     this.lastAnnouncement = -1;
-    this.isInvalidated = false;
     this.lastAngles = { L: null, R: null, Primary: null };
   }
 }
