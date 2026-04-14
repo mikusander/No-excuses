@@ -204,8 +204,9 @@ export class ExerciseTracker {
 
     this.onDebug?.({ angle: avgAngle, stage: this.stage, error: isAsymmetric, warning });
 
-    if (warning && !this.stage) {
-       // Only block INITIAL stage setting if they are literally standing up
+    if (warning === "Mettiti a terra!") {
+       // Stop counting entirely if the user stands up
+       this.stage = null;
        return;
     }
 
