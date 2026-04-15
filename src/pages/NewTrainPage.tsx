@@ -328,8 +328,9 @@ const NewTrainPage: React.FC = () => {
     }));
   };
 
-  const getDraftOrValue = (key: string, value: number) => {
+  const getDraftOrValue = (key: string, value: number, hideZero = false) => {
     if (Object.prototype.hasOwnProperty.call(numberDrafts, key)) return numberDrafts[key];
+    if (hideZero && value === 0) return '';
     return Number.isFinite(value) ? String(value) : '';
   };
 
@@ -747,8 +748,8 @@ const NewTrainPage: React.FC = () => {
               peso_kg: toDbWeight(sub.weight_kg),
               note_esercizio: String(sub.instruction_note || '').trim() || null,
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
-              reps: isIso ? null : Math.max(1, sub.reps || 1),
-              durata_secondi: isIso ? Math.max(1, sub.duration_seconds || 1) : null,
+              reps: isIso ? null : Math.max(0, sub.reps ?? 0),
+              durata_secondi: isIso ? Math.max(0, sub.duration_seconds ?? 0) : null,
               id_superset: data.id_superset,
               id_piramide: null,
               stepindex_piramide: null,
@@ -785,8 +786,8 @@ const NewTrainPage: React.FC = () => {
               peso_kg: toDbWeight(sub.weight_kg),
               note_esercizio: String(sub.instruction_note || '').trim() || null,
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
-              reps: isIso ? null : Math.max(1, sub.reps || 1),
-              durata_secondi: isIso ? Math.max(1, sub.duration_seconds || 1) : null,
+              reps: isIso ? null : Math.max(0, sub.reps ?? 0),
+              durata_secondi: isIso ? Math.max(0, sub.duration_seconds ?? 0) : null,
               id_superset: null,
               id_piramide: null,
               stepindex_piramide: null,
@@ -822,7 +823,7 @@ const NewTrainPage: React.FC = () => {
               peso_kg: toDbWeight(step.weight_kg),
               note_esercizio: String(ex.instruction_note || '').trim() || null,
               tipo: 'REPS',
-              reps: Math.max(1, step.reps || 1),
+              reps: Math.max(0, step.reps ?? 0),
               durata_secondi: null,
               id_superset: null,
               id_piramide: data.id_piramide,
@@ -850,8 +851,8 @@ const NewTrainPage: React.FC = () => {
           peso_kg: toDbWeight(ex.weight_kg),
           note_esercizio: String(ex.instruction_note || '').trim() || null,
           tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
-          reps: isIsometry ? null : Math.max(1, ex.reps || 1),
-          durata_secondi: isIsometry ? Math.max(1, ex.duration_seconds || 1) : null,
+          reps: isIsometry ? null : Math.max(0, ex.reps ?? 0),
+          durata_secondi: isIsometry ? Math.max(0, ex.duration_seconds ?? 0) : null,
           id_superset: null,
           id_piramide: null,
           stepindex_piramide: null,
@@ -1037,14 +1038,13 @@ const NewTrainPage: React.FC = () => {
                             {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           </label>
                           <input
-                            type="number" inputMode="numeric"
-                            min="1"
-                            value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds)}
+                            type="text" inputMode="numeric"
+                            value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
                             onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
-                            onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? 10 : 30, 1)}
+                            onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
                             onFocus={onNumberFocus}
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
-                            placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                            placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
                           />
                         </div>
                         <div>
@@ -1124,14 +1124,13 @@ const NewTrainPage: React.FC = () => {
                             {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           </label>
                           <input
-                            type="number" inputMode="numeric"
-                            min="1"
-                            value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds)}
+                            type="text" inputMode="numeric"
+                            value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
                             onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
-                            onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? 10 : 30, 1)}
+                            onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
                             onFocus={onNumberFocus}
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
-                            placeholder={sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                            placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
                           />
                         </div>
                         <div>
@@ -1212,13 +1211,13 @@ const NewTrainPage: React.FC = () => {
                           <div>
                             <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Reps</label>
                             <input
-                              type="number" inputMode="numeric"
-                              min="1"
-                              value={Object.prototype.hasOwnProperty.call(numberDrafts, `${ex.id}:pyr:${stepIdx}:reps`) ? numberDrafts[`${ex.id}:pyr:${stepIdx}:reps`] : (Number.isFinite(step.reps) && step.reps > 0 ? String(step.reps) : '')}
+                              type="text" inputMode="numeric"
+                              value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:reps`, step.reps, true)}
                               onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:reps`, e.target.value)}
-                              onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'reps', `${ex.id}:pyr:${stepIdx}:reps`, 10, 1)}
+                              onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'reps', `${ex.id}:pyr:${stepIdx}:reps`, 0, 0)}
                               onFocus={onNumberFocus}
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
+                              placeholder="MAX REPS"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
                             />
                           </div>
                           <div>
@@ -1351,13 +1350,13 @@ const NewTrainPage: React.FC = () => {
                         {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
                       </label>
                       <input
-                        type="number" inputMode="numeric"
-                        min="1"
-                        value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds)}
+                        type="text" inputMode="numeric"
+                        value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds, true)}
                         onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
-                        onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? 10 : 30, 1)}
+                        onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, 0, 0)}
                         onFocus={onNumberFocus}
-                        className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
+                        placeholder={ex.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
+                        className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors placeholder:text-brand-orange/60 placeholder:text-xs"
                       />
                     </div>
                   )}

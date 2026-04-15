@@ -733,11 +733,11 @@ const GymCardPage: React.FC = () => {
                        <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
                          {ex.type === 'pyramid' ? ex.pyramid_steps?.map((step, sIdx) => (
                            <div key={sIdx} className="text-sm font-semibold text-white/80">
-                             Step {sIdx + 1}: <span className="text-brand-orange ml-1 text-xs">{step.reps} reps</span> <span className="text-brand-grey/70 text-xs">/ rest {formatSecs(step.rest_seconds)}</span>
+                             Step {sIdx + 1}: <span className="text-brand-orange ml-1 text-xs">{step.reps > 0 ? `${step.reps} reps` : 'MAX'}</span> <span className="text-brand-grey/70 text-xs">/ rest {formatSecs(step.rest_seconds)}</span>
                            </div>
                          )) : ex.subExercises?.map((sub, sIdx) => (
                            <div key={sIdx} className="text-sm font-semibold text-white/80">
-                             {sub.name} <span className="text-brand-orange ml-1 text-xs">({sub.type === 'reps' ? `${sub.reps} reps` : `${sub.duration_seconds} s`})</span>
+                             {sub.name} <span className="text-brand-orange ml-1 text-xs">({sub.type === 'reps' ? (sub.reps > 0 ? `${sub.reps} reps` : 'MAX REPS') : (sub.duration_seconds > 0 ? `${sub.duration_seconds} s` : 'MAX TIME')})</span>
                              {showInlineWeightNearName && (
                                <span className="text-brand-grey/70 text-xs ml-1">{formatWeightLabel(sub.weight_kg)}</span>
                              )}
@@ -758,7 +758,7 @@ const GymCardPage: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="flex items-center space-x-2 text-xs text-brand-grey font-bold w-full mt-2">
+                  <div className="grid grid-cols-2 min-[450px]:grid-cols-4 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
                     <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                       <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
                         {ex.type === 'superset' ? 'Round' : (ex.type === 'emom' ? 'Rounds' : ex.type === 'pyramid' ? 'Steps' : 'Sets')}
@@ -771,7 +771,7 @@ const GymCardPage: React.FC = () => {
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
                           {ex.type === 'isometry' ? 'Duration' : (ex.type === 'emom' ? 'Time/Rnd' : 'Reps')}
                         </span>
-                        <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'emom' ? formatSecs(ex.duration_seconds) : ex.reps}</span>
+                        <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'emom' ? (ex.duration_seconds > 0 ? formatSecs(ex.duration_seconds) : 'MAX TIME') : (ex.reps > 0 ? ex.reps : 'MAX REPS')}</span>
                       </div>
                     )}
 
