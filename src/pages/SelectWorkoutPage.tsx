@@ -5,6 +5,7 @@ import { Dumbbell, Calendar, ArrowLeft, PlayCircle, Clock, Timer, Repeat, X } fr
 import BottomNavigation from '../components/BottomNavigation';
 import { useNavigate } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
 
 interface Exercise {
   id: string;
@@ -109,6 +110,11 @@ const SelectWorkoutPage: React.FC = () => {
     setPreviewError(null);
   };
 
+  const clearSavedWorkoutCheckpoint = () => {
+    if (!user?.id) return;
+    clearAllWorkoutProgressCheckpoints(user.id);
+  };
+
   const loadWorkoutPreview = async (workout: Workout) => {
     try {
       setPreviewLoading(true);
@@ -177,8 +183,8 @@ const SelectWorkoutPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
       <header className="p-4 flex items-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
-        <button 
-          onClick={() => navigate('/')} 
+        <button
+          onClick={() => navigate('/')}
           className="p-2 text-white hover:text-brand-orange transition-colors"
         >
           <ArrowLeft size={28} />
@@ -196,7 +202,7 @@ const SelectWorkoutPage: React.FC = () => {
             <Dumbbell size={48} className="mx-auto text-brand-grey/50 mb-4" />
             <h2 className="text-xl font-bold text-white mb-2">No Workouts Found</h2>
             <p className="text-brand-grey text-sm mb-6">You haven't created any workouts yet.</p>
-            <button 
+            <button
               onClick={() => navigate('/new-train')}
               className="bg-brand-orange hover:bg-brand-lightOrange text-black font-bold py-3 px-6 rounded-full transition-colors"
             >
@@ -278,22 +284,22 @@ const SelectWorkoutPage: React.FC = () => {
                         (ex.type === 'superset' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
 
                       return (
-                      <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
-                        {ex.type === 'superset' || ex.type === 'emom' || ex.type === 'pyramid' ? (
-                          <div className="mb-3">
-                            <span className="font-bold text-lg text-white drop-shadow-md flex items-center mb-2">
-                              <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                              <Repeat size={16} className="mr-1 text-brand-orange" /> {ex.name}
-                            </span>
-                            <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
-                              {ex.type === 'pyramid'
-                                ? ex.pyramid_steps?.map((step, sIdx) => (
+                        <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
+                          {ex.type === 'superset' || ex.type === 'emom' || ex.type === 'pyramid' ? (
+                            <div className="mb-3">
+                              <span className="font-bold text-lg text-white drop-shadow-md flex items-center mb-2">
+                                <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
+                                <Repeat size={16} className="mr-1 text-brand-orange" /> {ex.name}
+                              </span>
+                              <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
+                                {ex.type === 'pyramid'
+                                  ? ex.pyramid_steps?.map((step, sIdx) => (
                                     <div key={sIdx} className="text-sm font-semibold text-white/80">
                                       Step {sIdx + 1}: <span className="text-brand-orange ml-1 text-xs">{step.reps > 0 ? `${step.reps} reps` : 'MAX'}</span>{' '}
                                       <span className="text-brand-grey/70 text-xs">/ rest {formatSecs(step.rest_seconds)}</span>
                                     </div>
                                   ))
-                                : ex.subExercises?.map((sub, sIdx) => (
+                                  : ex.subExercises?.map((sub, sIdx) => (
                                     <div key={sIdx} className="text-sm font-semibold text-white/80">
                                       {sub.name}{' '}
                                       <span className="text-brand-orange ml-1 text-xs">
@@ -304,56 +310,57 @@ const SelectWorkoutPage: React.FC = () => {
                                       )}
                                     </div>
                                   ))}
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="font-bold text-lg text-white truncate max-w-[70%] drop-shadow-md flex items-center">
-                              <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                              {ex.name}
-                            </span>
-                            <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
-                              {ex.type === 'isometry' ? <Timer size={12} className="mr-1 text-brand-orange" /> : <Repeat size={12} className="mr-1 text-brand-orange" />}
-                              {ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
+                          ) : (
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="font-bold text-lg text-white truncate max-w-[70%] drop-shadow-md flex items-center">
+                                <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
+                                {ex.name}
+                              </span>
+                              <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
+                                {ex.type === 'isometry' ? <Timer size={12} className="mr-1 text-brand-orange" /> : <Repeat size={12} className="mr-1 text-brand-orange" />}
+                                {ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
 
-                        <div className="grid grid-cols-2 min-[450px]:grid-cols-4 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
-                          <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                            <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                              {ex.type === 'superset' ? 'Round' : ex.type === 'emom' ? 'Rounds' : ex.type === 'pyramid' ? 'Steps' : 'Sets'}
-                            </span>
-                            <span className="text-sm text-white">{ex.type === 'pyramid' ? ex.pyramid_steps?.length || 0 : ex.sets}</span>
-                          </div>
-
-                          {ex.type !== 'superset' && ex.type !== 'pyramid' && (
-                            <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
+                          <div className="grid grid-cols-2 min-[450px]:grid-cols-4 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
+                            <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                               <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                                {ex.type === 'isometry' ? 'Duration' : ex.type === 'emom' ? 'Time/Rnd' : 'Reps'}
+                                {ex.type === 'superset' ? 'Round' : ex.type === 'emom' ? 'Rounds' : ex.type === 'pyramid' ? 'Steps' : 'Sets'}
                               </span>
-                              <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'emom' ? (ex.duration_seconds > 0 ? formatSecs(ex.duration_seconds) : 'MAX TIME') : (ex.reps > 0 ? ex.reps : 'MAX REPS')}</span>
+                              <span className="text-sm text-white">{ex.type === 'pyramid' ? ex.pyramid_steps?.length || 0 : ex.sets}</span>
                             </div>
-                          )}
 
-                          {ex.type !== 'pyramid' && (
-                            <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                              <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
-                                <Clock size={9} className="mr-1" /> Rest
-                              </span>
-                              <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>
-                            </div>
-                          )}
+                            {ex.type !== 'superset' && ex.type !== 'pyramid' && (
+                              <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
+                                <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
+                                  {ex.type === 'isometry' ? 'Duration' : ex.type === 'emom' ? 'Time/Rnd' : 'Reps'}
+                                </span>
+                                <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'emom' ? (ex.duration_seconds > 0 ? formatSecs(ex.duration_seconds) : 'MAX TIME') : (ex.reps > 0 ? ex.reps : 'MAX REPS')}</span>
+                              </div>
+                            )}
 
-                          {!showInlineWeightNearName && (
-                            <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
-                              <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Weights</span>
-                              <span className="text-sm text-brand-lightOrange truncate">{getExerciseWeightLabel(ex)}</span>
-                            </div>
-                          )}
+                            {ex.type !== 'pyramid' && (
+                              <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                                <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
+                                  <Clock size={9} className="mr-1" /> Rest
+                                </span>
+                                <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>
+                              </div>
+                            )}
+
+                            {!showInlineWeightNearName && (
+                              <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
+                                <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Weights</span>
+                                <span className="text-sm text-brand-lightOrange truncate">{getExerciseWeightLabel(ex)}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )})}
+                      )
+                    })}
 
                     {(!selectedWorkoutPreview || selectedWorkoutPreview.exercises.length === 0) && !previewError && (
                       <p className="text-sm text-brand-grey/50 italic text-center py-4 bg-black/20 rounded-2xl">No exercises in this workout.</p>
@@ -367,6 +374,7 @@ const SelectWorkoutPage: React.FC = () => {
               <button
                 onClick={() => {
                   if (!selectedWorkoutPreview) return;
+                  clearSavedWorkoutCheckpoint();
                   navigate(`/active-workout/${selectedWorkoutPreview.id}`);
                 }}
                 disabled={!selectedWorkoutPreview || previewLoading}

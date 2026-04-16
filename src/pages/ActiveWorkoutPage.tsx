@@ -4,6 +4,14 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import {
+  buildWorkoutProgressStorageKey,
+  clearAllWorkoutProgressCheckpoints,
+  clearWorkoutProgressCheckpointByIdentity,
+  pruneWorkoutProgressCheckpoints,
+  WORKOUT_PROGRESS_MAX_AGE_MS,
+  type WorkoutProgressIdentity,
+} from '../lib/workoutProgressStorage';
 
 interface Exercise {
   id: string;
@@ -73,6 +81,34 @@ interface ExerciseEditDraft {
   currentStepWeightKg: string;
 }
 
+interface PersistedWorkoutProgressState {
+  currentExerciseIdx: number;
+  currentSetIdx: number;
+  currentSubExerciseIdx: number;
+  currentPyramidStepIdx: number;
+  currentEmomRoundIdx: number;
+  pendingPyramidAdvance: boolean;
+  pendingExerciseAdvance: boolean;
+  isResting: boolean;
+  restWasRunning: boolean;
+  restRemaining: number;
+  restInitialDuration: number;
+  isometryWasRunning: boolean;
+  isometryRemaining: number;
+  emomWasRunning: boolean;
+  emomRoundRemaining: number;
+  exerciseNotesByKey: Record<string, ExerciseNoteEntry>;
+  workoutStartedAtMs: number | null;
+}
+
+interface PersistedWorkoutProgressPayload {
+  version: 1;
+  savedAtMs: number;
+  state: PersistedWorkoutProgressState;
+}
+
+const WORKOUT_PROGRESS_THROTTLE_MS = 1000;
+
 const toSafeSnapshotNumber = (value: unknown, fallback: number) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -92,25 +128,25 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
 
       const subExercises = Array.isArray(item.subExercises)
         ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
-            const subType: 'reps' | 'isometry' =
-              String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
-            return {
-              name: String(sub.name || ''),
-              type: subType,
-              reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.reps, 0))),
-              duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.duration_seconds, 0))),
-              weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
-              instruction_note: String(sub.instruction_note || '').trim() || null,
-            };
-          })
+          const subType: 'reps' | 'isometry' =
+            String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
+          return {
+            name: String(sub.name || ''),
+            type: subType,
+            reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.reps, 0))),
+            duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.duration_seconds, 0))),
+            weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
+            instruction_note: String(sub.instruction_note || '').trim() || null,
+          };
+        })
         : undefined;
 
       const pyramidSteps = Array.isArray(item.pyramid_steps)
         ? (item.pyramid_steps as Array<Record<string, unknown>>).map((step) => ({
-            reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(step.reps, 0))),
-            rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(step.rest_seconds, 0))),
-            weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
-          }))
+          reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(step.reps, 0))),
+          rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(step.rest_seconds, 0))),
+          weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
+        }))
         : undefined;
 
       return {
@@ -144,7 +180,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [sourceSchedaId, setSourceSchedaId] = useState<number | null>(null);
-  
+
   // App State
   const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
   const [currentSetIdx, setCurrentSetIdx] = useState(0);
@@ -181,6 +217,9 @@ const ActiveWorkoutPage: React.FC = () => {
   const workoutNotesSavedRef = useRef(false);
   const workoutCompletionHandledRef = useRef(false);
   const workoutStartedAtMsRef = useRef<number | null>(null);
+  const lastProgressPersistAtMsRef = useRef(0);
+  const persistWorkoutProgressRef = useRef<((force?: boolean) => void) | null>(null);
+  const suppressProgressPersistenceRef = useRef(false);
 
   // Voice Command State
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
@@ -549,6 +588,280 @@ const ActiveWorkoutPage: React.FC = () => {
     clearTimerLongPressState();
   };
 
+  const getWorkoutProgressIdentity = (nextSourceSchedaId?: number | null): WorkoutProgressIdentity | null => {
+    const runNumericId = Number(workoutRunId);
+    if (Number.isFinite(runNumericId) && runNumericId > 0) {
+      return {
+        type: 'run',
+        id: Math.trunc(runNumericId),
+      };
+    }
+
+    const candidateSchedaId =
+      nextSourceSchedaId != null
+        ? nextSourceSchedaId
+        : sourceSchedaId != null
+          ? sourceSchedaId
+          : Number.isFinite(Number(id))
+            ? Number(id)
+            : null;
+
+    if (!Number.isFinite(candidateSchedaId) || (candidateSchedaId || 0) <= 0) {
+      return null;
+    }
+
+    return {
+      type: 'scheda',
+      id: Math.trunc(Number(candidateSchedaId)),
+    };
+  };
+
+  const getWorkoutProgressStorageKey = (nextSourceSchedaId?: number | null) => {
+    if (!user?.id) return null;
+
+    const identity = getWorkoutProgressIdentity(nextSourceSchedaId);
+    if (!identity) return null;
+
+    return buildWorkoutProgressStorageKey(user.id, identity);
+  };
+
+  const clearPersistedWorkoutProgress = (nextSourceSchedaId?: number | null) => {
+    if (!user?.id) return;
+
+    try {
+      const identity = getWorkoutProgressIdentity(nextSourceSchedaId);
+      if (identity) {
+        clearWorkoutProgressCheckpointByIdentity(user.id, identity);
+      }
+      clearAllWorkoutProgressCheckpoints(user.id);
+    } catch (error) {
+      console.error('Error clearing persisted workout progress:', error);
+    }
+  };
+
+  const persistWorkoutProgress = (force = false) => {
+    if (!workout || workout.exercises.length === 0) return;
+    if (workoutCompletionHandledRef.current) return;
+    if (suppressProgressPersistenceRef.current) return;
+
+    const storageKey = getWorkoutProgressStorageKey();
+    if (!storageKey) return;
+
+    const now = Date.now();
+    if (!force && now - lastProgressPersistAtMsRef.current < WORKOUT_PROGRESS_THROTTLE_MS) {
+      return;
+    }
+
+    const safeCurrentExerciseIdx = Math.max(0, Math.min(currentExerciseIdx, workout.exercises.length - 1));
+    const safeExercise = workout.exercises[safeCurrentExerciseIdx];
+    const safeCurrentSetIdx = Math.max(0, Math.min(currentSetIdx, Math.max(0, safeExercise.sets - 1)));
+    const safeCurrentSubExerciseIdx = safeExercise.type === 'superset'
+      ? Math.max(0, Math.min(currentSubExerciseIdx, Math.max(0, (safeExercise.subExercises?.length || 1) - 1)))
+      : 0;
+    const safeCurrentPyramidStepIdx = safeExercise.type === 'pyramid'
+      ? Math.max(0, Math.min(currentPyramidStepIdx, Math.max(0, (safeExercise.pyramid_steps?.length || 1) - 1)))
+      : 0;
+    const safeCurrentEmomRoundIdx = safeExercise.type === 'emom'
+      ? Math.max(0, Math.min(currentEmomRoundIdx, Math.max(0, (safeExercise.emom_rounds || 1) - 1)))
+      : 0;
+
+    const safeExerciseNotesByKey = Object.entries(exerciseNotesByKey).reduce<Record<string, ExerciseNoteEntry>>((acc, [key, value]) => {
+      const normalizedKey = String(key || '').trim();
+      const note = String(value?.note || '').trim();
+      if (!normalizedKey || !note) return acc;
+      acc[normalizedKey] = {
+        exerciseName: String(value?.exerciseName || '').trim() || normalizedKey,
+        note,
+      };
+      return acc;
+    }, {});
+
+    const payload: PersistedWorkoutProgressPayload = {
+      version: 1,
+      savedAtMs: now,
+      state: {
+        currentExerciseIdx: safeCurrentExerciseIdx,
+        currentSetIdx: safeCurrentSetIdx,
+        currentSubExerciseIdx: safeCurrentSubExerciseIdx,
+        currentPyramidStepIdx: safeCurrentPyramidStepIdx,
+        currentEmomRoundIdx: safeCurrentEmomRoundIdx,
+        pendingPyramidAdvance,
+        pendingExerciseAdvance,
+        isResting,
+        restWasRunning: restEndsAtMs != null,
+        restRemaining: restEndsAtMs != null ? computeRemainingFromEndsAt(restEndsAtMs) : Math.max(0, normalizeDurationSeconds(restRemaining)),
+        restInitialDuration: Math.max(0, normalizeDurationSeconds(restInitialDuration)),
+        isometryWasRunning: isometryEndsAtMs != null,
+        isometryRemaining: isometryEndsAtMs != null
+          ? computeRemainingFromEndsAt(isometryEndsAtMs)
+          : Math.max(0, normalizeDurationSeconds(isometryRemaining)),
+        emomWasRunning: emomRoundEndsAtMs != null,
+        emomRoundRemaining: emomRoundEndsAtMs != null
+          ? computeRemainingFromEndsAt(emomRoundEndsAtMs)
+          : Math.max(0, normalizeDurationSeconds(emomRoundRemaining)),
+        exerciseNotesByKey: safeExerciseNotesByKey,
+        workoutStartedAtMs: workoutStartedAtMsRef.current,
+      },
+    };
+
+    try {
+      if (user?.id) {
+        pruneWorkoutProgressCheckpoints(user.id, storageKey);
+      }
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+      lastProgressPersistAtMsRef.current = now;
+    } catch (error) {
+      console.error('Error persisting workout progress:', error);
+    }
+  };
+
+  const tryRestorePersistedWorkoutProgress = (nextWorkout: Workout, nextSourceSchedaId: number | null) => {
+    const storageKey = getWorkoutProgressStorageKey(nextSourceSchedaId);
+    if (!storageKey) return false;
+
+    let parsedPayload: PersistedWorkoutProgressPayload | null = null;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return false;
+      parsedPayload = JSON.parse(raw) as PersistedWorkoutProgressPayload;
+    } catch (error) {
+      console.error('Error parsing persisted workout progress:', error);
+      clearPersistedWorkoutProgress(nextSourceSchedaId);
+      return false;
+    }
+
+    if (!parsedPayload || parsedPayload.version !== 1 || !parsedPayload.state) {
+      clearPersistedWorkoutProgress(nextSourceSchedaId);
+      return false;
+    }
+
+    const savedAtMs = Number(parsedPayload.savedAtMs);
+    if (!Number.isFinite(savedAtMs) || Date.now() - savedAtMs > WORKOUT_PROGRESS_MAX_AGE_MS) {
+      clearPersistedWorkoutProgress(nextSourceSchedaId);
+      return false;
+    }
+
+    const state = parsedPayload.state;
+    const safeExerciseIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentExerciseIdx), nextWorkout.exercises.length - 1));
+    const safeExercise = nextWorkout.exercises[safeExerciseIdx];
+    const safeSetIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentSetIdx), Math.max(0, safeExercise.sets - 1)));
+
+    const rawSubIdx = normalizeDurationSeconds(state.currentSubExerciseIdx);
+    const safeSubIdx = safeExercise.type === 'superset'
+      ? Math.max(0, Math.min(rawSubIdx, Math.max(0, (safeExercise.subExercises?.length || 1) - 1)))
+      : 0;
+
+    const rawPyramidStepIdx = normalizeDurationSeconds(state.currentPyramidStepIdx);
+    const safePyramidStepIdx = safeExercise.type === 'pyramid'
+      ? Math.max(0, Math.min(rawPyramidStepIdx, Math.max(0, (safeExercise.pyramid_steps?.length || 1) - 1)))
+      : 0;
+
+    const rawEmomRoundIdx = normalizeDurationSeconds(state.currentEmomRoundIdx);
+    const safeEmomRoundIdx = safeExercise.type === 'emom'
+      ? Math.max(0, Math.min(rawEmomRoundIdx, Math.max(0, (safeExercise.emom_rounds || 1) - 1)))
+      : 0;
+
+    const fallbackIsometryTarget = (() => {
+      if (safeExercise.type === 'isometry') return Math.max(0, normalizeDurationSeconds(safeExercise.duration_seconds));
+      if (safeExercise.type === 'superset') {
+        const safeSub = safeExercise.subExercises?.[safeSubIdx];
+        if (safeSub?.type === 'isometry') {
+          return Math.max(0, normalizeDurationSeconds(safeSub.duration_seconds));
+        }
+      }
+      return 0;
+    })();
+
+    const fallbackEmomTarget = safeExercise.type === 'emom'
+      ? Math.max(1, normalizeDurationSeconds(safeExercise.emom_round_duration || 60))
+      : 0;
+    const elapsedSinceSaveSeconds = Math.max(0, Math.trunc((Date.now() - savedAtMs) / 1000));
+
+    const safeRestRemaining = Math.max(0, normalizeDurationSeconds(state.restRemaining));
+    const safeRestInitial = Math.max(0, normalizeDurationSeconds(state.restInitialDuration));
+    const effectiveRestInitial = safeRestInitial > 0 ? safeRestInitial : safeRestRemaining;
+    const effectiveRestRemainingBase = safeRestRemaining > 0 ? safeRestRemaining : effectiveRestInitial;
+    const effectiveRestRemaining = Boolean(state.restWasRunning)
+      ? Math.max(0, effectiveRestRemainingBase - elapsedSinceSaveSeconds)
+      : effectiveRestRemainingBase;
+    const shouldRestoreRest = Boolean(state.isResting) && effectiveRestRemaining > 0;
+
+    const safeIsometryRemainingBase = Math.max(
+      0,
+      normalizeDurationSeconds(
+        state.isometryRemaining > 0
+          ? state.isometryRemaining
+          : fallbackIsometryTarget,
+      ),
+    );
+    const safeIsometryRemaining = Boolean(state.isometryWasRunning)
+      ? Math.max(0, safeIsometryRemainingBase - elapsedSinceSaveSeconds)
+      : safeIsometryRemainingBase;
+
+    const safeEmomRoundRemainingBase = Math.max(
+      0,
+      normalizeDurationSeconds(
+        state.emomRoundRemaining > 0
+          ? state.emomRoundRemaining
+          : fallbackEmomTarget,
+      ),
+    );
+    const safeEmomRoundRemaining = Boolean(state.emomWasRunning)
+      ? Math.max(0, safeEmomRoundRemainingBase - elapsedSinceSaveSeconds)
+      : safeEmomRoundRemainingBase;
+
+    const safeNotes = Object.entries(state.exerciseNotesByKey || {}).reduce<Record<string, ExerciseNoteEntry>>((acc, [key, value]) => {
+      const note = String(value?.note || '').trim();
+      const normalizedKey = String(key || '').trim();
+      if (!normalizedKey || !note) return acc;
+      acc[normalizedKey] = {
+        exerciseName: String(value?.exerciseName || '').trim() || normalizedKey,
+        note,
+      };
+      return acc;
+    }, {});
+
+    setCurrentExerciseIdx(safeExerciseIdx);
+    setCurrentSetIdx(safeSetIdx);
+    setCurrentSubExerciseIdx(safeSubIdx);
+    setCurrentPyramidStepIdx(safePyramidStepIdx);
+    setCurrentEmomRoundIdx(safeEmomRoundIdx);
+    setPendingPyramidAdvance(Boolean(state.pendingPyramidAdvance) && safeExercise.type === 'pyramid');
+    setPendingExerciseAdvance(Boolean(state.pendingExerciseAdvance));
+
+    const resumeRestRunning = shouldRestoreRest && Boolean(state.restWasRunning);
+    const resumeIsometryRunning = Boolean(state.isometryWasRunning) && safeIsometryRemaining > 0;
+    const resumeEmomRunning = Boolean(state.emomWasRunning) && safeEmomRoundRemaining > 0;
+
+    wasRestingRef.current = resumeRestRunning;
+    wasIsometryActiveRef.current = resumeIsometryRunning;
+    wasEmomActiveRef.current = resumeEmomRunning;
+
+    setIsResting(shouldRestoreRest);
+    setRestRemaining(shouldRestoreRest ? effectiveRestRemaining : 0);
+    setRestInitialDuration(shouldRestoreRest ? effectiveRestInitial : 0);
+    setRestEndsAtMs(resumeRestRunning ? Date.now() + (effectiveRestRemaining * 1000) : null);
+
+    setIsometryRemaining(safeIsometryRemaining);
+    setIsometryActive(resumeIsometryRunning);
+    setIsometryEndsAtMs(resumeIsometryRunning ? Date.now() + (safeIsometryRemaining * 1000) : null);
+
+    setEmomRoundRemaining(safeEmomRoundRemaining);
+    setEmomActive(resumeEmomRunning);
+    setEmomRoundEndsAtMs(resumeEmomRunning ? Date.now() + (safeEmomRoundRemaining * 1000) : null);
+
+    setExerciseNotesByKey(safeNotes);
+
+    const restoredStartedAt = Number(state.workoutStartedAtMs);
+    workoutStartedAtMsRef.current = Number.isFinite(restoredStartedAt) && restoredStartedAt > 0
+      ? restoredStartedAt
+      : Date.now();
+
+    return true;
+  };
+
+  persistWorkoutProgressRef.current = persistWorkoutProgress;
+
   useEffect(() => {
     const saved = localStorage.getItem(VOICE_ASSIST_KEY);
     setVoiceAssistanceEnabled(saved !== 'false');
@@ -591,9 +904,9 @@ const ActiveWorkoutPage: React.FC = () => {
     else if (workout?.exercises[currentExerciseIdx]?.type === 'emom') {
       const ex = workout.exercises[currentExerciseIdx];
       if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
-          speakCue('next round');
-          setCurrentEmomRoundIdx(prev => prev + 1);
-          setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
+        speakCue('next round');
+        setCurrentEmomRoundIdx(prev => prev + 1);
+        setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
       } else {
         stopEmomCountdown();
         if (currentSetIdx === ex.sets - 1) {
@@ -605,21 +918,21 @@ const ActiveWorkoutPage: React.FC = () => {
     }
     else completeSet();
   };
-  
+
   handleVoicePrevRef.current = () => {
     // Granular 'back' functionality perfectly mirroring 'next'
     if (!workout) return;
     const currentEx = workout.exercises[currentExerciseIdx];
 
     if (currentEx.type === 'emom') {
-        if (currentEmomRoundIdx > 0) {
-          setCurrentEmomRoundIdx(prev => prev - 1);
-          setEmomRoundRemainingWithSync(currentEx.emom_round_duration || 60);
-        } else {
-          handlePrevExercise();
-        }
-        return;
+      if (currentEmomRoundIdx > 0) {
+        setCurrentEmomRoundIdx(prev => prev - 1);
+        setEmomRoundRemainingWithSync(currentEx.emom_round_duration || 60);
+      } else {
+        handlePrevExercise();
       }
+      return;
+    }
 
     if (currentEx.type === 'pyramid') {
       if (currentPyramidStepIdx > 0) {
@@ -637,7 +950,7 @@ const ActiveWorkoutPage: React.FC = () => {
       setIsometryRemainingWithSync(getTargetIsometry(currentEx, currentEx.subExercises?.[currentSubExerciseIdx]));
       return;
     }
-    
+
     if (currentEx.type === 'superset' && currentSubExerciseIdx > 0) {
       const prevSubIdx = currentSubExerciseIdx - 1;
       setCurrentSubExerciseIdx(prevSubIdx);
@@ -738,7 +1051,7 @@ const ActiveWorkoutPage: React.FC = () => {
           const isPrevExerciseCommand = transcript.includes('previous exercise') || transcript.includes('esercizio precedente');
           const isEndWorkoutCommand = transcript.includes('end workout') || transcript.includes('termina workout');
           const isResetTimerCommand = transcript.includes('reset') || transcript.includes('resetta');
-          
+
           if (isNextExerciseCommand) {
             setVoiceStatus('success');
             setTimeout(() => setVoiceStatus('idle'), 1500);
@@ -770,22 +1083,22 @@ const ActiveWorkoutPage: React.FC = () => {
               handleVoiceStartTimerRef.current();
             }
           } else if (transcript.includes('stop') || transcript.includes('fermo')) {
-             setVoiceStatus('success');
-             setTimeout(() => setVoiceStatus('idle'), 1500);
-             if (handleVoiceStopTimerRef.current) {
-               handleVoiceStopTimerRef.current();
-             }
+            setVoiceStatus('success');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
+            if (handleVoiceStopTimerRef.current) {
+              handleVoiceStopTimerRef.current();
+            }
           } else if (transcript.includes('next') || transcript.includes('avanti')) {
             setVoiceStatus('success');
             setTimeout(() => setVoiceStatus('idle'), 1500);
             if (handleVoiceNextRef.current) {
-               handleVoiceNextRef.current();
+              handleVoiceNextRef.current();
             }
           } else if (transcript.includes('back') || transcript.includes('indietro')) {
             setVoiceStatus('success');
             setTimeout(() => setVoiceStatus('idle'), 1500);
             if (handleVoicePrevRef.current) {
-               handleVoicePrevRef.current();
+              handleVoicePrevRef.current();
             }
           } else {
             // Se ho sentito parole ma non sono comandi supportati:
@@ -803,13 +1116,13 @@ const ActiveWorkoutPage: React.FC = () => {
           if (isVoiceEnabled && recognition) {
             try {
               recognition.start();
-            } catch (e) {}
+            } catch (e) { }
           }
         };
 
         try {
           recognition.start();
-        } catch (e) {}
+        } catch (e) { }
       } else {
         alert("Your browser does not support Speech Recognition.");
         setIsVoiceEnabled(false);
@@ -827,6 +1140,52 @@ const ActiveWorkoutPage: React.FC = () => {
   useEffect(() => {
     void fetchWorkout();
   }, [id, workoutRunId, user?.id]);
+
+  useEffect(() => {
+    persistWorkoutProgress(false);
+  }, [
+    workout,
+    sourceSchedaId,
+    currentExerciseIdx,
+    currentSetIdx,
+    currentSubExerciseIdx,
+    currentPyramidStepIdx,
+    currentEmomRoundIdx,
+    pendingPyramidAdvance,
+    pendingExerciseAdvance,
+    isResting,
+    restRemaining,
+    restInitialDuration,
+    restEndsAtMs,
+    isometryRemaining,
+    isometryEndsAtMs,
+    emomRoundRemaining,
+    emomRoundEndsAtMs,
+    exerciseNotesByKey,
+  ]);
+
+  useEffect(() => {
+    const flushProgress = () => {
+      persistWorkoutProgressRef.current?.(true);
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        flushProgress();
+      }
+    };
+
+    window.addEventListener('beforeunload', flushProgress);
+    window.addEventListener('pagehide', flushProgress);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      flushProgress();
+      window.removeEventListener('beforeunload', flushProgress);
+      window.removeEventListener('pagehide', flushProgress);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   const fetchWorkout = async () => {
     if (!user?.id) {
@@ -868,6 +1227,14 @@ const ActiveWorkoutPage: React.FC = () => {
       workoutNotesSavedRef.current = false;
       workoutCompletionHandledRef.current = false;
       workoutStartedAtMsRef.current = Date.now();
+      lastProgressPersistAtMsRef.current = 0;
+      suppressProgressPersistenceRef.current = false;
+
+      const didRestore = tryRestorePersistedWorkoutProgress(nextWorkout, nextSourceSchedaId);
+      if (didRestore) {
+        lastProgressPersistAtMsRef.current = Date.now();
+        return;
+      }
 
       const firstEx = nextWorkout.exercises[0];
       if (firstEx) {
@@ -1042,10 +1409,10 @@ const ActiveWorkoutPage: React.FC = () => {
     ).trim();
     const exercisesSnapshot = Array.isArray(workout?.exercises)
       ? workout.exercises.map((exercise) => ({
-          ...exercise,
-          subExercises: exercise.subExercises || [],
-          pyramid_steps: exercise.pyramid_steps || [],
-        }))
+        ...exercise,
+        subExercises: exercise.subExercises || [],
+        pyramid_steps: exercise.pyramid_steps || [],
+      }))
       : [];
 
     let data: { id_workout?: number } | null = null;
@@ -1347,7 +1714,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const isLastEmomRound = currentEmomRoundIdx === (currentExercise.emom_rounds || 1) - 1;
   const isPyramid = currentExercise.type === 'pyramid';
   const isLastPyramidStep = currentPyramidStepIdx === ((currentExercise.pyramid_steps?.length || 1) - 1);
-  
+
   const isSuperset = currentExercise.type === 'superset';
   const subExercise = isSuperset && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
   const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : isPyramid ? isLastPyramidStep : isLastSet);
@@ -1961,18 +2328,18 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const completeSet = () => {
     if (currentExercise.type === 'emom') {
-        // Skipping round manually via button
-        if (currentEmomRoundIdx < (currentExercise.emom_rounds || 1) - 1) {
-          speakCue('next round');
-          setCurrentEmomRoundIdx(prev => prev + 1);
-          setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
-        } else {
-          stopEmomCountdown();
-          if (isLastSet) queueNextExerciseFlow(currentExercise);
-          else { startRestCountdown(currentExercise.rest_seconds); }
-        }
-        return;
+      // Skipping round manually via button
+      if (currentEmomRoundIdx < (currentExercise.emom_rounds || 1) - 1) {
+        speakCue('next round');
+        setCurrentEmomRoundIdx(prev => prev + 1);
+        setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
+      } else {
+        stopEmomCountdown();
+        if (isLastSet) queueNextExerciseFlow(currentExercise);
+        else { startRestCountdown(currentExercise.rest_seconds); }
       }
+      return;
+    }
 
     if (currentExercise.type === 'pyramid') {
       const steps = currentExercise.pyramid_steps || [];
@@ -2132,7 +2499,7 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentPyramidStepIdx(prev => prev + 1);
       return;
     }
-    
+
     // Increment set
     const nextSetIdx = currentSetIdx + 1;
     setCurrentSetIdx(nextSetIdx);
@@ -2141,7 +2508,7 @@ const ActiveWorkoutPage: React.FC = () => {
       setCurrentEmomRoundIdx(0);
       setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
     }
-    
+
     // Reset isometry timer if needed
     setIsometryRemainingWithSync(getTargetIsometry(currentExercise, currentExercise.subExercises?.[0]));
   };
@@ -2160,9 +2527,18 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const nextRecoveryLabel = getNextRecoveryLabel();
 
+  const handleLeaveWorkout = () => {
+    suppressProgressPersistenceRef.current = true;
+    clearPersistedWorkoutProgress();
+    navigate(-1);
+  };
+
   const markWorkoutComplete = async () => {
     if (workoutCompletionHandledRef.current) return;
     workoutCompletionHandledRef.current = true;
+    suppressProgressPersistenceRef.current = true;
+
+    clearPersistedWorkoutProgress();
 
     speakCue('workout complete');
     stopEmomCountdown();
@@ -2241,13 +2617,13 @@ const ActiveWorkoutPage: React.FC = () => {
       <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center p-6 relative">
         {voiceCommandsHelpBubble}
         <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-10 p-2">
-          <button onClick={() => navigate(-1)} className="text-white/50 hover:text-white transition-colors">
+          <button onClick={handleLeaveWorkout} className="text-white/50 hover:text-white transition-colors">
             <ArrowLeft size={28} />
           </button>
           <div className="relative">
             {voiceStatus === 'success' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
             {voiceStatus === 'error' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
-            <button 
+            <button
               onClick={handleVoiceButtonClick}
               className={`p-2 rounded-full transition-all duration-300 ${isVoiceEnabled ? (voiceStatus === 'success' ? 'bg-green-500 text-white scale-110' : voiceStatus === 'error' ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-orange text-black') : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
             >
@@ -2255,7 +2631,7 @@ const ActiveWorkoutPage: React.FC = () => {
             </button>
           </div>
         </div>
-        
+
         <div
           className="w-64 h-64 rounded-full border-8 border-brand-darkGrey flex flex-col justify-center items-center shadow-[0_0_50px_rgba(255,107,0,0.1)] mb-12 relative overflow-hidden cursor-pointer select-none"
           onPointerDown={(event) => handleTimerPointerDown(event, resetRestCountdown)}
@@ -2263,17 +2639,17 @@ const ActiveWorkoutPage: React.FC = () => {
           onPointerCancel={handleTimerPointerAbort}
           onPointerLeave={handleTimerPointerAbort}
         >
-           {/* Animated Fill (approximate) */}
-           <div 
-             className="absolute bottom-0 left-0 right-0 bg-brand-orange/20 transition-all duration-1000 ease-linear"
-             style={{ height: `${(restRemaining / Math.max(1, restInitialDuration || currentExercise.rest_seconds || 1)) * 100}%` }}
-           />
-           
-           <Timer size={32} className="text-brand-orange mb-2" />
-           <span className="text-6xl font-black text-white z-10 font-mono tracking-tighter">
-             {formatTime(restRemaining)}
-           </span>
-           <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2 z-10">REST</span>
+          {/* Animated Fill (approximate) */}
+          <div
+            className="absolute bottom-0 left-0 right-0 bg-brand-orange/20 transition-all duration-1000 ease-linear"
+            style={{ height: `${(restRemaining / Math.max(1, restInitialDuration || currentExercise.rest_seconds || 1)) * 100}%` }}
+          />
+
+          <Timer size={32} className="text-brand-orange mb-2" />
+          <span className="text-6xl font-black text-white z-10 font-mono tracking-tighter">
+            {formatTime(restRemaining)}
+          </span>
+          <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2 z-10">REST</span>
         </div>
 
         <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold -mt-8 mb-8 text-center">
@@ -2284,7 +2660,7 @@ const ActiveWorkoutPage: React.FC = () => {
           <p className="text-white text-xl font-bold">{transitionNextExercise ? transitionNextExercise.name : currentExercise.name}</p>
           {!transitionNextExercise && <p className="text-brand-grey text-xs">Weights: {currentExecutionWeightLabel}</p>}
           {!transitionNextExercise && isSuperset && currentExercise.subExercises && (
-            <p className="text-brand-orange/80 text-sm font-semibold">{currentExercise.subExercises.map((s:any) => s.name).join(' + ')}</p>
+            <p className="text-brand-orange/80 text-sm font-semibold">{currentExercise.subExercises.map((s: any) => s.name).join(' + ')}</p>
           )}
           <p className="text-brand-orange font-bold font-mono">
             {transitionNextExercise
@@ -2298,11 +2674,10 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="flex items-stretch gap-3">
           <button
             onClick={openCurrentExerciseNoteModal}
-            className={`w-[68px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${
-              hasCurrentWorkoutNote
+            className={`w-[68px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${hasCurrentWorkoutNote
                 ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
                 : 'bg-white/10 border-white/10 text-brand-grey hover:text-white hover:border-white/20'
-            }`}
+              }`}
             title="Exercise Notes"
           >
             <FileText size={22} />
@@ -2368,7 +2743,7 @@ const ActiveWorkoutPage: React.FC = () => {
     <div className="min-h-screen bg-brand-dark flex flex-col pt-4 pb-12 px-6 safe-top safe-bottom relative">
       {voiceCommandsHelpBubble}
       <header className="flex items-center justify-between mb-8 z-10 relative">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors">
+        <button onClick={handleLeaveWorkout} className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors">
           <ArrowLeft size={28} />
         </button>
         <div className="text-center flex-1">
@@ -2378,7 +2753,7 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="relative">
           {voiceStatus === 'success' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>}
           {voiceStatus === 'error' && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
-          <button 
+          <button
             onClick={handleVoiceButtonClick}
             className={`p-2 -mr-2 rounded-full transition-all duration-300 ${isVoiceEnabled ? (voiceStatus === 'success' ? 'bg-green-500 text-white scale-110' : voiceStatus === 'error' ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-orange text-black') : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
           >
@@ -2389,7 +2764,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
       {/* Progress Bar */}
       <div className="w-full bg-brand-darkGrey/50 h-2 rounded-full mb-8 overflow-hidden">
-        <div 
+        <div
           className="bg-brand-orange h-full rounded-full transition-all duration-300"
           style={{ width: `${((currentExerciseIdx + 1) / workout.exercises.length) * 100}%` }}
         />
@@ -2403,7 +2778,7 @@ const ActiveWorkoutPage: React.FC = () => {
       >
         {/* Navigation Arrows & Title Area */}
         <div className="flex items-center justify-between mb-8">
-          <button 
+          <button
             onClick={handlePrevExercise}
             disabled={currentExerciseIdx === 0}
             className="p-3 bg-brand-darkGrey/40 rounded-full text-white/50 hover:text-white disabled:opacity-20 disabled:hover:text-white/50 transition-all active:scale-95"
@@ -2412,23 +2787,23 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
 
           <div className="flex-1 text-center px-4">
-             <span className="text-brand-orange font-black text-xs tracking-widest mb-1 block">
-               EXERCISE {currentExerciseIdx + 1} OF {workout.exercises.length}
-             </span>
-             <h2 className="text-3xl font-black text-white leading-tight drop-shadow-md">
-               {currentExercise.name}
-             </h2>
-             {specialExerciseLabel && (
-               <div className="mt-2 flex flex-col items-center gap-1">
-                 <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${specialExercisePillClass}`}>
-                   {specialExerciseLabel}
-                 </span>
-               </div>
-             )}
-             
+            <span className="text-brand-orange font-black text-xs tracking-widest mb-1 block">
+              EXERCISE {currentExerciseIdx + 1} OF {workout.exercises.length}
+            </span>
+            <h2 className="text-3xl font-black text-white leading-tight drop-shadow-md">
+              {currentExercise.name}
+            </h2>
+            {specialExerciseLabel && (
+              <div className="mt-2 flex flex-col items-center gap-1">
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${specialExercisePillClass}`}>
+                  {specialExerciseLabel}
+                </span>
+              </div>
+            )}
+
           </div>
 
-          <button 
+          <button
             onClick={handleNextExercise}
             className="p-3 bg-brand-darkGrey/40 rounded-full text-white/50 hover:text-white transition-all active:scale-95"
           >
@@ -2439,13 +2814,12 @@ const ActiveWorkoutPage: React.FC = () => {
         {/* Set Tracker Indicator */}
         <div className="flex justify-center space-x-2 mb-10">
           {Array.from({ length: currentExercise.sets }).map((_, i) => (
-            <div 
-              key={i} 
-              className={`h-2.5 rounded-full transition-all duration-300 ${
-                i < currentSetIdx ? 'bg-brand-lightOrange w-8' : 
-                i === currentSetIdx ? 'bg-brand-orange w-12 shadow-[0_0_10px_rgba(255,107,0,0.5)]' : 
-                'bg-white/10 w-8'
-              }`} 
+            <div
+              key={i}
+              className={`h-2.5 rounded-full transition-all duration-300 ${i < currentSetIdx ? 'bg-brand-lightOrange w-8' :
+                  i === currentSetIdx ? 'bg-brand-orange w-12 shadow-[0_0_10px_rgba(255,107,0,0.5)]' :
+                    'bg-white/10 w-8'
+                }`}
             />
           ))}
         </div>
@@ -2454,18 +2828,18 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center">
           {currentExercise.type === 'emom' ? (
             <div className="text-center w-full max-w-sm flex flex-col items-center">
-                     <div className={`relative group w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer select-none ${emomActive ? 'border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]' : 'border-brand-darkGrey'}`}
-                       onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
-                       onPointerUp={(event) => handleTimerPointerUp(event, handleEmomTimerTap)}
-                       onPointerCancel={handleTimerPointerAbort}
-                       onPointerLeave={handleTimerPointerAbort}>
-                 <span className={`text-[60px] font-mono tracking-tighter ${emomActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
-                   {emomRoundRemaining}
-                 </span>
-                 <span className="text-brand-grey font-bold uppercase tracking-widest text-[10px] mt-1">SEC LEFT</span>
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
-                    {emomActive ? <Pause size={48} className="text-white"/> : <Play size={48} className="text-white"/>}
-                 </div>
+              <div className={`relative group w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer select-none ${emomActive ? 'border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]' : 'border-brand-darkGrey'}`}
+                onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
+                onPointerUp={(event) => handleTimerPointerUp(event, handleEmomTimerTap)}
+                onPointerCancel={handleTimerPointerAbort}
+                onPointerLeave={handleTimerPointerAbort}>
+                <span className={`text-[60px] font-mono tracking-tighter ${emomActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
+                  {emomRoundRemaining}
+                </span>
+                <span className="text-brand-grey font-bold uppercase tracking-widest text-[10px] mt-1">SEC LEFT</span>
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
+                  {emomActive ? <Pause size={48} className="text-white" /> : <Play size={48} className="text-white" />}
+                </div>
               </div>
               <p className="text-center text-[10px] text-brand-grey mt-2 uppercase tracking-wider font-bold mb-4">
                 Tap to {emomActive ? 'pause' : 'start'} / hold to reset
@@ -2501,7 +2875,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   Upcoming Recovery: {nextRecoveryLabel}
                 </p>
               )}
-              
+
               {/* EMOM Tasks */}
               <div className="w-full flex-1 max-h-[25vh] overflow-y-auto space-y-2 px-2">
                 {currentExercise.subExercises?.map((sub, idx) => (
@@ -2614,17 +2988,17 @@ const ActiveWorkoutPage: React.FC = () => {
                 onPointerCancel={handleTimerPointerAbort}
                 onPointerLeave={handleTimerPointerAbort}
               >
-                 <span className={`text-[80px] font-mono tracking-tighter ${isometryActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
-                   {isMaxTarget(currentExercise.duration_seconds) ? 'MAX' : isometryRemaining}
-                 </span>
-                 <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2">SEC</span>
-                 
-                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
-                    {isometryActive ? <Pause size={48} className="text-white"/> : <Play size={48} className="text-white"/>}
-                 </div>
+                <span className={`text-[80px] font-mono tracking-tighter ${isometryActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
+                  {isMaxTarget(currentExercise.duration_seconds) ? 'MAX' : isometryRemaining}
+                </span>
+                <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2">SEC</span>
+
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
+                  {isometryActive ? <Pause size={48} className="text-white" /> : <Play size={48} className="text-white" />}
+                </div>
               </div>
               <p className="text-center text-xs text-brand-grey mt-6 uppercase tracking-wider font-bold">
-                  Tap to {isometryActive ? 'pause' : 'start'} / hold to reset
+                Tap to {isometryActive ? 'pause' : 'start'} / hold to reset
               </p>
               <div className="mt-4 w-full max-w-sm grid grid-cols-3 gap-2">
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
@@ -2706,11 +3080,10 @@ const ActiveWorkoutPage: React.FC = () => {
 
           <button
             onClick={openCurrentExerciseNoteModal}
-            className={`w-[70px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${
-              hasCurrentWorkoutNote
+            className={`w-[70px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${hasCurrentWorkoutNote
                 ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
                 : 'bg-brand-darkGrey/40 border-brand-grey/20 text-brand-grey hover:text-white hover:border-brand-grey/40'
-            }`}
+              }`}
             title="Exercise Notes"
           >
             <FileText size={24} />
@@ -2718,32 +3091,31 @@ const ActiveWorkoutPage: React.FC = () => {
 
           <button
             onClick={handlePrimaryAction}
-            className={`flex-1 h-[70px] rounded-2xl font-black text-xl flex items-center justify-center transition-all active:scale-95 shadow-xl ${
-              isFinalCompletionAction
-                ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20' 
+            className={`flex-1 h-[70px] rounded-2xl font-black text-xl flex items-center justify-center transition-all active:scale-95 shadow-xl ${isFinalCompletionAction
+                ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20'
                 : 'bg-brand-orange hover:bg-brand-lightOrange text-black shadow-brand-orange/20'
-            }`}
+              }`}
           >
-             {isFinalCompletionAction ? (
-               <>
-                 <CheckCircle2 size={28} className="mr-2" strokeWidth={3} />
-                 COMPLETE WORKOUT
-               </>
-             ) : isEmom && !isLastEmomRound ? (
-               <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
-             ) : isEmom && isLastEmomRound ? (
-               <>FINISH SET</>
-             ) : isPyramid && !isLastPyramidStep ? (
-               <>FINISH STEP <ArrowRight size={24} className="ml-2" /></>
-             ) : isLastSet ? (
-               isSuperset
-                 ? <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
-                 : <>FINISH EXERCISE <ArrowRight size={24} className="ml-2" /></>
-             ) : (
-               isSuperset
-                 ? <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
-                 : <>FINISH SET</>
-             )}
+            {isFinalCompletionAction ? (
+              <>
+                <CheckCircle2 size={28} className="mr-2" strokeWidth={3} />
+                COMPLETE WORKOUT
+              </>
+            ) : isEmom && !isLastEmomRound ? (
+              <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
+            ) : isEmom && isLastEmomRound ? (
+              <>FINISH SET</>
+            ) : isPyramid && !isLastPyramidStep ? (
+              <>FINISH STEP <ArrowRight size={24} className="ml-2" /></>
+            ) : isLastSet ? (
+              isSuperset
+                ? <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
+                : <>FINISH EXERCISE <ArrowRight size={24} className="ml-2" /></>
+            ) : (
+              isSuperset
+                ? <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
+                : <>FINISH SET</>
+            )}
           </button>
         </div>
       </main>

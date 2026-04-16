@@ -33,6 +33,113 @@ interface ExerciseDraft {
   }[];
 }
 
+interface PersistedNewWorkoutDraftPayload {
+  version: 1;
+  savedAtMs: number;
+  workoutName: string;
+  exercises: ExerciseDraft[];
+  numberDrafts: Record<string, string>;
+}
+
+const NEW_WORKOUT_DRAFT_STORAGE_PREFIX = 'new_workout_draft_v1';
+const NEW_WORKOUT_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7;
+
+const getNewWorkoutDraftStorageKey = (userId: string) => {
+  return `${NEW_WORKOUT_DRAFT_STORAGE_PREFIX}:${userId}`;
+};
+
+const toSafeInteger = (value: unknown, fallback: number, min = 0) => {
+  const parsed = Math.trunc(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  if (parsed < min) return min;
+  return parsed;
+};
+
+const toSafeWeight = (value: unknown) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+};
+
+const normalizeSubExerciseDraft = (raw: unknown): NonNullable<ExerciseDraft['subExercises']>[number] => {
+  const sub = (raw || {}) as Record<string, unknown>;
+  const type: 'reps' | 'isometry' = sub.type === 'isometry' ? 'isometry' : 'reps';
+
+  return {
+    name: String(sub.name || ''),
+    type,
+    reps: toSafeInteger(sub.reps, type === 'reps' ? 10 : 0, 0),
+    duration_seconds: toSafeInteger(sub.duration_seconds, type === 'isometry' ? 30 : 0, 0),
+    weight_kg: toSafeWeight(sub.weight_kg),
+    instruction_note: String(sub.instruction_note || ''),
+  };
+};
+
+const normalizePyramidStepDraft = (raw: unknown) => {
+  const step = (raw || {}) as Record<string, unknown>;
+  return {
+    reps: toSafeInteger(step.reps, 10, 1),
+    rest_seconds: toSafeInteger(step.rest_seconds, 60, 0),
+    weight_kg: toSafeWeight(step.weight_kg),
+  };
+};
+
+const normalizeExerciseDraft = (raw: unknown): ExerciseDraft => {
+  const ex = (raw || {}) as Record<string, unknown>;
+  const typeRaw = String(ex.type || 'reps').toLowerCase();
+  const type: ExerciseDraft['type'] =
+    typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'emom' || typeRaw === 'pyramid'
+      ? (typeRaw as ExerciseDraft['type'])
+      : 'reps';
+
+  const normalized: ExerciseDraft = {
+    id: String(ex.id || crypto.randomUUID()),
+    type,
+    name: String(ex.name || ''),
+    instruction_note: String(ex.instruction_note || ''),
+    sets: toSafeInteger(ex.sets, 3, 1),
+    reps: toSafeInteger(ex.reps, 10, 0),
+    duration_seconds: toSafeInteger(ex.duration_seconds, 30, 0),
+    rest_seconds: toSafeInteger(ex.rest_seconds, 60, 0),
+    transition_rest_seconds: toSafeInteger(ex.transition_rest_seconds, 0, 0),
+    weight_kg: toSafeWeight(ex.weight_kg),
+  };
+
+  if (type === 'emom') {
+    normalized.emom_rounds = toSafeInteger(ex.emom_rounds, 10, 1);
+    normalized.emom_round_duration = toSafeInteger(ex.emom_round_duration, 60, 1);
+  }
+
+  if (type === 'superset' || type === 'emom') {
+    const subExercises = Array.isArray(ex.subExercises)
+      ? ex.subExercises.map(normalizeSubExerciseDraft)
+      : [];
+    normalized.subExercises = subExercises;
+  }
+
+  if (type === 'pyramid') {
+    const pyramidSteps = Array.isArray(ex.pyramid_steps)
+      ? ex.pyramid_steps.map(normalizePyramidStepDraft)
+      : [];
+    normalized.pyramid_steps = pyramidSteps;
+    normalized.sets = 1;
+    normalized.rest_seconds = 0;
+  }
+
+  return normalized;
+};
+
+const normalizeNumberDrafts = (raw: unknown) => {
+  if (!raw || typeof raw !== 'object') return {};
+
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    result[String(key)] = String(value ?? '');
+  }
+
+  return result;
+};
+
 const NewTrainPage: React.FC = () => {
   const PYRAMID_DEFAULT_REPS = 10;
   const PYRAMID_DEFAULT_REPS_INCREMENT = 5;
@@ -59,6 +166,172 @@ const NewTrainPage: React.FC = () => {
     if (!Number.isFinite(parsed)) return null;
     return Math.max(1, Math.trunc(parsed));
   }, [location.search]);
+  const isCreateMode = !id;
+
+  const hasCreateDraftHydratedRef = React.useRef(false);
+  const createDraftPersistTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressCreateDraftPersistenceRef = React.useRef(false);
+  const latestCreateDraftRef = React.useRef<{
+    workoutName: string;
+    exercises: ExerciseDraft[];
+    numberDrafts: Record<string, string>;
+  }>({
+    workoutName: '',
+    exercises: [],
+    numberDrafts: {},
+  });
+  const persistCreateDraftRef = React.useRef<(() => void) | null>(null);
+
+  const clearCreateWorkoutDraft = (targetUserId?: string | null) => {
+    if (!targetUserId) return;
+
+    const storageKey = getNewWorkoutDraftStorageKey(targetUserId);
+    try {
+      localStorage.removeItem(storageKey);
+    } catch (draftError) {
+      console.error('Error clearing create-workout draft:', draftError);
+    }
+  };
+
+  const persistCreateWorkoutDraft = () => {
+    if (!isCreateMode || !user?.id || !hasCreateDraftHydratedRef.current) return;
+    if (suppressCreateDraftPersistenceRef.current) return;
+
+    const storageKey = getNewWorkoutDraftStorageKey(user.id);
+    const snapshot = latestCreateDraftRef.current;
+    const hasContent =
+      snapshot.workoutName.trim().length > 0 ||
+      snapshot.exercises.length > 0 ||
+      Object.keys(snapshot.numberDrafts).length > 0;
+
+    if (!hasContent) {
+      clearCreateWorkoutDraft(user.id);
+      return;
+    }
+
+    const payload: PersistedNewWorkoutDraftPayload = {
+      version: 1,
+      savedAtMs: Date.now(),
+      workoutName: snapshot.workoutName,
+      exercises: snapshot.exercises,
+      numberDrafts: snapshot.numberDrafts,
+    };
+
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch (draftError) {
+      console.error('Error persisting create-workout draft:', draftError);
+    }
+  };
+
+  persistCreateDraftRef.current = persistCreateWorkoutDraft;
+
+  React.useEffect(() => {
+    latestCreateDraftRef.current = {
+      workoutName,
+      exercises,
+      numberDrafts,
+    };
+  }, [workoutName, exercises, numberDrafts]);
+
+  React.useEffect(() => {
+    hasCreateDraftHydratedRef.current = false;
+
+    if (!isCreateMode || !user?.id) {
+      hasCreateDraftHydratedRef.current = true;
+      return;
+    }
+
+    const storageKey = getNewWorkoutDraftStorageKey(user.id);
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        hasCreateDraftHydratedRef.current = true;
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as PersistedNewWorkoutDraftPayload;
+      if (!parsed || parsed.version !== 1) {
+        clearCreateWorkoutDraft(user.id);
+        hasCreateDraftHydratedRef.current = true;
+        return;
+      }
+
+      const savedAtMs = Number(parsed.savedAtMs);
+      if (!Number.isFinite(savedAtMs) || Date.now() - savedAtMs > NEW_WORKOUT_DRAFT_MAX_AGE_MS) {
+        clearCreateWorkoutDraft(user.id);
+        hasCreateDraftHydratedRef.current = true;
+        return;
+      }
+
+      const restoredWorkoutName = String(parsed.workoutName || '');
+      const restoredExercises = Array.isArray(parsed.exercises)
+        ? parsed.exercises.map(normalizeExerciseDraft)
+        : [];
+      const restoredNumberDrafts = normalizeNumberDrafts(parsed.numberDrafts);
+
+      setWorkoutName(restoredWorkoutName);
+      setExercises(restoredExercises);
+      setNumberDrafts(restoredNumberDrafts);
+      setEditingTransitionForExerciseId(null);
+      setFocusedExerciseId(null);
+      setDidAutoFocusExercise(false);
+    } catch (draftError) {
+      console.error('Error restoring create-workout draft:', draftError);
+      clearCreateWorkoutDraft(user.id);
+    } finally {
+      hasCreateDraftHydratedRef.current = true;
+    }
+  }, [isCreateMode, user?.id]);
+
+  React.useEffect(() => {
+    if (!isCreateMode || !user?.id || !hasCreateDraftHydratedRef.current) return;
+
+    if (createDraftPersistTimeoutRef.current) {
+      clearTimeout(createDraftPersistTimeoutRef.current);
+      createDraftPersistTimeoutRef.current = null;
+    }
+
+    createDraftPersistTimeoutRef.current = setTimeout(() => {
+      persistCreateDraftRef.current?.();
+      createDraftPersistTimeoutRef.current = null;
+    }, 250);
+
+    return () => {
+      if (createDraftPersistTimeoutRef.current) {
+        clearTimeout(createDraftPersistTimeoutRef.current);
+        createDraftPersistTimeoutRef.current = null;
+      }
+    };
+  }, [isCreateMode, user?.id, workoutName, exercises, numberDrafts]);
+
+  React.useEffect(() => {
+    const flushDraft = () => {
+      if (createDraftPersistTimeoutRef.current) {
+        clearTimeout(createDraftPersistTimeoutRef.current);
+        createDraftPersistTimeoutRef.current = null;
+      }
+      persistCreateDraftRef.current?.();
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        flushDraft();
+      }
+    };
+
+    window.addEventListener('beforeunload', flushDraft);
+    window.addEventListener('pagehide', flushDraft);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      flushDraft();
+      window.removeEventListener('beforeunload', flushDraft);
+      window.removeEventListener('pagehide', flushDraft);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   // Carica i dati della scheda se siamo in modalità modifica
   React.useEffect(() => {
@@ -868,6 +1141,11 @@ const NewTrainPage: React.FC = () => {
         .insert(rowsToInsert);
 
       if (exercisesError) throw exercisesError;
+
+      if (isCreateMode && user?.id) {
+        suppressCreateDraftPersistenceRef.current = true;
+        clearCreateWorkoutDraft(user.id);
+      }
 
       navigate('/gym-card');
 

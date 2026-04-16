@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import type { UiExercise, UiSubExercise } from '../lib/workoutSchemaAdapter';
+import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
 
 interface WorkoutHistoryDetail {
   id: string;
@@ -95,24 +96,24 @@ const toSnapshotExercises = (raw: unknown): UiExercise[] => {
 
       const subExercises = Array.isArray(item.subExercises)
         ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
-            const subType: UiSubExercise['type'] =
-              String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
-            return {
-              name: String(sub.name || ''),
-              type: subType,
-              reps: Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0))),
-              duration_seconds: Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0))),
-              weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
-            } satisfies UiSubExercise;
-          })
+          const subType: UiSubExercise['type'] =
+            String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
+          return {
+            name: String(sub.name || ''),
+            type: subType,
+            reps: Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0))),
+            duration_seconds: Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0))),
+            weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
+          } satisfies UiSubExercise;
+        })
         : undefined;
 
       const pyramidSteps = Array.isArray(item.pyramid_steps)
         ? (item.pyramid_steps as Array<Record<string, unknown>>).map((step) => ({
-            reps: Math.max(0, Math.trunc(toSafeNumber(step.reps, 0))),
-            rest_seconds: Math.max(0, Math.trunc(toSafeNumber(step.rest_seconds, 0))),
-            weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
-          }))
+          reps: Math.max(0, Math.trunc(toSafeNumber(step.reps, 0))),
+          rest_seconds: Math.max(0, Math.trunc(toSafeNumber(step.rest_seconds, 0))),
+          weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
+        }))
         : undefined;
 
       return {
@@ -149,6 +150,11 @@ const WorkoutHistoryDetailPage: React.FC = () => {
   const [exerciseNoteModalContext, setExerciseNoteModalContext] = useState<ExerciseNoteModalContext | null>(null);
   const [exerciseNoteDraft, setExerciseNoteDraft] = useState('');
   const [isSavingExerciseNote, setIsSavingExerciseNote] = useState(false);
+
+  const clearRestartCheckpoint = () => {
+    if (!user?.id) return;
+    clearAllWorkoutProgressCheckpoints(user.id);
+  };
 
   useEffect(() => {
     const fetchWorkoutHistoryDetail = async () => {
@@ -523,12 +529,12 @@ const WorkoutHistoryDetailPage: React.FC = () => {
               exercise.type === 'reps'
                 ? 'REPS'
                 : exercise.type === 'isometry'
-                ? 'ISOMETRIC'
-                : exercise.type === 'superset'
-                ? 'SUPERSET'
-                : exercise.type === 'emom'
-                ? 'EMOM'
-                : 'PYRAMID';
+                  ? 'ISOMETRIC'
+                  : exercise.type === 'superset'
+                    ? 'SUPERSET'
+                    : exercise.type === 'emom'
+                      ? 'EMOM'
+                      : 'PYRAMID';
 
             const isComplexType =
               exercise.type === 'superset' || exercise.type === 'emom' || exercise.type === 'pyramid';
@@ -558,11 +564,10 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                   <div className="mb-3 flex justify-end">
                     <button
                       onClick={() => openExerciseNoteModal(exercise.name)}
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wide transition-colors border ${
-                        hasDirectExerciseNote
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wide transition-colors border ${hasDirectExerciseNote
                           ? 'bg-brand-orange/20 text-brand-orange border-brand-orange/40 hover:bg-brand-orange/25'
                           : 'bg-brand-darkGrey/40 text-brand-grey border-brand-grey/30 hover:text-white hover:border-brand-grey/50'
-                      }`}
+                        }`}
                     >
                       <FileText size={12} />
                       {hasDirectExerciseNote ? 'Edit note' : 'Add note'}
@@ -735,9 +740,11 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           <button
             onClick={() => {
               if (detail.canRestartFromTemplate && detail.schedaId) {
+                clearRestartCheckpoint();
                 navigate(`/active-workout/${detail.schedaId}`);
                 return;
               }
+              clearRestartCheckpoint();
               navigate(`/active-workout-history/${detail.id}`);
             }}
             className="w-full bg-brand-orange hover:bg-brand-lightOrange text-black font-black py-4 px-5 rounded-full flex items-center justify-center transition-colors mt-2"
