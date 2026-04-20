@@ -220,6 +220,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const lastProgressPersistAtMsRef = useRef(0);
   const persistWorkoutProgressRef = useRef<((force?: boolean) => void) | null>(null);
   const suppressProgressPersistenceRef = useRef(false);
+  const lastHandledRestCompletionEndsAtMsRef = useRef<number | null>(null);
+  const lastHandledEmomCompletionEndsAtMsRef = useRef<number | null>(null);
 
   // Voice Command State
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
@@ -335,6 +337,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const startRestCountdown = (durationSeconds: number) => {
     const safe = normalizeDurationSeconds(durationSeconds);
+    lastHandledRestCompletionEndsAtMsRef.current = null;
     setRestInitialDuration(safe);
     setRestRemaining(safe);
     setRestEndsAtMs(Date.now() + (safe * 1000));
@@ -365,6 +368,7 @@ const ActiveWorkoutPage: React.FC = () => {
       : (restInitialDuration > 0 ? restInitialDuration : fallbackRestDuration);
 
     if (nextDuration <= 0) return;
+    lastHandledRestCompletionEndsAtMsRef.current = null;
     setRestRemaining(nextDuration);
     setRestEndsAtMs(Date.now() + (nextDuration * 1000));
     setIsResting(true);
@@ -394,6 +398,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const startEmomCountdown = (durationSeconds: number) => {
     const safe = Math.max(1, normalizeDurationSeconds(durationSeconds));
+    lastHandledEmomCompletionEndsAtMsRef.current = null;
     setEmomRoundRemaining(safe);
     setEmomRoundEndsAtMs(Date.now() + (safe * 1000));
     setEmomActive(true);
@@ -415,6 +420,7 @@ const ActiveWorkoutPage: React.FC = () => {
     setEmomRoundRemaining(safe);
     if (emomActive) {
       if (safe > 0) {
+        lastHandledEmomCompletionEndsAtMsRef.current = null;
         setEmomRoundEndsAtMs(Date.now() + (safe * 1000));
       } else {
         setEmomRoundEndsAtMs(null);
@@ -1522,6 +1528,11 @@ const ActiveWorkoutPage: React.FC = () => {
       setRestRemaining((prev) => (prev === nextRemaining ? prev : nextRemaining));
 
       if (nextRemaining <= 0) {
+        if (lastHandledRestCompletionEndsAtMsRef.current === restEndsAtMs) {
+          return;
+        }
+        lastHandledRestCompletionEndsAtMsRef.current = restEndsAtMs;
+
         if (intervalId) {
           clearInterval(intervalId);
           intervalId = null;
@@ -1577,6 +1588,11 @@ const ActiveWorkoutPage: React.FC = () => {
       setEmomRoundRemaining((prev) => (prev === nextRemaining ? prev : nextRemaining));
 
       if (nextRemaining <= 0) {
+        if (lastHandledEmomCompletionEndsAtMsRef.current === emomRoundEndsAtMs) {
+          return;
+        }
+        lastHandledEmomCompletionEndsAtMsRef.current = emomRoundEndsAtMs;
+
         if (intervalId) {
           clearInterval(intervalId);
           intervalId = null;
@@ -2476,6 +2492,20 @@ const ActiveWorkoutPage: React.FC = () => {
 
     if (Math.abs(deltaY) > SWIPE_MAX_VERTICAL_DRIFT_PX) return;
     if (Math.abs(deltaX) < SWIPE_MIN_DISTANCE_PX) return;
+
+    if (currentExercise.type === 'pyramid') {
+      const maxStepIdx = Math.max(0, (currentExercise.pyramid_steps?.length || 1) - 1);
+
+      if (deltaX > 0) {
+        if (currentPyramidStepIdx >= maxStepIdx) return;
+        advanceWithinCurrentExercise();
+        return;
+      }
+
+      if (currentPyramidStepIdx <= 0) return;
+      rewindWithinCurrentExercise();
+      return;
+    }
 
     if (deltaX > 0) {
       advanceWithinCurrentExercise();

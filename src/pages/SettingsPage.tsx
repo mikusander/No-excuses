@@ -176,7 +176,7 @@ const SettingsPage: React.FC = () => {
         </div>
 
         {/* Logout Button pushed to the end */}
-        <div className="mt-auto w-full max-w-sm pt-12">
+        <div className="mt-auto w-full max-w-sm pt-12 mb-24">
           <button 
             onClick={signOut}
             className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 font-bold text-lg py-4 rounded-xl flex items-center justify-center transition-colors shadow-lg shadow-red-500/5"

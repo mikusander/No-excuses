@@ -9,16 +9,32 @@ const AuthPage: React.FC = () => {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   
   const navigate = useNavigate();
 
+  const switchAuthMode = (mode: AuthMode) => {
+    setAuthMode(mode);
+    setError(null);
+    setMessage(null);
+    if (mode !== 'signup') {
+      setConfirmPassword('');
+    }
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+
+    if (authMode === 'signup' && password !== confirmPassword) {
+      setError('I campi Password e Conferma Password devono combaciare.');
+      return;
+    }
+
+    setLoading(true);
 
     try {
       if (authMode === 'forgot') {
@@ -46,9 +62,11 @@ const AuthPage: React.FC = () => {
             });
         }
 
-        navigate('/');
+        setAuthMode('login');
+        setPassword('');
+        setConfirmPassword('');
+        setMessage('Account created successfully. \n Please log in.');
       }
-      navigate('/');
     } catch (err: any) {
       setError(err.message || 'Error during authentication');
     } finally {
@@ -98,12 +116,23 @@ const AuthPage: React.FC = () => {
               required
             />
           )}
+
+          {authMode === 'signup' && (
+            <input
+              type="password"
+              placeholder="Conferma Password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="bg-black/50 border-2 border-brand-grey/20 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors"
+              required
+            />
+          )}
           
           {authMode === 'login' && (
             <div className="text-right">
               <button 
                 type="button" 
-                onClick={() => { setAuthMode('forgot'); setError(null); setMessage(null); }}
+                onClick={() => switchAuthMode('forgot')}
                 className="text-xs text-brand-grey hover:text-brand-orange transition-colors"
               >
                 Forgot your password?
@@ -126,7 +155,7 @@ const AuthPage: React.FC = () => {
               <span>Already have an account?</span>
               <button 
                 type="button" 
-                onClick={() => { setAuthMode('login'); setError(null); setMessage(null); }} 
+                onClick={() => switchAuthMode('login')} 
                 className="text-brand-orange font-bold ml-2 hover:underline"
               >
                 Log in
@@ -138,7 +167,7 @@ const AuthPage: React.FC = () => {
               <span>Don't have an account?</span>
               <button 
                 type="button" 
-                onClick={() => { setAuthMode('signup'); setError(null); setMessage(null); }} 
+                onClick={() => switchAuthMode('signup')} 
                 className="text-brand-orange font-bold ml-2 hover:underline"
               >
                 Sign up

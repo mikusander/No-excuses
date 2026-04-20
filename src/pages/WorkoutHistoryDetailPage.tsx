@@ -538,6 +538,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
             const isComplexType =
               exercise.type === 'superset' || exercise.type === 'emom' || exercise.type === 'pyramid';
+            const shouldShowTypeBadge = exercise.type !== 'superset' && exercise.type !== 'emom';
 
             return (
               <section
@@ -551,14 +552,16 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                       {isComplexType ? <Repeat size={16} className="mr-1 text-brand-orange" /> : null}
                       {exercise.name}
                     </span>
-                    <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner whitespace-nowrap">
-                      {exercise.type === 'isometry' ? (
-                        <Timer size={12} className="mr-1 text-brand-orange" />
-                      ) : (
-                        <Repeat size={12} className="mr-1 text-brand-orange" />
-                      )}
-                      {typeLabel}
-                    </div>
+                    {shouldShowTypeBadge && (
+                      <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner whitespace-nowrap">
+                        {exercise.type === 'isometry' ? (
+                          <Timer size={12} className="mr-1 text-brand-orange" />
+                        ) : (
+                          <Repeat size={12} className="mr-1 text-brand-orange" />
+                        )}
+                        {typeLabel}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mb-3 flex justify-end">

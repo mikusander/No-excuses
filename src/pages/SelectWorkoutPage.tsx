@@ -287,10 +287,18 @@ const SelectWorkoutPage: React.FC = () => {
                         <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
                           {ex.type === 'superset' || ex.type === 'emom' || ex.type === 'pyramid' ? (
                             <div className="mb-3">
-                              <span className="font-bold text-lg text-white drop-shadow-md flex items-center mb-2">
-                                <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                                <Repeat size={16} className="mr-1 text-brand-orange" /> {ex.name}
-                              </span>
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <span className="font-bold text-lg text-white drop-shadow-md flex items-center min-w-0">
+                                  <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
+                                  <Repeat size={16} className="mr-1 text-brand-orange shrink-0" />
+                                  <span className="truncate">{ex.name}</span>
+                                </span>
+                                {ex.type === 'pyramid' && (
+                                  <span className="shrink-0 inline-flex items-center rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                                    PYRAMID
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
                                 {ex.type === 'pyramid'
                                   ? ex.pyramid_steps?.map((step, sIdx) => (
