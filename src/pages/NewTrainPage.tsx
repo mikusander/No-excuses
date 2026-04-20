@@ -43,9 +43,14 @@ interface PersistedNewWorkoutDraftPayload {
 
 const NEW_WORKOUT_DRAFT_STORAGE_PREFIX = 'new_workout_draft_v1';
 const NEW_WORKOUT_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7;
+const NEW_WORKOUT_DRAFT_RESUME_SESSION_PREFIX = 'new_workout_draft_resume_v1';
 
 const getNewWorkoutDraftStorageKey = (userId: string) => {
   return `${NEW_WORKOUT_DRAFT_STORAGE_PREFIX}:${userId}`;
+};
+
+const getNewWorkoutDraftResumeSessionKey = (userId: string) => {
+  return `${NEW_WORKOUT_DRAFT_RESUME_SESSION_PREFIX}:${userId}`;
 };
 
 const toSafeInteger = (value: unknown, fallback: number, min = 0) => {
@@ -171,6 +176,7 @@ const NewTrainPage: React.FC = () => {
   const hasCreateDraftHydratedRef = React.useRef(false);
   const createDraftPersistTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressCreateDraftPersistenceRef = React.useRef(false);
+  const preserveCreateDraftOnUnmountRef = React.useRef(true);
   const latestCreateDraftRef = React.useRef<{
     workoutName: string;
     exercises: ExerciseDraft[];
@@ -190,6 +196,21 @@ const NewTrainPage: React.FC = () => {
       localStorage.removeItem(storageKey);
     } catch (draftError) {
       console.error('Error clearing create-workout draft:', draftError);
+    }
+  };
+
+  const setCreateDraftResumeAllowed = (targetUserId?: string | null, allowed = false) => {
+    if (!targetUserId) return;
+
+    const sessionKey = getNewWorkoutDraftResumeSessionKey(targetUserId);
+    try {
+      if (allowed) {
+        sessionStorage.setItem(sessionKey, '1');
+      } else {
+        sessionStorage.removeItem(sessionKey);
+      }
+    } catch (sessionError) {
+      console.error('Error updating create-workout resume session flag:', sessionError);
     }
   };
 
@@ -242,6 +263,26 @@ const NewTrainPage: React.FC = () => {
       return;
     }
 
+    const sessionKey = getNewWorkoutDraftResumeSessionKey(user.id);
+    const canRestoreFromSession = (() => {
+      try {
+        return sessionStorage.getItem(sessionKey) === '1';
+      } catch {
+        return false;
+      }
+    })();
+
+    const navEntry = typeof performance !== 'undefined'
+      ? (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)
+      : undefined;
+    const isReloadNavigation = navEntry?.type === 'reload';
+
+    if (!canRestoreFromSession && !isReloadNavigation) {
+      clearCreateWorkoutDraft(user.id);
+      hasCreateDraftHydratedRef.current = true;
+      return;
+    }
+
     const storageKey = getNewWorkoutDraftStorageKey(user.id);
 
     try {
@@ -283,6 +324,16 @@ const NewTrainPage: React.FC = () => {
     } finally {
       hasCreateDraftHydratedRef.current = true;
     }
+  }, [isCreateMode, user?.id]);
+
+  React.useEffect(() => {
+    if (!isCreateMode || !user?.id) return;
+
+    preserveCreateDraftOnUnmountRef.current = true;
+
+    return () => {
+      setCreateDraftResumeAllowed(user.id, preserveCreateDraftOnUnmountRef.current);
+    };
   }, [isCreateMode, user?.id]);
 
   React.useEffect(() => {
@@ -494,15 +545,29 @@ const NewTrainPage: React.FC = () => {
     }));
   };
 
-  const addEmom = () => {
-    setExercises([
-      ...exercises,
-      {
-        id: crypto.randomUUID(), type: 'emom', name: '', instruction_note: '', sets: 1, reps: 0, duration_seconds: 0, rest_seconds: 60, transition_rest_seconds: 0, weight_kg: null, emom_rounds: 10, emom_round_duration: 60, subExercises: [
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
-        ]
+  const convertToEmom = (id: string) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === id) {
+        return {
+          ...ex,
+          type: 'emom',
+          sets: Math.max(1, ex.sets || 1),
+          emom_rounds: Math.max(1, ex.emom_rounds || 10),
+          emom_round_duration: Math.max(1, ex.emom_round_duration || 60),
+          subExercises: [
+            {
+              name: ex.name,
+              type: ex.type === 'isometry' ? 'isometry' : 'reps',
+              reps: ex.type === 'reps' ? ex.reps : 0,
+              duration_seconds: ex.type === 'isometry' ? ex.duration_seconds : 0,
+              weight_kg: ex.weight_kg ?? null,
+              instruction_note: ex.instruction_note || '',
+            },
+          ],
+        };
       }
-    ]);
+      return ex;
+    }));
   };
 
   const removeExercise = (id: string) => {
@@ -1143,7 +1208,9 @@ const NewTrainPage: React.FC = () => {
       if (exercisesError) throw exercisesError;
 
       if (isCreateMode && user?.id) {
+        preserveCreateDraftOnUnmountRef.current = false;
         suppressCreateDraftPersistenceRef.current = true;
+        setCreateDraftResumeAllowed(user.id, false);
         clearCreateWorkoutDraft(user.id);
       }
 
@@ -1156,11 +1223,26 @@ const NewTrainPage: React.FC = () => {
     }
   };
 
+  const handleBackFromCreate = () => {
+    if (isCreateMode && user?.id) {
+      preserveCreateDraftOnUnmountRef.current = false;
+      suppressCreateDraftPersistenceRef.current = true;
+      setCreateDraftResumeAllowed(user.id, false);
+      if (createDraftPersistTimeoutRef.current) {
+        clearTimeout(createDraftPersistTimeoutRef.current);
+        createDraftPersistTimeoutRef.current = null;
+      }
+      clearCreateWorkoutDraft(user.id);
+    }
+
+    navigate('/gym-card');
+  };
+
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24">
       <header className="p-4 flex items-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
         <button
-          onClick={() => navigate('/gym-card')}
+          onClick={handleBackFromCreate}
           className="p-2 text-white hover:text-brand-orange transition-colors"
         >
           <ArrowLeft size={28} />
@@ -1694,12 +1776,18 @@ const NewTrainPage: React.FC = () => {
                 )}
 
                 {ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
-                  <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <button
                       onClick={() => convertToSuperset(ex.id)}
                       className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                     >
                       <Plus size={14} className="mr-1" /> CREATE SUPERSET
+                    </button>
+                    <button
+                      onClick={() => convertToEmom(ex.id)}
+                      className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                    >
+                      <Plus size={14} className="mr-1" /> CREATE EMOM
                     </button>
                     <button
                       onClick={() => convertToPyramid(ex.id)}
@@ -1789,22 +1877,13 @@ const NewTrainPage: React.FC = () => {
           )}
 
           <div className="flex flex-col space-y-3 pt-2">
-            <div className="flex space-x-3">
-              <button
-                onClick={addExercise}
-                className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
-              >
-                <Plus size={20} className="mr-1" />
-                EXERCISE
-              </button>
-              <button
-                onClick={addEmom}
-                className="flex-1 text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
-              >
-                <Plus size={20} className="mr-1" />
-                EMOM
-              </button>
-            </div>
+            <button
+              onClick={addExercise}
+              className="w-full text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
+            >
+              <Plus size={20} className="mr-1" />
+              EXERCISE
+            </button>
           </div>
         </div>
 
