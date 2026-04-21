@@ -24,6 +24,7 @@ const RepCounterPage: React.FC = () => {
   const [debugData, setDebugData] = useState<{ angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }>({ angle: 0, stage: null });
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [isCountingActive, setIsCountingActive] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
@@ -56,6 +57,17 @@ const RepCounterPage: React.FC = () => {
   };
 
   useVoiceCommands({
+    onStart: () => {
+      if (isCountingActive || !trackerRef.current || !selectedExerciseRef.current || !isCameraReady || isLoading) return;
+      trackerRef.current.resetTrackingState();
+      setPaused(false);
+      setIsCountingActive(true);
+    },
+    onStop: () => {
+      if (!isCountingActive) return;
+      trackerRef.current?.resetTrackingState();
+      setIsCountingActive(false);
+    },
     onPause: () => setPaused(true),
     onResume: () => setPaused(false),
     enabled: selectedExercise !== null && isCameraReady && !isLoading
@@ -130,10 +142,12 @@ const RepCounterPage: React.FC = () => {
 
           const landmarks = results.landmarks[0];
           const currentEx = selectedExerciseRef.current;
-          
-          if (currentEx === 'pullups') trackerRef.current?.updatePullup(landmarks);
-          else if (currentEx === 'pushups') trackerRef.current?.updatePushup(landmarks);
-          else if (currentEx === 'squats') trackerRef.current?.updateSquat(landmarks);
+
+          if (isCountingActive) {
+            if (currentEx === 'pullups') trackerRef.current?.updatePullup(landmarks);
+            else if (currentEx === 'pushups') trackerRef.current?.updatePushup(landmarks);
+            else if (currentEx === 'squats') trackerRef.current?.updateSquat(landmarks);
+          }
         }
       }
       animationId = requestAnimationFrame(processFrame);
@@ -141,7 +155,7 @@ const RepCounterPage: React.FC = () => {
 
     animationId = requestAnimationFrame(processFrame);
     return () => cancelAnimationFrame(animationId);
-  }, [selectedExercise, isCameraReady, paused, detectPose]);
+  }, [selectedExercise, isCameraReady, paused, isCountingActive, detectPose]);
 
 
   const handleSelectExercise = (type: ExerciseType) => {
@@ -149,6 +163,7 @@ const RepCounterPage: React.FC = () => {
     setPoseResults(null);
     setIsCameraReady(false);
     setPaused(false);
+    setIsCountingActive(false);
     initTracker();
     setSelectedExercise(type);
   };
@@ -157,6 +172,7 @@ const RepCounterPage: React.FC = () => {
     setSelectedExercise(null);
     setIsCameraReady(false);
     setPaused(false);
+    setIsCountingActive(false);
     setCount(0);
     trackerRef.current?.reset();
   };

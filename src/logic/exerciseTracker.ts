@@ -324,11 +324,15 @@ export class ExerciseTracker {
     return this.count;
   }
 
-  reset() {
-    this.count = 0;
+  resetTrackingState() {
     this.stage = null;
     this.hasStarted = false;
-    this.lastAnnouncement = -1;
     this.lastAngles = { L: null, R: null, Primary: null };
+  }
+
+  reset() {
+    this.count = 0;
+    this.lastAnnouncement = -1;
+    this.resetTrackingState();
   }
 }

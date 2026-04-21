@@ -2,18 +2,24 @@
 import { useEffect, useRef } from 'react';
 
 interface VoiceCommandsProps {
+  onStart?: () => void;
+  onStop?: () => void;
   onPause: () => void;
   onResume: () => void;
   enabled: boolean;
 }
 
-export const useVoiceCommands = ({ onPause, onResume, enabled }: VoiceCommandsProps) => {
+export const useVoiceCommands = ({ onStart, onStop, onPause, onResume, enabled }: VoiceCommandsProps) => {
   const recognitionRef = useRef<any>(null);
   const isActiveRef = useRef(true);
+  const onStartRef = useRef(onStart);
+  const onStopRef = useRef(onStop);
   const onPauseRef = useRef(onPause);
   const onResumeRef = useRef(onResume);
 
   // Keep refs updated to avoid re-triggering useEffect
+  useEffect(() => { onStartRef.current = onStart; }, [onStart]);
+  useEffect(() => { onStopRef.current = onStop; }, [onStop]);
   useEffect(() => { onPauseRef.current = onPause; }, [onPause]);
   useEffect(() => { onResumeRef.current = onResume; }, [onResume]);
 
@@ -41,7 +47,11 @@ export const useVoiceCommands = ({ onPause, onResume, enabled }: VoiceCommandsPr
         const last = event.results.length - 1;
         const command = event.results[last][0].transcript.toLowerCase().trim();
         console.log('Voice Command:', command);
-        if (command.includes('pausa')) {
+        if (command.includes('vai') || command.includes('go')) {
+          onStartRef.current?.();
+        } else if (command.includes('stop') || command.includes('fermo')) {
+          onStopRef.current?.();
+        } else if (command.includes('pausa')) {
           onPauseRef.current();
         } else if (command.includes('riprendi') || command.includes('continua')) {
           onResumeRef.current();
@@ -90,4 +100,3 @@ export const useVoiceCommands = ({ onPause, onResume, enabled }: VoiceCommandsPr
     };
   }, [enabled]); // Only depend on enabled
 };
-
