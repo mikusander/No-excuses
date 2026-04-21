@@ -18,6 +18,75 @@ const SettingsPage: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
   const [voiceAssistanceEnabled, setVoiceAssistanceEnabled] = useState(true);
+  const [voiceSyncError, setVoiceSyncError] = useState<string | null>(null);
+  const [voiceSaving, setVoiceSaving] = useState(false);
+
+  const getProfileMailValue = () => {
+    const normalizedEmail = String(user?.email || '').trim().toLowerCase();
+    if (normalizedEmail.length > 0) return normalizedEmail;
+    return `${String(user?.id || 'user')}@noexcuses.local`;
+  };
+
+  const getProfileUsernameBase = (mailValue: string) => {
+    const localPart = String(mailValue.split('@')[0] || 'user')
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    const safe = localPart.length > 0 ? localPart : 'user';
+    return safe.slice(0, 40);
+  };
+
+  const buildProfileUsernameCandidate = (base: string, attempt: number) => {
+    if (attempt === 0) return base;
+    const suffix = `_${Math.floor(Math.random() * 9000) + 1000}`;
+    const safeBase = base.slice(0, Math.max(1, 50 - suffix.length));
+    return `${safeBase}${suffix}`;
+  };
+
+  const ensureProfileExists = async (voiceSetting: boolean) => {
+    if (!user?.id) {
+      throw new Error('User not authenticated.');
+    }
+
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from('profili')
+      .select('id_utente')
+      .eq('id_utente', user.id)
+      .maybeSingle();
+
+    if (existingProfileError) throw existingProfileError;
+    if (existingProfile?.id_utente) return;
+
+    const mailValue = getProfileMailValue();
+    const usernameBase = getProfileUsernameBase(mailValue);
+    let lastInsertError: { code?: string; message?: string } | null = null;
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const username = buildProfileUsernameCandidate(usernameBase, attempt);
+      const { error: insertError } = await supabase
+        .from('profili')
+        .insert([
+          {
+            id_utente: user.id,
+            username,
+            mail: mailValue,
+            voice_assistant: voiceSetting,
+            updated_at: new Date().toISOString(),
+          },
+        ]);
+
+      if (!insertError) return;
+
+      lastInsertError = insertError;
+      const duplicateConflict = String(insertError.code || '') === '23505'
+        || /duplicate key|unique/i.test(String(insertError.message || ''));
+      if (!duplicateConflict) throw insertError;
+    }
+
+    throw lastInsertError || new Error('Unable to initialize profile for voice settings.');
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem(VOICE_ASSIST_KEY);
@@ -26,10 +95,37 @@ const SettingsPage: React.FC = () => {
     }
   }, []);
 
-  const handleToggleVoiceAssistance = () => {
+  const handleToggleVoiceAssistance = async () => {
+    if (!user || voiceSaving) return;
+
+    const previous = voiceAssistanceEnabled;
     const next = !voiceAssistanceEnabled;
+
+    setVoiceSyncError(null);
     setVoiceAssistanceEnabled(next);
     localStorage.setItem(VOICE_ASSIST_KEY, String(next));
+    setVoiceSaving(true);
+
+    try {
+      await ensureProfileExists(next);
+
+      const { error: updateError } = await supabase
+        .from('profili')
+        .update({
+          voice_assistant: next,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id_utente', user.id);
+
+      if (updateError) throw updateError;
+    } catch (toggleError) {
+      console.error('Error syncing voice assistance preference:', toggleError);
+      setVoiceAssistanceEnabled(previous);
+      localStorage.setItem(VOICE_ASSIST_KEY, String(previous));
+      setVoiceSyncError('Unable to sync this setting across devices. Please try again.');
+    } finally {
+      setVoiceSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -38,7 +134,7 @@ const SettingsPage: React.FC = () => {
       setProfileLoading(true);
       const { data, error } = await supabase
         .from('profili')
-        .select('username')
+        .select('username, voice_assistant')
         .eq('id_utente', user.id)
         .maybeSingle();
 
@@ -47,6 +143,12 @@ const SettingsPage: React.FC = () => {
       } else {
         setUserName(user.email?.split('@')[0] || 'User');
       }
+
+      if (!error && typeof data?.voice_assistant === 'boolean') {
+        setVoiceAssistanceEnabled(data.voice_assistant);
+        localStorage.setItem(VOICE_ASSIST_KEY, String(data.voice_assistant));
+      }
+
       setProfileLoading(false);
     };
     fetchProfile();
@@ -164,6 +266,7 @@ const SettingsPage: React.FC = () => {
               </div>
               <button
                 onClick={handleToggleVoiceAssistance}
+                disabled={voiceSaving || profileLoading}
                 className={`relative w-12 h-7 rounded-full overflow-hidden transition-colors ${voiceAssistanceEnabled ? 'bg-brand-orange' : 'bg-brand-grey/30'}`}
                 aria-label="Toggle voice assistance"
               >
@@ -172,6 +275,9 @@ const SettingsPage: React.FC = () => {
                 />
               </button>
             </div>
+            {voiceSyncError && (
+              <p className="text-red-400 text-xs mt-2">{voiceSyncError}</p>
+            )}
           </div>
         </div>
 

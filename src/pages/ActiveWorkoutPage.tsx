@@ -260,10 +260,12 @@ const ActiveWorkoutPage: React.FC = () => {
   const handleVoiceStartTimerRef = useRef<(() => void) | null>(null);
   const handleVoiceStopTimerRef = useRef<(() => void) | null>(null);
   const handleVoiceResetTimerRef = useRef<(() => void) | null>(null);
+  const handleVoiceSkipRestRef = useRef<(() => boolean) | null>(null);
   const timerLongPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timerLongPressTriggeredRef = useRef(false);
   const voiceHelpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipeTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressSwipeNextExerciseVoiceCueRef = useRef(false);
   const SWIPE_MIN_DISTANCE_PX = 60;
   const SWIPE_MAX_VERTICAL_DRIFT_PX = 48;
   const canPersistExerciseEdits = sourceSchedaId != null;
@@ -420,7 +422,6 @@ const ActiveWorkoutPage: React.FC = () => {
     setEmomRoundRemaining(safe);
     if (emomActive) {
       if (safe > 0) {
-        lastHandledEmomCompletionEndsAtMsRef.current = null;
         setEmomRoundEndsAtMs(Date.now() + (safe * 1000));
       } else {
         setEmomRoundEndsAtMs(null);
@@ -870,7 +871,31 @@ const ActiveWorkoutPage: React.FC = () => {
 
   useEffect(() => {
     const saved = localStorage.getItem(VOICE_ASSIST_KEY);
-    setVoiceAssistanceEnabled(saved !== 'false');
+    if (saved !== null) {
+      setVoiceAssistanceEnabled(saved === 'true');
+    } else {
+      setVoiceAssistanceEnabled(true);
+    }
+
+    let isUnmounted = false;
+    const loadVoiceAssistancePreference = async () => {
+      if (!user?.id) return;
+
+      const { data, error } = await supabase
+        .from('profili')
+        .select('voice_assistant')
+        .eq('id_utente', user.id)
+        .maybeSingle();
+
+      if (isUnmounted || error) return;
+
+      if (typeof data?.voice_assistant === 'boolean') {
+        setVoiceAssistanceEnabled(data.voice_assistant);
+        localStorage.setItem(VOICE_ASSIST_KEY, String(data.voice_assistant));
+      }
+    };
+
+    void loadVoiceAssistancePreference();
 
     const onStorage = (e: StorageEvent) => {
       if (e.key === VOICE_ASSIST_KEY && e.newValue !== null) {
@@ -879,8 +904,11 @@ const ActiveWorkoutPage: React.FC = () => {
     };
 
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
+    return () => {
+      isUnmounted = true;
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!isVoiceHelpVisible) return;
@@ -1038,6 +1066,12 @@ const ActiveWorkoutPage: React.FC = () => {
     resetCurrentTimerFromContext();
   };
 
+  handleVoiceSkipRestRef.current = () => {
+    if (!isResting) return false;
+    skipRest();
+    return true;
+  };
+
   // Voice Recognition logic
   useEffect(() => {
     let recognition: any = null;
@@ -1067,6 +1101,9 @@ const ActiveWorkoutPage: React.FC = () => {
             normalizedTranscript.includes('termina workout') ||
             normalizedTranscript.includes('termina allenamento');
           const isResetTimerCommand = normalizedTranscript.includes('reset') || normalizedTranscript.includes('resetta');
+          const isSkipRestCommand =
+            /\bskip\s*rest\b/.test(normalizedTranscript) ||
+            normalizedTranscript.includes('salta recupero');
 
           if (isNextExerciseCommand) {
             setVoiceStatus('success');
@@ -1092,6 +1129,10 @@ const ActiveWorkoutPage: React.FC = () => {
             if (handleVoiceResetTimerRef.current) {
               handleVoiceResetTimerRef.current();
             }
+          } else if (isSkipRestCommand) {
+            const didSkipRest = handleVoiceSkipRestRef.current?.() || false;
+            setVoiceStatus(didSkipRest ? 'success' : 'error');
+            setTimeout(() => setVoiceStatus('idle'), 1500);
           } else if (normalizedTranscript.includes('vai') || normalizedTranscript.includes('start')) {
             setVoiceStatus('success');
             setTimeout(() => setVoiceStatus('idle'), 1500);
@@ -2335,7 +2376,11 @@ const ActiveWorkoutPage: React.FC = () => {
     if (!isLastExercise) {
       const nextIdx = currentExerciseIdx + 1;
       const nextEx = workout.exercises[nextIdx];
-      speakCue(buildNextExerciseVoiceCue(nextEx, nextIdx));
+      const shouldSuppressVoiceCue = suppressSwipeNextExerciseVoiceCueRef.current;
+      suppressSwipeNextExerciseVoiceCueRef.current = false;
+      if (!shouldSuppressVoiceCue) {
+        speakCue(buildNextExerciseVoiceCue(nextEx, nextIdx));
+      }
       setCurrentExerciseIdx(nextIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
@@ -2517,6 +2562,23 @@ const ActiveWorkoutPage: React.FC = () => {
     swipeTouchStartRef.current = null;
   };
 
+  const suppressNextExerciseVoiceCueForCurrentTick = () => {
+    suppressSwipeNextExerciseVoiceCueRef.current = true;
+    queueMicrotask(() => {
+      suppressSwipeNextExerciseVoiceCueRef.current = false;
+    });
+  };
+
+  const handleArrowNextExercise = () => {
+    suppressNextExerciseVoiceCueForCurrentTick();
+    handleNextExercise();
+  };
+
+  const handleArrowPrevExercise = () => {
+    suppressNextExerciseVoiceCueForCurrentTick();
+    handlePrevExercise();
+  };
+
   const handleActiveWorkoutTouchEnd = (event: React.TouchEvent<HTMLElement>) => {
     const start = swipeTouchStartRef.current;
     swipeTouchStartRef.current = null;
@@ -2534,20 +2596,24 @@ const ActiveWorkoutPage: React.FC = () => {
 
       if (deltaX > 0) {
         if (currentPyramidStepIdx >= maxStepIdx) return;
+        suppressNextExerciseVoiceCueForCurrentTick();
         advanceWithinCurrentExercise();
         return;
       }
 
       if (currentPyramidStepIdx <= 0) return;
+      suppressNextExerciseVoiceCueForCurrentTick();
       rewindWithinCurrentExercise();
       return;
     }
 
     if (deltaX > 0) {
+      suppressNextExerciseVoiceCueForCurrentTick();
       advanceWithinCurrentExercise();
       return;
     }
 
+    suppressNextExerciseVoiceCueForCurrentTick();
     rewindWithinCurrentExercise();
   };
 
@@ -2660,6 +2726,7 @@ const ActiveWorkoutPage: React.FC = () => {
           <p><span className="font-bold text-brand-orange">start / vai</span> - start timer</p>
           <p><span className="font-bold text-brand-orange">stop / fermo</span> - pause timer</p>
           <p><span className="font-bold text-brand-orange">reset / resetta</span> - reset active timer</p>
+          <p><span className="font-bold text-brand-orange">skip rest / salta recupero</span> - skip active rest</p>
           <p><span className="font-bold text-brand-orange">next / avanti</span> - next set or round</p>
           <p><span className="font-bold text-brand-orange">back / indietro</span> - previous step</p>
           <p><span className="font-bold text-brand-orange">next exercise / prossimo esercizio</span> - jump to next exercise</p>
@@ -2674,6 +2741,10 @@ const ActiveWorkoutPage: React.FC = () => {
   const transitionNextExercise = pendingExerciseAdvance && !isLastExercise
     ? workout.exercises[currentExerciseIdx + 1]
     : null;
+  const getExerciseDisplayName = (exercise: Exercise, fallbackIndex: number) => {
+    return String(exercise.name || '').trim() || `Exercise ${fallbackIndex + 1}`;
+  };
+
   const getRestTransitionSpecialTypeLabel = (exercise: Exercise | null) => {
     if (!exercise) return null;
     if (exercise.type === 'emom') return 'EMOM MODE';
@@ -2682,31 +2753,52 @@ const ActiveWorkoutPage: React.FC = () => {
     return null;
   };
 
-  const getRestTransitionExerciseNames = (exercise: Exercise | null, fallbackIndex: number) => {
-    if (!exercise) return [] as string[];
+  const getRestUpcomingExecutionEntries = (
+    exercise: Exercise | null,
+    fallbackIndex: number,
+    pyramidStepIdx: number | null,
+  ) => {
+    if (!exercise) return [] as Array<{ name: string; weightLabel: string }>;
+
+    const baseName = getExerciseDisplayName(exercise, fallbackIndex);
 
     if (exercise.type === 'superset' || exercise.type === 'emom') {
-      const names = (exercise.subExercises || [])
-        .map((sub, subIdx) => String(sub.name || '').trim() || `Exercise ${subIdx + 1}`)
-        .filter((name) => name.length > 0);
+      const entries = (exercise.subExercises || []).map((sub, subIdx) => ({
+        name: String(sub.name || '').trim() || `Exercise ${subIdx + 1}`,
+        weightLabel: formatWeightLabel(sub.weight_kg),
+      }));
 
-      if (names.length > 0) return names;
+      if (entries.length > 0) return entries;
+      return [{ name: baseName, weightLabel: formatWeightLabel(exercise.weight_kg) }];
     }
 
     if (exercise.type === 'pyramid') {
-      const pyramidName = String(exercise.name || '').trim() || `Exercise ${fallbackIndex + 1}`;
-      return [pyramidName];
+      const steps = exercise.pyramid_steps || [];
+      const rawStepIdx = pyramidStepIdx ?? 0;
+      const safeStepIdx = Math.min(Math.max(rawStepIdx, 0), Math.max(0, steps.length - 1));
+      const step = steps[safeStepIdx];
+      return [{ name: baseName, weightLabel: formatWeightLabel(step?.weight_kg) }];
     }
 
-    return [] as string[];
+    return [{ name: baseName, weightLabel: formatWeightLabel(exercise.weight_kg) }];
   };
 
-  const transitionSpecialTypeLabel = transitionNextExercise
-    ? getRestTransitionSpecialTypeLabel(transitionNextExercise)
+  const restTargetExercise = transitionNextExercise || currentExercise;
+  const restTargetExerciseIndex = transitionNextExercise ? currentExerciseIdx + 1 : currentExerciseIdx;
+  const restTargetExerciseName = getExerciseDisplayName(restTargetExercise, restTargetExerciseIndex);
+  const restTargetSpecialTypeLabel = getRestTransitionSpecialTypeLabel(restTargetExercise);
+  const restTargetPyramidStepIdx = restTargetExercise.type === 'pyramid'
+    ? transitionNextExercise
+      ? 0
+      : pendingPyramidAdvance
+        ? currentPyramidStepIdx + 1
+        : currentPyramidStepIdx
     : null;
-  const transitionSpecialExerciseNames = transitionNextExercise
-    ? getRestTransitionExerciseNames(transitionNextExercise, currentExerciseIdx + 1)
-    : [];
+  const restUpcomingExecutionEntries = getRestUpcomingExecutionEntries(
+    restTargetExercise,
+    restTargetExerciseIndex,
+    restTargetPyramidStepIdx,
+  );
 
   // ----------------------------------------------------------------------
   // RENDER REST VIEW
@@ -2756,16 +2848,19 @@ const ActiveWorkoutPage: React.FC = () => {
         </p>
 
         <div className="text-center space-y-2 mb-12">
-          <p className="text-white text-xl font-bold">{transitionNextExercise ? transitionNextExercise.name : currentExercise.name}</p>
-          {transitionNextExercise && transitionSpecialTypeLabel && (
-            <p className="text-brand-orange text-xs font-black uppercase tracking-widest">{transitionSpecialTypeLabel}</p>
+          <p className="text-white text-xl font-bold">{restTargetExerciseName}</p>
+          {restTargetSpecialTypeLabel && (
+            <p className="text-brand-orange text-xs font-black uppercase tracking-widest">{restTargetSpecialTypeLabel}</p>
           )}
-          {transitionNextExercise && transitionSpecialExerciseNames.length > 0 && (
-            <p className="text-brand-orange/80 text-sm font-semibold">{transitionSpecialExerciseNames.join(' + ')}</p>
-          )}
-          {!transitionNextExercise && <p className="text-brand-grey text-xs">Weights: {currentExecutionWeightLabel}</p>}
-          {!transitionNextExercise && isSuperset && currentExercise.subExercises && (
-            <p className="text-brand-orange/80 text-sm font-semibold">{currentExercise.subExercises.map((s: any) => s.name).join(' + ')}</p>
+          {restUpcomingExecutionEntries.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-brand-grey/70 text-[10px] uppercase tracking-wider font-bold">Prossimo esercizio</p>
+              {restUpcomingExecutionEntries.map((entry, idx) => (
+                <p key={`${entry.name}-${entry.weightLabel}-${idx}`} className="text-brand-orange/80 text-sm font-semibold">
+                  {`${entry.name} ${entry.weightLabel}`}
+                </p>
+              ))}
+            </div>
           )}
           <p className="text-brand-orange font-bold font-mono">
             {transitionNextExercise
@@ -2884,7 +2979,7 @@ const ActiveWorkoutPage: React.FC = () => {
         {/* Navigation Arrows & Title Area */}
         <div className="flex items-center justify-between mb-8">
           <button
-            onClick={handlePrevExercise}
+            onClick={handleArrowPrevExercise}
             disabled={currentExerciseIdx === 0}
             className="p-3 bg-brand-darkGrey/40 rounded-full text-white/50 hover:text-white disabled:opacity-20 disabled:hover:text-white/50 transition-all active:scale-95"
           >
@@ -2909,7 +3004,7 @@ const ActiveWorkoutPage: React.FC = () => {
           </div>
 
           <button
-            onClick={handleNextExercise}
+            onClick={handleArrowNextExercise}
             className="p-3 bg-brand-darkGrey/40 rounded-full text-white/50 hover:text-white transition-all active:scale-95"
           >
             <ArrowRight size={24} />
