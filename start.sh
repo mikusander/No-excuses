@@ -18,7 +18,12 @@ fi
 
 cd "$ROOT_DIR"
 
-nohup npm run dev -- --host 0.0.0.0 --port "$PORT" --strictPort > "$LOG_FILE" 2>&1 &
+if command -v setsid >/dev/null 2>&1; then
+  setsid npm run dev -- --host 0.0.0.0 --port "$PORT" --strictPort < /dev/null > "$LOG_FILE" 2>&1 &
+else
+  nohup npm run dev -- --host 0.0.0.0 --port "$PORT" --strictPort < /dev/null > "$LOG_FILE" 2>&1 &
+fi
+
 SERVER_PID=$!
 echo "$SERVER_PID" > "$PID_FILE"
 
@@ -33,10 +38,21 @@ fi
 
 LAN_IP="$(get_ip)"
 
+if ! curl -fsS "http://localhost:$PORT" >/dev/null 2>&1; then
+  echo "Server process started but localhost check failed."
+  cat "$LOG_FILE"
+  exit 1
+fi
+
 echo "Dev server started."
 echo "Local:   http://localhost:$PORT/"
 if [[ -n "$LAN_IP" ]]; then
   echo "Network: http://$LAN_IP:$PORT/"
+  if curl -fsS "http://$LAN_IP:$PORT" >/dev/null 2>&1; then
+    echo "Network check: OK"
+  else
+    echo "Network check: FAILED from this Mac"
+  fi
 else
   echo "Network IP not detected automatically."
 fi
