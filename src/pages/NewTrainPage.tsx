@@ -976,6 +976,77 @@ const NewTrainPage: React.FC = () => {
     return afterRace.id_esercizio;
   };
 
+  const getProfileMailValue = () => {
+    const normalizedEmail = String(user?.email || '').trim().toLowerCase();
+    if (normalizedEmail.length > 0) return normalizedEmail;
+    return `${String(user?.id || 'user')}@noexcuses.local`;
+  };
+
+  const getProfileUsernameBase = (mailValue: string) => {
+    const localPart = String(mailValue.split('@')[0] || 'user')
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    const safe = localPart.length > 0 ? localPart : 'user';
+    return safe.slice(0, 40);
+  };
+
+  const buildProfileUsernameCandidate = (base: string, attempt: number) => {
+    if (attempt === 0) return base;
+    const suffix = `_${Math.floor(Math.random() * 9000) + 1000}`;
+    const safeBase = base.slice(0, Math.max(1, 50 - suffix.length));
+    return `${safeBase}${suffix}`;
+  };
+
+  const ensureUserProfileExists = async () => {
+    if (!user?.id) {
+      throw new Error('User not authenticated.');
+    }
+
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from('profili')
+      .select('id_utente')
+      .eq('id_utente', user.id)
+      .maybeSingle();
+
+    if (existingProfileError) throw existingProfileError;
+    if (existingProfile?.id_utente) return;
+
+    const mailValue = getProfileMailValue();
+    const usernameBase = getProfileUsernameBase(mailValue);
+    let lastInsertError: { code?: string; message?: string } | null = null;
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const username = buildProfileUsernameCandidate(usernameBase, attempt);
+      const { error: insertProfileError } = await supabase
+        .from('profili')
+        .insert([
+          {
+            id_utente: user.id,
+            username,
+            mail: mailValue,
+            updated_at: new Date().toISOString(),
+          },
+        ]);
+
+      if (!insertProfileError) {
+        return;
+      }
+
+      lastInsertError = insertProfileError;
+      const duplicateConflict = String(insertProfileError.code || '') === '23505'
+        || /duplicate key|unique/i.test(String(insertProfileError.message || ''));
+
+      if (!duplicateConflict) {
+        throw insertProfileError;
+      }
+    }
+
+    throw lastInsertError || new Error('Unable to initialize user profile.');
+  };
+
   const saveWorkout = async () => {
     if (!workoutName.trim()) {
       setError('Enter a name for the workout');
@@ -1043,6 +1114,8 @@ const NewTrainPage: React.FC = () => {
 
       } else {
         // INSERT nuova scheda
+        await ensureUserProfileExists();
+
         const { data: workoutData, error: workoutError } = await supabase
           .from('schede')
           .insert([{ nome: workoutName, id_utente: user?.id }])
