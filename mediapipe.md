@@ -1,98 +1,144 @@
-# MediaPipe rep counter changes
+# Rep counter module changes
 
 ## Files changed
 
-- `src/hooks/useVoiceCommands.ts`
 - `src/pages/RepCounterPage.tsx`
+- `src/hooks/useVoiceCommands.ts`
+- `src/hooks/usePoseLandmarker.ts`
+- `src/hooks/useAccelerometerRepCounter.ts`
 - `src/logic/exerciseTracker.ts`
 
-## What changed
+## Summary
 
-### 1. Voice commands in the rep counter now reuse the existing workout commands
+The rep counter now supports two counting modes:
 
-The shared voice hook now supports the same start/stop commands already used in the workout flow:
+- **Video**: camera + MediaPipe pose detection
+- **Accelerometer**: `DeviceMotionEvent`-based counting with the phone in the user's pocket
 
-- start: `vai` / `go`
-- stop: `stop` / `fermo`
+The exercise selection screen now includes a mode toggle.
 
-The existing pause/resume commands were kept:
+## Video mode
 
-- pause: `pausa`
-- resume: `riprendi` / `continua`
+### Behavior
 
-### 2. Rep counting no longer starts immediately after exercise selection
+Video mode keeps the MediaPipe flow and the existing voice-controlled start/stop logic:
 
-When the user selects an exercise:
+- MediaPipe can initialize and the camera can start
+- repetitions do **not** start immediately
+- counting starts only after the existing workout-style voice start command (`vai` / `go`)
+- counting stops on the existing stop command (`stop` / `fermo`)
+- pause/resume remains separate from start/stop
 
-- the camera starts
-- MediaPipe pose detection starts
-- the pose overlay can render
-- the tracker is initialized
-- **rep counting stays disabled until a voice start command is received**
+### Relevant implementation details
 
-### 3. Rep counting is now gated by an explicit session state
+- `RepCounterPage` keeps an `isCountingActive` gate for MediaPipe counting
+- `useVoiceCommands` now supports start/stop callbacks in addition to pause/resume
+- `ExerciseTracker.resetTrackingState()` clears transient pose-tracking state without resetting the total count
 
-`RepCounterPage` now keeps a dedicated `isCountingActive` state.
+## Accelerometer mode
 
-The tracker updates for:
+### New flow
 
-- pullups
-- pushups
-- squats
+When the user selects **Accelerometer** mode and then chooses an exercise:
 
-only run when `isCountingActive === true`.
+1. the app requests motion permission if needed
+2. a **30-second preparation countdown** starts on screen
+3. the user can put the phone in their pocket and prepare
+4. when the countdown ends, repetition counting starts automatically
+5. the screen shows the live rep count
+6. the user can:
+   - **pause / resume** the session
+   - **end the exercise**
 
-This means pose detection can remain active without incrementing repetitions.
+### Important behavior notes
 
-### 4. Stop/start transitions reset transient tracking state without losing the count
+- **Voice commands are not used** in accelerometer mode
+- **MediaPipe is not initialized** when accelerometer mode is selected
+- counting is based on a generic motion-cycle detector using `DeviceMotionEvent`
+- the same accelerometer logic is used for pullups, pushups, and squats in this version
 
-`ExerciseTracker` now exposes `resetTrackingState()`.
+### New hook
 
-This clears only the motion-phase state used for detection:
+`src/hooks/useAccelerometerRepCounter.ts` was added to isolate the motion logic from the page UI.
 
-- current stage
-- startup posture state
-- smoothed angle memory
+It handles:
 
-It does **not** reset the repetition count.
+- support detection
+- iOS motion permission requests
+- the 30-second preparation countdown
+- pause / resume
+- reset / teardown
+- repetition counting from device motion
 
-This avoids false positives when the user stops the session, changes posture, and then starts again.
+### Motion counting logic
 
-## How the repetition counting module works now
+The hook listens to `devicemotion` events and uses:
 
-### Session flow
+- `accelerationIncludingGravity` as the primary source
+- `acceleration` as fallback
+- vector magnitude (`x`, `y`, `z`) to detect full motion cycles
 
-1. The user selects an exercise.
-2. The app starts camera acquisition.
-3. MediaPipe loads and begins pose detection.
-4. Landmarks can still be rendered in the overlay.
-5. The rep tracker does **not** count yet.
-6. When the user says the existing start command (`vai` / `go`), counting becomes active.
-7. While counting is active, pose landmarks are forwarded to the tracker and repetitions are counted normally.
-8. When the user says the existing stop command (`stop` / `fermo`), counting is disabled again.
-9. The current rep total is preserved.
-10. If the user starts again, counting resumes from the same total with a fresh transient tracking state.
+The current algorithm is a simple generic detector:
 
-### Pause/resume behavior
+- it smooths motion magnitude
+- detects a movement peak above a threshold
+- waits for the signal to settle back below a reset threshold
+- increments the rep count once per full cycle with cooldown protection
 
-Pause/resume remains separate from start/stop:
+## Rep counter page structure now
 
-- `pausa` pauses the session
-- `riprendi` / `continua` resumes the paused session
-- `vai` / `go` controls whether rep counting is enabled
-- `stop` / `fermo` disables rep counting without clearing the current total
+### Exercise selection screen
 
-### Reset behavior
+The page now has:
 
-Counting is reset to inactive when:
+- an exercise selector
+- a **Video / Accelerometer** toggle
 
-- the user selects a new exercise
-- the user cancels the workout
+### Video session screen
 
-In those cases the full tracker reset still clears the total repetition count as before.
+The video session screen remains camera-based and shows:
+
+- the video preview
+- pose overlay
+- debug information
+- pause button
+- rep count
+
+### Accelerometer session screen
+
+The accelerometer session screen shows:
+
+- selected exercise name
+- preparation countdown or rep count
+- status text
+- pause/resume button
+- end exercise button
+
+## MediaPipe loading change
+
+`usePoseLandmarker` now accepts an `enabled` flag.
+
+This allows the app to:
+
+- initialize MediaPipe only when a video-mode exercise session actually starts
+- close and release the pose landmarker when video mode is not active
 
 ## Verification notes
 
-The local TypeScript build could not be executed in this environment because `tsc` is not installed (`npm run build` fails with `sh: tsc: command not found`).
+### What was checked
 
-The implementation was therefore checked by direct file review and logic validation after each change.
+- direct review of the modified files after each change
+- logic review of the state transitions for:
+  - video mode start/stop
+  - accelerometer preparation countdown
+  - accelerometer active counting
+  - pause/resume
+  - session reset/end
+
+### Environment limitation
+
+The local TypeScript build could not be executed in this environment because `tsc` is not installed:
+
+- `npm run build` fails with `sh: tsc: command not found`
+
+So verification here is based on code inspection and logic validation, not a local compiled build.

@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
-export const usePoseLandmarker = () => {
+export const usePoseLandmarker = (enabled = true) => {
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(enabled);
 
   useEffect(() => {
+    if (!enabled) {
+      poseLandmarkerRef.current?.close();
+      poseLandmarkerRef.current = null;
+      setIsLoading(false);
+      return;
+    }
+
     let isCancelled = false;
+    setIsLoading(true);
+
     const initPoseLandmarker = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
@@ -31,6 +40,9 @@ export const usePoseLandmarker = () => {
         setIsLoading(false);
       } catch (error) {
         console.error("Failed to initialize Pose Landmarker:", error);
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -39,8 +51,9 @@ export const usePoseLandmarker = () => {
     return () => {
       isCancelled = true;
       poseLandmarkerRef.current?.close();
+      poseLandmarkerRef.current = null;
     };
-  }, []);
+  }, [enabled]);
 
   const detectPose = (video: HTMLVideoElement, timestamp: number) => {
     if (!poseLandmarkerRef.current) return null;

@@ -11,27 +11,30 @@ interface VoiceCommandsProps {
 
 export const useVoiceCommands = ({ onStart, onStop, onPause, onResume, enabled }: VoiceCommandsProps) => {
   const recognitionRef = useRef<any>(null);
-  const isActiveRef = useRef(true);
+  const isActiveRef = useRef(false);
+  const enabledRef = useRef(enabled);
   const onStartRef = useRef(onStart);
   const onStopRef = useRef(onStop);
   const onPauseRef = useRef(onPause);
   const onResumeRef = useRef(onResume);
 
   // Keep refs updated to avoid re-triggering useEffect
+  useEffect(() => { enabledRef.current = enabled; }, [enabled]);
   useEffect(() => { onStartRef.current = onStart; }, [onStart]);
   useEffect(() => { onStopRef.current = onStop; }, [onStop]);
   useEffect(() => { onPauseRef.current = onPause; }, [onPause]);
   useEffect(() => { onResumeRef.current = onResume; }, [onResume]);
 
   useEffect(() => {
-    isActiveRef.current = true;
-    
     if (!enabled) {
+      isActiveRef.current = false;
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
       }
       return;
     }
+
+    isActiveRef.current = true;
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
@@ -66,9 +69,9 @@ export const useVoiceCommands = ({ onStart, onStop, onPause, onResume, enabled }
 
       recognition.onend = () => {
         // ONLY restart if still enabled, NOT unmounted
-        if (enabled && isActiveRef.current) {
+        if (enabledRef.current && isActiveRef.current) {
           setTimeout(() => {
-            if (enabled && isActiveRef.current) {
+            if (enabledRef.current && isActiveRef.current) {
               try {
                 recognition.start();
               } catch {
