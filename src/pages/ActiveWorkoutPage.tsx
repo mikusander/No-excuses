@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, HeartPulse } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface Exercise {
@@ -186,6 +186,93 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [voiceAssistanceEnabled, setVoiceAssistanceEnabled] = useState(true);
+
+  // Heart Rate Tracking State
+  const [heartRate, setHeartRate] = useState<number | null>(null);
+  const [isHrConnecting, setIsHrConnecting] = useState(false);
+  const [hrDevice, setHrDevice] = useState<any>(null);
+  const vitalSignsHistoryRef = useRef<{exercise_name: string, exercise_order_index: number, heart_rate: number, recorded_at: string}[]>([]);
+  const latestHeartRateRef = useRef<number | null>(null);
+  const currentExerciseSnapshotRef = useRef<{name: string, order_index: number} | null>(null);
+
+  useEffect(() => {
+    if (workout?.exercises[currentExerciseIdx]) {
+      currentExerciseSnapshotRef.current = {
+        name: workout.exercises[currentExerciseIdx].name,
+        order_index: workout.exercises[currentExerciseIdx].order_index
+      };
+    }
+  }, [workout, currentExerciseIdx]);
+
+  const connectHeartRateMonitor = async () => {
+    try {
+      if (!navigator.bluetooth) {
+        alert("Il tuo browser o dispositivo non supporta il Web Bluetooth API.");
+        return;
+      }
+      setIsHrConnecting(true);
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ['heart_rate'] }]
+      });
+
+      device.addEventListener('gattserverdisconnected', () => {
+        setHrDevice(null);
+        setHeartRate(null);
+        latestHeartRateRef.current = null;
+      });
+
+      const server = await device.gatt?.connect();
+      if (!server) throw new Error("GATT server not available");
+
+      const service = await server.getPrimaryService('heart_rate');
+      const characteristic = await service.getCharacteristic('heart_rate_measurement');
+      
+      await characteristic.startNotifications();
+      
+      characteristic.addEventListener('characteristicvaluechanged', (event: any) => {
+        const value = event.target.value;
+        if (value) {
+          const flags = value.getUint8(0);
+          const hr16 = flags & 0x01;
+          const currentHr = hr16 ? value.getUint16(1, true) : value.getUint8(1);
+          setHeartRate(currentHr);
+          latestHeartRateRef.current = currentHr;
+        }
+      });
+      
+      setHrDevice(device);
+    } catch (error) {
+      console.error('Web Bluetooth Error:', error);
+    } finally {
+      setIsHrConnecting(false);
+    }
+  };
+
+  const disconnectHeartRateMonitor = () => {
+    if (hrDevice?.gatt?.connected) {
+      hrDevice.gatt.disconnect();
+    }
+    setHrDevice(null);
+    setHeartRate(null);
+    latestHeartRateRef.current = null;
+  };
+
+  useEffect(() => {
+    const hrTimer = setInterval(() => {
+      const hr = latestHeartRateRef.current;
+      const ex = currentExerciseSnapshotRef.current;
+      if (hr !== null && ex) {
+        vitalSignsHistoryRef.current.push({
+          exercise_name: ex.name,
+          exercise_order_index: ex.order_index,
+          heart_rate: hr,
+          recorded_at: new Date().toISOString()
+        });
+      }
+    }, 5000);
+    return () => clearInterval(hrTimer);
+  }, []);
+
   const [exerciseNotesByKey, setExerciseNotesByKey] = useState<Record<string, ExerciseNoteEntry>>({});
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [noteModalDraft, setNoteModalDraft] = useState('');
@@ -1115,8 +1202,21 @@ const ActiveWorkoutPage: React.FC = () => {
       return null;
     }
 
+    const savedWorkoutId = Number(data.id_workout);
+
+    // Save vital signs if available
+    if (vitalSignsHistoryRef.current.length > 0) {
+      const vitalSignsToInsert = vitalSignsHistoryRef.current.map(vs => ({
+        session_id: savedWorkoutId,
+        exercise_id: vs.exercise_name,
+        heart_rate: vs.heart_rate,
+        recorded_at: vs.recorded_at
+      }));
+      await supabase.from('vital_signs').insert(vitalSignsToInsert).catch(console.error);
+    }
+
     workoutRunSavedRef.current = true;
-    workoutRunIdRef.current = Number(data.id_workout);
+    workoutRunIdRef.current = savedWorkoutId;
     return workoutRunIdRef.current;
   };
 
@@ -2252,6 +2352,14 @@ const ActiveWorkoutPage: React.FC = () => {
               className={`p-2 rounded-full transition-all duration-300 ${isVoiceEnabled ? (voiceStatus === 'success' ? 'bg-green-500 text-white scale-110' : voiceStatus === 'error' ? 'bg-red-500 text-white animate-pulse' : 'bg-brand-orange text-black') : 'text-white/50 hover:text-white bg-brand-darkGrey/40'}`}
             >
               {isVoiceEnabled ? <Mic size={24} /> : <MicOff size={24} />}
+            </button>
+            <button 
+              onClick={hrDevice ? disconnectHeartRateMonitor : connectHeartRateMonitor}
+              disabled={isHrConnecting}
+              className={`ml-3 p-2 flex items-center gap-1 rounded-full transition-all duration-300 ${hrDevice ? 'bg-red-500 text-white' : 'text-white/50 hover:text-white bg-brand-darkGrey/40'} ${isHrConnecting ? 'animate-pulse' : ''}`}
+            >
+              <HeartPulse size={24} />
+              {heartRate != null && <span className="text-xs font-bold font-mono pl-1">{heartRate}</span>}
             </button>
           </div>
         </div>

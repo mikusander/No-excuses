@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X, HeartPulse } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
@@ -16,6 +16,7 @@ interface WorkoutHistoryDetail {
   executedAt: string;
   totalDurationSeconds: number | null;
   notes: string[];
+  vitalSigns: Record<string, { avgHeartRate: number; maxHeartRate: number }>;
 }
 
 interface ExerciseNoteModalContext {
@@ -246,7 +247,32 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           notes: linkedNotes
             .map((note: { testo?: unknown }) => String(note?.testo || '').trim())
             .filter((note: string) => note.length > 0),
+          vitalSigns: {}
         };
+
+        const { data: vitalSignsData } = await supabase
+          .from('vital_signs')
+          .select('*')
+          .eq('session_id', workoutRunNumericId);
+
+        if (vitalSignsData && vitalSignsData.length > 0) {
+          const groupedData: Record<string, number[]> = {};
+          vitalSignsData.forEach((vs: any) => {
+            const exName = vs.exercise_id;
+            if (!groupedData[exName]) groupedData[exName] = [];
+            groupedData[exName].push(vs.heart_rate);
+          });
+          
+          Object.keys(groupedData).forEach((exName) => {
+            const hrs = groupedData[exName];
+            if (hrs.length > 0) {
+              parsedDetail.vitalSigns[exName] = {
+                avgHeartRate: Math.round(hrs.reduce((a,b) => a+b, 0) / hrs.length),
+                maxHeartRate: Math.max(...hrs)
+              };
+            }
+          });
+        }
 
         setDetail(parsedDetail);
 
@@ -697,6 +723,15 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Steps</span>
                         <span className="text-sm text-white">{exercise.pyramid_steps?.length || 0}</span>
                       </div>
+                    </div>
+                  )}
+
+                  {detail.vitalSigns && detail.vitalSigns[exercise.name] && (
+                    <div className="mt-3 flex items-center bg-red-500/10 border border-red-500/20 py-2 px-3 rounded-xl w-fit">
+                      <HeartPulse size={14} className="text-red-500 mr-2" />
+                      <span className="text-xs text-red-200 uppercase tracking-widest font-black">
+                        {detail.vitalSigns[exercise.name].avgHeartRate} avg <span className="opacity-50 mx-1">•</span> {detail.vitalSigns[exercise.name].maxHeartRate} max
+                      </span>
                     </div>
                   )}
                 </div>
