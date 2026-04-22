@@ -34,6 +34,7 @@ Video mode keeps the MediaPipe flow and the existing voice-controlled start/stop
 - `RepCounterPage` keeps an `isCountingActive` gate for MediaPipe counting
 - `useVoiceCommands` now supports start/stop callbacks in addition to pause/resume
 - `ExerciseTracker.resetTrackingState()` clears transient pose-tracking state without resetting the total count
+- the video viewport stays mounted while MediaPipe loads, so the camera stream can attach correctly even on cold starts
 
 ## Accelerometer mode
 
@@ -42,7 +43,7 @@ Video mode keeps the MediaPipe flow and the existing voice-controlled start/stop
 When the user selects **Accelerometer** mode and then chooses an exercise:
 
 1. the app requests motion permission if needed
-2. a **30-second preparation countdown** starts on screen
+2. a **10-second preparation countdown** starts on screen
 3. the user can put the phone in their pocket and prepare
 4. when the countdown ends, repetition counting starts automatically
 5. the screen shows the live rep count
@@ -65,7 +66,7 @@ It handles:
 
 - support detection
 - iOS motion permission requests
-- the 30-second preparation countdown
+- the 10-second preparation countdown
 - pause / resume
 - reset / teardown
 - repetition counting from device motion
@@ -76,14 +77,15 @@ The hook listens to `devicemotion` events and uses:
 
 - `accelerationIncludingGravity` as the primary source
 - `acceleration` as fallback
+- `rotationRate` to strengthen motion burst detection
 - vector magnitude (`x`, `y`, `z`) to detect full motion cycles
 
 The current algorithm is a simple generic detector:
 
 - it smooths motion magnitude
-- detects a movement peak above a threshold
-- waits for the signal to settle back below a reset threshold
-- increments the rep count once per full cycle with cooldown protection
+- detects a movement burst from acceleration or rotation
+- waits for the signal to settle back below reset thresholds
+- counts one repetition only after two valid bursts arrive within the allowed cycle window, approximating a full giù-su cycle instead of counting each half movement
 
 ## Rep counter page structure now
 
@@ -135,10 +137,10 @@ This allows the app to:
   - pause/resume
   - session reset/end
 
-### Environment limitation
+### Build status
 
-The local TypeScript build could not be executed in this environment because `tsc` is not installed:
+The local TypeScript build now succeeds with:
 
-- `npm run build` fails with `sh: tsc: command not found`
+- `npm run build`
 
-So verification here is based on code inspection and logic validation, not a local compiled build.
+There is still a Vite warning about a large bundle chunk, but the build completes successfully.

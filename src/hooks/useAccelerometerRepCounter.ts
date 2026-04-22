@@ -14,10 +14,13 @@ interface UseAccelerometerRepCounterOptions {
 
 const PEAK_THRESHOLD = 1.2;
 const RESET_THRESHOLD = 0.35;
-const REP_COOLDOWN_MS = 650;
+const ROTATION_THRESHOLD = 90;
+const ROTATION_RESET_THRESHOLD = 20;
+const BURST_GAP_MS = 250;
+const CYCLE_TIMEOUT_MS = 2500;
 
 export const useAccelerometerRepCounter = ({
-  prepDurationSeconds = 30,
+  prepDurationSeconds = 10,
   onCountChange,
 }: UseAccelerometerRepCounterOptions) => {
   const [phase, setPhase] = useState<AccelerometerSessionPhase>('idle');
@@ -30,12 +33,14 @@ export const useAccelerometerRepCounter = ({
   const countRef = useRef(0);
   const smoothedMagnitudeRef = useRef<number | null>(null);
   const stageRef = useRef<'idle' | 'peak'>('idle');
-  const lastRepTimeRef = useRef(0);
+  const burstCycleRef = useRef<'idle' | 'awaitingSecondBurst'>('idle');
+  const lastBurstTimeRef = useRef(0);
 
   const resetTrackingState = useCallback(() => {
     smoothedMagnitudeRef.current = null;
     stageRef.current = 'idle';
-    lastRepTimeRef.current = 0;
+    burstCycleRef.current = 'idle';
+    lastBurstTimeRef.current = 0;
   }, []);
 
   const resetSession = useCallback(() => {
@@ -56,7 +61,7 @@ export const useAccelerometerRepCounter = ({
   const requestMotionPermission = useCallback(async () => {
     if (!isSupported) {
       setPermissionState('unsupported');
-      setError('Accelerometer is not supported on this device or requires HTTPS.');
+      setError('L\'accelerometro non è supportato su questo dispositivo oppure richiede HTTPS.');
       return false;
     }
 
@@ -70,7 +75,7 @@ export const useAccelerometerRepCounter = ({
       const result = await api.requestPermission();
       if (result !== 'granted') {
         setPermissionState('denied');
-        setError('Motion permission was denied. Enable motion access and try again.');
+        setError('Permesso di movimento negato. Abilita l\'accesso al movimento e riprova.');
         return false;
       }
 
@@ -78,7 +83,7 @@ export const useAccelerometerRepCounter = ({
       return true;
     } catch {
       setPermissionState('denied');
-      setError('Unable to request motion permission on this device.');
+      setError('Impossibile richiedere il permesso di movimento su questo dispositivo.');
       return false;
     }
   }, [isSupported]);
@@ -157,6 +162,8 @@ export const useAccelerometerRepCounter = ({
       const acceleration = event.accelerationIncludingGravity ?? event.acceleration;
       if (!acceleration) return;
 
+      const rotationRate = event.rotationRate;
+
       const magnitude = Math.hypot(
         acceleration.x ?? 0,
         acceleration.y ?? 0,
@@ -172,20 +179,38 @@ export const useAccelerometerRepCounter = ({
 
       smoothedMagnitudeRef.current = smoothedMagnitude;
       const delta = Math.abs(magnitude - smoothedMagnitude);
+      const rotationMagnitude = rotationRate
+        ? Math.hypot(rotationRate.alpha ?? 0, rotationRate.beta ?? 0, rotationRate.gamma ?? 0)
+        : 0;
       const now = Date.now();
 
       if (stageRef.current === 'idle') {
-        if (delta >= PEAK_THRESHOLD && now - lastRepTimeRef.current > REP_COOLDOWN_MS) {
+        if (delta >= PEAK_THRESHOLD || rotationMagnitude >= ROTATION_THRESHOLD) {
           stageRef.current = 'peak';
         }
         return;
       }
 
-      if (delta <= RESET_THRESHOLD) {
+      if (delta <= RESET_THRESHOLD && rotationMagnitude <= ROTATION_RESET_THRESHOLD) {
         stageRef.current = 'idle';
-        lastRepTimeRef.current = now;
-        countRef.current += 1;
-        onCountChange(countRef.current);
+
+        if (burstCycleRef.current === 'idle') {
+          burstCycleRef.current = 'awaitingSecondBurst';
+          lastBurstTimeRef.current = now;
+          return;
+        }
+
+        const elapsed = now - lastBurstTimeRef.current;
+        if (elapsed >= BURST_GAP_MS && elapsed <= CYCLE_TIMEOUT_MS) {
+          countRef.current += 1;
+          onCountChange(countRef.current);
+          burstCycleRef.current = 'idle';
+          lastBurstTimeRef.current = now;
+          return;
+        }
+
+        burstCycleRef.current = 'awaitingSecondBurst';
+        lastBurstTimeRef.current = now;
       }
     };
 
