@@ -18,7 +18,7 @@ const RepCounterPage: React.FC = () => {
   
   // Setup logic states
   const [selectedExercise, setSelectedExercise] = useState<ExerciseType | null>(null);
-  const { detectPose, isLoading } = usePoseLandmarker(countingMode === 'video' && selectedExercise !== null);
+  const { detectPose, isLoading, error: poseError } = usePoseLandmarker(countingMode === 'video' && selectedExercise !== null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,18 +86,22 @@ const RepCounterPage: React.FC = () => {
     );
   };
 
+  const startVideoCounting = () => {
+    if (isCountingActive || !trackerRef.current || !selectedExerciseRef.current || !isCameraReady || isLoading) return;
+    trackerRef.current.resetTrackingState();
+    setPaused(false);
+    setIsCountingActive(true);
+  };
+
+  const stopVideoCounting = () => {
+    if (!isCountingActive) return;
+    trackerRef.current?.resetTrackingState();
+    setIsCountingActive(false);
+  };
+
   useVoiceCommands({
-    onStart: () => {
-      if (isCountingActive || !trackerRef.current || !selectedExerciseRef.current || !isCameraReady || isLoading) return;
-      trackerRef.current.resetTrackingState();
-      setPaused(false);
-      setIsCountingActive(true);
-    },
-    onStop: () => {
-      if (!isCountingActive) return;
-      trackerRef.current?.resetTrackingState();
-      setIsCountingActive(false);
-    },
+    onStart: startVideoCounting,
+    onStop: stopVideoCounting,
     onPause: () => setPaused(true),
     onResume: () => setPaused(false),
     enabled: countingMode === 'video' && selectedExercise !== null && isCameraReady && !isLoading
@@ -462,6 +466,24 @@ const RepCounterPage: React.FC = () => {
             {paused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
           </button>
         </div>
+        <div className="mt-4 flex justify-center gap-3">
+          <button
+            type="button"
+            onClick={startVideoCounting}
+            disabled={!isCameraReady || isLoading || isCountingActive}
+            className="rounded-full border border-green-500/40 bg-green-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-green-100 transition-colors hover:bg-green-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Start temp
+          </button>
+          <button
+            type="button"
+            onClick={() => setPaused((current) => !current)}
+            disabled={!isCameraReady || isLoading}
+            className="rounded-full border border-yellow-500/40 bg-yellow-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-yellow-100 transition-colors hover:bg-yellow-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {paused ? 'Riprendi temp' : 'Pausa temp'}
+          </button>
+        </div>
       </div>
 
       {/* Camera Status */}
@@ -521,6 +543,12 @@ const RepCounterPage: React.FC = () => {
         {cameraError && (
           <div className="absolute bottom-32 left-1/2 z-40 w-[90%] max-w-sm -translate-x-1/2 rounded-3xl border border-red-500/40 bg-black/80 p-4 text-center text-sm text-red-100 shadow-2xl">
             {cameraError}
+          </div>
+        )}
+
+        {poseError && (
+          <div className="absolute bottom-14 left-1/2 z-40 w-[90%] max-w-sm -translate-x-1/2 rounded-3xl border border-yellow-500/40 bg-black/80 p-4 text-center text-sm text-yellow-100 shadow-2xl">
+            {poseError}
           </div>
         )}
 
