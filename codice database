@@ -172,8 +172,8 @@ create table public.esecuzioni (
   constraint ck_esecuzioni_set_num_pos check (set_num is null or set_num > 0),
   constraint ck_esecuzioni_rest_pos check (rest_secondi is null or rest_secondi > 0),
   constraint ck_esecuzioni_peso_pos check (peso_kg is null or peso_kg > 0),
-  constraint ck_esecuzioni_reps_pos check (reps is null or reps > 0),
-  constraint ck_esecuzioni_durata_pos check (durata_secondi is null or durata_secondi > 0),
+  constraint ck_esecuzioni_reps_pos check (reps is null or reps >= 0),
+  constraint ck_esecuzioni_durata_pos check (durata_secondi is null or durata_secondi >= 0),
   constraint ck_esecuzioni_step_piramide_pos check (stepindex_piramide is null or stepindex_piramide > 0),
   constraint ck_esecuzioni_step_emom_pos check (stepindex_emom is null or stepindex_emom > 0),
 

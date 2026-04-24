@@ -672,6 +672,10 @@ const NewTrainPage: React.FC = () => {
     return Number.isFinite(value) ? String(value) : '';
   };
 
+  const hasDraftValue = (key: string) => {
+    return Object.prototype.hasOwnProperty.call(numberDrafts, key);
+  };
+
   const onNumberFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     e.target.select();
   };
@@ -694,16 +698,17 @@ const NewTrainPage: React.FC = () => {
   };
 
   const getWeightDraftOrValue = (key: string, value?: number | null) => {
-    if (Object.prototype.hasOwnProperty.call(numberDrafts, key)) return numberDrafts[key];
+    if (hasDraftValue(key)) return numberDrafts[key];
     return formatWeightDisplay(value);
   };
 
   const parseWeightInput = (raw: string, fallback: number | null) => {
     const trimmed = raw.trim();
-    if (!trimmed) return null;
+    if (!trimmed) return fallback;
     const normalized = trimmed.replace(',', '.');
     const parsed = Number(normalized);
-    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    if (!Number.isFinite(parsed)) return fallback;
+    if (parsed <= 0) return null;
     return Math.round(parsed * 100) / 100;
   };
 
@@ -720,9 +725,22 @@ const NewTrainPage: React.FC = () => {
     min = 0,
     max?: number
   ) => {
+    if (!hasDraftValue(key)) return;
+
     const raw = (numberDrafts[key] ?? '').trim();
-    let parsed = raw === '' ? defaultValue : parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) parsed = defaultValue;
+    const currentExercise = exercises.find((exercise) => exercise.id === id);
+    const currentRawValue = currentExercise?.[field];
+    const currentValue = typeof currentRawValue === 'number' && Number.isFinite(currentRawValue)
+      ? currentRawValue
+      : defaultValue;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentValue;
     if (parsed < min) parsed = min;
     if (typeof max === 'number' && parsed > max) parsed = max;
     updateExercise(id, field, parsed);
@@ -738,9 +756,22 @@ const NewTrainPage: React.FC = () => {
     min = 0,
     max?: number
   ) => {
+    if (!hasDraftValue(key)) return;
+
     const raw = (numberDrafts[key] ?? '').trim();
-    let parsed = raw === '' ? defaultValue : parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) parsed = defaultValue;
+    const currentSubExercise = exercises.find((exercise) => exercise.id === supersetId)?.subExercises?.[subIndex];
+    const currentRawValue = currentSubExercise?.[field];
+    const currentValue = typeof currentRawValue === 'number' && Number.isFinite(currentRawValue)
+      ? currentRawValue
+      : defaultValue;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentValue;
     if (parsed < min) parsed = min;
     if (typeof max === 'number' && parsed > max) parsed = max;
     updateSubExercise(supersetId, subIndex, field, parsed);
@@ -756,9 +787,22 @@ const NewTrainPage: React.FC = () => {
     min = 0,
     max?: number
   ) => {
+    if (!hasDraftValue(key)) return;
+
     const raw = (numberDrafts[key] ?? '').trim();
-    let parsed = raw === '' ? defaultValue : parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) parsed = defaultValue;
+    const currentStep = exercises.find((exercise) => exercise.id === pyramidId)?.pyramid_steps?.[stepIndex];
+    const currentRawValue = currentStep?.[field];
+    const currentValue = typeof currentRawValue === 'number' && Number.isFinite(currentRawValue)
+      ? currentRawValue
+      : defaultValue;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentValue;
     if (parsed < min) parsed = min;
     if (typeof max === 'number' && parsed > max) parsed = max;
     updatePyramidStep(pyramidId, stepIndex, field, parsed);
@@ -772,15 +816,24 @@ const NewTrainPage: React.FC = () => {
     key: string,
     currentRestSeconds: number
   ) => {
-    const raw = (numberDrafts[key] ?? '').trim();
-    let parsed = raw === '' ? 0 : parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) parsed = 0;
-    if (parsed < 0) parsed = 0;
-    if (part === 'sec' && parsed > 59) parsed = 59;
+    if (!hasDraftValue(key)) return;
 
+    const raw = (numberDrafts[key] ?? '').trim();
     const safeCurrent = Number.isFinite(currentRestSeconds) ? currentRestSeconds : 0;
     const minutes = Math.floor(safeCurrent / 60);
     const seconds = safeCurrent % 60;
+    const currentPartValue = part === 'min' ? minutes : seconds;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentPartValue;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
     const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
     updatePyramidStep(pyramidId, stepIndex, 'rest_seconds', next);
     clearDraftValue(key);
@@ -792,7 +845,14 @@ const NewTrainPage: React.FC = () => {
     key: string,
     currentWeight: number | null | undefined
   ) => {
+    if (!hasDraftValue(key)) return;
+
     const raw = numberDrafts[key] ?? '';
+    if (!raw.trim()) {
+      clearDraftValue(key);
+      return;
+    }
+
     const fallback = typeof currentWeight === 'number' && Number.isFinite(currentWeight) ? currentWeight : null;
     const parsed = parseWeightInput(raw, fallback);
 
@@ -813,7 +873,14 @@ const NewTrainPage: React.FC = () => {
     key: string,
     currentWeight: number | null | undefined
   ) => {
+    if (!hasDraftValue(key)) return;
+
     const raw = numberDrafts[key] ?? '';
+    if (!raw.trim()) {
+      clearDraftValue(key);
+      return;
+    }
+
     const fallback = typeof currentWeight === 'number' && Number.isFinite(currentWeight) ? currentWeight : null;
     const parsed = parseWeightInput(raw, fallback);
     updateExercise(id, 'weight_kg', parsed);
@@ -826,7 +893,14 @@ const NewTrainPage: React.FC = () => {
     key: string,
     currentWeight: number | null | undefined
   ) => {
+    if (!hasDraftValue(key)) return;
+
     const raw = numberDrafts[key] ?? '';
+    if (!raw.trim()) {
+      clearDraftValue(key);
+      return;
+    }
+
     const fallback = typeof currentWeight === 'number' && Number.isFinite(currentWeight) ? currentWeight : null;
     const parsed = parseWeightInput(raw, fallback);
     updateSubExercise(containerId, subIndex, 'weight_kg', parsed);
@@ -839,15 +913,24 @@ const NewTrainPage: React.FC = () => {
     key: string,
     currentRestSeconds: number
   ) => {
-    const raw = (numberDrafts[key] ?? '').trim();
-    let parsed = raw === '' ? (part === 'min' ? 0 : 0) : parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) parsed = 0;
-    if (parsed < 0) parsed = 0;
-    if (part === 'sec' && parsed > 59) parsed = 59;
+    if (!hasDraftValue(key)) return;
 
+    const raw = (numberDrafts[key] ?? '').trim();
     const safeCurrent = Number.isFinite(currentRestSeconds) ? currentRestSeconds : 0;
     const minutes = Math.floor(safeCurrent / 60);
     const seconds = safeCurrent % 60;
+    const currentPartValue = part === 'min' ? minutes : seconds;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentPartValue;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
     const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
     updateExercise(id, 'rest_seconds', next);
     clearDraftValue(key);
@@ -859,17 +942,26 @@ const NewTrainPage: React.FC = () => {
     key: string,
     currentTransitionRestSeconds: number
   ) => {
-    const raw = (numberDrafts[key] ?? '').trim();
-    let parsed = raw === '' ? 0 : parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) parsed = 0;
-    if (parsed < 0) parsed = 0;
-    if (part === 'sec' && parsed > 59) parsed = 59;
+    if (!hasDraftValue(key)) return;
 
+    const raw = (numberDrafts[key] ?? '').trim();
     const safeCurrent = Number.isFinite(currentTransitionRestSeconds)
       ? Math.max(0, Math.trunc(currentTransitionRestSeconds))
       : 0;
     const minutes = Math.floor(safeCurrent / 60);
     const seconds = safeCurrent % 60;
+    const currentPartValue = part === 'min' ? minutes : seconds;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentPartValue;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
     const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
 
     updateExercise(id, 'transition_rest_seconds', next);
@@ -889,15 +981,24 @@ const NewTrainPage: React.FC = () => {
     key: string,
     currentRoundDurationSeconds: number
   ) => {
-    const raw = (numberDrafts[key] ?? '').trim();
-    let parsed = raw === '' ? 0 : parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) parsed = 0;
-    if (parsed < 0) parsed = 0;
-    if (part === 'sec' && parsed > 59) parsed = 59;
+    if (!hasDraftValue(key)) return;
 
+    const raw = (numberDrafts[key] ?? '').trim();
     const safeCurrent = Number.isFinite(currentRoundDurationSeconds) ? Math.max(1, currentRoundDurationSeconds) : 60;
     const minutes = Math.floor(safeCurrent / 60);
     const seconds = safeCurrent % 60;
+    const currentPartValue = part === 'min' ? minutes : seconds;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentPartValue;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
     const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
 
     updateExercise(id, 'emom_round_duration', Math.max(1, next));

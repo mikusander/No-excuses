@@ -1874,6 +1874,12 @@ const ActiveWorkoutPage: React.FC = () => {
     return String(Math.round(n * 100) / 100).replace('.', ',');
   };
 
+  const formatTargetDraft = (value: unknown) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    return String(Math.max(0, Math.trunc(n)));
+  };
+
   const parseStrictInt = (raw: string, label: string, allowZero = false) => {
     const n = Number(raw);
     if (!Number.isFinite(n) || !Number.isInteger(n)) {
@@ -1889,8 +1895,14 @@ const ActiveWorkoutPage: React.FC = () => {
     const normalized = raw.trim().replace(',', '.');
     if (!normalized) return null;
     const n = Number(normalized);
-    if (!Number.isFinite(n) || n <= 0) {
-      throw new Error('Weight must be > 0.');
+    if (!Number.isFinite(n)) {
+      throw new Error('Weight must be a valid number.');
+    }
+    if (n < 0) {
+      throw new Error('Weight must be >= 0.');
+    }
+    if (n === 0) {
+      return null;
     }
     return Math.round(n * 100) / 100;
   };
@@ -1932,15 +1944,15 @@ const ActiveWorkoutPage: React.FC = () => {
     setExerciseEditDraft({
       sets: String(currentExercise.sets || 1),
       restSeconds: String(currentExercise.rest_seconds || 0),
-      reps: String(currentExercise.reps || 1),
-      durationSeconds: String(currentExercise.duration_seconds || 1),
+      reps: formatTargetDraft(currentExercise.reps),
+      durationSeconds: formatTargetDraft(currentExercise.duration_seconds),
       weightKg: formatWeightDraft(currentExercise.weight_kg),
       emomRounds: String(currentExercise.emom_rounds || 1),
       emomRoundDuration: String(currentExercise.emom_round_duration || 60),
-      currentSubReps: String(currentSub?.reps || 1),
-      currentSubDuration: String(currentSub?.duration_seconds || 1),
+      currentSubReps: formatTargetDraft(currentSub?.reps),
+      currentSubDuration: formatTargetDraft(currentSub?.duration_seconds),
       currentSubWeightKg: formatWeightDraft(currentSub?.weight_kg),
-      currentStepReps: String(currentStep?.reps || 1),
+      currentStepReps: formatTargetDraft(currentStep?.reps),
       currentStepRestSeconds: String(currentStep?.rest_seconds || 0),
       currentStepWeightKg: formatWeightDraft(currentStep?.weight_kg),
     });
@@ -2077,9 +2089,9 @@ const ActiveWorkoutPage: React.FC = () => {
         let nextSubDuration = currentSub.duration_seconds;
 
         if (currentSub.type === 'isometry') {
-          nextSubDuration = parseStrictInt(exerciseEditDraft.currentSubDuration, 'Current exercise duration');
+          nextSubDuration = parseStrictInt(exerciseEditDraft.currentSubDuration, 'Current exercise duration', true);
         } else {
-          nextSubReps = parseStrictInt(exerciseEditDraft.currentSubReps, 'Current exercise reps');
+          nextSubReps = parseStrictInt(exerciseEditDraft.currentSubReps, 'Current exercise reps', true);
         }
 
         const supersetId = Number(currentExercise.id);
@@ -2114,13 +2126,14 @@ const ActiveWorkoutPage: React.FC = () => {
           throw new Error('Unable to map current superset exercise to database row.');
         }
 
+        const currentSubPayload = {
+          reps: currentSub.type === 'reps' ? nextSubReps : null,
+          durata_secondi: currentSub.type === 'isometry' ? nextSubDuration : null,
+          peso_kg: nextSubWeight,
+        };
         const { error: currentSubUpdateError } = await supabase
           .from('esecuzioni')
-          .update({
-            reps: currentSub.type === 'reps' ? nextSubReps : null,
-            durata_secondi: currentSub.type === 'isometry' ? nextSubDuration : null,
-            peso_kg: nextSubWeight,
-          })
+          .update(currentSubPayload)
           .eq('id_scheda', schedaId)
           .eq('id_esecuzione', targetRow.id_esecuzione);
         if (currentSubUpdateError) throw currentSubUpdateError;
@@ -2148,17 +2161,18 @@ const ActiveWorkoutPage: React.FC = () => {
           setIsometryRemainingWithSync(Math.min(isometryRemaining, nextSubDuration));
         }
       } else if (currentExercise.type === 'pyramid') {
-        const nextStepReps = parseStrictInt(exerciseEditDraft.currentStepReps, 'Step reps');
+        const nextStepReps = parseStrictInt(exerciseEditDraft.currentStepReps, 'Step reps', true);
         const nextStepRest = parseStrictInt(exerciseEditDraft.currentStepRestSeconds, 'Step rest', true);
         const nextStepWeight = parseOptionalWeight(exerciseEditDraft.currentStepWeightKg);
 
+        const stepPayload = {
+          reps: nextStepReps,
+          rest_secondi: nextStepRest > 0 ? nextStepRest : null,
+          peso_kg: nextStepWeight,
+        };
         const { error: stepUpdateError } = await supabase
           .from('esecuzioni')
-          .update({
-            reps: nextStepReps,
-            rest_secondi: nextStepRest > 0 ? nextStepRest : null,
-            peso_kg: nextStepWeight,
-          })
+          .update(stepPayload)
           .eq('id_scheda', schedaId)
           .eq('id_piramide', Number(currentExercise.id))
           .eq('stepindex_piramide', currentPyramidStepIdx + 1);
@@ -2191,20 +2205,21 @@ const ActiveWorkoutPage: React.FC = () => {
         }
 
         const isIso = currentExercise.type === 'isometry';
-        const nextReps = isIso ? currentExercise.reps : parseStrictInt(exerciseEditDraft.reps, 'Reps');
+        const nextReps = isIso ? currentExercise.reps : parseStrictInt(exerciseEditDraft.reps, 'Reps', true);
         const nextDuration = isIso
-          ? parseStrictInt(exerciseEditDraft.durationSeconds, 'Duration')
+          ? parseStrictInt(exerciseEditDraft.durationSeconds, 'Duration', true)
           : currentExercise.duration_seconds;
 
+        const basePayload = {
+          set_num: nextSets,
+          rest_secondi: nextRest > 0 ? nextRest : null,
+          peso_kg: nextWeight,
+          reps: isIso ? null : nextReps,
+          durata_secondi: isIso ? nextDuration : null,
+        };
         const { error: baseUpdateError } = await supabase
           .from('esecuzioni')
-          .update({
-            set_num: nextSets,
-            rest_secondi: nextRest > 0 ? nextRest : null,
-            peso_kg: nextWeight,
-            reps: isIso ? null : nextReps,
-            durata_secondi: isIso ? nextDuration : null,
-          })
+          .update(basePayload)
           .eq('id_scheda', schedaId)
           .eq('id_esecuzione', Number(currentExercise.id));
         if (baseUpdateError) throw baseUpdateError;
@@ -2570,12 +2585,10 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const handleArrowNextExercise = () => {
-    suppressNextExerciseVoiceCueForCurrentTick();
     handleNextExercise();
   };
 
   const handleArrowPrevExercise = () => {
-    suppressNextExerciseVoiceCueForCurrentTick();
     handlePrevExercise();
   };
 
@@ -2785,7 +2798,6 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const restTargetExercise = transitionNextExercise || currentExercise;
   const restTargetExerciseIndex = transitionNextExercise ? currentExerciseIdx + 1 : currentExerciseIdx;
-  const restTargetExerciseName = getExerciseDisplayName(restTargetExercise, restTargetExerciseIndex);
   const restTargetSpecialTypeLabel = getRestTransitionSpecialTypeLabel(restTargetExercise);
   const restTargetPyramidStepIdx = restTargetExercise.type === 'pyramid'
     ? transitionNextExercise
@@ -2848,13 +2860,12 @@ const ActiveWorkoutPage: React.FC = () => {
         </p>
 
         <div className="text-center space-y-2 mb-12">
-          <p className="text-white text-xl font-bold">{restTargetExerciseName}</p>
-          {restTargetSpecialTypeLabel && (
-            <p className="text-brand-orange text-xs font-black uppercase tracking-widest">{restTargetSpecialTypeLabel}</p>
-          )}
           {restUpcomingExecutionEntries.length > 0 && (
             <div className="space-y-1">
-              <p className="text-brand-grey/70 text-[10px] uppercase tracking-wider font-bold">Prossimo esercizio</p>
+              <p className="text-brand-grey/70 text-[10px] uppercase tracking-wider font-bold">Next exercise</p>
+              {restTargetSpecialTypeLabel && (
+                <p className="text-brand-orange text-xs font-black uppercase tracking-widest">{restTargetSpecialTypeLabel}</p>
+              )}
               {restUpcomingExecutionEntries.map((entry, idx) => (
                 <p key={`${entry.name}-${entry.weightLabel}-${idx}`} className="text-brand-orange/80 text-sm font-semibold">
                   {`${entry.name} ${entry.weightLabel}`}
@@ -3518,7 +3529,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     <label className="text-sm text-brand-grey">Current Exercise Duration (sec)
                       <input
                         type="number" inputMode="numeric"
-                        min={1}
+                        min={0}
                         value={exerciseEditDraft.currentSubDuration}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubDuration: e.target.value }))}
                         className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
@@ -3528,7 +3539,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     <label className="text-sm text-brand-grey">Current Exercise Reps
                       <input
                         type="number" inputMode="numeric"
-                        min={1}
+                        min={0}
                         value={exerciseEditDraft.currentSubReps}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubReps: e.target.value }))}
                         className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
@@ -3554,7 +3565,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     <label className="text-sm text-brand-grey">Current Step Reps
                       <input
                         type="number" inputMode="numeric"
-                        min={1}
+                        min={0}
                         value={exerciseEditDraft.currentStepReps}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepReps: e.target.value }))}
                         className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
@@ -3609,7 +3620,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     <label className="text-sm text-brand-grey">Duration (sec)
                       <input
                         type="number" inputMode="numeric"
-                        min={1}
+                        min={0}
                         value={exerciseEditDraft.durationSeconds}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, durationSeconds: e.target.value }))}
                         className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
@@ -3619,7 +3630,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     <label className="text-sm text-brand-grey">Reps
                       <input
                         type="number" inputMode="numeric"
-                        min={1}
+                        min={0}
                         value={exerciseEditDraft.reps}
                         onChange={(e) => setExerciseEditDraft((d) => ({ ...d, reps: e.target.value }))}
                         className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"

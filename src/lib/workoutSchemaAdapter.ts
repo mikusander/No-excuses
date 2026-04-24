@@ -118,8 +118,8 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
           item: {
             name: dictName,
             type: rowType,
-            reps: Math.max(1, toSafeInt(row.reps, 1)),
-            duration_seconds: Math.max(1, toSafeInt(row.durata_secondi, 1)),
+            reps: Math.max(0, toSafeInt(row.reps, 0)),
+            duration_seconds: Math.max(0, toSafeInt(row.durata_secondi, 0)),
             weight_kg: toSafeDecimal(row.peso_kg, null),
             instruction_note: toOptionalNote(row.note_esercizio),
           },
@@ -183,8 +183,8 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
           item: {
             name: dictName,
             type: rowType,
-            reps: Math.max(1, toSafeInt(row.reps, 1)),
-            duration_seconds: Math.max(1, toSafeInt(row.durata_secondi, 1)),
+            reps: Math.max(0, toSafeInt(row.reps, 0)),
+            duration_seconds: Math.max(0, toSafeInt(row.durata_secondi, 0)),
             weight_kg: toSafeDecimal(row.peso_kg, null),
             instruction_note: toOptionalNote(row.note_esercizio),
           },
