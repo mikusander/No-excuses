@@ -58,7 +58,6 @@ interface InstructionModalItem {
   name: string;
   note: string;
 }
-
 interface InstructionModalContext {
   exerciseName: string;
   note: string | null;
@@ -79,6 +78,18 @@ interface ExerciseEditDraft {
   currentStepReps: string;
   currentStepRestSeconds: string;
   currentStepWeightKg: string;
+  subExerciseDrafts: Array<{
+    name: string;
+    type: 'reps' | 'isometry';
+    reps: string;
+    durationSeconds: string;
+    weightKg: string;
+  }>;
+  pyramidStepDrafts: Array<{
+    reps: string;
+    restSeconds: string;
+    weightKg: string;
+  }>;
 }
 
 interface PersistedWorkoutProgressState {
@@ -233,6 +244,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
   const [isInstructionModalOpen, setIsInstructionModalOpen] = useState(false);
   const [instructionModalContext, setInstructionModalContext] = useState<InstructionModalContext | null>(null);
+  const [isWorkoutOverviewModalOpen, setIsWorkoutOverviewModalOpen] = useState(false);
+  const [isWorkoutOverviewAdvancePending, setIsWorkoutOverviewAdvancePending] = useState(false);
   const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
   const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
     sets: '',
@@ -248,6 +261,8 @@ const ActiveWorkoutPage: React.FC = () => {
     currentStepReps: '',
     currentStepRestSeconds: '',
     currentStepWeightKg: '',
+    subExerciseDrafts: [],
+    pyramidStepDrafts: [],
   });
   const [exerciseEditError, setExerciseEditError] = useState<string | null>(null);
   const [isSavingExerciseEdit, setIsSavingExerciseEdit] = useState(false);
@@ -1592,6 +1607,10 @@ const ActiveWorkoutPage: React.FC = () => {
           intervalId = null;
         }
         setRestEndsAtMs(null);
+        if (isWorkoutOverviewModalOpen) {
+          setIsWorkoutOverviewAdvancePending(true);
+          return;
+        }
         setIsResting(false);
         finishRestAndNextSet();
       }
@@ -1612,7 +1631,7 @@ const ActiveWorkoutPage: React.FC = () => {
       document.removeEventListener('visibilitychange', handleWakeSync);
       window.removeEventListener('focus', handleWakeSync);
     };
-  }, [isResting, restEndsAtMs]);
+  }, [isResting, restEndsAtMs, isWorkoutOverviewModalOpen]);
 
   useEffect(() => {
     if (!isResting || restRemaining > 3 || restRemaining <= 0) {
@@ -1935,6 +1954,38 @@ const ActiveWorkoutPage: React.FC = () => {
     });
   };
 
+  const buildSubExerciseDrafts = (subExercises: Exercise['subExercises']) => {
+    return (subExercises || []).map((sub, index) => ({
+      name: String(sub?.name || '').trim() || `Exercise ${index + 1}`,
+      type: sub?.type || 'reps',
+      reps: formatTargetDraft(sub?.reps),
+      durationSeconds: formatTargetDraft(sub?.duration_seconds),
+      weightKg: formatWeightDraft(sub?.weight_kg),
+    }));
+  };
+
+  const buildPyramidStepDrafts = (steps: Exercise['pyramid_steps']) => {
+    return (steps || []).map((step) => ({
+      reps: formatTargetDraft(step?.reps),
+      restSeconds: String(Math.max(0, Math.trunc(step?.rest_seconds || 0))),
+      weightKg: formatWeightDraft(step?.weight_kg),
+    }));
+  };
+
+  const updateSubExerciseDraft = (index: number, patch: Partial<ExerciseEditDraft['subExerciseDrafts'][number]>) => {
+    setExerciseEditDraft((prev) => ({
+      ...prev,
+      subExerciseDrafts: prev.subExerciseDrafts.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }));
+  };
+
+  const updatePyramidStepDraft = (index: number, patch: Partial<ExerciseEditDraft['pyramidStepDrafts'][number]>) => {
+    setExerciseEditDraft((prev) => ({
+      ...prev,
+      pyramidStepDrafts: prev.pyramidStepDrafts.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }));
+  };
+
   const openEditExerciseModal = () => {
     const currentSub = currentExercise.type === 'superset' ? subExercise : null;
     const currentStep = currentExercise.type === 'pyramid'
@@ -1955,6 +2006,8 @@ const ActiveWorkoutPage: React.FC = () => {
       currentStepReps: formatTargetDraft(currentStep?.reps),
       currentStepRestSeconds: String(currentStep?.rest_seconds || 0),
       currentStepWeightKg: formatWeightDraft(currentStep?.weight_kg),
+      subExerciseDrafts: buildSubExerciseDrafts(currentExercise.subExercises),
+      pyramidStepDrafts: buildPyramidStepDrafts(currentExercise.pyramid_steps),
     });
     setExerciseEditError(null);
     setIsEditExerciseModalOpen(true);
@@ -1983,6 +2036,19 @@ const ActiveWorkoutPage: React.FC = () => {
     if (!currentInstructionContext) return;
     setInstructionModalContext(currentInstructionContext);
     setIsInstructionModalOpen(true);
+  };
+
+  const openWorkoutOverviewModal = () => {
+    setIsWorkoutOverviewModalOpen(true);
+  };
+
+  const closeWorkoutOverviewModal = () => {
+    setIsWorkoutOverviewModalOpen(false);
+    if (isWorkoutOverviewAdvancePending) {
+      setIsWorkoutOverviewAdvancePending(false);
+      setIsResting(false);
+      finishRestAndNextSet();
+    }
   };
 
   const closeCurrentInstructionModal = () => {
@@ -2022,6 +2088,8 @@ const ActiveWorkoutPage: React.FC = () => {
 
     try {
       const schedaId = sourceSchedaId;
+      const nextSubExerciseDrafts = exerciseEditDraft.subExerciseDrafts;
+      const nextPyramidStepDrafts = exerciseEditDraft.pyramidStepDrafts;
 
       const minAllowedSets = currentSetIdx + 1;
 
@@ -2059,6 +2127,44 @@ const ActiveWorkoutPage: React.FC = () => {
           .eq('id_emom', Number(currentExercise.id));
         if (emomRowsError) throw emomRowsError;
 
+        const emomSubExercises = currentExercise.subExercises || [];
+        if (nextSubExerciseDrafts.length !== emomSubExercises.length) {
+          throw new Error('Could not map all EMOM sub-exercises to the edit form.');
+        }
+
+        const { data: emomRows, error: emomFetchError } = await supabase
+          .from('esecuzioni')
+          .select('id_esecuzione, ordine')
+          .eq('id_scheda', schedaId)
+          .eq('id_emom', Number(currentExercise.id))
+          .order('ordine', { ascending: true });
+        if (emomFetchError) throw emomFetchError;
+
+        if ((emomRows?.length || 0) < nextSubExerciseDrafts.length) {
+          throw new Error('Unable to map all EMOM exercises to database rows.');
+        }
+
+        await Promise.all((emomRows || []).slice(0, nextSubExerciseDrafts.length).map(async (row, index) => {
+          const currentSub = emomSubExercises[index];
+          const draft = nextSubExerciseDrafts[index];
+          if (!currentSub || !draft) return;
+
+          const nextSubWeight = parseOptionalWeight(draft.weightKg);
+          const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'EMOM reps', true) : null;
+          const nextSubDuration = currentSub.type === 'isometry' ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : null;
+
+          const { error: currentSubUpdateError } = await supabase
+            .from('esecuzioni')
+            .update({
+              reps: nextSubReps,
+              durata_secondi: nextSubDuration,
+              peso_kg: nextSubWeight,
+            })
+            .eq('id_scheda', schedaId)
+            .eq('id_esecuzione', row.id_esecuzione);
+          if (currentSubUpdateError) throw currentSubUpdateError;
+        }));
+
         setWorkout((prev) => {
           if (!prev) return prev;
           const exercises = [...prev.exercises];
@@ -2069,6 +2175,16 @@ const ActiveWorkoutPage: React.FC = () => {
             emom_rounds: nextRounds,
             emom_round_duration: nextRoundDuration,
             duration_seconds: nextRoundDuration,
+            subExercises: (exercises[currentExerciseIdx].subExercises || []).map((sub, index) => {
+              const draft = nextSubExerciseDrafts[index];
+              if (!draft) return sub;
+              return {
+                ...sub,
+                reps: sub.type === 'reps' ? parseStrictInt(draft.reps, 'EMOM reps', true) : sub.reps,
+                duration_seconds: sub.type === 'isometry' ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : sub.duration_seconds,
+                weight_kg: parseOptionalWeight(draft.weightKg),
+              };
+            }),
           };
           return { ...prev, exercises };
         });
@@ -2081,17 +2197,9 @@ const ActiveWorkoutPage: React.FC = () => {
           throw new Error(`You are currently at round ${minAllowedSets}. Rounds cannot be lower than this value.`);
         }
 
-        const currentSub = subExercise;
-        if (!currentSub) throw new Error('No current superset exercise found.');
-
-        const nextSubWeight = parseOptionalWeight(exerciseEditDraft.currentSubWeightKg);
-        let nextSubReps = currentSub.reps;
-        let nextSubDuration = currentSub.duration_seconds;
-
-        if (currentSub.type === 'isometry') {
-          nextSubDuration = parseStrictInt(exerciseEditDraft.currentSubDuration, 'Current exercise duration', true);
-        } else {
-          nextSubReps = parseStrictInt(exerciseEditDraft.currentSubReps, 'Current exercise reps', true);
+        const currentSupersetExercises = currentExercise.subExercises || [];
+        if (nextSubExerciseDrafts.length !== currentSupersetExercises.length) {
+          throw new Error('Could not map all superset sub-exercises to the edit form.');
         }
 
         const supersetId = Number(currentExercise.id);
@@ -2121,22 +2229,30 @@ const ActiveWorkoutPage: React.FC = () => {
           .order('ordine', { ascending: true });
         if (supersetFetchError) throw supersetFetchError;
 
-        const targetRow = supersetRows?.[currentSubExerciseIdx];
-        if (!targetRow?.id_esecuzione) {
-          throw new Error('Unable to map current superset exercise to database row.');
+        if ((supersetRows?.length || 0) < nextSubExerciseDrafts.length) {
+          throw new Error('Unable to map all superset exercises to database rows.');
         }
 
-        const currentSubPayload = {
-          reps: currentSub.type === 'reps' ? nextSubReps : null,
-          durata_secondi: currentSub.type === 'isometry' ? nextSubDuration : null,
-          peso_kg: nextSubWeight,
-        };
-        const { error: currentSubUpdateError } = await supabase
-          .from('esecuzioni')
-          .update(currentSubPayload)
-          .eq('id_scheda', schedaId)
-          .eq('id_esecuzione', targetRow.id_esecuzione);
-        if (currentSubUpdateError) throw currentSubUpdateError;
+        await Promise.all((supersetRows || []).slice(0, nextSubExerciseDrafts.length).map(async (row, index) => {
+          const currentSub = currentSupersetExercises[index];
+          const draft = nextSubExerciseDrafts[index];
+          if (!currentSub || !draft) return;
+
+          const nextSubWeight = parseOptionalWeight(draft.weightKg);
+          const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'Superset reps', true) : null;
+          const nextSubDuration = currentSub.type === 'isometry' ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : null;
+
+          const { error: currentSubUpdateError } = await supabase
+            .from('esecuzioni')
+            .update({
+              reps: nextSubReps,
+              durata_secondi: nextSubDuration,
+              peso_kg: nextSubWeight,
+            })
+            .eq('id_scheda', schedaId)
+            .eq('id_esecuzione', row.id_esecuzione);
+          if (currentSubUpdateError) throw currentSubUpdateError;
+        }));
 
         setWorkout((prev) => {
           if (!prev) return prev;
@@ -2144,54 +2260,71 @@ const ActiveWorkoutPage: React.FC = () => {
           const updated = { ...exercises[currentExerciseIdx] };
           updated.sets = nextSets;
           updated.rest_seconds = nextRest;
-          updated.subExercises = [...(updated.subExercises || [])];
-          if (updated.subExercises[currentSubExerciseIdx]) {
-            updated.subExercises[currentSubExerciseIdx] = {
-              ...updated.subExercises[currentSubExerciseIdx],
-              reps: nextSubReps,
-              duration_seconds: nextSubDuration,
-              weight_kg: nextSubWeight,
+          updated.subExercises = (updated.subExercises || []).map((sub, index) => {
+            const draft = nextSubExerciseDrafts[index];
+            if (!draft) return sub;
+            return {
+              ...sub,
+              reps: sub.type === 'reps' ? parseStrictInt(draft.reps, 'Superset reps', true) : sub.reps,
+              duration_seconds: sub.type === 'isometry' ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : sub.duration_seconds,
+              weight_kg: parseOptionalWeight(draft.weightKg),
             };
-          }
+          });
           exercises[currentExerciseIdx] = updated;
           return { ...prev, exercises };
         });
-
-        if (currentSub.type === 'isometry') {
-          setIsometryRemainingWithSync(Math.min(isometryRemaining, nextSubDuration));
-        }
       } else if (currentExercise.type === 'pyramid') {
-        const nextStepReps = parseStrictInt(exerciseEditDraft.currentStepReps, 'Step reps', true);
-        const nextStepRest = parseStrictInt(exerciseEditDraft.currentStepRestSeconds, 'Step rest', true);
-        const nextStepWeight = parseOptionalWeight(exerciseEditDraft.currentStepWeightKg);
+        const pyramidSteps = currentExercise.pyramid_steps || [];
+        if (nextPyramidStepDrafts.length !== pyramidSteps.length) {
+          throw new Error('Could not map all pyramid steps to the edit form.');
+        }
 
-        const stepPayload = {
-          reps: nextStepReps,
-          rest_secondi: nextStepRest > 0 ? nextStepRest : null,
-          peso_kg: nextStepWeight,
-        };
-        const { error: stepUpdateError } = await supabase
+        const { data: pyramidRows, error: pyramidFetchError } = await supabase
           .from('esecuzioni')
-          .update(stepPayload)
+          .select('id_esecuzione, ordine, stepindex_piramide')
           .eq('id_scheda', schedaId)
           .eq('id_piramide', Number(currentExercise.id))
-          .eq('stepindex_piramide', currentPyramidStepIdx + 1);
-        if (stepUpdateError) throw stepUpdateError;
+          .order('ordine', { ascending: true });
+        if (pyramidFetchError) throw pyramidFetchError;
+
+        if ((pyramidRows?.length || 0) < nextPyramidStepDrafts.length) {
+          throw new Error('Unable to map all pyramid steps to database rows.');
+        }
+
+        await Promise.all((pyramidRows || []).slice(0, nextPyramidStepDrafts.length).map(async (row, index) => {
+          const draft = nextPyramidStepDrafts[index];
+          if (!draft) return;
+
+          const nextStepReps = parseStrictInt(draft.reps, 'Step reps', true);
+          const nextStepRest = parseStrictInt(draft.restSeconds, 'Step rest', true);
+          const nextStepWeight = parseOptionalWeight(draft.weightKg);
+
+          const { error: rowUpdateError } = await supabase
+            .from('esecuzioni')
+            .update({
+              reps: nextStepReps,
+              rest_secondi: nextStepRest > 0 ? nextStepRest : null,
+              peso_kg: nextStepWeight,
+            })
+            .eq('id_scheda', schedaId)
+            .eq('id_esecuzione', row.id_esecuzione);
+          if (rowUpdateError) throw rowUpdateError;
+        }));
 
         setWorkout((prev) => {
           if (!prev) return prev;
           const exercises = [...prev.exercises];
           const updated = { ...exercises[currentExerciseIdx] };
-          const nextSteps = [...(updated.pyramid_steps || [])];
-          if (nextSteps[currentPyramidStepIdx]) {
-            nextSteps[currentPyramidStepIdx] = {
-              ...nextSteps[currentPyramidStepIdx],
-              reps: nextStepReps,
-              rest_seconds: nextStepRest,
-              weight_kg: nextStepWeight,
+          updated.pyramid_steps = (updated.pyramid_steps || []).map((step, index) => {
+            const draft = nextPyramidStepDrafts[index];
+            if (!draft) return step;
+            return {
+              ...step,
+              reps: parseStrictInt(draft.reps, 'Step reps', true),
+              rest_seconds: parseStrictInt(draft.restSeconds, 'Step rest', true),
+              weight_kg: parseOptionalWeight(draft.weightKg),
             };
-          }
-          updated.pyramid_steps = nextSteps;
+          });
           exercises[currentExerciseIdx] = updated;
           return { ...prev, exercises };
         });
@@ -2308,6 +2441,57 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const currentExecutionWeightLabel = getCurrentExecutionWeightLabel();
+  const workoutOverviewExerciseNumber = currentExerciseIdx + 1;
+  const workoutOverviewExerciseLabel = `EXERCISE ${workoutOverviewExerciseNumber} OF ${workout.exercises.length}`;
+  const workoutRestOverviewExerciseLabel = `JUST FINISHED EXERCISE ${workoutOverviewExerciseNumber} OF ${workout.exercises.length}`;
+
+  const getWorkoutOverviewTypeLabel = (exercise: Exercise) => {
+    if (exercise.type === 'emom') return 'EMOM MODE';
+    if (exercise.type === 'superset') return 'SUPERSET MODE';
+    if (exercise.type === 'pyramid') return 'PYRAMID MODE';
+    if (exercise.type === 'isometry') return 'ISOMETRY';
+    return 'REPS';
+  };
+
+  const getWorkoutOverviewSummary = (exercise: Exercise) => {
+    if (exercise.type === 'emom') {
+      return [
+        `${exercise.sets || 1} sets`,
+        `${exercise.emom_rounds || 1} rounds`,
+        `${formatTime(exercise.emom_round_duration || 60)} per round`,
+      ];
+    }
+
+    if (exercise.type === 'superset') {
+      return [
+        `${exercise.sets || 1} rounds`,
+        `${exercise.subExercises?.length || 0} exercises`,
+        `${formatTime(exercise.rest_seconds || 0)} rest`,
+      ];
+    }
+
+    if (exercise.type === 'pyramid') {
+      return [
+        `${exercise.pyramid_steps?.length || 0} steps`,
+        exercise.instruction_note ? 'Has notes' : 'No notes',
+        formatWeightLabel(exercise.weight_kg),
+      ];
+    }
+
+    if (exercise.type === 'isometry') {
+      return [
+        `${exercise.sets || 1} sets`,
+        `${isMaxTarget(exercise.duration_seconds) ? 'MAX' : formatTime(exercise.duration_seconds)} hold`,
+        formatWeightLabel(exercise.weight_kg),
+      ];
+    }
+
+    return [
+      `${exercise.sets || 1} sets`,
+      `${isMaxTarget(exercise.reps) ? 'MAX' : `${formatBigTargetValue(exercise.reps)} reps`}`,
+      formatWeightLabel(exercise.weight_kg),
+    ];
+  };
 
   const specialExerciseLabel =
     currentExercise.type === 'emom'
@@ -2754,6 +2938,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const transitionNextExercise = pendingExerciseAdvance && !isLastExercise
     ? workout.exercises[currentExerciseIdx + 1]
     : null;
+  const restOverviewExerciseLabel = transitionNextExercise ? workoutRestOverviewExerciseLabel : workoutOverviewExerciseLabel;
   const getExerciseDisplayName = (exercise: Exercise, fallbackIndex: number) => {
     return String(exercise.name || '').trim() || `Exercise ${fallbackIndex + 1}`;
   };
@@ -2819,6 +3004,82 @@ const ActiveWorkoutPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center p-6 relative">
         {voiceCommandsHelpBubble}
+        {isWorkoutOverviewModalOpen && (
+          <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Workout Overview</h3>
+                  <p className="text-xs text-brand-grey mt-1">{workout.name}</p>
+                </div>
+                <button
+                  onClick={closeWorkoutOverviewModal}
+                  className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
+                  title="Close overview"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
+                {workout.exercises.map((exercise, index) => {
+                  const isCurrentExercise = index === currentExerciseIdx;
+                  const exerciseTitle = String(exercise.name || '').trim() || `Exercise ${index + 1}`;
+                  const summary = getWorkoutOverviewSummary(exercise);
+
+                  return (
+                    <div
+                      key={exercise.id}
+                      className={`rounded-2xl border p-4 transition-colors ${isCurrentExercise
+                          ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
+                          : 'border-white/10 bg-black/30'
+                        }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase tracking-[0.25em] text-brand-grey/70 font-bold mb-1">
+                            Exercise {index + 1}
+                          </p>
+                          <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
+                          <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
+                            {getWorkoutOverviewTypeLabel(exercise)}
+                          </p>
+                        </div>
+
+                        <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${isCurrentExercise
+                            ? 'bg-brand-orange text-black'
+                            : 'bg-white/5 text-brand-grey'
+                          }`}>
+                          {isCurrentExercise ? 'You are here' : `#${index + 1}`}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {summary.map((item, summaryIndex) => (
+                          <span
+                            key={`${exercise.id}:summary:${summaryIndex}`}
+                            className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-3 py-1 text-[11px] font-bold text-white/85"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex items-center justify-end">
+                <button
+                  onClick={closeWorkoutOverviewModal}
+                  className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-10 p-2">
           <button onClick={handleLeaveWorkout} className="text-white/50 hover:text-white transition-colors">
             <ArrowLeft size={28} />
@@ -2860,6 +3121,17 @@ const ActiveWorkoutPage: React.FC = () => {
         </p>
 
         <div className="text-center space-y-2 mb-12">
+          <button
+            type="button"
+            onClick={openWorkoutOverviewModal}
+            className="inline-flex flex-col items-center gap-1 rounded-2xl border border-brand-orange/25 bg-brand-darkGrey/30 px-3 py-2 text-center transition-colors hover:border-brand-orange/60 hover:bg-brand-orange/10 cursor-pointer"
+            title="Open full workout overview"
+          >
+            <span className="text-[10px] text-brand-grey/75 uppercase tracking-[0.24em] font-bold">Tap to view workout overview</span>
+            <span className="text-brand-orange font-black text-xs tracking-widest">
+              {restOverviewExerciseLabel}
+            </span>
+          </button>
           {restUpcomingExecutionEntries.length > 0 && (
             <div className="space-y-1">
               <p className="text-brand-grey/70 text-[10px] uppercase tracking-wider font-bold">Next exercise</p>
@@ -3004,6 +3276,17 @@ const ActiveWorkoutPage: React.FC = () => {
             <h2 className="text-3xl font-black text-white leading-tight drop-shadow-md">
               {currentExercise.name}
             </h2>
+            <button
+              type="button"
+              onClick={openWorkoutOverviewModal}
+              className="mt-2 inline-flex flex-col items-center gap-1 rounded-2xl border border-brand-orange/25 bg-brand-darkGrey/30 px-3 py-2 text-center transition-colors hover:border-brand-orange/60 hover:bg-brand-orange/10 cursor-pointer"
+              title="Open full workout overview"
+            >
+              <span className="text-[10px] text-brand-grey/75 uppercase tracking-[0.24em] font-bold">Tap to view workout overview</span>
+              <span className="text-brand-orange font-black text-xs tracking-widest ">
+                {workoutOverviewExerciseLabel}
+              </span>
+            </button>
             {specialExerciseLabel && (
               <div className="mt-2 flex flex-col items-center gap-1">
                 <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${specialExercisePillClass}`}>
@@ -3011,7 +3294,6 @@ const ActiveWorkoutPage: React.FC = () => {
                 </span>
               </div>
             )}
-
           </div>
 
           <button
@@ -3418,6 +3700,137 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
       )}
 
+      {isWorkoutOverviewModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Workout Overview</h3>
+                <p className="text-xs text-brand-grey mt-1">{workout.name}</p>
+              </div>
+              <button
+                onClick={closeWorkoutOverviewModal}
+                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
+                title="Close overview"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
+              {workout.exercises.map((exercise, index) => {
+                const isCurrentExercise = index === currentExerciseIdx;
+                const exerciseTitle = String(exercise.name || '').trim() || `Exercise ${index + 1}`;
+                const summary = getWorkoutOverviewSummary(exercise);
+
+                return (
+                  <div
+                    key={exercise.id}
+                    className={`rounded-2xl border p-4 transition-colors ${isCurrentExercise
+                        ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
+                        : 'border-white/10 bg-black/30'
+                      }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] uppercase tracking-[0.25em] text-brand-grey/70 font-bold mb-1">
+                          Exercise {index + 1}
+                        </p>
+                        <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
+                        <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
+                          {getWorkoutOverviewTypeLabel(exercise)}
+                        </p>
+                      </div>
+
+                      <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${isCurrentExercise
+                          ? 'bg-brand-orange text-black'
+                          : 'bg-white/5 text-brand-grey'
+                        }`}>
+                        {isCurrentExercise ? 'You are here' : `#${index + 1}`}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {summary.map((item, summaryIndex) => (
+                        <span
+                          key={`${exercise.id}:summary:${summaryIndex}`}
+                          className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-3 py-1 text-[11px] font-bold text-white/85"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+
+                    {exercise.type === 'superset' && exercise.subExercises && exercise.subExercises.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {exercise.subExercises.map((sub, subIndex) => (
+                          <div key={`${exercise.id}:sub:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
+                              <p className="text-[11px] text-brand-orange/90 font-black uppercase tracking-wide mt-1">
+                                {formatSupersetTaskMetricLabel(sub)}
+                              </p>
+                            </div>
+                            <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                              {formatWeightLabel(sub.weight_kg)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {exercise.type === 'emom' && exercise.subExercises && exercise.subExercises.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {exercise.subExercises.map((sub, subIndex) => (
+                          <div key={`${exercise.id}:emom:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
+                              <p className="text-[11px] text-blue-400 font-black uppercase tracking-wide mt-1">
+                                {formatEmomTaskMetricLabel(sub)}
+                              </p>
+                            </div>
+                            <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                              {formatWeightLabel(sub.weight_kg)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {exercise.type === 'pyramid' && exercise.pyramid_steps && exercise.pyramid_steps.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {exercise.pyramid_steps.map((step, stepIndex) => (
+                          <div key={`${exercise.id}:pyramid:${stepIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-white font-bold text-sm truncate">Step {stepIndex + 1}</p>
+                              <p className="text-[11px] text-amber-300 font-black uppercase tracking-wide mt-1">
+                                {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
+                              </p>
+                            </div>
+                            <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                              {formatWeightLabel(step.weight_kg)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end">
+              <button
+                onClick={closeWorkoutOverviewModal}
+                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isEditExerciseModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="w-full max-w-lg bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
@@ -3499,6 +3912,54 @@ const ActiveWorkoutPage: React.FC = () => {
                       />
                     </label>
                   </div>
+
+                  <div className="space-y-3 pt-2">
+                    {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
+                      <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">EMOM exercise {index + 1}</p>
+                            <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
+                          </div>
+                          <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">{draft.type === 'isometry' ? 'Isometry' : 'Reps'}</span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          {draft.type === 'isometry' ? (
+                            <label className="text-sm text-brand-grey">Duration (sec)
+                              <input
+                                type="number" inputMode="numeric"
+                                min={0}
+                                value={draft.durationSeconds}
+                                onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                          ) : (
+                            <label className="text-sm text-brand-grey">Reps
+                              <input
+                                type="number" inputMode="numeric"
+                                min={0}
+                                value={draft.reps}
+                                onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                          )}
+
+                          <label className="text-sm text-brand-grey">Weight (kg)
+                            <input
+                              type="text"
+                              value={draft.weightKg}
+                              onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
+                              placeholder="body weight"
+                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </>
               )}
 
@@ -3525,72 +3986,101 @@ const ActiveWorkoutPage: React.FC = () => {
                     </label>
                   </div>
 
-                  {subExercise?.type === 'isometry' ? (
-                    <label className="text-sm text-brand-grey">Current Exercise Duration (sec)
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.currentSubDuration}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubDuration: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  ) : (
-                    <label className="text-sm text-brand-grey">Current Exercise Reps
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.currentSubReps}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubReps: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  )}
+                  <div className="space-y-3 pt-2">
+                    {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
+                      <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">Superset exercise {index + 1}</p>
+                            <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
+                          </div>
+                          <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">{draft.type === 'isometry' ? 'Isometry' : 'Reps'}</span>
+                        </div>
 
-                  <label className="text-sm text-brand-grey">Current Exercise Weight (kg)
-                    <input
-                      type="text"
-                      value={exerciseEditDraft.currentSubWeightKg}
-                      onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentSubWeightKg: e.target.value }))}
-                      placeholder="body Weight"
-                      className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                    />
-                  </label>
+                        <div className="grid grid-cols-2 gap-3">
+                          {draft.type === 'isometry' ? (
+                            <label className="text-sm text-brand-grey">Duration (sec)
+                              <input
+                                type="number" inputMode="numeric"
+                                min={0}
+                                value={draft.durationSeconds}
+                                onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                          ) : (
+                            <label className="text-sm text-brand-grey">Reps
+                              <input
+                                type="number" inputMode="numeric"
+                                min={0}
+                                value={draft.reps}
+                                onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                          )}
+
+                          <label className="text-sm text-brand-grey">Weight (kg)
+                            <input
+                              type="text"
+                              value={draft.weightKg}
+                              onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
+                              placeholder="body weight"
+                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </>
               )}
 
               {currentExercise.type === 'pyramid' && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-brand-grey">Current Step Reps
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.currentStepReps}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepReps: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                    <label className="text-sm text-brand-grey">Current Step Rest (sec)
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.currentStepRestSeconds}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepRestSeconds: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
+                <div className="space-y-3">
+                  <div className="space-y-3 pt-2">
+                    {exerciseEditDraft.pyramidStepDrafts.map((draft, index) => (
+                      <div key={`step-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">Step {index + 1}</p>
+                            <h4 className="text-white font-black text-base truncate">Pyramid step {index + 1}</h4>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <label className="text-sm text-brand-grey">Reps
+                            <input
+                              type="number" inputMode="numeric"
+                              min={0}
+                              value={draft.reps}
+                              onChange={(e) => updatePyramidStepDraft(index, { reps: e.target.value })}
+                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                            />
+                          </label>
+                          <label className="text-sm text-brand-grey">Rest (sec)
+                            <input
+                              type="number" inputMode="numeric"
+                              min={0}
+                              value={draft.restSeconds}
+                              onChange={(e) => updatePyramidStepDraft(index, { restSeconds: e.target.value })}
+                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                            />
+                          </label>
+                          <label className="text-sm text-brand-grey">Weight (kg)
+                            <input
+                              type="text"
+                              value={draft.weightKg}
+                              onChange={(e) => updatePyramidStepDraft(index, { weightKg: e.target.value })}
+                              placeholder="body weight"
+                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <label className="text-sm text-brand-grey">Current Step Weight (kg)
-                    <input
-                      type="text"
-                      value={exerciseEditDraft.currentStepWeightKg}
-                      onChange={(e) => setExerciseEditDraft((d) => ({ ...d, currentStepWeightKg: e.target.value }))}
-                      placeholder="body Weight"
-                      className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                    />
-                  </label>
-                </>
+                </div>
               )}
 
               {(currentExercise.type === 'reps' || currentExercise.type === 'isometry') && (

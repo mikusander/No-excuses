@@ -60,6 +60,16 @@ const formatSecs = (totalSecs: number) => {
   return `${minutes}m ${seconds}s`;
 };
 
+const formatHistoryTarget = (value: number) => {
+  const safe = Number.isFinite(value) ? Math.trunc(value) : 0;
+  return safe === 0 ? 'MAX' : String(safe);
+};
+
+const formatHistoryDuration = (value: number) => {
+  const safe = Number.isFinite(value) ? Math.trunc(value) : 0;
+  return safe === 0 ? 'MAX' : formatSecs(safe);
+};
+
 const formatWorkoutDuration = (totalSecs: number | null) => {
   if (totalSecs == null || !Number.isFinite(totalSecs)) return 'Not available';
 
@@ -585,7 +595,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                             exercise.pyramid_steps.map((step, stepIdx) => (
                               <div key={`${exercise.id}:step:${stepIdx}`} className="text-sm font-semibold text-white/80">
                                 - Step {stepIdx + 1}:{' '}
-                                <span className="text-brand-orange ml-1 text-xs">{step.reps} reps</span>{' '}
+                                  <span className="text-brand-orange ml-1 text-xs">{formatHistoryTarget(step.reps)} reps</span>{' '}
                                 <span className="text-brand-grey/70 text-xs">/ rest {formatSecs(step.rest_seconds)}</span>
                               </div>
                             ))
@@ -597,8 +607,8 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                             const subNotes = getNotesForName(subExercise.name);
                             const subMetric =
                               subExercise.type === 'reps'
-                                ? `${subExercise.reps} reps`
-                                : formatSecs(subExercise.duration_seconds);
+                                ? `${formatHistoryTarget(subExercise.reps)} reps`
+                                : formatHistoryDuration(subExercise.duration_seconds);
 
                             return (
                               <div key={`${exercise.id}:sub:${subIdx}`} className="border border-white/5 bg-black/10 rounded-2xl p-3">
@@ -641,7 +651,9 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                           {exercise.type === 'isometry' ? 'Duration' : 'Reps'}
                         </span>
                         <span className="text-sm text-brand-orange">
-                          {exercise.type === 'isometry' ? formatSecs(exercise.duration_seconds) : exercise.reps}
+                          {exercise.type === 'isometry'
+                            ? formatHistoryDuration(exercise.duration_seconds)
+                            : formatHistoryTarget(exercise.reps)}
                         </span>
                       </div>
 
@@ -686,7 +698,9 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
                       <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Time/Round</span>
-                        <span className="text-sm text-brand-orange">{formatSecs(exercise.emom_round_duration || exercise.duration_seconds)}</span>
+                        <span className="text-sm text-brand-orange">
+                          {formatHistoryDuration(exercise.emom_round_duration || exercise.duration_seconds)}
+                        </span>
                       </div>
 
                       <div className="bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
