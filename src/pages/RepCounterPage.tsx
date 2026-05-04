@@ -39,6 +39,9 @@ const RepCounterPage: React.FC = () => {
   const trackerRef = useRef<ExerciseTracker | null>(null);
   const lastStateUpdateTime = useRef(0);
   const selectedExerciseRef = useRef(selectedExercise);
+  // Refs to avoid stale closures in the rAF loop (Bug #1 & #4)
+  const isCountingActiveRef = useRef(isCountingActive);
+  const pausedRef = useRef(paused);
 
   const {
     phase: accelerometerPhase,
@@ -52,8 +55,10 @@ const RepCounterPage: React.FC = () => {
     onCountChange: setCount,
   });
 
-  // Sync ref for the animation frame
+  // Sync refs for the animation frame (avoids stale closures)
   useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
+  useEffect(() => { isCountingActiveRef.current = isCountingActive; }, [isCountingActive]);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
 
   useEffect(() => {
     if (!selectedExercise || countingMode !== 'video') {
@@ -188,26 +193,33 @@ const RepCounterPage: React.FC = () => {
   }, [cameraStream, countingMode]);
 
   // Frame processing loop
+  // IMPORTANT: isCountingActive and paused are read via refs to avoid stale closures.
+  // detectPose is stable (memoized with useCallback). The loop starts when the camera
+  // is ready and never restarts due to counting/pause state changes.
   useEffect(() => {
-    if (!selectedExercise || countingMode !== 'video' || paused || !isCameraReady) return;
+    if (!selectedExercise || countingMode !== 'video' || !isCameraReady) return;
 
     let animationId: number;
     let lastRenderTime = 0;
     
-    const processFrame = (time: number) => {
-      if (videoRef.current) {
-        const results = detectPose(videoRef.current, time);
+    const processFrame = () => {
+      // Read current values from refs — NOT from closure (Bug #1 fix)
+      if (!pausedRef.current && videoRef.current) {
+        // Bug #3 fix: use performance.now() for a monotonically-increasing timestamp
+        const timestamp = performance.now();
+        const results = detectPose(videoRef.current, timestamp);
         
         if (results && results.landmarks && results.landmarks.length > 0) {
-          if (time - lastRenderTime > 33) {
+          if (timestamp - lastRenderTime > 33) {
             setPoseResults(results);
-            lastRenderTime = time;
+            lastRenderTime = timestamp;
           }
 
           const landmarks = results.landmarks[0];
           const currentEx = selectedExerciseRef.current;
 
-          if (isCountingActive) {
+          // Read isCountingActive from ref, not stale closure (Bug #1 fix)
+          if (isCountingActiveRef.current) {
             if (currentEx === 'pullups') trackerRef.current?.updatePullup(landmarks);
             else if (currentEx === 'pushups') trackerRef.current?.updatePushup(landmarks);
             else if (currentEx === 'squats') trackerRef.current?.updateSquat(landmarks);
@@ -219,7 +231,8 @@ const RepCounterPage: React.FC = () => {
 
     animationId = requestAnimationFrame(processFrame);
     return () => cancelAnimationFrame(animationId);
-  }, [selectedExercise, countingMode, isCameraReady, paused, isCountingActive, detectPose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedExercise, countingMode, isCameraReady, detectPose]);
 
 
   const handleSelectExercise = async (type: ExerciseType) => {
@@ -505,7 +518,8 @@ const RepCounterPage: React.FC = () => {
           <PoseOverlay 
             results={poseResults} 
             width={videoSize.width} 
-            height={videoSize.height} 
+            height={videoSize.height}
+            exercise={selectedExercise}
           />
         )}
         

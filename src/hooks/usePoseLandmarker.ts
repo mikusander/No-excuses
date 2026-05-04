@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 const MEDIAPIPE_VERSION = '0.10.34';
@@ -61,10 +61,10 @@ export const usePoseLandmarker = (enabled = true) => {
     };
   }, [enabled]);
 
-  const detectPose = (video: HTMLVideoElement, timestamp: number) => {
+  const detectPose = useCallback((video: HTMLVideoElement, timestamp: number) => {
     if (!poseLandmarkerRef.current) return null;
     return poseLandmarkerRef.current.detectForVideo(video, timestamp);
-  };
+  }, []); // stable reference - poseLandmarkerRef is a ref, not state
 
   return { detectPose, isLoading, error };
 };

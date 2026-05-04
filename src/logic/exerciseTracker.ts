@@ -92,62 +92,42 @@ export class ExerciseTracker {
   }
 
   updatePullup(landmarks: NormalizedLandmark[]) {
-    const lShoulder = landmarks[11], rShoulder = landmarks[12];
-    const lElbow = landmarks[13], rElbow = landmarks[14];
-    const lWrist = landmarks[15], rWrist = landmarks[16];
-    const lHip = landmarks[23], rHip = landmarks[24];
+    // Per le trazioni bastano: naso (0), spalle (11,12), polsi (15,16)
+    // La ripetizione si conta quando la testa supera il livello dei polsi (sbarra)
     const nose = landmarks[0];
+    const lShoulder = landmarks[11], rShoulder = landmarks[12];
+    const lWrist = landmarks[15], rWrist = landmarks[16];
 
-    if (!lShoulder || !rShoulder || !lElbow || !rElbow || !lWrist || !rWrist) return;
+    if (!nose || (!lWrist && !rWrist)) return;
 
-    // Controllo di visibilità: se nessuna delle due braccia è ben visibile, non calcolare nulla
-    const isLeftArmVisible = isSideVisible(lShoulder, lElbow, lWrist, 0.65);
-    const isRightArmVisible = isSideVisible(rShoulder, rElbow, rWrist, 0.65);
-    if (!isLeftArmVisible && !isRightArmVisible) return;
+    // Verifica che naso e almeno un polso siano visibili
+    const noseVis = (nose.visibility ?? 0) > 0.4;
+    const lWristVis = (lWrist?.visibility ?? 0) > 0.4;
+    const rWristVis = (rWrist?.visibility ?? 0) > 0.4;
+    if (!noseVis || (!lWristVis && !rWristVis)) return;
 
-    let angleL = calculateAngle(lShoulder, lElbow, lWrist);
-    let angleR = calculateAngle(rShoulder, rElbow, rWrist);
+    // Y della sbarra = media dei polsi visibili (y più piccola = più in alto nello schermo)
+    const wristYValues: number[] = [];
+    if (lWristVis && lWrist) wristYValues.push(lWrist.y);
+    if (rWristVis && rWrist) wristYValues.push(rWrist.y);
+    const barY = wristYValues.reduce((a, b) => a + b, 0) / wristYValues.length;
 
-    angleL = applyEMA(angleL, this.lastAngles.L);
-    angleR = applyEMA(angleR, this.lastAngles.R);
-    this.lastAngles.L = angleL;
-    this.lastAngles.R = angleR;
+    // noseToBar > 0: naso SOTTO la sbarra (posizione bassa, appeso)
+    // noseToBar < 0: naso SOPRA la sbarra (testa oltre la sbarra → ripetizione valida)
+    const rawNoseToBar = nose.y - barY;
+    const smoothed = applyEMA(rawNoseToBar, this.lastAngles.Primary);
+    this.lastAngles.Primary = smoothed;
 
-    const isAsymmetric = this.checkAsymmetry(angleL, angleR, landmarks);
+    // Mostra nel debug la distanza in % altezza frame (positivo = appeso, negativo = sopra sbarra)
+    this.onDebug?.({ angle: Math.round(smoothed * 1000) / 10, stage: this.stage });
 
-    const visL = (lShoulder.visibility || 0) + (lElbow.visibility || 0) + (lWrist.visibility || 0);
-    const visR = (rShoulder.visibility || 0) + (rElbow.visibility || 0) + (rWrist.visibility || 0);
-    const avgAngle = (angleL * visL + angleR * visR) / (visL + visR || 1);
-
-    let warning: string | undefined;
-
-    // Kipping detection
-    if (lHip && rHip) {
-      const midShoulderX = (lShoulder.x + rShoulder.x) / 2;
-      const midHipX = (lHip.x + rHip.x) / 2;
-      const midShoulderY = (lShoulder.y + rShoulder.y) / 2;
-      const midHipY = (lHip.y + rHip.y) / 2;
-      
-      const verticalDev = Math.atan2(Math.abs(midShoulderX - midHipX), Math.abs(midHipY - midShoulderY));
-      const devDegrees = verticalDev * (180 / Math.PI);
-      if (devDegrees > 15 && this.stage === 'UP') {
-         warning = "Non dondolare col corpo!";
-         this.triggerWarning(warning);
-      }
-    }
-
-    this.onDebug?.({ angle: avgAngle, stage: this.stage, error: isAsymmetric, warning });
-
-    // Hysteresis logic
-    if (avgAngle > 150) {
+    // DOWN: naso chiaramente sotto la sbarra (appeso, braccia distese)
+    if (smoothed > 0.08) {
       this.stage = 'DOWN';
     }
 
-    // Chin over bar check using wrists Y position
-    const barLevelY = (lWrist.y + rWrist.y) / 2;
-    const chinOverBar = nose.y < barLevelY;
-
-    if (this.stage === 'DOWN' && avgAngle < 80 && chinOverBar) {
+    // UP: il naso ha raggiunto/superato il livello della sbarra → conta la ripetizione
+    if (this.stage === 'DOWN' && smoothed < 0.02) {
       this.stage = 'UP';
       this.count++;
       this.onCount(this.count);
