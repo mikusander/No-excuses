@@ -6,7 +6,6 @@ import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
-import { playErrorSound } from '../utils/audio';
 import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
 
@@ -86,8 +85,7 @@ const RepCounterPage: React.FC = () => {
            setDebugData(data);
            lastStateUpdateTime.current = performance.now();
         }
-      },
-      () => playErrorSound()
+      }
     );
   };
 

@@ -40,9 +40,6 @@ export class ExerciseTracker {
   private onCount: (count: number) => void;
   private onAnnounce: (msg: string) => void;
   private onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void;
-  private onAsymmetry?: () => void;
-  
-  private lastAsymmetryTime: number = 0;
   private lastWarningTime: number = 0;
   private hasStarted: boolean = false;
 
@@ -55,14 +52,12 @@ export class ExerciseTracker {
     target: number, 
     onCount: (count: number) => void, 
     onAnnounce: (msg: string) => void,
-    onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void,
-    onAsymmetry?: () => void
+    onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void
   ) {
     this.target = target;
     this.onCount = onCount;
     this.onAnnounce = onAnnounce;
     this.onDebug = onDebug;
-    this.onAsymmetry = onAsymmetry;
   }
 
   private triggerWarning(msg: string) {
@@ -73,29 +68,10 @@ export class ExerciseTracker {
     }
   }
 
-  private checkAsymmetry(angleL: number, angleR: number, landmarks: NormalizedLandmark[], thresh = 30) {
-    const visL = landmarks[13]?.visibility || 0;
-    const visR = landmarks[14]?.visibility || 0;
-
-    if (visL > 0.5 && visR > 0.5) {
-      const diff = Math.abs(angleL - angleR);
-      if (diff > thresh) {
-        const now = Date.now();
-        if (now - this.lastAsymmetryTime > 2000) {
-          this.onAsymmetry?.();
-          this.lastAsymmetryTime = now;
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   updatePullup(landmarks: NormalizedLandmark[]) {
     // Per le trazioni bastano: naso (0), spalle (11,12), polsi (15,16)
     // La ripetizione si conta quando la testa supera il livello dei polsi (sbarra)
     const nose = landmarks[0];
-    const lShoulder = landmarks[11], rShoulder = landmarks[12];
     const lWrist = landmarks[15], rWrist = landmarks[16];
 
     if (!nose || (!lWrist && !rWrist)) return;
