@@ -6,10 +6,7 @@ import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
-<<<<<<< HEAD
-=======
 import { playErrorSound, playGoalReachedSound } from '../utils/audio';
->>>>>>> ed2b152 (Poche cose)
 import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
 
