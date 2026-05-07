@@ -6,7 +6,10 @@ import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
-import { playGoalReachedSound } from '../utils/audio';
+<<<<<<< HEAD
+=======
+import { playErrorSound, playGoalReachedSound } from '../utils/audio';
+>>>>>>> ed2b152 (Poche cose)
 import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
 
@@ -18,15 +21,15 @@ const RepCounterPage: React.FC = () => {
   // Obiettivo ripetizioni: null = infinito
   const [repTarget, setRepTarget] = useState<number | null>(null);
   const [repTargetInput, setRepTargetInput] = useState('');
-  
+
   // Setup logic states
   const [selectedExercise, setSelectedExercise] = useState<ExerciseType | null>(null);
   const { detectPose, isLoading, error: poseError } = usePoseLandmarker(countingMode === 'video' && selectedExercise !== null);
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  
+
   // Tracking states
   const [count, setCount] = useState(0);
   const [debugData, setDebugData] = useState<{ angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }>({ angle: 0, stage: null });
@@ -38,7 +41,7 @@ const RepCounterPage: React.FC = () => {
   const [showVoiceCommandsBanner, setShowVoiceCommandsBanner] = useState(false);
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
-  
+
   const trackerRef = useRef<ExerciseTracker | null>(null);
   const lastStateUpdateTime = useRef(0);
   const selectedExerciseRef = useRef(selectedExercise);
@@ -97,8 +100,8 @@ const RepCounterPage: React.FC = () => {
       (msg) => speak(msg),
       (data) => {
         if (performance.now() - lastStateUpdateTime.current > 66) {
-           setDebugData(data);
-           lastStateUpdateTime.current = performance.now();
+          setDebugData(data);
+          lastStateUpdateTime.current = performance.now();
         }
       }
     );
@@ -138,8 +141,8 @@ const RepCounterPage: React.FC = () => {
           return;
         }
 
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'user', width: 640, height: 480 } 
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: 640, height: 480 }
         });
 
         if (isCancelled) {
@@ -214,14 +217,14 @@ const RepCounterPage: React.FC = () => {
 
     let animationId: number;
     let lastRenderTime = 0;
-    
+
     const processFrame = () => {
       // Read current values from refs — NOT from closure (Bug #1 fix)
       if (!pausedRef.current && videoRef.current) {
         // Bug #3 fix: use performance.now() for a monotonically-increasing timestamp
         const timestamp = performance.now();
         const results = detectPose(videoRef.current, timestamp);
-        
+
         if (results && results.landmarks && results.landmarks.length > 0) {
           if (timestamp - lastRenderTime > 33) {
             setPoseResults(results);
@@ -244,7 +247,7 @@ const RepCounterPage: React.FC = () => {
 
     animationId = requestAnimationFrame(processFrame);
     return () => cancelAnimationFrame(animationId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedExercise, countingMode, isCameraReady, detectPose]);
 
 
@@ -372,7 +375,7 @@ const RepCounterPage: React.FC = () => {
             </div>
           </div>
 
-          <button 
+          <button
             onClick={() => handleSelectExercise('pullups')}
             className="w-full bg-brand-darkGrey border border-brand-orange/50 hover:border-brand-orange hover:bg-brand-orange/10 text-white rounded-3xl p-6 flex items-center justify-between transition-all group shadow-lg"
           >
@@ -388,7 +391,7 @@ const RepCounterPage: React.FC = () => {
             <Play className="w-6 h-6 text-brand-grey group-hover:text-brand-orange transition-colors" />
           </button>
 
-          <button 
+          <button
             onClick={() => handleSelectExercise('pushups')}
             className="w-full bg-brand-darkGrey border border-brand-lightOrange/50 hover:border-brand-lightOrange hover:bg-brand-lightOrange/10 text-white rounded-3xl p-6 flex items-center justify-between transition-all group shadow-lg"
           >
@@ -404,7 +407,7 @@ const RepCounterPage: React.FC = () => {
             <Play className="w-6 h-6 text-brand-grey group-hover:text-brand-lightOrange transition-colors" />
           </button>
 
-          <button 
+          <button
             onClick={() => handleSelectExercise('squats')}
             className="w-full bg-brand-darkGrey border border-white/20 hover:border-white hover:bg-white/10 text-white rounded-3xl p-6 flex items-center justify-between transition-all group shadow-lg"
           >
@@ -530,12 +533,12 @@ const RepCounterPage: React.FC = () => {
             <ArrowLeft className="w-6 h-6 text-white" />
           </button>
           <h2 className="text-xl font-bold uppercase tracking-widest text-brand-orange">
-            {selectedExercise === 'pullups' ? 'Trazioni' 
-             : selectedExercise === 'pushups' ? 'Flessioni' 
-             : 'Squat'}
+            {selectedExercise === 'pullups' ? 'Trazioni'
+              : selectedExercise === 'pushups' ? 'Flessioni'
+                : 'Squat'}
           </h2>
-          <button 
-            onClick={() => setPaused(!paused)} 
+          <button
+            onClick={() => setPaused(!paused)}
             className={`p-2 rounded-full transition-all ${paused ? 'bg-brand-orange text-white scale-110' : 'bg-white/10 text-white hover:bg-white/20'}`}
           >
             {paused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
@@ -577,22 +580,22 @@ const RepCounterPage: React.FC = () => {
           className={`absolute min-w-full min-h-full object-cover scale-x-[-1] transition-opacity ${paused ? 'opacity-40 grayscale-[0.5]' : 'opacity-100'}`}
         />
         {isCameraReady && (
-          <PoseOverlay 
-            results={poseResults} 
-            width={videoSize.width} 
+          <PoseOverlay
+            results={poseResults}
+            width={videoSize.width}
             height={videoSize.height}
             exercise={selectedExercise}
           />
         )}
-        
+
         {/* Hint Overlays */}
         {showHint && isCameraReady && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-xl p-6 rounded-3xl border border-brand-orange/50 text-center max-w-[90%] w-sm shadow-2xl animate-in fade-in duration-300">
             <h3 className="text-xl font-black text-brand-orange mb-2 uppercase tracking-wider">Mettiti in Posizione</h3>
             <p className="text-white/80 text-sm leading-relaxed">
               {selectedExercise === 'pullups' ? 'Inquadra tutto il corpo e la sbarra per le trazioni.'
-               : selectedExercise === 'pushups' ? 'Posizionati di profilo. Schiena e gambe devono essere inquadrate.'
-               : 'Posizionati leggermente di lato. Inquadra dalla testa ai piedi.'}
+                : selectedExercise === 'pushups' ? 'Posizionati di profilo. Schiena e gambe devono essere inquadrate.'
+                  : 'Posizionati leggermente di lato. Inquadra dalla testa ai piedi.'}
             </p>
           </div>
         )}
@@ -645,7 +648,7 @@ const RepCounterPage: React.FC = () => {
               <span className="text-[10px] font-bold text-red-500 uppercase">Posizione Errata</span>
             </div>
           )}
-          
+
           {debugData.warning && (
             <div className="bg-yellow-500/20 backdrop-blur-md p-2 rounded-xl border border-yellow-500/30 flex items-center gap-2 animate-bounce">
               <AlertTriangle className="w-4 h-4 text-yellow-500" />
@@ -670,24 +673,24 @@ const RepCounterPage: React.FC = () => {
 
       {/* Stats Overlay Bottom */}
       <div className="absolute bottom-0 left-0 right-0 z-20 p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
-         <div className="bg-black/60 backdrop-blur-md rounded-full px-12 py-6 border-2 border-brand-orange mx-auto max-w-xs shadow-[0_0_20px_rgba(196,90,0,0.4)] flex flex-col items-center justify-center">
-            <p className="text-7xl font-black text-white">{count}</p>
-            {repTarget !== null ? (
-              <>
-                <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">
-                  / {repTarget} rip.
-                </p>
-                <div className="w-full mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-brand-orange transition-all duration-300"
-                    style={{ width: `${Math.min(100, (count / repTarget) * 100)}%` }}
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">Ripetizioni</p>
-            )}
-         </div>
+        <div className="bg-black/60 backdrop-blur-md rounded-full px-12 py-6 border-2 border-brand-orange mx-auto max-w-xs shadow-[0_0_20px_rgba(196,90,0,0.4)] flex flex-col items-center justify-center">
+          <p className="text-7xl font-black text-white">{count}</p>
+          {repTarget !== null ? (
+            <>
+              <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">
+                / {repTarget} rip.
+              </p>
+              <div className="w-full mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-brand-orange transition-all duration-300"
+                  style={{ width: `${Math.min(100, (count / repTarget) * 100)}%` }}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">Ripetizioni</p>
+          )}
+        </div>
       </div>
     </div>
   );
