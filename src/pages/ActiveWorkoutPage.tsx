@@ -3270,9 +3270,6 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
 
           <div className="flex-1 text-center px-4">
-            <span className="text-brand-orange font-black text-xs tracking-widest mb-1 block">
-              EXERCISE {currentExerciseIdx + 1} OF {workout.exercises.length}
-            </span>
             <h2 className="text-3xl font-black text-white leading-tight drop-shadow-md">
               {currentExercise.name}
             </h2>
