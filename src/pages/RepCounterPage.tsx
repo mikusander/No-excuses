@@ -1,11 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Activity, Repeat, Video, Smartphone, Timer, Square } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Activity, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
+<<<<<<< HEAD
+=======
+import { playErrorSound, playGoalReachedSound } from '../utils/audio';
+>>>>>>> ed2b152 (Poche cose)
 import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
 
@@ -14,15 +18,18 @@ type CountingMode = 'video' | 'accelerometer';
 const RepCounterPage: React.FC = () => {
   const navigate = useNavigate();
   const [countingMode, setCountingMode] = useState<CountingMode>('video');
-  
+  // Obiettivo ripetizioni: null = infinito
+  const [repTarget, setRepTarget] = useState<number | null>(null);
+  const [repTargetInput, setRepTargetInput] = useState('');
+
   // Setup logic states
   const [selectedExercise, setSelectedExercise] = useState<ExerciseType | null>(null);
   const { detectPose, isLoading, error: poseError } = usePoseLandmarker(countingMode === 'video' && selectedExercise !== null);
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  
+
   // Tracking states
   const [count, setCount] = useState(0);
   const [debugData, setDebugData] = useState<{ angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }>({ angle: 0, stage: null });
@@ -34,7 +41,7 @@ const RepCounterPage: React.FC = () => {
   const [showVoiceCommandsBanner, setShowVoiceCommandsBanner] = useState(false);
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
-  
+
   const trackerRef = useRef<ExerciseTracker | null>(null);
   const lastStateUpdateTime = useRef(0);
   const selectedExerciseRef = useRef(selectedExercise);
@@ -51,7 +58,14 @@ const RepCounterPage: React.FC = () => {
     resumeSession: resumeAccelerometerSession,
     resetSession: resetAccelerometerSession,
   } = useAccelerometerRepCounter({
-    onCountChange: setCount,
+    onCountChange: (newCount) => {
+      setCount(newCount);
+      // Verifica obiettivo per la modalità accelerometro
+      if (repTarget !== null && newCount >= repTarget) {
+        playGoalReachedSound();
+        resetAccelerometerSession();
+      }
+    },
   });
 
   // Sync refs for the animation frame (avoids stale closures)
@@ -71,19 +85,23 @@ const RepCounterPage: React.FC = () => {
   }, [selectedExercise, countingMode]);
 
   const initTracker = () => {
-    // In un contesto reale potresti voler limitare il target (es. 10), ma qui facciamo infinito (Infinity)
-    // Finché l'utente non decide di terminare
     trackerRef.current = new ExerciseTracker(
-      Infinity,
+      repTarget ?? Infinity,
       (newCount) => {
         setCount(newCount);
         speakNumber(newCount);
+        // Verifica obiettivo per la modalità video
+        if (repTarget !== null && newCount >= repTarget) {
+          playGoalReachedSound();
+          // Stop automatico al raggiungimento del target
+          setIsCountingActive(false);
+        }
       },
       (msg) => speak(msg),
       (data) => {
         if (performance.now() - lastStateUpdateTime.current > 66) {
-           setDebugData(data);
-           lastStateUpdateTime.current = performance.now();
+          setDebugData(data);
+          lastStateUpdateTime.current = performance.now();
         }
       }
     );
@@ -123,8 +141,8 @@ const RepCounterPage: React.FC = () => {
           return;
         }
 
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'user', width: 640, height: 480 } 
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: 640, height: 480 }
         });
 
         if (isCancelled) {
@@ -199,14 +217,14 @@ const RepCounterPage: React.FC = () => {
 
     let animationId: number;
     let lastRenderTime = 0;
-    
+
     const processFrame = () => {
       // Read current values from refs — NOT from closure (Bug #1 fix)
       if (!pausedRef.current && videoRef.current) {
         // Bug #3 fix: use performance.now() for a monotonically-increasing timestamp
         const timestamp = performance.now();
         const results = detectPose(videoRef.current, timestamp);
-        
+
         if (results && results.landmarks && results.landmarks.length > 0) {
           if (timestamp - lastRenderTime > 33) {
             setPoseResults(results);
@@ -229,7 +247,7 @@ const RepCounterPage: React.FC = () => {
 
     animationId = requestAnimationFrame(processFrame);
     return () => cancelAnimationFrame(animationId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedExercise, countingMode, isCameraReady, detectPose]);
 
 
@@ -295,6 +313,7 @@ const RepCounterPage: React.FC = () => {
             Scegli il tuo Esercizio
           </h2>
 
+          {/* Modalità conteggio */}
           <div className="w-full rounded-3xl border border-white/10 bg-brand-darkGrey/40 p-2 shadow-lg">
             <p className="px-2 pb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">Modalità conteggio</p>
             <div className="grid grid-cols-2 gap-2">
@@ -322,7 +341,41 @@ const RepCounterPage: React.FC = () => {
             </p>
           </div>
 
-          <button 
+          {/* Obiettivo ripetizioni */}
+          <div className="w-full rounded-3xl border border-white/10 bg-brand-darkGrey/40 p-4 shadow-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Flag className="h-4 w-4 text-brand-orange" />
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">Obiettivo ripetizioni</p>
+            </div>
+            <p className="text-xs text-white/40 mb-3 leading-relaxed">
+              Inserisci un numero per fermare automaticamente il conteggio quando lo raggiungi — il telefono suonerà. Lascia vuoto per contare all'infinito.
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                id="rep-target-input"
+                type="number"
+                min="1"
+                max="999"
+                placeholder="∞  nessun limite"
+                value={repTargetInput}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setRepTargetInput(raw);
+                  const parsed = parseInt(raw, 10);
+                  setRepTarget(!raw || isNaN(parsed) || parsed < 1 ? null : parsed);
+                }}
+                className="flex-1 rounded-2xl bg-black/40 border border-white/10 text-white placeholder:text-white/25 px-4 py-3 text-sm font-bold outline-none focus:border-brand-orange/60 focus:ring-1 focus:ring-brand-orange/30 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              {repTarget !== null && (
+                <div className="flex items-center gap-1.5 rounded-2xl bg-brand-orange/15 border border-brand-orange/30 px-3 py-2">
+                  <Flag className="h-4 w-4 text-brand-orange" />
+                  <span className="text-brand-orange font-black text-sm">{repTarget}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <button
             onClick={() => handleSelectExercise('pullups')}
             className="w-full bg-brand-darkGrey border border-brand-orange/50 hover:border-brand-orange hover:bg-brand-orange/10 text-white rounded-3xl p-6 flex items-center justify-between transition-all group shadow-lg"
           >
@@ -338,7 +391,7 @@ const RepCounterPage: React.FC = () => {
             <Play className="w-6 h-6 text-brand-grey group-hover:text-brand-orange transition-colors" />
           </button>
 
-          <button 
+          <button
             onClick={() => handleSelectExercise('pushups')}
             className="w-full bg-brand-darkGrey border border-brand-lightOrange/50 hover:border-brand-lightOrange hover:bg-brand-lightOrange/10 text-white rounded-3xl p-6 flex items-center justify-between transition-all group shadow-lg"
           >
@@ -354,7 +407,7 @@ const RepCounterPage: React.FC = () => {
             <Play className="w-6 h-6 text-brand-grey group-hover:text-brand-lightOrange transition-colors" />
           </button>
 
-          <button 
+          <button
             onClick={() => handleSelectExercise('squats')}
             className="w-full bg-brand-darkGrey border border-white/20 hover:border-white hover:bg-white/10 text-white rounded-3xl p-6 flex items-center justify-between transition-all group shadow-lg"
           >
@@ -414,6 +467,20 @@ const RepCounterPage: React.FC = () => {
               <>
                 <div className="text-7xl font-black text-white">{count}</div>
                 <p className="text-sm uppercase tracking-[0.35em] text-brand-orange">Ripetizioni</p>
+                {repTarget !== null && (
+                  <div className="w-full max-w-[220px] mt-2">
+                    <div className="flex justify-between text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">
+                      <span>Progresso</span>
+                      <span>{count}/{repTarget}</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-brand-orange transition-all duration-300"
+                        style={{ width: `${Math.min(100, (count / repTarget) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -466,12 +533,12 @@ const RepCounterPage: React.FC = () => {
             <ArrowLeft className="w-6 h-6 text-white" />
           </button>
           <h2 className="text-xl font-bold uppercase tracking-widest text-brand-orange">
-            {selectedExercise === 'pullups' ? 'Trazioni' 
-             : selectedExercise === 'pushups' ? 'Flessioni' 
-             : 'Squat'}
+            {selectedExercise === 'pullups' ? 'Trazioni'
+              : selectedExercise === 'pushups' ? 'Flessioni'
+                : 'Squat'}
           </h2>
-          <button 
-            onClick={() => setPaused(!paused)} 
+          <button
+            onClick={() => setPaused(!paused)}
             className={`p-2 rounded-full transition-all ${paused ? 'bg-brand-orange text-white scale-110' : 'bg-white/10 text-white hover:bg-white/20'}`}
           >
             {paused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
@@ -513,22 +580,22 @@ const RepCounterPage: React.FC = () => {
           className={`absolute min-w-full min-h-full object-cover scale-x-[-1] transition-opacity ${paused ? 'opacity-40 grayscale-[0.5]' : 'opacity-100'}`}
         />
         {isCameraReady && (
-          <PoseOverlay 
-            results={poseResults} 
-            width={videoSize.width} 
+          <PoseOverlay
+            results={poseResults}
+            width={videoSize.width}
             height={videoSize.height}
             exercise={selectedExercise}
           />
         )}
-        
+
         {/* Hint Overlays */}
         {showHint && isCameraReady && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-xl p-6 rounded-3xl border border-brand-orange/50 text-center max-w-[90%] w-sm shadow-2xl animate-in fade-in duration-300">
             <h3 className="text-xl font-black text-brand-orange mb-2 uppercase tracking-wider">Mettiti in Posizione</h3>
             <p className="text-white/80 text-sm leading-relaxed">
               {selectedExercise === 'pullups' ? 'Inquadra tutto il corpo e la sbarra per le trazioni.'
-               : selectedExercise === 'pushups' ? 'Posizionati di profilo. Schiena e gambe devono essere inquadrate.'
-               : 'Posizionati leggermente di lato. Inquadra dalla testa ai piedi.'}
+                : selectedExercise === 'pushups' ? 'Posizionati di profilo. Schiena e gambe devono essere inquadrate.'
+                  : 'Posizionati leggermente di lato. Inquadra dalla testa ai piedi.'}
             </p>
           </div>
         )}
@@ -581,7 +648,7 @@ const RepCounterPage: React.FC = () => {
               <span className="text-[10px] font-bold text-red-500 uppercase">Posizione Errata</span>
             </div>
           )}
-          
+
           {debugData.warning && (
             <div className="bg-yellow-500/20 backdrop-blur-md p-2 rounded-xl border border-yellow-500/30 flex items-center gap-2 animate-bounce">
               <AlertTriangle className="w-4 h-4 text-yellow-500" />
@@ -606,10 +673,24 @@ const RepCounterPage: React.FC = () => {
 
       {/* Stats Overlay Bottom */}
       <div className="absolute bottom-0 left-0 right-0 z-20 p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
-         <div className="bg-black/60 backdrop-blur-md rounded-full px-12 py-6 border-2 border-brand-orange mx-auto max-w-xs shadow-[0_0_20px_rgba(196,90,0,0.4)] flex flex-col items-center justify-center">
-            <p className="text-7xl font-black text-white">{count}</p>
+        <div className="bg-black/60 backdrop-blur-md rounded-full px-12 py-6 border-2 border-brand-orange mx-auto max-w-xs shadow-[0_0_20px_rgba(196,90,0,0.4)] flex flex-col items-center justify-center">
+          <p className="text-7xl font-black text-white">{count}</p>
+          {repTarget !== null ? (
+            <>
+              <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">
+                / {repTarget} rip.
+              </p>
+              <div className="w-full mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-brand-orange transition-all duration-300"
+                  style={{ width: `${Math.min(100, (count / repTarget) * 100)}%` }}
+                />
+              </div>
+            </>
+          ) : (
             <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">Ripetizioni</p>
-         </div>
+          )}
+        </div>
       </div>
     </div>
   );
