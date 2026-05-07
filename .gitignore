@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vite-dev.log
+start.sh
+stop.sh
