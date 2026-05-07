@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Activity, Repeat, Video, Smartphone, Timer, Square } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Activity, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
+import { playGoalReachedSound } from '../utils/audio';
 import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
 
@@ -14,6 +15,9 @@ type CountingMode = 'video' | 'accelerometer';
 const RepCounterPage: React.FC = () => {
   const navigate = useNavigate();
   const [countingMode, setCountingMode] = useState<CountingMode>('video');
+  // Obiettivo ripetizioni: null = infinito
+  const [repTarget, setRepTarget] = useState<number | null>(null);
+  const [repTargetInput, setRepTargetInput] = useState('');
   
   // Setup logic states
   const [selectedExercise, setSelectedExercise] = useState<ExerciseType | null>(null);
@@ -51,7 +55,14 @@ const RepCounterPage: React.FC = () => {
     resumeSession: resumeAccelerometerSession,
     resetSession: resetAccelerometerSession,
   } = useAccelerometerRepCounter({
-    onCountChange: setCount,
+    onCountChange: (newCount) => {
+      setCount(newCount);
+      // Verifica obiettivo per la modalità accelerometro
+      if (repTarget !== null && newCount >= repTarget) {
+        playGoalReachedSound();
+        resetAccelerometerSession();
+      }
+    },
   });
 
   // Sync refs for the animation frame (avoids stale closures)
@@ -71,13 +82,17 @@ const RepCounterPage: React.FC = () => {
   }, [selectedExercise, countingMode]);
 
   const initTracker = () => {
-    // In un contesto reale potresti voler limitare il target (es. 10), ma qui facciamo infinito (Infinity)
-    // Finché l'utente non decide di terminare
     trackerRef.current = new ExerciseTracker(
-      Infinity,
+      repTarget ?? Infinity,
       (newCount) => {
         setCount(newCount);
         speakNumber(newCount);
+        // Verifica obiettivo per la modalità video
+        if (repTarget !== null && newCount >= repTarget) {
+          playGoalReachedSound();
+          // Stop automatico al raggiungimento del target
+          setIsCountingActive(false);
+        }
       },
       (msg) => speak(msg),
       (data) => {
@@ -295,6 +310,7 @@ const RepCounterPage: React.FC = () => {
             Scegli il tuo Esercizio
           </h2>
 
+          {/* Modalità conteggio */}
           <div className="w-full rounded-3xl border border-white/10 bg-brand-darkGrey/40 p-2 shadow-lg">
             <p className="px-2 pb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">Modalità conteggio</p>
             <div className="grid grid-cols-2 gap-2">
@@ -320,6 +336,40 @@ const RepCounterPage: React.FC = () => {
                 ? 'Usa la fotocamera e il rilevamento pose di MediaPipe.'
                 : 'Usa il sensore di movimento del telefono. Metti il telefono in tasca durante il conto alla rovescia di 10 secondi.'}
             </p>
+          </div>
+
+          {/* Obiettivo ripetizioni */}
+          <div className="w-full rounded-3xl border border-white/10 bg-brand-darkGrey/40 p-4 shadow-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Flag className="h-4 w-4 text-brand-orange" />
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">Obiettivo ripetizioni</p>
+            </div>
+            <p className="text-xs text-white/40 mb-3 leading-relaxed">
+              Inserisci un numero per fermare automaticamente il conteggio quando lo raggiungi — il telefono suonerà. Lascia vuoto per contare all'infinito.
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                id="rep-target-input"
+                type="number"
+                min="1"
+                max="999"
+                placeholder="∞  nessun limite"
+                value={repTargetInput}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setRepTargetInput(raw);
+                  const parsed = parseInt(raw, 10);
+                  setRepTarget(!raw || isNaN(parsed) || parsed < 1 ? null : parsed);
+                }}
+                className="flex-1 rounded-2xl bg-black/40 border border-white/10 text-white placeholder:text-white/25 px-4 py-3 text-sm font-bold outline-none focus:border-brand-orange/60 focus:ring-1 focus:ring-brand-orange/30 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              {repTarget !== null && (
+                <div className="flex items-center gap-1.5 rounded-2xl bg-brand-orange/15 border border-brand-orange/30 px-3 py-2">
+                  <Flag className="h-4 w-4 text-brand-orange" />
+                  <span className="text-brand-orange font-black text-sm">{repTarget}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           <button 
@@ -414,6 +464,20 @@ const RepCounterPage: React.FC = () => {
               <>
                 <div className="text-7xl font-black text-white">{count}</div>
                 <p className="text-sm uppercase tracking-[0.35em] text-brand-orange">Ripetizioni</p>
+                {repTarget !== null && (
+                  <div className="w-full max-w-[220px] mt-2">
+                    <div className="flex justify-between text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">
+                      <span>Progresso</span>
+                      <span>{count}/{repTarget}</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-brand-orange transition-all duration-300"
+                        style={{ width: `${Math.min(100, (count / repTarget) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -608,7 +672,21 @@ const RepCounterPage: React.FC = () => {
       <div className="absolute bottom-0 left-0 right-0 z-20 p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
          <div className="bg-black/60 backdrop-blur-md rounded-full px-12 py-6 border-2 border-brand-orange mx-auto max-w-xs shadow-[0_0_20px_rgba(196,90,0,0.4)] flex flex-col items-center justify-center">
             <p className="text-7xl font-black text-white">{count}</p>
-            <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">Ripetizioni</p>
+            {repTarget !== null ? (
+              <>
+                <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">
+                  / {repTarget} rip.
+                </p>
+                <div className="w-full mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-brand-orange transition-all duration-300"
+                    style={{ width: `${Math.min(100, (count / repTarget) * 100)}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">Ripetizioni</p>
+            )}
          </div>
       </div>
     </div>
