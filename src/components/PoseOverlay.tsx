@@ -12,13 +12,13 @@ interface Props {
 // Landmark indices rilevanti per ogni esercizio
 const EXERCISE_CONFIG: Record<ExerciseType, { connections: [number, number][]; points: number[] }> = {
   pullups: {
-    // Trazione: naso, spalle, gomiti, polsi
+    // Trazione: spalle, gomiti, polsi
     connections: [
       [11, 12], // spalla-spalla
       [11, 13], [13, 15], // braccio sinistro
       [12, 14], [14, 16], // braccio destro
     ],
-    points: [0, 11, 12, 13, 14, 15, 16], // + naso (0)
+    points: [11, 12, 13, 14, 15, 16],
   },
   pushups: {
     // Flessione: spalle, gomiti, polsi, fianchi
@@ -88,18 +88,17 @@ const PoseOverlay: React.FC<Props> = ({ results, width, height, exercise }) => {
       // Se c'è un esercizio selezionato, disegna solo i punti rilevanti
       if (relevantPoints && !relevantPoints.has(idx)) return;
       if ((landmark.visibility ?? 0) > 0.4) {
-        // Naso (0) per le trazioni: evidenzialo in verde come punto chiave
-        const isKeyPoint = exercise === 'pullups' && idx === 0;
-        const radius = isKeyPoint ? 9 : 6;
-        const fillColor = isKeyPoint ? '#4ade80' : '#ffffff';
-        const strokeColor = isKeyPoint ? '#16a34a' : '#8b5cf6';
+        const isShoulderPoint = exercise === 'pullups' && (idx === 11 || idx === 12);
+        const radius = isShoulderPoint ? 8 : 6;
+        const fillColor = isShoulderPoint ? '#fbbf24' : '#ffffff';
+        const strokeColor = isShoulderPoint ? '#f59e0b' : '#8b5cf6';
 
         ctx.beginPath();
         ctx.arc(landmark.x * width, landmark.y * height, radius, 0, 2 * Math.PI);
         ctx.fillStyle = fillColor;
         ctx.fill();
         ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = isKeyPoint ? 3 : 2;
+        ctx.lineWidth = isShoulderPoint ? 3 : 2;
         ctx.stroke();
       }
     });

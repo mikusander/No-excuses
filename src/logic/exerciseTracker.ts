@@ -69,18 +69,20 @@ export class ExerciseTracker {
   }
 
   updatePullup(landmarks: NormalizedLandmark[]) {
-    // Per le trazioni bastano: naso (0), spalle (11,12), polsi (15,16)
-    // La ripetizione si conta quando la testa supera il livello dei polsi (sbarra)
-    const nose = landmarks[0];
+    // Per le trazioni bastano: spalle (11,12) e polsi (15,16)
+    // La ripetizione si conta quando le spalle superano il livello della sbarra (polsi)
+    const lShoulder = landmarks[11], rShoulder = landmarks[12];
     const lWrist = landmarks[15], rWrist = landmarks[16];
 
-    if (!nose || (!lWrist && !rWrist)) return;
+    if (!lShoulder || !rShoulder || (!lWrist && !rWrist)) return;
 
-    // Verifica che naso e almeno un polso siano visibili
-    const noseVis = (nose.visibility ?? 0) > 0.4;
+    // Verifica che spalle e almeno un polso siano visibili
+    const lShoulderVis = (lShoulder.visibility ?? 0) > 0.4;
+    const rShoulderVis = (rShoulder.visibility ?? 0) > 0.4;
     const lWristVis = (lWrist?.visibility ?? 0) > 0.4;
     const rWristVis = (rWrist?.visibility ?? 0) > 0.4;
-    if (!noseVis || (!lWristVis && !rWristVis)) return;
+    if (!lShoulderVis && !rShoulderVis) return;
+    if (!lWristVis && !rWristVis) return;
 
     // Y della sbarra = media dei polsi visibili (y più piccola = più in alto nello schermo)
     const wristYValues: number[] = [];
@@ -88,21 +90,25 @@ export class ExerciseTracker {
     if (rWristVis && rWrist) wristYValues.push(rWrist.y);
     const barY = wristYValues.reduce((a, b) => a + b, 0) / wristYValues.length;
 
-    // noseToBar > 0: naso SOTTO la sbarra (posizione bassa, appeso)
-    // noseToBar < 0: naso SOPRA la sbarra (testa oltre la sbarra → ripetizione valida)
-    const rawNoseToBar = nose.y - barY;
-    const smoothed = applyEMA(rawNoseToBar, this.lastAngles.Primary);
+    // shoulderToBar > 0: spalle SOTTO la sbarra (posizione bassa, appeso)
+    // shoulderToBar < 0: spalle SOPRA la sbarra → ripetizione valida
+    const shoulderYValues: number[] = [];
+    if (lShoulderVis) shoulderYValues.push(lShoulder.y);
+    if (rShoulderVis) shoulderYValues.push(rShoulder.y);
+    const shoulderY = shoulderYValues.reduce((a, b) => a + b, 0) / shoulderYValues.length;
+    const rawShoulderToBar = shoulderY - barY;
+    const smoothed = applyEMA(rawShoulderToBar, this.lastAngles.Primary);
     this.lastAngles.Primary = smoothed;
 
     // Mostra nel debug la distanza in % altezza frame (positivo = appeso, negativo = sopra sbarra)
     this.onDebug?.({ angle: Math.round(smoothed * 1000) / 10, stage: this.stage });
 
-    // DOWN: naso chiaramente sotto la sbarra (appeso, braccia distese)
+    // DOWN: spalle chiaramente sotto la sbarra (appeso, braccia distese)
     if (smoothed > 0.08) {
       this.stage = 'DOWN';
     }
 
-    // UP: il naso ha raggiunto/superato il livello della sbarra → conta la ripetizione
+    // UP: le spalle hanno raggiunto/superato il livello della sbarra → conta la ripetizione
     if (this.stage === 'DOWN' && smoothed < 0.02) {
       this.stage = 'UP';
       this.count++;

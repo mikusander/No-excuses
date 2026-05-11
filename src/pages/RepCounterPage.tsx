@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Activity, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Activity, Repeat, Video, Smartphone, Timer, Square, Flag, ToggleLeft, ToggleRight } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
@@ -11,6 +11,108 @@ import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
 
 type CountingMode = 'video' | 'accelerometer';
+
+const POSE_LANDMARK_NAMES = [
+  'nose',
+  'left_eye_inner',
+  'left_eye',
+  'left_eye_outer',
+  'right_eye_inner',
+  'right_eye',
+  'right_eye_outer',
+  'left_ear',
+  'right_ear',
+  'mouth_left',
+  'mouth_right',
+  'left_shoulder',
+  'right_shoulder',
+  'left_elbow',
+  'right_elbow',
+  'left_wrist',
+  'right_wrist',
+  'left_pinky',
+  'right_pinky',
+  'left_index',
+  'right_index',
+  'left_thumb',
+  'right_thumb',
+  'left_hip',
+  'right_hip',
+  'left_knee',
+  'right_knee',
+  'left_ankle',
+  'right_ankle',
+  'left_heel',
+  'right_heel',
+  'left_foot_index',
+  'right_foot_index',
+] as const;
+
+const POSE_LANDMARK_GROUPS = [
+  'head',
+  'head',
+  'head',
+  'head',
+  'head',
+  'head',
+  'head',
+  'head',
+  'head',
+  'head',
+  'head',
+  'left_arm',
+  'right_arm',
+  'left_arm',
+  'right_arm',
+  'left_arm',
+  'right_arm',
+  'left_arm',
+  'right_arm',
+  'left_arm',
+  'right_arm',
+  'left_arm',
+  'right_arm',
+  'torso',
+  'torso',
+  'left_leg',
+  'right_leg',
+  'left_leg',
+  'right_leg',
+  'left_leg',
+  'right_leg',
+  'left_leg',
+  'right_leg',
+] as const;
+
+const POSE_LANDMARK_EXPORT_INDICES = Array.from({ length: 22 }, (_, index) => index + 11);
+
+const csvEscape = (value: unknown) => {
+  const text = String(value ?? '');
+  if (/[,"\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+};
+
+const csvNumber = (value: number | undefined | null, digits = 6) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '';
+  }
+  return value.toFixed(digits);
+};
+
+const downloadTextFile = (filename: string, content: string) => {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+};
 
 const RepCounterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -38,13 +140,21 @@ const RepCounterPage: React.FC = () => {
   const [showVoiceCommandsBanner, setShowVoiceCommandsBanner] = useState(false);
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
+  const [isPoseDebuggerEnabled, setIsPoseDebuggerEnabled] = useState(true);
 
   const trackerRef = useRef<ExerciseTracker | null>(null);
   const lastStateUpdateTime = useRef(0);
   const selectedExerciseRef = useRef(selectedExercise);
+  const countRef = useRef(count);
   // Refs to avoid stale closures in the rAF loop (Bug #1 & #4)
   const isCountingActiveRef = useRef(isCountingActive);
+  const wasCountingActiveRef = useRef(false);
   const pausedRef = useRef(paused);
+  const poseCsvSessionActiveRef = useRef(false);
+  const poseCsvSessionStartPerfRef = useRef<number | null>(null);
+  const poseCsvFrameIndexRef = useRef(0);
+  const poseCsvRowsRef = useRef<string[]>([]);
+  const poseCsvFilenameRef = useRef<string | null>(null);
 
   const {
     phase: accelerometerPhase,
@@ -67,8 +177,91 @@ const RepCounterPage: React.FC = () => {
 
   // Sync refs for the animation frame (avoids stale closures)
   useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
-  useEffect(() => { isCountingActiveRef.current = isCountingActive; }, [isCountingActive]);
+  useEffect(() => { countRef.current = count; }, [count]);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
+
+  const startPoseCsvSession = () => {
+    if (!isPoseDebuggerEnabled || !selectedExerciseRef.current) return;
+
+    poseCsvSessionActiveRef.current = true;
+    poseCsvSessionStartPerfRef.current = performance.now();
+    poseCsvFrameIndexRef.current = 0;
+    poseCsvRowsRef.current = [
+      [
+        'session_id',
+        'exercise',
+        'frame_index',
+        'frame_time_ms',
+        'elapsed_ms',
+        'count',
+        'paused',
+        'landmark_index',
+        'landmark_name',
+        'landmark_group',
+        'x',
+        'y',
+        'z',
+        'visibility',
+      ].join(','),
+    ];
+    poseCsvFilenameRef.current = `mediapipe-debug-${selectedExerciseRef.current}-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+  };
+
+  const finishPoseCsvSession = (download = true) => {
+    if (!poseCsvSessionActiveRef.current) return;
+
+    poseCsvSessionActiveRef.current = false;
+    const rows = poseCsvRowsRef.current;
+    const filename = poseCsvFilenameRef.current;
+    poseCsvFilenameRef.current = null;
+    poseCsvSessionStartPerfRef.current = null;
+
+    if (!download || !rows || rows.length <= 1 || !filename) {
+      poseCsvRowsRef.current = [];
+      poseCsvFrameIndexRef.current = 0;
+      return;
+    }
+
+    downloadTextFile(filename, rows.join('\n'));
+    poseCsvRowsRef.current = [];
+    poseCsvFrameIndexRef.current = 0;
+  };
+
+  const recordPoseCsvFrame = (timestamp: number, landmarks: any[]) => {
+    if (!isPoseDebuggerEnabled || !poseCsvSessionActiveRef.current || !selectedExerciseRef.current || poseCsvSessionStartPerfRef.current == null) return;
+    if (!Array.isArray(landmarks) || landmarks.length === 0) return;
+
+    const sessionId = poseCsvFilenameRef.current || 'pose-session';
+    const elapsedMs = Math.max(0, Math.round(timestamp - poseCsvSessionStartPerfRef.current));
+    const frameIndex = poseCsvFrameIndexRef.current++;
+    const exerciseLabel = selectedExerciseRef.current;
+    const countSnapshot = countRef.current;
+    const pausedSnapshot = pausedRef.current;
+
+    POSE_LANDMARK_EXPORT_INDICES.forEach((landmarkIndex) => {
+      const landmark = landmarks[landmarkIndex];
+      if (!landmark) return;
+
+      const landmarkName = POSE_LANDMARK_NAMES[landmarkIndex] ?? `landmark_${landmarkIndex}`;
+      const landmarkGroup = POSE_LANDMARK_GROUPS[landmarkIndex] ?? 'other';
+      poseCsvRowsRef.current.push([
+        csvEscape(sessionId),
+        csvEscape(exerciseLabel),
+        String(frameIndex),
+        csvNumber(timestamp),
+        String(elapsedMs),
+        String(countSnapshot),
+        String(pausedSnapshot),
+        String(landmarkIndex),
+        csvEscape(landmarkName),
+        csvEscape(landmarkGroup),
+        csvNumber(landmark.x),
+        csvNumber(landmark.y),
+        csvNumber(landmark.z),
+        csvNumber(landmark.visibility, 4),
+      ].join(','));
+    });
+  };
 
   useEffect(() => {
     if (!selectedExercise || countingMode !== 'video') {
@@ -104,9 +297,35 @@ const RepCounterPage: React.FC = () => {
     );
   };
 
+  useEffect(() => {
+    return () => {
+      finishPoseCsvSession();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPoseDebuggerEnabled) {
+      finishPoseCsvSession(false);
+      return;
+    }
+
+    if (isCountingActive && selectedExerciseRef.current && !poseCsvSessionActiveRef.current) {
+      startPoseCsvSession();
+    }
+  }, [isPoseDebuggerEnabled, isCountingActive]);
+
+  useEffect(() => {
+    if (wasCountingActiveRef.current && !isCountingActive) {
+      finishPoseCsvSession();
+    }
+    wasCountingActiveRef.current = isCountingActive;
+    isCountingActiveRef.current = isCountingActive;
+  }, [isCountingActive]);
+
   const startVideoCounting = () => {
     if (isCountingActive || !trackerRef.current || !selectedExerciseRef.current || !isCameraReady || isLoading) return;
     trackerRef.current.resetTrackingState();
+    startPoseCsvSession();
     setPaused(false);
     setIsCountingActive(true);
   };
@@ -115,6 +334,7 @@ const RepCounterPage: React.FC = () => {
     if (!isCountingActive) return;
     trackerRef.current?.resetTrackingState();
     setIsCountingActive(false);
+    finishPoseCsvSession();
   };
 
   useVoiceCommands({
@@ -231,6 +451,8 @@ const RepCounterPage: React.FC = () => {
           const landmarks = results.landmarks[0];
           const currentEx = selectedExerciseRef.current;
 
+          recordPoseCsvFrame(timestamp, landmarks);
+
           // Read isCountingActive from ref, not stale closure (Bug #1 fix)
           if (isCountingActiveRef.current) {
             if (currentEx === 'pullups') trackerRef.current?.updatePullup(landmarks);
@@ -275,6 +497,7 @@ const RepCounterPage: React.FC = () => {
     setCount(0);
     resetAccelerometerSession();
     trackerRef.current?.reset();
+    finishPoseCsvSession();
   };
 
   const isAccelerometerMode = countingMode === 'accelerometer';
@@ -557,6 +780,14 @@ const RepCounterPage: React.FC = () => {
             className="rounded-full border border-yellow-500/40 bg-yellow-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-yellow-100 transition-colors hover:bg-yellow-500/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {paused ? 'Riprendi temp' : 'Pausa temp'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsPoseDebuggerEnabled((current) => !current)}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition-colors ${isPoseDebuggerEnabled ? 'border border-cyan-400/40 bg-cyan-400/20 text-cyan-100 hover:bg-cyan-400/30' : 'border border-white/10 bg-white/10 text-white/60 hover:bg-white/20'}`}
+          >
+            {isPoseDebuggerEnabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+            {isPoseDebuggerEnabled ? 'Debugger CSV ON' : 'Debugger CSV OFF'}
           </button>
         </div>
       </div>
