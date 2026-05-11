@@ -1,0 +1,20 @@
+# LOG CALIBRAZIONE - TRAZIONI (Pullups)
+# Sessioni reali di 10 ripetizioni ciascuna.
+# Incolla i JSON di ogni sessione separati da una riga vuota.
+# Formato: [{ "status": "...", "durationMs": ..., "maxGyro": ..., "maxDelta": ..., "timestamp": ... }, ...]
+#
+# ISTRUZIONI:
+# 1. Apri l'app, attiva "Modalità Calibrazione", seleziona Trazioni
+# 2. Dopo il conto alla rovescia, fai 10 trazioni reali con il telefono in tasca
+# 3. Clicca "Salva Log", copia il JSON e incollalo qui sotto
+# 4. Ripeti per quante sessioni vuoi
+
+# ─── SESSIONE 1 ────────────────────────────────────────────────────────────────
+
+
+# ─── SESSIONE 2 ────────────────────────────────────────────────────────────────
+
+
+# ─── SESSIONE 3 ────────────────────────────────────────────────────────────────
+
+

@@ -1,0 +1,37 @@
+# LOG CALIBRAZIONE - FLESSIONI (Pushups)
+# Sessioni reali di 10 ripetizioni ciascuna.
+# Incolla i JSON di ogni sessione separati da una riga vuota.
+# Formato: [{ "status": "...", "durationMs": ..., "maxGyro": ..., "maxDelta": ..., "timestamp": ... }, ...]
+#
+# ISTRUZIONI:
+# 1. Apri l'app, attiva "Modalità Calibrazione", seleziona Flessioni
+# 2. Dopo il conto alla rovescia, fai 10 flessioni reali con il telefono in tasca
+# 3. Clicca "Salva Log", copia il JSON e incollalo qui sotto
+# 4. Ripeti per quante sessioni vuoi
+
+# ─── SESSIONE 1 ────────────────────────────────────────────────────────────────
+
+
+# ─── SESSIONE 2 ────────────────────────────────────────────────────────────────
+
+
+# ─── SESSIONE 3 ────────────────────────────────────────────────────────────────
+
+# ─── SESSIONE 4 ────────────────────────────────────────────────────────────────
+
+# ─── SESSIONE 5 ────────────────────────────────────────────────────────────────
+
+
+# ─── SESSIONE 6 ────────────────────────────────────────────────────────────────
+
+# ─── SESSIONE 7 ────────────────────────────────────────────────────────────────
+
+# ─── SESSIONE 8 ────────────────────────────────────────────────────────────────
+
+# ─── SESSIONE 9 ────────────────────────────────────────────────────────────────
+
+# ─── SESSIONE 10 ────────────────────────────────────────────────────────────────
+
+
+
+

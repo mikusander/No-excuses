@@ -6,7 +6,7 @@ import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
-import { playGoalReachedSound } from '../utils/audio';
+import { playErrorSound, playGoalReachedSound } from '../utils/audio';
 import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
 
@@ -18,6 +18,11 @@ const RepCounterPage: React.FC = () => {
   // Obiettivo ripetizioni: null = infinito
   const [repTarget, setRepTarget] = useState<number | null>(null);
   const [repTargetInput, setRepTargetInput] = useState('');
+
+  // Calibration logic
+  const [isCalibrationMode, setIsCalibrationMode] = useState(false);
+  const [calibrationLogs, setCalibrationLogs] = useState<any[]>([]);
+  const [showCalibrationLogs, setShowCalibrationLogs] = useState(false);
 
   // Setup logic states
   const [selectedExercise, setSelectedExercise] = useState<ExerciseType | null>(null);
@@ -63,6 +68,11 @@ const RepCounterPage: React.FC = () => {
         resetAccelerometerSession();
       }
     },
+    onRepData: (data) => {
+      if (isCalibrationMode) {
+        setCalibrationLogs(prev => [...prev, data]);
+      }
+    }
   });
 
   // Sync refs for the animation frame (avoids stale closures)
@@ -273,6 +283,9 @@ const RepCounterPage: React.FC = () => {
     setIsCountingActive(false);
     setShowVoiceCommandsBanner(false);
     setCount(0);
+    setIsCalibrationMode(false);
+    setShowCalibrationLogs(false);
+    setCalibrationLogs([]);
     resetAccelerometerSession();
     trackerRef.current?.reset();
   };
@@ -370,6 +383,32 @@ const RepCounterPage: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Calibrazione Sperimentale */}
+          <div className="w-full rounded-3xl border border-purple-500/20 bg-purple-500/5 p-4 shadow-lg flex items-center justify-between">
+             <div className="flex flex-col">
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-purple-400">Modalità Calibrazione</span>
+                <span className="text-xs text-white/50 mt-1">Registra 10 rep per analizzare i dati</span>
+             </div>
+             <button
+               onClick={() => {
+                 const newVal = !isCalibrationMode;
+                 setIsCalibrationMode(newVal);
+                 if (newVal) {
+                   setCountingMode('accelerometer');
+                   setRepTarget(null);
+                   setRepTargetInput('');
+                   setCalibrationLogs([]);
+                 } else {
+                   setRepTarget(null);
+                   setRepTargetInput('');
+                 }
+               }}
+               className={`w-12 h-6 rounded-full transition-colors relative shadow-inner ${isCalibrationMode ? 'bg-purple-500' : 'bg-black/40 border border-white/10'}`}
+             >
+               <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-md ${isCalibrationMode ? 'left-7' : 'left-1'}`} />
+             </button>
           </div>
 
           <button
@@ -504,18 +543,68 @@ const RepCounterPage: React.FC = () => {
                 {isAccelerometerPaused ? 'Riprendi' : 'Pausa'}
               </span>
             </button>
-            <button
-              type="button"
-              onClick={cancelWorkout}
-              className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm font-bold text-red-100 transition-colors hover:bg-red-500/20"
-            >
-              <span className="inline-flex items-center justify-center gap-2">
-                <Square className="h-4 w-4" />
-                Termina esercizio
-              </span>
-            </button>
+            {isCalibrationMode ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCalibrationLogs(true);
+                  pauseAccelerometerSession();
+                }}
+                className="flex-1 rounded-2xl border border-purple-500/50 bg-purple-500/20 px-5 py-4 text-sm font-bold text-purple-200 transition-colors hover:bg-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.2)]"
+              >
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Flag className="h-4 w-4" />
+                  Salva Log
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={cancelWorkout}
+                className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm font-bold text-red-100 transition-colors hover:bg-red-500/20"
+              >
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Square className="h-4 w-4" />
+                  Termina esercizio
+                </span>
+              </button>
+            )}
           </div>
         </main>
+
+        {showCalibrationLogs && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-6">
+            <div className="bg-brand-dark border border-purple-500/50 rounded-3xl p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
+              <h3 className="text-xl font-black text-purple-400 mb-1 uppercase tracking-wider">Log Calibrazione</h3>
+              <p className="text-xs text-white/50 mb-4 leading-relaxed">Copia questi dati per analizzare le firme del tuo movimento. Sono stati registrati {calibrationLogs.length} eventi (inclusi quelli scartati).</p>
+              
+              <div className="flex-1 min-h-[200px] max-h-[400px] mb-4 relative rounded-xl overflow-hidden border border-white/10 bg-black/50">
+                <textarea 
+                  readOnly 
+                  className="absolute inset-0 w-full h-full p-4 text-[11px] font-mono text-white/80 outline-none bg-transparent resize-none"
+                  value={JSON.stringify(calibrationLogs, null, 2)}
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(calibrationLogs, null, 2));
+                  }}
+                  className="flex-1 bg-white/10 border border-white/20 text-white font-bold py-3 px-4 rounded-xl hover:bg-white/20 transition-colors text-sm"
+                >
+                  Copia JSON
+                </button>
+                <button 
+                  onClick={cancelWorkout}
+                  className="flex-1 bg-purple-500 text-white font-bold py-3 px-4 rounded-xl hover:bg-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-colors text-sm"
+                >
+                  Fine
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
