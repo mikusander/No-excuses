@@ -6,7 +6,7 @@ import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
-import { playErrorSound, playGoalReachedSound } from '../utils/audio';
+import { playGoalReachedSound } from '../utils/audio';
 import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
 

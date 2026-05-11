@@ -247,6 +247,8 @@ export const useAccelerometerRepCounter = ({
     if (phase !== 'preparing') return;
 
     // ── Listener DeviceOrientation (angoli assoluti) ────────────────────────────
+  }, [phase, prepRemaining]);
+
   useEffect(() => {
     if (phase !== 'active') return;
     const onOrientation = (e: DeviceOrientationEvent) => {
