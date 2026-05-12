@@ -1,20 +1,65 @@
 # LOG CALIBRAZIONE - SQUAT
-# Sessioni reali di 10 ripetizioni ciascuna.
-# Incolla i JSON di ogni sessione separati da una riga vuota.
-# Formato: [{ "status": "...", "durationMs": ..., "maxGyro": ..., "maxDelta": ..., "timestamp": ... }, ...]
+# Ogni sessione include: numero di ripetizioni REALI fatte, conteggio dell'app, e il JSON grezzo dei dati.
+# Più varietà di sessioni = migliore calibrazione (es. 1 rep, 3 rep, 5 rep, 10 rep).
+#
+# FORMATO SESSIONE:
+# reps_reali: N            <- quante ripetizioni HAI FATTO davvero
+# conteggio_app: N         <- quante ne ha contate l'app (leggi dal contatore)
+# [{ ...JSON dei dati... }]
 #
 # ISTRUZIONI:
 # 1. Apri l'app, attiva "Modalità Calibrazione", seleziona Squat
-# 2. Dopo il conto alla rovescia, fai 10 squat reali con il telefono in tasca
+# 2. Dopo il conto alla rovescia, fai N squat reali con il telefono in tasca
 # 3. Clicca "Salva Log", copia il JSON e incollalo qui sotto
-# 4. Ripeti per quante sessioni vuoi
+# 4. Aggiungi a mano reps_reali e conteggio_app sopra il JSON
+# 5. Ripeti con numeri di ripetizioni diverse (1, 3, 5, 10...)
 
-# ─── SESSIONE 1 ────────────────────────────────────────────────────────────────
+# ─── SESSIONE 1 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
 
 
-# ─── SESSIONE 2 ────────────────────────────────────────────────────────────────
+# ─── SESSIONE 2 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
 
 
-# ─── SESSIONE 3 ────────────────────────────────────────────────────────────────
+# ─── SESSIONE 3 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
 
+
+# ─── SESSIONE 4 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
+
+
+# ─── SESSIONE 5 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
+
+
+# ─── SESSIONE 6 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
+
+
+# ─── SESSIONE 7 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
+
+
+# ─── SESSIONE 8 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
+
+
+# ─── SESSIONE 9 ─────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
+
+
+# ─── SESSIONE 10 ────────────────────────────────────────────────────────────────
+# reps_reali:
+# conteggio_app:
 

@@ -60,6 +60,7 @@ const RepCounterPage: React.FC = () => {
     resumeSession: resumeAccelerometerSession,
     resetSession: resetAccelerometerSession,
   } = useAccelerometerRepCounter({
+    exerciseType: selectedExercise ?? undefined,
     onCountChange: (newCount) => {
       setCount(newCount);
       // Verifica obiettivo per la modalità accelerometro

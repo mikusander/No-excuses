@@ -53,6 +53,7 @@ export interface RepData {
 
 interface UseAccelerometerRepCounterOptions {
   prepDurationSeconds?: number;
+  exerciseType?: string; // Es. 'pushups', 'pullups', 'squats' — usato nei log di calibrazione
   onCountChange: (count: number) => void;
   onRepData?: (data: RepData) => void;
 }
@@ -75,6 +76,7 @@ const triggerHaptic = () => {
 
 export const useAccelerometerRepCounter = ({
   prepDurationSeconds = 10,
+  exerciseType,
   onCountChange,
   onRepData,
 }: UseAccelerometerRepCounterOptions) => {
@@ -246,7 +248,28 @@ export const useAccelerometerRepCounter = ({
   useEffect(() => {
     if (phase !== 'preparing') return;
 
-    // ── Listener DeviceOrientation (angoli assoluti) ────────────────────────────
+    if (!prepEndsAtRef.current) {
+      prepEndsAtRef.current = Date.now() + prepRemaining * 1000;
+    }
+
+    const updateCountdown = () => {
+      if (!prepEndsAtRef.current) return;
+      const remainingMs = Math.max(0, prepEndsAtRef.current - Date.now());
+      setPrepRemaining(Math.max(0, Math.ceil(remainingMs / 1000)));
+      if (remainingMs <= 0) {
+        prepEndsAtRef.current = null;
+        previousPhaseRef.current = 'active';
+        resetTrackingState();
+        setPhase('active');
+      }
+    };
+
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 250);
+    return () => window.clearInterval(interval);
+  }, [phase, prepRemaining, resetTrackingState]);
+
+  // ── Listener DeviceOrientation (angoli assoluti) ─────────────────────────────
   useEffect(() => {
     if (phase !== 'active') return;
     const onOrientation = (e: DeviceOrientationEvent) => {
@@ -259,6 +282,7 @@ export const useAccelerometerRepCounter = ({
     window.addEventListener('deviceorientation', onOrientation, { passive: true });
     return () => window.removeEventListener('deviceorientation', onOrientation);
   }, [phase]);
+
 
   // ── Listener DeviceMotion (Energia Cinetica + tutte le metriche) ─────────────
   useEffect(() => {
@@ -367,6 +391,7 @@ export const useAccelerometerRepCounter = ({
           const tiltAngleDeg  = Math.round(Math.atan2(Math.hypot(gVec.x, gVec.y), Math.abs(gVec.z)) * 180 / Math.PI);
 
           const burstData = {
+            exerciseType,
             burstDurationMs:    duration,
             totalRepDurationMs: 0,
             energyRampMs,
