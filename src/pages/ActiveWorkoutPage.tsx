@@ -2453,6 +2453,23 @@ const ActiveWorkoutPage: React.FC = () => {
     return 'REPS';
   };
 
+  /**
+   * Per esercizi speciali con un solo sub-esercizio, mostra il nome dell'esercizio.
+   * Per esercizi con più sub-esercizi o esercizi standard, mostra il tipo.
+   */
+  const getWorkoutOverviewDisplayLabel = (exercise: Exercise) => {
+    // Se è superset, emom e ha un SOLO sub-esercizio
+    if ((exercise.type === 'superset' || exercise.type === 'emom') && 
+        exercise.subExercises && 
+        exercise.subExercises.length === 1) {
+      return exercise.subExercises[0].name || getWorkoutOverviewTypeLabel(exercise);
+    }
+    
+    // Se è pyramid, non ha sub-esercises ma il nome è il main exercise name
+    // Quindi mostra sempre il tipo
+    return getWorkoutOverviewTypeLabel(exercise);
+  };
+
   const getWorkoutOverviewSummary = (exercise: Exercise) => {
     if (exercise.type === 'emom') {
       return [
@@ -3042,7 +3059,7 @@ const ActiveWorkoutPage: React.FC = () => {
                           </p>
                           <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
                           <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
-                            {getWorkoutOverviewTypeLabel(exercise)}
+                            {getWorkoutOverviewDisplayLabel(exercise)}
                           </p>
                         </div>
 
@@ -3735,7 +3752,7 @@ const ActiveWorkoutPage: React.FC = () => {
                         </p>
                         <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
                         <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
-                          {getWorkoutOverviewTypeLabel(exercise)}
+                          {getWorkoutOverviewDisplayLabel(exercise)}
                         </p>
                       </div>
 

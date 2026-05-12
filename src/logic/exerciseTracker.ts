@@ -31,6 +31,16 @@ const isSideVisible = (p1: NormalizedLandmark, p2: NormalizedLandmark, p3: Norma
   return (p1.visibility ?? 0) > threshold && (p2.visibility ?? 0) > threshold && (p3.visibility ?? 0) > threshold;
 };
 
+interface LandmarkSample {
+  y: number;
+  timestamp: number;
+}
+
+interface DownPhaseSnapshot {
+  shoulderY: number;
+  wristY: number;
+}
+
 export class ExerciseTracker {
   private stage: 'UP' | 'DOWN' | null = null;
   private count: number = 0;
@@ -47,6 +57,11 @@ export class ExerciseTracker {
   private lastAngles: { L: number | null; R: number | null; Primary: number | null } = {
     L: null, R: null, Primary: null
   };
+
+  // Storico per validazione MediaPipe (trazioni)
+  private wristYHistory: LandmarkSample[] = [];
+  private shoulderYHistory: LandmarkSample[] = [];
+  private downPhaseSnapshot: DownPhaseSnapshot | null = null;
 
   constructor(
     target: number, 
@@ -68,9 +83,44 @@ export class ExerciseTracker {
     }
   }
 
+  /**
+   * Aggiorna lo storico Y del polso (usa la media tra left e right se visibili)
+   */
+  private updateWristHistory(lWrist: NormalizedLandmark | undefined, rWrist: NormalizedLandmark | undefined) {
+    const wristYValues: number[] = [];
+    if (lWrist && (lWrist.visibility ?? 0) > 0.4) wristYValues.push(lWrist.y);
+    if (rWrist && (rWrist.visibility ?? 0) > 0.4) wristYValues.push(rWrist.y);
+
+    if (wristYValues.length > 0) {
+      const avgWristY = wristYValues.reduce((a, b) => a + b, 0) / wristYValues.length;
+      this.wristYHistory.push({ y: avgWristY, timestamp: Date.now() });
+
+      // Mantieni solo gli ultimi 1000ms di storico
+      const cutoff = Date.now() - 1000;
+      this.wristYHistory = this.wristYHistory.filter(s => s.timestamp >= cutoff);
+    }
+  }
+
+  /**
+   * Aggiorna lo storico Y delle spalle (usa la media tra left e right se visibili)
+   */
+  private updateShoulderHistory(lShoulder: NormalizedLandmark | undefined, rShoulder: NormalizedLandmark | undefined) {
+    const shoulderYValues: number[] = [];
+    if (lShoulder && (lShoulder.visibility ?? 0) > 0.4) shoulderYValues.push(lShoulder.y);
+    if (rShoulder && (rShoulder.visibility ?? 0) > 0.4) shoulderYValues.push(rShoulder.y);
+
+    if (shoulderYValues.length > 0) {
+      const avgShoulderY = shoulderYValues.reduce((a, b) => a + b, 0) / shoulderYValues.length;
+      this.shoulderYHistory.push({ y: avgShoulderY, timestamp: Date.now() });
+
+      // Mantieni solo gli ultimi 1000ms di storico
+      const cutoff = Date.now() - 1000;
+      this.shoulderYHistory = this.shoulderYHistory.filter(s => s.timestamp >= cutoff);
+    }
+  }
+
   updatePullup(landmarks: NormalizedLandmark[]) {
     // Per le trazioni bastano: spalle (11,12) e polsi (15,16)
-    // La ripetizione si conta quando le spalle superano il livello della sbarra (polsi)
     const lShoulder = landmarks[11], rShoulder = landmarks[12];
     const lWrist = landmarks[15], rWrist = landmarks[16];
 
@@ -83,6 +133,10 @@ export class ExerciseTracker {
     const rWristVis = (rWrist?.visibility ?? 0) > 0.4;
     if (!lShoulderVis && !rShoulderVis) return;
     if (!lWristVis && !rWristVis) return;
+
+    // Aggiorna lo storico di polsi e spalle
+    this.updateWristHistory(lWrist, rWrist);
+    this.updateShoulderHistory(lShoulder, rShoulder);
 
     // Y della sbarra = media dei polsi visibili (y più piccola = più in alto nello schermo)
     const wristYValues: number[] = [];
@@ -105,15 +159,54 @@ export class ExerciseTracker {
 
     // DOWN: spalle chiaramente sotto la sbarra (appeso, braccia distese)
     if (smoothed > 0.08) {
+      if (this.stage !== 'DOWN') {
+        // Entrato appena in DOWN → memorizzo snapshot
+        this.downPhaseSnapshot = { shoulderY, wristY: barY };
+      }
       this.stage = 'DOWN';
     }
 
-    // UP: le spalle hanno raggiunto/superato il livello della sbarra → conta la ripetizione
+    // UP: le spalle hanno raggiunto/superato il livello della sbarra
+    // Valida la ripetizione solo se durante il movimento:
+    // - Spalle si sono mosse significativamente (>= 0.08)
+    // - Polsi sono rimasti fermi (< 0.05 di movimento)
     if (this.stage === 'DOWN' && smoothed < 0.02) {
-      this.stage = 'UP';
-      this.count++;
-      this.onCount(this.count);
-      this.checkAnnouncements();
+      let isValid = false;
+      let reasons: string[] = [];
+
+      if (this.downPhaseSnapshot) {
+        const shoulderMovement = Math.abs(shoulderY - this.downPhaseSnapshot.shoulderY);
+        const wristMovement = Math.abs(barY - this.downPhaseSnapshot.wristY);
+
+        const shouldersMoved = shoulderMovement >= 0.08;
+        const wristsStable = wristMovement < 0.05;
+
+        if (!shouldersMoved) reasons.push('spalle_non_si_muovono');
+        if (!wristsStable) reasons.push('polsi_si_muovono');
+
+        isValid = shouldersMoved && wristsStable;
+      } else {
+        // Nessuno snapshot (edge case), consenti la ripetizione comunque
+        isValid = true;
+      }
+
+      if (isValid) {
+        // Ripetizione valida
+        this.stage = 'UP';
+        this.count++;
+        this.onCount(this.count);
+        this.checkAnnouncements();
+      } else {
+        // Log debug: perché la ripetizione non è valida
+        this.onDebug?.({
+          angle: Math.round(smoothed * 1000) / 10,
+          stage: this.stage,
+          warning: `Ripetizione non valida: ${reasons.join(', ')}`
+        });
+      }
+
+      // Pulisci snapshot dopo la valutazione
+      this.downPhaseSnapshot = null;
     }
   }
 
@@ -290,6 +383,9 @@ export class ExerciseTracker {
     this.stage = null;
     this.hasStarted = false;
     this.lastAngles = { L: null, R: null, Primary: null };
+    this.wristYHistory = [];
+    this.shoulderYHistory = [];
+    this.downPhaseSnapshot = null;
   }
 
   reset() {
