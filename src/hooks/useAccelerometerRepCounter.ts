@@ -62,9 +62,30 @@ interface UseAccelerometerRepCounterOptions {
 // Timeout se il burst si protrae senza mai invertire
 const MAX_REP_DURATION_MS = 8000;
 
-// Filtro Anti-Shake: soglia basata su dati reali (pushup = 430-516 °/s)
-// Alziamo a 700 per non scartare le ripetizioni vere
-const GYRO_SHAKE_THRESHOLD = 700;
+// Soglie per esercizio — derivate dall'analisi dei dati di calibrazione reali.
+//
+// pullups — backtest su 32 sessioni / 168 rep reali:
+//   mode 'single_burst': 1 burst valido = 1 ripetizione (accuratezza 88.1%)
+//   vs dual_burst: 42.9% — il problema è che la discesa lenta non genera un burst
+//   di ritorno separato (l'energia EMA non scende sotto THRESH_REST).
+//   active:      140  → min maxEnergy valido = 180.7, margine 40pt
+//   rest:         78  → min minEnergy valido = 75.2
+//   gyroShake:   673  → midpoint del gap (max_valid=645.6, min_shake=700.5)
+//   minDuration: 210  → midpoint del gap (max_tooShort=200ms, min_valid=217ms)
+//   repCooldown: 500  → impedisce doppio conteggio nella stessa ripetizione
+const EXERCISE_CONFIG: Record<string, {
+  active: number;
+  rest: number;
+  gyroShake: number;
+  minDuration: number;
+  mode: 'single_burst' | 'dual_burst';
+  repCooldownMs: number; // ms minimi tra due rep conteggiate (anti-doppio)
+}> = {
+  pullups: { active: 140, rest: 78,  gyroShake: 673, minDuration: 210, mode: 'single_burst', repCooldownMs: 500 },
+  pushups: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',   repCooldownMs: 0   }, // da calibrare
+  squats:  { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',   repCooldownMs: 0   }, // da calibrare
+  default: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',   repCooldownMs: 0   },
+};
 
 // ─── Feedback aptico ──────────────────────────────────────────────────────────
 const triggerHaptic = () => {
@@ -88,6 +109,7 @@ export const useAccelerometerRepCounter = ({
   const previousPhaseRef = useRef<AccelerometerSessionPhase>('preparing');
   const prepEndsAtRef = useRef<number | null>(null);
   const countRef = useRef(0);
+  const lastRepTimeRef = useRef<number>(0); // timestamp dell'ultima rep contata (cooldown anti-doppio)
 
   // ─── Stati Algoritmo (Motion Energy) ─────────────────────────────────────────────
   const gravityRef = useRef<{ x: number; y: number; z: number } | null>(null);
@@ -160,6 +182,7 @@ export const useAccelerometerRepCounter = ({
     trackStateRef.current  = 'idle';
     burstCountRef.current  = 0;
     lastBurstTimeRef.current = 0;
+    lastRepTimeRef.current   = 0;
     resetBurstMetrics();
 
     gravityAtBurstStartRef.current = { x: 0, y: 0, z: 0 };
@@ -350,8 +373,14 @@ export const useAccelerometerRepCounter = ({
       }
 
       // ─── MACCHINA A STATI: RILEVAMENTO BURSTS ───────────────────────────────
-      const THRESH_ACTIVE = 180;
-      const THRESH_REST   = 100;
+      const cfg = (exerciseType && EXERCISE_CONFIG[exerciseType])
+        ? EXERCISE_CONFIG[exerciseType]
+        : EXERCISE_CONFIG.default;
+
+      const THRESH_ACTIVE    = cfg.active;
+      const THRESH_REST      = cfg.rest;
+      const GYRO_SHAKE_LIMIT = cfg.gyroShake;
+      const MIN_DURATION     = cfg.minDuration;
 
       if (trackStateRef.current === 'idle') {
         if (energy > THRESH_ACTIVE) {
@@ -419,17 +448,36 @@ export const useAccelerometerRepCounter = ({
             timestamp:          now,
           };
 
-          if (duration <= 200) {
+          if (duration <= MIN_DURATION) {
             if (onRepData) onRepData({ status: 'rejected_too_short', burstIndex: (burstCountRef.current + 1) as 1 | 2, ...burstData });
             return;
           }
 
-          if (maxGyroRef.current > GYRO_SHAKE_THRESHOLD) {
+          if (maxGyroRef.current > GYRO_SHAKE_LIMIT) {
             if (onRepData) onRepData({ status: 'rejected_shake', burstIndex: (burstCountRef.current + 1) as 1 | 2, ...burstData });
             burstCountRef.current = 0;
             return;
           }
 
+          // ── Modalità single_burst: ogni burst valido = 1 rep ────────────────
+          if (cfg.mode === 'single_burst') {
+            const sinceLastRep = now - lastRepTimeRef.current;
+            if (sinceLastRep < cfg.repCooldownMs) {
+              // Siamo nel cooldown: scarta il burst (troppo vicino alla rep precedente)
+              if (onRepData) onRepData({ status: 'rejected_too_short', burstIndex: 1, ...burstData });
+              return;
+            }
+            // ✅ Conta la ripetizione
+            countRef.current += 1;
+            onCountChange(countRef.current);
+            lastRepTimeRef.current = now;
+            if (onRepData) onRepData({ status: 'valid', burstIndex: 1, ...burstData, totalRepDurationMs: duration });
+            triggerHaptic();
+            burstCountRef.current = 0;
+            return;
+          }
+
+          // ── Modalità dual_burst: B1 + B2 = 1 rep (logica originale) ─────────
           burstCountRef.current += 1;
 
           if (burstCountRef.current === 1) {
