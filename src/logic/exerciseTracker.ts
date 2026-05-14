@@ -38,14 +38,10 @@ interface LandmarkSample {
 
 interface DownPhaseSnapshot {
   shoulderY: number;
-<<<<<<< Updated upstream
-  wristY: number;
-=======
   leftWristY?: number;
   rightWristY?: number;
   leftWristVisible: boolean;
   rightWristVisible: boolean;
->>>>>>> Stashed changes
 }
 
 export class ExerciseTracker {
@@ -70,13 +66,10 @@ export class ExerciseTracker {
   private shoulderYHistory: LandmarkSample[] = [];
   private downPhaseSnapshot: DownPhaseSnapshot | null = null;
 
-<<<<<<< Updated upstream
-=======
   // Calibri/thresholds (regolabili)
   private SHOULDER_MOVE_THRESHOLD = 0.05; // min movimento spalle per considerare una rep (calibrato dai test)
   private WRIST_MOVE_THRESHOLD = 0.02; // max movimento polsi per considerarli fermi (calibrato dai test)
 
->>>>>>> Stashed changes
   constructor(
     target: number, 
     onCount: (count: number) => void, 
@@ -174,28 +167,6 @@ export class ExerciseTracker {
     // DOWN: spalle chiaramente sotto la sbarra (appeso, braccia distese)
     if (smoothed > 0.08) {
       if (this.stage !== 'DOWN') {
-<<<<<<< Updated upstream
-        // Entrato appena in DOWN → memorizzo snapshot
-        this.downPhaseSnapshot = { shoulderY, wristY: barY };
-      }
-      this.stage = 'DOWN';
-    }
-
-    // UP: le spalle hanno raggiunto/superato il livello della sbarra
-    // Valida la ripetizione solo se durante il movimento:
-    // - Spalle si sono mosse significativamente (>= 0.08)
-    // - Polsi sono rimasti fermi (< 0.05 di movimento)
-    if (this.stage === 'DOWN' && smoothed < 0.02) {
-      let isValid = false;
-      let reasons: string[] = [];
-
-      if (this.downPhaseSnapshot) {
-        const shoulderMovement = Math.abs(shoulderY - this.downPhaseSnapshot.shoulderY);
-        const wristMovement = Math.abs(barY - this.downPhaseSnapshot.wristY);
-
-        const shouldersMoved = shoulderMovement >= 0.08;
-        const wristsStable = wristMovement < 0.05;
-=======
         // Entrato appena in DOWN → inizializzo snapshot
         this.downPhaseSnapshot = {
           shoulderY,
@@ -259,35 +230,10 @@ export class ExerciseTracker {
         // 3. Definisco le variabili che prima mancavano
         const wristsStable = !(leftWristMoved || rightWristMoved);
         const shouldersMoved = shoulderMovement >= this.SHOULDER_MOVE_THRESHOLD;
->>>>>>> Stashed changes
 
         if (!shouldersMoved) reasons.push('spalle_non_si_muovono');
         if (!wristsStable) reasons.push('polsi_si_muovono');
 
-<<<<<<< Updated upstream
-        isValid = shouldersMoved && wristsStable;
-      } else {
-        // Nessuno snapshot (edge case), consenti la ripetizione comunque
-        isValid = true;
-      }
-
-      if (isValid) {
-        // Ripetizione valida
-        this.stage = 'UP';
-        this.count++;
-        this.onCount(this.count);
-        this.checkAnnouncements();
-      } else {
-        // Log debug: perché la ripetizione non è valida
-        this.onDebug?.({
-          angle: Math.round(smoothed * 1000) / 10,
-          stage: this.stage,
-          warning: `Ripetizione non valida: ${reasons.join(', ')}`
-        });
-      }
-
-      // Pulisci snapshot dopo la valutazione
-=======
         // Debug
         this.onDebug?.({
           angle: Math.round(smoothed * 1000) / 10,
@@ -313,7 +259,6 @@ export class ExerciseTracker {
       }
 
       // Pulisci snapshot
->>>>>>> Stashed changes
       this.downPhaseSnapshot = null;
     }
   }
