@@ -25,3 +25,5 @@ dist-ssr
 .vite-dev.log
 start.sh
 stop.sh
+scripts/
+dati di debug/

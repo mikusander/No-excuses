@@ -72,4 +72,18 @@ export default defineConfig([
 ]);
 ```
 
+## MediaPipe Threshold Tuning
+
+Manual threshold explorer for a single pullup debug CSV:
+
+```bash
+python scripts/manual_threshold_tuner.py --base "dati di debug" --test "1°"
+```
+
+One-shot evaluation:
+
+```bash
+python scripts/manual_threshold_tuner.py --base "dati di debug" --test "1°" --eval 0.0243 0.0193
+```
+
 .

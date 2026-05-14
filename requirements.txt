@@ -1,3 +1,7 @@
 pandas
 matplotlib
 seaborn
+<<<<<<< Updated upstream
+=======
+numpy
+>>>>>>> Stashed changes

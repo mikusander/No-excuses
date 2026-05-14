@@ -1,0 +1,3 @@
+Thresholds used: shoulder=0.43397800000000003 wrist=0.14195699999999997
+GOOD transitions: 44, valid (TP): 0, TPR: 0.00
+BAD transitions: 23, valid (FP): 0, FPR: 0.00

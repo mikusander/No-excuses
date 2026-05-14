@@ -38,7 +38,14 @@ interface LandmarkSample {
 
 interface DownPhaseSnapshot {
   shoulderY: number;
+<<<<<<< Updated upstream
   wristY: number;
+=======
+  leftWristY?: number;
+  rightWristY?: number;
+  leftWristVisible: boolean;
+  rightWristVisible: boolean;
+>>>>>>> Stashed changes
 }
 
 export class ExerciseTracker {
@@ -63,6 +70,13 @@ export class ExerciseTracker {
   private shoulderYHistory: LandmarkSample[] = [];
   private downPhaseSnapshot: DownPhaseSnapshot | null = null;
 
+<<<<<<< Updated upstream
+=======
+  // Calibri/thresholds (regolabili)
+  private SHOULDER_MOVE_THRESHOLD = 0.05; // min movimento spalle per considerare una rep (calibrato dai test)
+  private WRIST_MOVE_THRESHOLD = 0.02; // max movimento polsi per considerarli fermi (calibrato dai test)
+
+>>>>>>> Stashed changes
   constructor(
     target: number, 
     onCount: (count: number) => void, 
@@ -160,6 +174,7 @@ export class ExerciseTracker {
     // DOWN: spalle chiaramente sotto la sbarra (appeso, braccia distese)
     if (smoothed > 0.08) {
       if (this.stage !== 'DOWN') {
+<<<<<<< Updated upstream
         // Entrato appena in DOWN → memorizzo snapshot
         this.downPhaseSnapshot = { shoulderY, wristY: barY };
       }
@@ -180,10 +195,76 @@ export class ExerciseTracker {
 
         const shouldersMoved = shoulderMovement >= 0.08;
         const wristsStable = wristMovement < 0.05;
+=======
+        // Entrato appena in DOWN → inizializzo snapshot
+        this.downPhaseSnapshot = {
+          shoulderY,
+          leftWristY: lWristVis && lWrist ? lWrist.y : undefined,
+          rightWristY: rWristVis && rWrist ? rWrist.y : undefined,
+          leftWristVisible: !!lWristVis,
+          rightWristVisible: !!rWristVis,
+        };
+        this.stage = 'DOWN';
+      } else if (this.downPhaseSnapshot) {
+        // 1. Spalle: Trackiamo il picco massimo di discesa. 
+        // Qui i picchi di rumore non ci fanno danni, ci assicurano solo 
+        // che l'escursione superi la soglia a fine trazione.
+        if (shoulderY > this.downPhaseSnapshot.shoulderY) {
+          this.downPhaseSnapshot.shoulderY = shoulderY;
+        }
+
+        // 2. Polsi: AGGIORNAMENTO CONTINUO E INCONDIZIONATO (La soluzione)
+        // Finché smoothed > 0.08, l'utente è considerato fermo in appensione.
+        // Sovrascriviamo continuamente i polsi. Questo cancella ogni assestamento iniziale!
+        // Appena l'utente inizia a tirare, smoothed scende sotto 0.08, questo if
+        // smette di essere valutato e i polsi si "congelano" magicamente per la valutazione.
+        if (lWristVis && lWrist) this.downPhaseSnapshot.leftWristY = lWrist.y;
+        if (rWristVis && rWrist) this.downPhaseSnapshot.rightWristY = rWrist.y;
+      }
+    }
+
+    // UP: le spalle hanno raggiunto/superato il livello della sbarra
+    if (this.stage === 'DOWN' && smoothed < 0.02) {
+      let isValid = false;
+      const reasons: string[] = [];
+
+      if (this.downPhaseSnapshot) {
+        // 1. Calcolo lo spostamento delle spalle
+        const shoulderMovement = Math.abs(shoulderY - this.downPhaseSnapshot.shoulderY);
+
+        // 2. Calcolo lo spostamento dei polsi
+        let leftWristMoved = false;
+        let rightWristMoved = false;
+        let leftVal = 0;
+        let rightVal = 0;
+
+        if (this.downPhaseSnapshot.leftWristVisible) {
+          if (!lWristVis || !lWrist) {
+            leftWristMoved = true;
+          } else {
+            leftVal = Math.abs(lWrist.y - (this.downPhaseSnapshot.leftWristY ?? lWrist.y));
+            leftWristMoved = leftVal >= this.WRIST_MOVE_THRESHOLD;
+          }
+        }
+
+        if (this.downPhaseSnapshot.rightWristVisible) {
+          if (!rWristVis || !rWrist) {
+            rightWristMoved = true;
+          } else {
+            rightVal = Math.abs(rWrist.y - (this.downPhaseSnapshot.rightWristY ?? rWrist.y));
+            rightWristMoved = rightVal >= this.WRIST_MOVE_THRESHOLD;
+          }
+        }
+
+        // 3. Definisco le variabili che prima mancavano
+        const wristsStable = !(leftWristMoved || rightWristMoved);
+        const shouldersMoved = shoulderMovement >= this.SHOULDER_MOVE_THRESHOLD;
+>>>>>>> Stashed changes
 
         if (!shouldersMoved) reasons.push('spalle_non_si_muovono');
         if (!wristsStable) reasons.push('polsi_si_muovono');
 
+<<<<<<< Updated upstream
         isValid = shouldersMoved && wristsStable;
       } else {
         // Nessuno snapshot (edge case), consenti la ripetizione comunque
@@ -206,6 +287,33 @@ export class ExerciseTracker {
       }
 
       // Pulisci snapshot dopo la valutazione
+=======
+        // Debug
+        this.onDebug?.({
+          angle: Math.round(smoothed * 1000) / 10,
+          stage: this.stage,
+          warning: reasons.length ? `Ripetizione non valida: ${reasons.join(', ')}` : undefined,
+          okMsg: `shoulderMove=${shoulderMovement.toFixed(3)} leftWrist=${leftVal.toFixed(3)} rightWrist=${rightVal.toFixed(3)}`
+        });
+
+        isValid = shouldersMoved && wristsStable;
+      } else {
+        // Nessuno snapshot: considero non valida (più sicuro che regalare rep)
+        isValid = false;
+      }
+
+      // --- LA CORREZIONE DELLA MACCHINA A STATI ---
+      // Cambio stato in UP a prescindere dalla validità per non restare bloccati
+      this.stage = 'UP';
+
+      if (isValid) {
+        this.count++;
+        this.onCount(this.count);
+        this.checkAnnouncements();
+      }
+
+      // Pulisci snapshot
+>>>>>>> Stashed changes
       this.downPhaseSnapshot = null;
     }
   }
