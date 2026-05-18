@@ -59,14 +59,15 @@ const RepCounterPage: React.FC = () => {
     pauseSession: pauseAccelerometerSession,
     resumeSession: resumeAccelerometerSession,
     resetSession: resetAccelerometerSession,
+    stopSession: stopAccelerometerSession,
   } = useAccelerometerRepCounter({
     exerciseType: selectedExercise ?? undefined,
     onCountChange: (newCount) => {
       setCount(newCount);
-      // Verifica obiettivo per la modalità accelerometro
+      // Ferma la sessione al raggiungimento del target
       if (repTarget !== null && newCount >= repTarget) {
         playGoalReachedSound();
-        resetAccelerometerSession();
+        stopAccelerometerSession();
       }
     },
     onRepData: (data) => {

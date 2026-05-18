@@ -83,33 +83,74 @@ const EXERCISE_CONFIG: Record<string, {
   rest: number;
   gyroShake: number;
   minDuration: number;
-  mode: 'single_burst' | 'dual_burst';
-  repCooldownMs: number; // ms minimi tra due rep conteggiate (anti-doppio)
+  mode: 'single_burst' | 'dual_burst' | 'peak_count';
+  repCooldownMs: number;
+  peakRatioThreshold?: number; // solo peak_count: energia min picco = active * ratio
+  minRestMs?: number;          // solo peak_count: ms minimi di idle prima di contare la rep
 }> = {
-  pullups: { active: 140, rest: 78,  gyroShake: 673, minDuration: 210, mode: 'single_burst', repCooldownMs: 500 },
-  // Flessioni: escursione verticale piccola (~2 cm), telefono orizzontale in tasca.
-  // Il gyro contribuisce poco (nessuna rotazione), l'energia è quasi tutta lineare (40×linMag).
-  // single_burst: un unico picco per ciclo giù→su (come le trazioni ma con parametri più sensibili).
-  // active: 80  → soglia bassa per catturare il momento in cui il corpo inizia a scendere
-  // rest:   45  → il burst termina quando l'energia scende qui (fine del ciclo)
-  // gyroShake: 500 → tolleriamo meno rotazione (le flessioni non ruotano il telefono)
-  // minDuration: 250 → filtriamo tremori brevissimi (<250ms non è una flessione reale)
-  // repCooldownMs: 700 → almeno 700ms tra una rep e l'altra (flessioni lente ~1-2s/ciclo)
-  pushups: { active: 80,  rest: 45,  gyroShake: 500, minDuration: 250, mode: 'single_burst', repCooldownMs: 700 },
-  squats:  { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',   repCooldownMs: 0   }, // da calibrare
-  default: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',   repCooldownMs: 0   },
+  pullups: { active: 140, rest: 78,  gyroShake: 673,  minDuration: 210, mode: 'single_burst', repCooldownMs: 500 },
+  // ── Flessioni: peak_count ─────────────────────────────────────────────────────
+  // I dati (5 sessioni reali) mostrano picchi a 900-1100 e valley a 73-80.
+  // Il burst NON si chiude tra rep ravvicinate (inter-rep energy = 73-90 ≈ rest=75).
+  // Soluzione: peak_count — conta ogni picco genuino che supera active*3 (=360)
+  pushups: { active: 120, rest: 75, gyroShake: 1200, minDuration: 300, mode: 'peak_count', repCooldownMs: 1200, peakRatioThreshold: 3 },
+  squats:  { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',  repCooldownMs: 0 },
+  default: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',  repCooldownMs: 0 },
 };
 
 // ─── Feedback aptico ──────────────────────────────────────────────────────────
+// AudioContext viene creato lazily dentro startSession (user gesture) per evitare
+// che iOS lo blocchi permanentemente quando viene creato a livello modulo.
+let _audioCtx: AudioContext | null = null;
+
+const getAudioCtx = (): AudioContext | null => {
+  if (_audioCtx) return _audioCtx;
+  if (typeof window === 'undefined') return null;
+  try {
+    _audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    return _audioCtx;
+  } catch { return null; }
+};
+
+const playBeep = async (freq: number, durationMs: number, volume = 0.8) => {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    if (ctx.state === 'suspended') await ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = freq;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationMs / 1000);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + durationMs / 1000);
+  } catch { /* ignore */ }
+};
+
 const triggerHaptic = () => {
   if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-    // Doppio impulso breve: indica chiaramente una ripetizione confermata
     navigator.vibrate([60, 40, 60]);
   }
+  // Beep anche su Android (complementare alla vibrazione) + fallback iOS
+  void playBeep(880, 100);
+};
+
+// Vibrazione/audio distinta per segnalare l'inizio dell'esercizio.
+const triggerStartHaptic = () => {
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    navigator.vibrate([150, 80, 150, 80, 300]);
+  }
+  // Tre beep ascendenti: udibili su iOS e come rinforzo su Android
+  void playBeep(440, 150);
+  setTimeout(() => void playBeep(550, 150), 220);
+  setTimeout(() => void playBeep(660, 250), 440);
 };
 
 export const useAccelerometerRepCounter = ({
-  prepDurationSeconds = 10,
+  prepDurationSeconds = 5,
   exerciseType,
   onCountChange,
   onRepData,
@@ -132,7 +173,17 @@ export const useAccelerometerRepCounter = ({
 
   // ─── Stati Algoritmo (Motion Energy) ─────────────────────────────────────────────
   const gravityRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  const initialGravityRef = useRef<{ x: number; y: number; z: number } | null>(null); // Calibrata a T=0
   const energyRef = useRef<number>(0);
+  const prevEnergyRef = useRef<number>(0);
+  const peakSeenRef = useRef<boolean>(false);
+  const peakMaxEnergyRef = useRef<number>(0);
+  const peakIdleStartRef = useRef<number>(0);
+
+  // Ref per la fase corrente — accessibile dentro il listener devicemotion
+  // senza causare ri-registrazione ad ogni cambio fase.
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
   
   const trackStateRef = useRef<'idle' | 'active'>('idle');
   const burstCountRef = useRef<number>(0);
@@ -196,14 +247,18 @@ export const useAccelerometerRepCounter = ({
   }, []);
 
   const resetTrackingState = useCallback(() => {
-    gravityRef.current     = null;
-    energyRef.current      = 0;
-    trackStateRef.current  = 'idle';
-    burstCountRef.current  = 0;
+    gravityRef.current       = null;
+    initialGravityRef.current = null;
+    energyRef.current        = 0;
+    prevEnergyRef.current    = 0;
+    peakSeenRef.current      = false;
+    peakMaxEnergyRef.current = 0;
+    peakIdleStartRef.current = 0;
+    trackStateRef.current    = 'idle';
+    burstCountRef.current    = 0;
     lastBurstTimeRef.current = 0;
     lastRepTimeRef.current   = 0;
     resetBurstMetrics();
-
     gravityAtBurstStartRef.current = { x: 0, y: 0, z: 0 };
   }, []);
 
@@ -256,15 +311,29 @@ export const useAccelerometerRepCounter = ({
     const granted = await requestMotionPermission();
     if (!granted) return false;
 
+    // Crea/resume AudioContext dentro la user gesture per sbloccare l'audio su iOS
+    getAudioCtx();
+    const ctx = _audioCtx;
+    if (ctx && ctx.state === 'suspended') {
+      await ctx.resume().catch(() => {});
+    }
+
     countRef.current = 0;
     onCountChange(0);
     resetTrackingState();
+    lastRepTimeRef.current = Date.now(); // evita burstDurationMs astronomico sulla prima rep
     setPrepRemaining(prepDurationSeconds);
     previousPhaseRef.current = 'preparing';
     prepEndsAtRef.current = Date.now() + prepDurationSeconds * 1000;
     setPhase('preparing');
     return true;
   }, [onCountChange, prepDurationSeconds, requestMotionPermission, resetTrackingState]);
+
+  const stopSession = useCallback(() => {
+    prepEndsAtRef.current = null;
+    previousPhaseRef.current = 'idle';
+    setPhase('idle');
+  }, []);
 
   const pauseSession = useCallback(() => {
     if (phase !== 'preparing' && phase !== 'active') return;
@@ -301,8 +370,17 @@ export const useAccelerometerRepCounter = ({
       if (remainingMs <= 0) {
         prepEndsAtRef.current = null;
         previousPhaseRef.current = 'active';
-        resetTrackingState();
+        // Salva la gravità calibrata (telefono in tasca) per filtrare l'estrazione
+        if (gravityRef.current) {
+          initialGravityRef.current = { ...gravityRef.current };
+        }
+        triggerStartHaptic();
         setPhase('active');
+      } else if (remainingMs <= 1000 && gravityRef.current === null) {
+        // Ultimo secondo: avvia la calibrazione della gravity con il telefono in tasca.
+        // La gravity vector verrà usata subito quando parte il conteggio.
+        resetTrackingState();
+        lastRepTimeRef.current = Date.now();
       }
     };
 
@@ -326,9 +404,9 @@ export const useAccelerometerRepCounter = ({
   }, [phase]);
 
 
-  // ── Listener DeviceMotion (Energia Cinetica + tutte le metriche) ─────────────
+  // ── Listener DeviceMotion: attivo durante preparing (calibrazione) e active (conteggio)
   useEffect(() => {
-    if (phase !== 'active') return;
+    if (phase !== 'active' && phase !== 'preparing') return;
 
     const onMotion = (event: DeviceMotionEvent) => {
       const now = Date.now();
@@ -350,16 +428,83 @@ export const useAccelerometerRepCounter = ({
       const linMag = Math.hypot(rawAcc.x - gravity.x, rawAcc.y - gravity.y, rawAcc.z - gravity.z);
 
       // 3. Giroscopio per asse (valori assoluti)
-      const rr     = event.rotationRate;
-      const gAlpha = Math.abs(rr?.alpha || 0);
-      const gBeta  = Math.abs(rr?.beta  || 0);
-      const gGamma = Math.abs(rr?.gamma || 0);
+      const rr      = event.rotationRate;
+      const gAlpha  = Math.abs(rr?.alpha || 0);
+      const gBeta   = Math.abs(rr?.beta  || 0);
+      const gGamma  = Math.abs(rr?.gamma || 0);
       const gyroMag = Math.hypot(gAlpha, gBeta, gGamma);
 
-      // 4. Energia Cinetica combinata (gyro + linAcc scalate sulla stessa unità)
+      // 4. Energia Cinetica combinata
       const rawEnergy = gyroMag + 40 * linMag;
+      prevEnergyRef.current = energyRef.current;
       energyRef.current = energyRef.current * 0.6 + rawEnergy * 0.4;
       const energy = energyRef.current;
+
+      const cfg_peek = (exerciseType && EXERCISE_CONFIG[exerciseType])
+        ? EXERCISE_CONFIG[exerciseType]
+        : EXERCISE_CONFIG.default;
+
+      if (cfg_peek.mode === 'peak_count') {
+        const peakThresh = cfg_peek.active * (cfg_peek.peakRatioThreshold ?? 3);
+
+        if (energy > cfg_peek.active) {
+          if (energy > peakMaxEnergyRef.current) peakMaxEnergyRef.current = energy;
+          if (peakMaxEnergyRef.current > peakThresh) peakSeenRef.current = true;
+          peakIdleStartRef.current = 0;
+        } else {
+          if (peakIdleStartRef.current === 0) peakIdleStartRef.current = now;
+
+          // Conta solo durante la fase attiva (non durante la calibrazione)
+          if (phaseRef.current === 'active' && peakSeenRef.current) {
+            
+            // CONTROLLO GRAVITÀ: scarta il movimento se il telefono non è più 
+            // nell'orientamento iniziale (es. quando viene estratto dalla tasca).
+            let isSameOrientation = true;
+            if (initialGravityRef.current) {
+              const ig = initialGravityRef.current;
+              const cg = gravity;
+              const dot = ig.x * cg.x + ig.y * cg.y + ig.z * cg.z;
+              const magIg = Math.hypot(ig.x, ig.y, ig.z);
+              const magCg = Math.hypot(cg.x, cg.y, cg.z);
+              if (magIg > 0 && magCg > 0) {
+                const angleRad = Math.acos(Math.max(-1, Math.min(1, dot / (magIg * magCg))));
+                if (angleRad > Math.PI / 2.7) { // ~66 gradi: tollera tasche larghe, blocca l'alzata in piedi (~90 gradi)
+                  isSameOrientation = false;
+                }
+              }
+            }
+
+            if (isSameOrientation) {
+              const sinceLastRep = now - lastRepTimeRef.current;
+              if (sinceLastRep >= cfg_peek.repCooldownMs) {
+                countRef.current += 1;
+                onCountChangeRef.current(countRef.current);
+                lastRepTimeRef.current = now;
+                triggerHaptic();
+                if (onRepDataRef.current) {
+                  onRepDataRef.current({
+                    status: 'valid', burstIndex: 1, exerciseType,
+                    burstDurationMs: sinceLastRep, totalRepDurationMs: sinceLastRep,
+                    energyRampMs: 0, sampleCount: 0,
+                    maxEnergy: peakMaxEnergyRef.current, minEnergy: energy,
+                    avgEnergy: 0, energyAt25pct: 0, energyAt50pct: 0, energyAt75pct: 0,
+                    maxLinAcc: 0, peakAccRaw: { x: 0, y: 0, z: 0 },
+                    maxGyro: 0, maxGyroAlpha: 0, maxGyroBeta: 0, maxGyroGamma: 0,
+                    orientationStart: { alpha: 0, beta: 0, gamma: 0 },
+                    orientationEnd:   { alpha: 0, beta: 0, gamma: 0 },
+                    orientationDelta: { beta: 0, gamma: 0 },
+                    gravityVec: { ...gravity }, tiltAngleDeg: 0, timestamp: now,
+                  });
+                }
+              }
+            }
+            
+            peakSeenRef.current      = false;
+            peakMaxEnergyRef.current = 0;
+          }
+        }
+        return;
+      }
 
       // ─── AGGIORNAMENTO METRICHE DURANTE BURST ────────────────────────────────
       if (trackStateRef.current === 'active') {
@@ -564,6 +709,7 @@ export const useAccelerometerRepCounter = ({
     pauseSession,
     resumeSession,
     resetSession,
+    stopSession,
   };
 };
 
