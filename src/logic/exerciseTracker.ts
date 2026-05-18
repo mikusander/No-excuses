@@ -195,7 +195,7 @@ export class ExerciseTracker {
     }
 
     // UP: le spalle hanno raggiunto/superato il livello della sbarra
-    if (this.stage === 'DOWN' && smoothed < 0.02) {
+    if (this.stage === 'DOWN' && smoothed < 0.04) {
       let isValid = false;
       const reasons: string[] = [];
 

@@ -82,13 +82,15 @@ def main() -> None:
     base = Path(args.base)
     out_base = Path(args.out)
 
-    for test_name in ['1°', '2°', '3°', '4°', '5°']:
-        fp = base / f"{test_name} test.csv"
-        if not fp.exists():
+    for fp in base.glob('* test.csv'):
+        # Skip se non iniziano con un numero (es. "mediapipe-debug-pullups...")
+        if not fp.stem[0].isdigit():
             continue
         df = load_frames(fp)
         sid = fp.stem
-        out_dir = out_base / f"{test_name} test"
+        
+        # Metti tutto nella stessa cartella oppure cartelle separate, qui lasciamo come prima
+        out_dir = out_base / sid
         for lm in LANDMARKS:
             plot_landmark(df, sid, lm, out_dir)
         plot_combined(df, sid, out_dir)
