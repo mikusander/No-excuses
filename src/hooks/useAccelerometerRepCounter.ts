@@ -58,6 +58,11 @@ interface UseAccelerometerRepCounterOptions {
   onRepData?: (data: RepData) => void;
 }
 
+// ─── Helpers per stabilizzare le callback ────────────────────────────────────
+// Le callback vengono wrappate in ref per evitare che il listener devicemotion
+// si ri-registri ad ogni render (Bug #4). Il listener legge sempre la versione
+// più aggiornata tramite il ref, senza essere incluso nelle deps del useEffect.
+
 // ─── COSTANTI DI RILEVAMENTO ─────────────────────────────────────────────────
 // Timeout se il burst si protrae senza mai invertire
 const MAX_REP_DURATION_MS = 8000;
@@ -82,7 +87,15 @@ const EXERCISE_CONFIG: Record<string, {
   repCooldownMs: number; // ms minimi tra due rep conteggiate (anti-doppio)
 }> = {
   pullups: { active: 140, rest: 78,  gyroShake: 673, minDuration: 210, mode: 'single_burst', repCooldownMs: 500 },
-  pushups: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',   repCooldownMs: 0   }, // da calibrare
+  // Flessioni: escursione verticale piccola (~2 cm), telefono orizzontale in tasca.
+  // Il gyro contribuisce poco (nessuna rotazione), l'energia è quasi tutta lineare (40×linMag).
+  // single_burst: un unico picco per ciclo giù→su (come le trazioni ma con parametri più sensibili).
+  // active: 80  → soglia bassa per catturare il momento in cui il corpo inizia a scendere
+  // rest:   45  → il burst termina quando l'energia scende qui (fine del ciclo)
+  // gyroShake: 500 → tolleriamo meno rotazione (le flessioni non ruotano il telefono)
+  // minDuration: 250 → filtriamo tremori brevissimi (<250ms non è una flessione reale)
+  // repCooldownMs: 700 → almeno 700ms tra una rep e l'altra (flessioni lente ~1-2s/ciclo)
+  pushups: { active: 80,  rest: 45,  gyroShake: 500, minDuration: 250, mode: 'single_burst', repCooldownMs: 700 },
   squats:  { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',   repCooldownMs: 0   }, // da calibrare
   default: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',   repCooldownMs: 0   },
 };
@@ -101,6 +114,12 @@ export const useAccelerometerRepCounter = ({
   onCountChange,
   onRepData,
 }: UseAccelerometerRepCounterOptions) => {
+  // Bug #4 fix: stabilizzazione callback tramite ref — evita ri-registrazione
+  // del listener devicemotion ad ogni render quando le callback cambiano identità.
+  const onCountChangeRef = useRef(onCountChange);
+  const onRepDataRef = useRef(onRepData);
+  useEffect(() => { onCountChangeRef.current = onCountChange; }, [onCountChange]);
+  useEffect(() => { onRepDataRef.current = onRepData; }, [onRepData]);
   const [phase, setPhase] = useState<AccelerometerSessionPhase>('idle');
   const [prepRemaining, setPrepRemaining] = useState(prepDurationSeconds);
   const [error, setError] = useState<string | null>(null);
@@ -449,13 +468,18 @@ export const useAccelerometerRepCounter = ({
           };
 
           if (duration <= MIN_DURATION) {
-            if (onRepData) onRepData({ status: 'rejected_too_short', burstIndex: (burstCountRef.current + 1) as 1 | 2, ...burstData });
+            // Bug #2 fix: se siamo in dual_burst e B1 era già stato contato,
+            // un B2 troppo corto deve resettare il contatore altrimenti il prossimo
+            // burst valido qualsiasi viene erroneamente contato come completamento rep.
+            if (cfg.mode === 'dual_burst') burstCountRef.current = 0;
+            if (onRepDataRef.current) onRepDataRef.current({ status: 'rejected_too_short', burstIndex: (burstCountRef.current + 1) as 1 | 2, ...burstData });
             return;
           }
 
           if (maxGyroRef.current > GYRO_SHAKE_LIMIT) {
-            if (onRepData) onRepData({ status: 'rejected_shake', burstIndex: (burstCountRef.current + 1) as 1 | 2, ...burstData });
+            // Bug #2 fix: stesso problema — reset esplicito in caso di shake su B2.
             burstCountRef.current = 0;
+            if (onRepDataRef.current) onRepDataRef.current({ status: 'rejected_shake', burstIndex: (burstCountRef.current + 1) as 1 | 2, ...burstData });
             return;
           }
 
@@ -464,14 +488,14 @@ export const useAccelerometerRepCounter = ({
             const sinceLastRep = now - lastRepTimeRef.current;
             if (sinceLastRep < cfg.repCooldownMs) {
               // Siamo nel cooldown: scarta il burst (troppo vicino alla rep precedente)
-              if (onRepData) onRepData({ status: 'rejected_too_short', burstIndex: 1, ...burstData });
+              if (onRepDataRef.current) onRepDataRef.current({ status: 'rejected_too_short', burstIndex: 1, ...burstData });
               return;
             }
             // ✅ Conta la ripetizione
             countRef.current += 1;
-            onCountChange(countRef.current);
+            onCountChangeRef.current(countRef.current);
             lastRepTimeRef.current = now;
-            if (onRepData) onRepData({ status: 'valid', burstIndex: 1, ...burstData, totalRepDurationMs: duration });
+            if (onRepDataRef.current) onRepDataRef.current({ status: 'valid', burstIndex: 1, ...burstData, totalRepDurationMs: duration });
             triggerHaptic();
             burstCountRef.current = 0;
             return;
@@ -482,26 +506,29 @@ export const useAccelerometerRepCounter = ({
 
           if (burstCountRef.current === 1) {
             lastBurstTimeRef.current = activeStartTimeRef.current;
-            if (onRepData) onRepData({ status: 'valid', burstIndex: 1, ...burstData });
+            if (onRepDataRef.current) onRepDataRef.current({ status: 'valid', burstIndex: 1, ...burstData });
           } else if (burstCountRef.current === 2) {
             countRef.current += 1;
-            onCountChange(countRef.current);
+            onCountChangeRef.current(countRef.current);
             const totalDuration = now - lastBurstTimeRef.current;
-            if (onRepData) onRepData({ status: 'valid', burstIndex: 2, ...burstData, totalRepDurationMs: totalDuration });
+            if (onRepDataRef.current) onRepDataRef.current({ status: 'valid', burstIndex: 2, ...burstData, totalRepDurationMs: totalDuration });
             triggerHaptic();
+            burstCountRef.current = 0;
+          } else {
+            // Burst > 2: stato inconsistente, resettiamo per sicurezza
             burstCountRef.current = 0;
           }
 
         } else if (duration > MAX_REP_DURATION_MS) {
           trackStateRef.current = 'idle';
-          burstCountRef.current = 0;
+          burstCountRef.current = 0; // Reset anche qui per sicurezza (Bug #2 defense)
           const avgEnergy    = sampleCountRef.current > 0 ? sumEnergyRef.current / sampleCountRef.current : 0;
           const energyRampMs = energyPeakTimeRef.current - activeStartTimeRef.current;
           const orientEnd    = { ...orientationRef.current };
           const gVec         = gravityAtBurstStartRef.current;
           const tiltAngleDeg = Math.round(Math.atan2(Math.hypot(gVec.x, gVec.y), Math.abs(gVec.z)) * 180 / Math.PI);
-          if (onRepData) {
-            onRepData({
+          if (onRepDataRef.current) {
+            onRepDataRef.current({
               status: 'rejected_timeout',
               burstIndex: 1,
               burstDurationMs: duration, totalRepDurationMs: 0, energyRampMs, sampleCount: sampleCountRef.current,
@@ -520,7 +547,12 @@ export const useAccelerometerRepCounter = ({
 
     window.addEventListener('devicemotion', onMotion, { passive: true });
     return () => window.removeEventListener('devicemotion', onMotion);
-  }, [onCountChange, onRepData, phase]);
+    // Bug #1 fix: aggiunto exerciseType alle deps — se l'utente cambia esercizio
+    // senza smontare il componente, il listener rilegge la cfg corretta.
+    // Bug #4 fix: onCountChange e onRepData sono letti tramite ref, non inclusi
+    // nelle deps — il listener non si ri-registra ad ogni render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, exerciseType]);
 
   return {
     phase,
