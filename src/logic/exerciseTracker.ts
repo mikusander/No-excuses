@@ -27,9 +27,7 @@ const applyEMA = (current: number, prev: number | null, alpha = 0.4): number => 
   return alpha * current + (1 - alpha) * prev;
 };
 
-const isSideVisible = (p1: NormalizedLandmark, p2: NormalizedLandmark, p3: NormalizedLandmark, threshold = 0.65) => {
-  return (p1.visibility ?? 0) > threshold && (p2.visibility ?? 0) > threshold && (p3.visibility ?? 0) > threshold;
-};
+
 
 interface LandmarkSample {
   y: number;
@@ -82,13 +80,7 @@ export class ExerciseTracker {
     this.onDebug = onDebug;
   }
 
-  private triggerWarning(msg: string) {
-    const now = Date.now();
-    if (now - this.lastWarningTime > 3000) { // 3 seconds debounce for vocal warnings
-      this.onAnnounce(msg);
-      this.lastWarningTime = now;
-    }
-  }
+
 
   /**
    * Aggiorna lo storico Y del polso (usa la media tra left e right se visibili)

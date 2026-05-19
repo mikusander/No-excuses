@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Activity, Repeat, Video, Smartphone, Timer, Square, Flag, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, Target, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
@@ -131,7 +131,7 @@ const RepCounterPage: React.FC = () => {
 
   // Tracking states
   const [count, setCount] = useState(0);
-  const [debugData, setDebugData] = useState<{ angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }>({ angle: 0, stage: null });
+
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
@@ -140,7 +140,7 @@ const RepCounterPage: React.FC = () => {
   const [showVoiceCommandsBanner, setShowVoiceCommandsBanner] = useState(false);
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
-  const [isPoseDebuggerEnabled, setIsPoseDebuggerEnabled] = useState(true);
+  const isPoseDebuggerEnabled = true;
 
   const trackerRef = useRef<ExerciseTracker | null>(null);
   const lastStateUpdateTime = useRef(0);
@@ -170,6 +170,7 @@ const RepCounterPage: React.FC = () => {
       // Verifica obiettivo per la modalità accelerometro
       if (repTarget !== null && newCount >= repTarget) {
         playGoalReachedSound();
+        speak('finish reps');
         resetAccelerometerSession();
       }
     },
@@ -283,17 +284,12 @@ const RepCounterPage: React.FC = () => {
         // Verifica obiettivo per la modalità video
         if (repTarget !== null && newCount >= repTarget) {
           playGoalReachedSound();
+          speak('finish reps');
           // Stop automatico al raggiungimento del target
           setIsCountingActive(false);
         }
       },
-      (msg) => speak(msg),
-      (data) => {
-        if (performance.now() - lastStateUpdateTime.current > 66) {
-          setDebugData(data);
-          lastStateUpdateTime.current = performance.now();
-        }
-      }
+      (msg) => speak(msg)
     );
   };
 
@@ -512,7 +508,6 @@ const RepCounterPage: React.FC = () => {
         : isAccelerometerPaused
           ? (prepRemaining > 0 ? 'Preparation paused' : 'Counting paused')
           : 'Starting accelerometer';
-  const videoStatusLabel = isCountingActive && !paused ? 'Active' : 'Paused';
 
   // --- RENDERING ---
 
@@ -572,25 +567,20 @@ const RepCounterPage: React.FC = () => {
             <div className="flex items-center gap-3">
               <input
                 id="rep-target-input"
-                type="number"
-                min="1"
-                max="999"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={3}
                 placeholder="∞  no limit"
                 value={repTargetInput}
                 onChange={(e) => {
-                  const raw = e.target.value;
+                  const raw = e.target.value.replace(/\D/g, '');
                   setRepTargetInput(raw);
                   const parsed = parseInt(raw, 10);
                   setRepTarget(!raw || isNaN(parsed) || parsed < 1 ? null : parsed);
                 }}
-                className="flex-1 rounded-2xl bg-black/40 border border-white/10 text-white placeholder:text-white/25 px-4 py-3 text-sm font-bold outline-none focus:border-brand-orange/60 focus:ring-1 focus:ring-brand-orange/30 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="flex-1 rounded-2xl bg-black/40 border border-white/10 text-white placeholder:text-white/25 px-4 py-3 text-sm font-bold outline-none focus:border-brand-orange/60 focus:ring-1 focus:ring-brand-orange/30 transition-all"
               />
-              {repTarget !== null && (
-                <div className="flex items-center gap-1.5 rounded-2xl bg-brand-orange/15 border border-brand-orange/30 px-3 py-2">
-                  <Flag className="h-4 w-4 text-brand-orange" />
-                  <span className="text-brand-orange font-black text-sm">{repTarget}</span>
-                </div>
-              )}
             </div>
           </div>
 
