@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Activity, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, AlertCircle, AlertTriangle, Target, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';

@@ -27,9 +27,7 @@ const applyEMA = (current: number, prev: number | null, alpha = 0.4): number => 
   return alpha * current + (1 - alpha) * prev;
 };
 
-const isSideVisible = (p1: NormalizedLandmark, p2: NormalizedLandmark, p3: NormalizedLandmark, threshold = 0.65) => {
-  return (p1.visibility ?? 0) > threshold && (p2.visibility ?? 0) > threshold && (p3.visibility ?? 0) > threshold;
-};
+
 
 export class ExerciseTracker {
   private stage: 'UP' | 'DOWN' | null = null;
@@ -40,7 +38,6 @@ export class ExerciseTracker {
   private onCount: (count: number) => void;
   private onAnnounce: (msg: string) => void;
   private onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void;
-  private lastWarningTime: number = 0;
   private hasStarted: boolean = false;
 
   // EMA state
@@ -60,13 +57,7 @@ export class ExerciseTracker {
     this.onDebug = onDebug;
   }
 
-  private triggerWarning(msg: string) {
-    const now = Date.now();
-    if (now - this.lastWarningTime > 3000) { // 3 seconds debounce for vocal warnings
-      this.onAnnounce(msg);
-      this.lastWarningTime = now;
-    }
-  }
+
 
   updatePullup(landmarks: NormalizedLandmark[]) {
     // Per le trazioni bastano: naso (0), spalle (11,12), polsi (15,16)
