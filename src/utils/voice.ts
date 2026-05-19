@@ -11,6 +11,9 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
 }
 
 export const speak = (text: string) => {
+  const isVoiceAssistantEnabled = localStorage.getItem('voice_assistance_enabled') !== 'false';
+  if (!isVoiceAssistantEnabled) return;
+
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
@@ -23,12 +26,12 @@ export const speak = (text: string) => {
     // Refresh voices list if empty
     if (voices.length === 0) voices = window.speechSynthesis.getVoices();
     
-    const italianVoice = voices.find(v => v.lang.startsWith('it'));
-    if (italianVoice) {
-      utterance.voice = italianVoice;
+    const englishVoice = voices.find(v => v.lang.startsWith('en'));
+    if (englishVoice) {
+      utterance.voice = englishVoice;
     }
     
-    utterance.lang = 'it-IT';
+    utterance.lang = 'en-US';
     utterance.rate = 1.1;
     utterance.pitch = 1.0;
     

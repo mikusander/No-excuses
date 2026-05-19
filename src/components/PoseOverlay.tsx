@@ -30,16 +30,6 @@ const EXERCISE_CONFIG: Record<ExerciseType, { connections: [number, number][]; p
     ],
     points: [11, 12, 13, 14, 15, 16, 23, 24],
   },
-  squats: {
-    // Squat: fianchi, ginocchia, caviglie + spalle per inclinazione busto
-    connections: [
-      [11, 12], [11, 23], [12, 24],
-      [23, 24],
-      [23, 25], [25, 27],
-      [24, 26], [26, 28],
-    ],
-    points: [11, 12, 23, 24, 25, 26, 27, 28],
-  },
 };
 
 const PoseOverlay: React.FC<Props> = ({ results, width, height, exercise }) => {

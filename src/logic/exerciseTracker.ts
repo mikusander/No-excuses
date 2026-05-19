@@ -359,62 +359,7 @@ export class ExerciseTracker {
     this.onDebug?.({ angle: armExtensionY, stage: this.stage, error: false, warning, okMsg });
   }
 
-  updateSquat(landmarks: NormalizedLandmark[]) {
-    const lHip = landmarks[23], rHip = landmarks[24];
-    const lKnee = landmarks[25], rKnee = landmarks[26];
-    const lAnkle = landmarks[27], rAnkle = landmarks[28];
-    const lShoulder = landmarks[11], rShoulder = landmarks[12];
 
-    if (!lHip || !rHip || !lKnee || !rKnee || !lAnkle || !rAnkle || !lShoulder || !rShoulder) return;
-
-    // Controllo di visibilità: se nessuna delle due gambe è ben visibile, non calcolare nulla
-    const isLeftLegVisible = isSideVisible(lHip, lKnee, lAnkle, 0.65);
-    const isRightLegVisible = isSideVisible(rHip, rKnee, rAnkle, 0.65);
-    if (!isLeftLegVisible && !isRightLegVisible) return;
-
-    let kneeAngleL = calculateAngle(lHip, lKnee, lAnkle);
-    let kneeAngleR = calculateAngle(rHip, rKnee, rAnkle);
-
-    kneeAngleL = applyEMA(kneeAngleL, this.lastAngles.L);
-    kneeAngleR = applyEMA(kneeAngleR, this.lastAngles.R);
-    this.lastAngles.L = kneeAngleL;
-    this.lastAngles.R = kneeAngleR;
-
-    const visL = (lKnee.visibility || 0);
-    const visR = (rKnee.visibility || 0);
-    const avgKneeAngle = (kneeAngleL * visL + kneeAngleR * visR) / ((visL + visR) || 1);
-
-    let warning: string | undefined;
-
-    // Torso inclination check
-    const side = visL > visR ? 'L' : 'R';
-    let torsoAngle = 0; // relative to vertical
-    if (side === 'L') {
-       torsoAngle = Math.atan2(Math.abs(lShoulder.x - lHip.x), Math.abs(lHip.y - lShoulder.y)) * (180 / Math.PI);
-    } else {
-       torsoAngle = Math.atan2(Math.abs(rShoulder.x - rHip.x), Math.abs(rHip.y - rShoulder.y)) * (180 / Math.PI);
-    }
-
-    if (torsoAngle > 60) {
-        warning = "Tieni il petto in alto!";
-        this.triggerWarning(warning);
-    }
-
-    this.onDebug?.({ angle: avgKneeAngle, stage: this.stage, error: false, warning });
-
-    // Squat DOWN threshold
-    if (avgKneeAngle < 110) {
-      this.stage = 'DOWN';
-    }
-
-    // Squat UP threshold
-    if (this.stage === 'DOWN' && avgKneeAngle > 150) {
-      this.stage = 'UP';
-      this.count++;
-      this.onCount(this.count);
-      this.checkAnnouncements();
-    }
-  }
 
 
   private checkAnnouncements() {

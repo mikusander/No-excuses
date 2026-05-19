@@ -1,9 +1,8 @@
-export type ExerciseType = 'pullups' | 'pushups' | 'squats';
+export type ExerciseType = 'pullups' | 'pushups';
 
 export interface WorkoutConfig {
   pullupsCount: number;
   pushupsCount: number;
-  squatsCount: number;
 }
 
 export type AppState = 'config' | 'workout' | 'summary';
