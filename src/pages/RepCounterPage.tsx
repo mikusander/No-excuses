@@ -143,7 +143,6 @@ const RepCounterPage: React.FC = () => {
   const isPoseDebuggerEnabled = true;
 
   const trackerRef = useRef<ExerciseTracker | null>(null);
-  const lastStateUpdateTime = useRef(0);
   const selectedExerciseRef = useRef(selectedExercise);
   const countRef = useRef(count);
   // Refs to avoid stale closures in the rAF loop (Bug #1 & #4)
@@ -472,7 +471,6 @@ const RepCounterPage: React.FC = () => {
     setCameraError(null);
     setPaused(false);
     setIsCountingActive(false);
-    setDebugData({ angle: 0, stage: null });
     resetAccelerometerSession();
     initTracker();
     setSelectedExercise(type);

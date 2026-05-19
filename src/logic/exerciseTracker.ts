@@ -51,7 +51,6 @@ export class ExerciseTracker {
   private onCount: (count: number) => void;
   private onAnnounce: (msg: string) => void;
   private onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void;
-  private lastWarningTime: number = 0;
   private hasStarted: boolean = false;
 
   // EMA state
