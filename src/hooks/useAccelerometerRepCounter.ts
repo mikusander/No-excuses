@@ -10,7 +10,7 @@ type MotionPermissionAPI = typeof DeviceMotionEvent & {
 export interface RepData {
   // ─ Classificazione ─────────────────────────────────────────────────────────
   status: 'valid' | 'rejected_too_short' | 'rejected_shake' | 'rejected_timeout';
-  exerciseType?: string; // Es. 'pushups', 'pullups', 'squats'
+  exerciseType?: string; // Es. 'pushups', 'pullups'
   burstIndex: 1 | 2;    // 1 = andata (discesa), 2 = ritorno (rep completata)
 
   // ─ Timing ───────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ export interface RepData {
 
 interface UseAccelerometerRepCounterOptions {
   prepDurationSeconds?: number;
-  exerciseType?: string; // Es. 'pushups', 'pullups', 'squats' — usato nei log di calibrazione
+  exerciseType?: string; // Es. 'pushups', 'pullups' — usato nei log di calibrazione
   onCountChange: (count: number) => void;
   onRepData?: (data: RepData) => void;
 }
@@ -94,7 +94,7 @@ const EXERCISE_CONFIG: Record<string, {
   // Il burst NON si chiude tra rep ravvicinate (inter-rep energy = 73-90 ≈ rest=75).
   // Soluzione: peak_count — conta ogni picco genuino che supera active*3 (=360)
   pushups: { active: 120, rest: 75, gyroShake: 1200, minDuration: 300, mode: 'peak_count', repCooldownMs: 1200, peakRatioThreshold: 3 },
-  squats:  { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',  repCooldownMs: 0 },
+
   default: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',  repCooldownMs: 0 },
 };
 
