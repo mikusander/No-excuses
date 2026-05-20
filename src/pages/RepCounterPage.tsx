@@ -308,15 +308,12 @@ const RepCounterPage: React.FC = () => {
       return;
     }
 
-    if (isCountingActive && selectedExerciseRef.current && !poseCsvSessionActiveRef.current) {
+    if (selectedExerciseRef.current && !poseCsvSessionActiveRef.current) {
       startPoseCsvSession();
     }
-  }, [isPoseDebuggerEnabled, isCountingActive]);
+  }, [isPoseDebuggerEnabled]);
 
   useEffect(() => {
-    if (wasCountingActiveRef.current && !isCountingActive) {
-      finishPoseCsvSession();
-    }
     wasCountingActiveRef.current = isCountingActive;
     isCountingActiveRef.current = isCountingActive;
   }, [isCountingActive]);
@@ -324,7 +321,9 @@ const RepCounterPage: React.FC = () => {
   const startVideoCounting = () => {
     if (isCountingActive || !trackerRef.current || !selectedExerciseRef.current || !isCameraReady || isLoading) return;
     trackerRef.current.resetTrackingState();
-    startPoseCsvSession();
+    if (!poseCsvSessionActiveRef.current) {
+      startPoseCsvSession();
+    }
     setPaused(false);
     setIsCountingActive(true);
   };
@@ -333,7 +332,6 @@ const RepCounterPage: React.FC = () => {
     if (!isCountingActive) return;
     trackerRef.current?.resetTrackingState();
     setIsCountingActive(false);
-    finishPoseCsvSession();
   };
 
   useVoiceCommands({
@@ -756,18 +754,20 @@ const RepCounterPage: React.FC = () => {
           >
             {paused ? 'Resume' : 'Pause'}
           </button>
-          <button
-            type="button"
-            onClick={() => setIsPoseDebuggerEnabled((prev) => !prev)}
-            className={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition-colors flex items-center gap-1 ${
-              isPoseDebuggerEnabled 
-                ? 'border-red-500/40 bg-red-500/20 text-red-100 hover:bg-red-500/30' 
-                : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/10'
-            }`}
-          >
-            <Bug className="w-3 h-3" />
-            {isPoseDebuggerEnabled ? 'Debug On' : 'Debug Off'}
-          </button>
+          {selectedExercise === 'pushups' && (
+            <button
+              type="button"
+              onClick={() => setIsPoseDebuggerEnabled((prev) => !prev)}
+              className={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition-colors flex items-center gap-1 ${
+                isPoseDebuggerEnabled 
+                  ? 'border-red-500/40 bg-red-500/20 text-red-100 hover:bg-red-500/30' 
+                  : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/10'
+              }`}
+            >
+              <Bug className="w-3 h-3" />
+              {isPoseDebuggerEnabled ? 'Debug On' : 'Debug Off'}
+            </button>
+          )}
         </div>
       </div>
 
