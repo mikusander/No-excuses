@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Play, Pause, Target, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, Target, Repeat, Video, Smartphone, Timer, Square, Flag, Bug } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
@@ -140,7 +140,7 @@ const RepCounterPage: React.FC = () => {
   const [showVoiceCommandsBanner, setShowVoiceCommandsBanner] = useState(false);
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
-  const isPoseDebuggerEnabled = true;
+  const [isPoseDebuggerEnabled, setIsPoseDebuggerEnabled] = useState(false);
 
   const trackerRef = useRef<ExerciseTracker | null>(null);
   const selectedExerciseRef = useRef(selectedExercise);
@@ -238,7 +238,11 @@ const RepCounterPage: React.FC = () => {
     const countSnapshot = countRef.current;
     const pausedSnapshot = pausedRef.current;
 
-    POSE_LANDMARK_EXPORT_INDICES.forEach((landmarkIndex) => {
+    const exportIndices = selectedExerciseRef.current === 'pushups' 
+      ? [11, 12, 13, 14, 15, 16] 
+      : POSE_LANDMARK_EXPORT_INDICES;
+
+    exportIndices.forEach((landmarkIndex) => {
       const landmark = landmarks[landmarkIndex];
       if (!landmark) return;
 
@@ -752,7 +756,18 @@ const RepCounterPage: React.FC = () => {
           >
             {paused ? 'Resume' : 'Pause'}
           </button>
-
+          <button
+            type="button"
+            onClick={() => setIsPoseDebuggerEnabled((prev) => !prev)}
+            className={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition-colors flex items-center gap-1 ${
+              isPoseDebuggerEnabled 
+                ? 'border-red-500/40 bg-red-500/20 text-red-100 hover:bg-red-500/30' 
+                : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/10'
+            }`}
+          >
+            <Bug className="w-3 h-3" />
+            {isPoseDebuggerEnabled ? 'Debug On' : 'Debug Off'}
+          </button>
         </div>
       </div>
 

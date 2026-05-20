@@ -258,14 +258,12 @@ export class ExerciseTracker {
     const lShoulder = landmarks[11], rShoulder = landmarks[12];
     const lElbow = landmarks[13], rElbow = landmarks[14];
     const lWrist = landmarks[15], rWrist = landmarks[16];
-    const lHip = landmarks[23], rHip = landmarks[24];
-    const lAnkle = landmarks[27], rAnkle = landmarks[28];
 
-    if (!lShoulder || !rShoulder || !lElbow || !rElbow) return;
+    if (!lShoulder || !rShoulder || !lElbow || !rElbow || !lWrist || !rWrist) return;
 
     // Check visibilities
-    const isLeftArmVisible = (lShoulder.visibility ?? 0) > 0.5 && (lElbow.visibility ?? 0) > 0.5;
-    const isRightArmVisible = (rShoulder.visibility ?? 0) > 0.5 && (rElbow.visibility ?? 0) > 0.5;
+    const isLeftArmVisible = (lShoulder.visibility ?? 0) > 0.5 && (lElbow.visibility ?? 0) > 0.5 && (lWrist.visibility ?? 0) > 0.5;
+    const isRightArmVisible = (rShoulder.visibility ?? 0) > 0.5 && (rElbow.visibility ?? 0) > 0.5 && (rWrist.visibility ?? 0) > 0.5;
     if (!isLeftArmVisible && !isRightArmVisible) return;
 
     const shoulderY = (lShoulder.y + rShoulder.y) / 2;
@@ -277,37 +275,7 @@ export class ExerciseTracker {
     let warning: string | undefined;
     let okMsg: string | undefined;
 
-    // Controllo "A Terra" STRETTO
-    let isStanding = false;
-    
-    const hipY = (lHip.y + rHip.y) / 2;
-    const ankleY = (lAnkle.y + rAnkle.y) / 2;
-
-    const isLateral = Math.abs(lShoulder.x - lHip.x) > 0.25 || Math.abs(rShoulder.x - rHip.x) > 0.25;
-
-    if (!isLateral) {
-         // Visuale Frontale
-         // Se si è per terra verso la telecamera ("ravvicinati uno consecutivo all'altro"), la prospettiva li schiaccia e occupano pochissimo spazio su Y.
-         // Se la distanza assoluta tra anca e piede è maggiore di 0.15 (che è piccolissima per uno in piedi ma enorme per uno sdraiato frontalmente), sei in piedi!
-         if (Math.abs(hipY - ankleY) > 0.15) {
-             isStanding = true;
-         }
-    } else {
-         // Visuale Laterale
-         // Se in posizione laterale pushup, bisogna essere paralleli a terra
-         if (Math.abs(hipY - shoulderY) > 0.25) {
-             isStanding = true;
-         }
-    }
-
-    if (isStanding) {
-        this.stage = null;
-        this.hasStarted = false; // Hai rotto la posizione, devi ricominciare
-        this.onDebug?.({ angle: armExtensionY, stage: null, error: false, warning: "Mettiti a terra!" });
-        return;
-    }
-
-    // "Vorrei che il sistema inizi a contare solo quando l'utente è in posizione, braccia distese e anca ginocchia piedi in posizione"
+    // "Vorrei che il sistema inizi a contare solo quando l'utente è in posizione, braccia distese"
     if (!this.hasStarted) {
         if (armExtensionY > 0.08) {
              // Entrato in posizione iniziale valida! (Braccia distese e non sei in piedi)

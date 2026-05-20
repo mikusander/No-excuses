@@ -21,14 +21,13 @@ const EXERCISE_CONFIG: Record<ExerciseType, { connections: [number, number][]; p
     points: [11, 12, 13, 14, 15, 16],
   },
   pushups: {
-    // Flessione: spalle, gomiti, polsi, fianchi
+    // Flessione: spalle, gomiti, polsi
     connections: [
       [11, 12],
       [11, 13], [13, 15],
       [12, 14], [14, 16],
-      [11, 23], [12, 24], [23, 24],
     ],
-    points: [11, 12, 13, 14, 15, 16, 23, 24],
+    points: [11, 12, 13, 14, 15, 16],
   },
 };
 
