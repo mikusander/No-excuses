@@ -40,6 +40,7 @@ interface DownPhaseSnapshot {
   rightWristY?: number;
   leftWristVisible: boolean;
   rightWristVisible: boolean;
+  peakShoulderMovement?: number;
 }
 
 export class ExerciseTracker {
@@ -256,66 +257,122 @@ export class ExerciseTracker {
 
   updatePushup(landmarks: NormalizedLandmark[]) {
     const lShoulder = landmarks[11], rShoulder = landmarks[12];
-    const lElbow = landmarks[13], rElbow = landmarks[14];
     const lWrist = landmarks[15], rWrist = landmarks[16];
 
-    if (!lShoulder || !rShoulder || !lElbow || !rElbow || !lWrist || !rWrist) return;
+    if (!lShoulder || !rShoulder || !lWrist || !rWrist) return;
 
     // Check visibilities
-    const isLeftArmVisible = (lShoulder.visibility ?? 0) > 0.5 && (lElbow.visibility ?? 0) > 0.5 && (lWrist.visibility ?? 0) > 0.5;
-    const isRightArmVisible = (rShoulder.visibility ?? 0) > 0.5 && (rElbow.visibility ?? 0) > 0.5 && (rWrist.visibility ?? 0) > 0.5;
+    const lShoulderVis = (lShoulder.visibility ?? 0) > 0.5;
+    const rShoulderVis = (rShoulder.visibility ?? 0) > 0.5;
+    const lWristVis = (lWrist.visibility ?? 0) > 0.5;
+    const rWristVis = (rWrist.visibility ?? 0) > 0.5;
+
+    const isLeftArmVisible = lShoulderVis && lWristVis;
+    const isRightArmVisible = rShoulderVis && rWristVis;
+
     if (!isLeftArmVisible && !isRightArmVisible) return;
 
-    const shoulderY = (lShoulder.y + rShoulder.y) / 2;
-    const elbowY = (lElbow.y + rElbow.y) / 2;
-    
-    // Distanza verticale braccio: >0 = spalle più in alto dei gomiti
-    const armExtensionY = elbowY - shoulderY;
+    const shoulderYValues = [];
+    if (lShoulderVis) shoulderYValues.push(lShoulder.y);
+    if (rShoulderVis) shoulderYValues.push(rShoulder.y);
+    const shoulderY = shoulderYValues.reduce((a, b) => a + b, 0) / shoulderYValues.length;
 
-    let warning: string | undefined;
-    let okMsg: string | undefined;
+    // Utilizziamo l'escursione relativa delle spalle invece della distanza assoluta
+    const EXCURSION_THRESHOLD = 0.10;
+    const PUSHUP_WRIST_THRESHOLD = 0.05; // Tolleranza maggiore per i pushup rispetto alle trazioni
 
-    // "Vorrei che il sistema inizi a contare solo quando l'utente è in posizione, braccia distese"
+    this.onDebug?.({ angle: Math.round(shoulderY * 1000) / 1000, stage: this.stage });
+
     if (!this.hasStarted) {
-        if (armExtensionY > 0.08) {
-             // Entrato in posizione iniziale valida! (Braccia distese e non sei in piedi)
-             this.hasStarted = true;
-             this.stage = 'UP';
-             this.onDebug?.({ angle: armExtensionY, stage: this.stage, error: false, warning: undefined, okMsg: "OK" });
-        } else {
-             this.onDebug?.({ angle: armExtensionY, stage: null, error: false, warning: "Iniziamo! Distendi le braccia." });
+      this.hasStarted = true;
+      this.stage = 'UP';
+      this.downPhaseSnapshot = {
+        shoulderY,
+        leftWristY: lWristVis ? lWrist.y : undefined,
+        rightWristY: rWristVis ? rWrist.y : undefined,
+        leftWristVisible: isLeftArmVisible,
+        rightWristVisible: isRightArmVisible,
+        peakShoulderMovement: 0
+      };
+      return;
+    }
+
+    if (this.stage === 'UP' && this.downPhaseSnapshot) {
+      // In fase UP, le spalle sono in alto (valore Y MINORE in MediaPipe)
+      // Cerchiamo il picco minimo (massima altezza)
+      if (shoulderY < this.downPhaseSnapshot.shoulderY) {
+        this.downPhaseSnapshot.shoulderY = shoulderY;
+      }
+      
+      // Se le spalle scendono (valore Y AUMENTA) oltre la soglia dal picco minimo
+      if (shoulderY - this.downPhaseSnapshot.shoulderY > EXCURSION_THRESHOLD) {
+        this.stage = 'DOWN';
+        // Usiamo peakShoulderMovement temporaneamente per tracciare il picco massimo (discesa massima)
+        this.downPhaseSnapshot.peakShoulderMovement = shoulderY;
+        // Inizializziamo lo snapshot polsi
+        if (lWristVis) this.downPhaseSnapshot.leftWristY = lWrist.y;
+        if (rWristVis) this.downPhaseSnapshot.rightWristY = rWrist.y;
+      }
+    } else if (this.stage === 'DOWN' && this.downPhaseSnapshot) {
+      // In fase DOWN, cerchiamo il picco massimo (valore Y MAGGIORE, massima vicinanza al suolo)
+      if (shoulderY > (this.downPhaseSnapshot.peakShoulderMovement ?? shoulderY)) {
+        this.downPhaseSnapshot.peakShoulderMovement = shoulderY;
+        // PRENDIAMO LO SNAPSHOT POLSI QUI!
+        // Al punto più basso del pushup, i polsi sono fermi a terra. Questo risolve il problema della prima ripetizione.
+        if (lWristVis) this.downPhaseSnapshot.leftWristY = lWrist.y;
+        if (rWristVis) this.downPhaseSnapshot.rightWristY = rWrist.y;
+      }
+      
+      // Se le spalle risalgono (valore Y DIMINUISCE) oltre la soglia dal picco massimo
+      if ((this.downPhaseSnapshot.peakShoulderMovement ?? shoulderY) - shoulderY > EXCURSION_THRESHOLD) {
+        // VALIDAZIONE ANTI-FAKE: I polsi non devono essersi mossi drasticamente
+        let leftWristMoved = false;
+        let rightWristMoved = false;
+        let leftVal = 0;
+        let rightVal = 0;
+
+        if (this.downPhaseSnapshot.leftWristVisible) {
+          if (!lWristVis) leftWristMoved = true;
+          else {
+            leftVal = Math.abs(lWrist.y - (this.downPhaseSnapshot.leftWristY ?? lWrist.y));
+            leftWristMoved = leftVal >= PUSHUP_WRIST_THRESHOLD;
+          }
         }
-        return; // Blocca eventuali conteggi fantasma se ti assembles la postura
-    }
+        if (this.downPhaseSnapshot.rightWristVisible) {
+          if (!rWristVis) rightWristMoved = true;
+          else {
+            rightVal = Math.abs(rWrist.y - (this.downPhaseSnapshot.rightWristY ?? rWrist.y));
+            rightWristMoved = rightVal >= PUSHUP_WRIST_THRESHOLD;
+          }
+        }
 
-    // Siamo in posizione valida e abbiamo iniziato.
-    // (spalla più in alto del gomito)
-    if (armExtensionY > 0.08) {
-       this.stage = 'UP';
-       okMsg = "OK";
-    }
+        const wristsStable = !(leftWristMoved || rightWristMoved);
 
-    // "quando si scende nel momento in cui le spalle arrivano indicativamente alla stessa altezza dei gomiti..."
-    if (armExtensionY <= 0.02) {
-       // PREVENZIONE FALSI POSITIVI: "...solo quando spalle e gomiti sono vicini ma mani più lontane"
-       // Calcoliamo la distanza 2D tra spalla e mani. In piedi muovendo le braccia a vuoto, le mani vengono vicine al petto.
-       const distWristShoulderL = Math.sqrt(Math.pow(lWrist.x - lShoulder.x, 2) + Math.pow(lWrist.y - lShoulder.y, 2));
-       const distWristShoulderR = Math.sqrt(Math.pow(rWrist.x - rShoulder.x, 2) + Math.pow(rWrist.y - rShoulder.y, 2));
-
-       if (distWristShoulderL < 0.15 || distWristShoulderR < 0.15) {
-          // Mani troppo vicine alle spalle (air pushups). Non è una discesa di pushup valida.
-          return; 
-       }
-
-       if (this.stage === 'UP') {
+        if (wristsStable) {
           this.count++;
           this.onCount(this.count);
           this.checkAnnouncements();
-       }
-       this.stage = 'DOWN';
-    }
+        }
 
-    this.onDebug?.({ angle: armExtensionY, stage: this.stage, error: false, warning, okMsg });
+        this.onDebug?.({
+          angle: shoulderY,
+          stage: 'UP',
+          warning: !wristsStable ? `Fake rep! Polsi mossi (L:${leftVal.toFixed(2)} R:${rightVal.toFixed(2)})` : undefined,
+          okMsg: wristsStable ? `Rep Valida (L:${leftVal.toFixed(2)} R:${rightVal.toFixed(2)})` : undefined
+        });
+
+        // Reset stato per la prossima ripetizione
+        this.stage = 'UP';
+        this.downPhaseSnapshot = {
+          shoulderY,
+          leftWristY: lWristVis ? lWrist.y : undefined,
+          rightWristY: rWristVis ? rWrist.y : undefined,
+          leftWristVisible: isLeftArmVisible,
+          rightWristVisible: isRightArmVisible,
+          peakShoulderMovement: 0
+        };
+      }
+    }
   }
 
 

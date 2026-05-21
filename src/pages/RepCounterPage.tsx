@@ -141,6 +141,7 @@ const RepCounterPage: React.FC = () => {
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
   const [isPoseDebuggerEnabled, setIsPoseDebuggerEnabled] = useState(false);
+  const isPoseDebuggerEnabledRef = useRef(isPoseDebuggerEnabled);
 
   const trackerRef = useRef<ExerciseTracker | null>(null);
   const selectedExerciseRef = useRef(selectedExercise);
@@ -179,6 +180,7 @@ const RepCounterPage: React.FC = () => {
   useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
   useEffect(() => { countRef.current = count; }, [count]);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => { isPoseDebuggerEnabledRef.current = isPoseDebuggerEnabled; }, [isPoseDebuggerEnabled]);
 
   const startPoseCsvSession = () => {
     if (!isPoseDebuggerEnabled || !selectedExerciseRef.current) return;
@@ -228,7 +230,7 @@ const RepCounterPage: React.FC = () => {
   };
 
   const recordPoseCsvFrame = (timestamp: number, landmarks: any[]) => {
-    if (!isPoseDebuggerEnabled || !poseCsvSessionActiveRef.current || !selectedExerciseRef.current || poseCsvSessionStartPerfRef.current == null) return;
+    if (!isPoseDebuggerEnabledRef.current || !poseCsvSessionActiveRef.current || !selectedExerciseRef.current || poseCsvSessionStartPerfRef.current == null) return;
     if (!Array.isArray(landmarks) || landmarks.length === 0) return;
 
     const sessionId = poseCsvFilenameRef.current || 'pose-session';
