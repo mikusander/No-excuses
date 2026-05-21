@@ -1,0 +1,425 @@
+fatte: 5
+obbiettivo: 5
+contate:5
+[
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 5057,
+    "totalRepDurationMs": 5057,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 1314.7544208858562,
+    "minEnergy": 31.26028107276821,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 4.844017075755783,
+      "y": 5.58333438011196,
+      "z": -6.4541531811898
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120803896
+  },
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 2309,
+    "totalRepDurationMs": 2309,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 376.4763969173357,
+    "minEnergy": 105.25694573982283,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 3.817246648107323,
+      "y": 2.4510728099877355,
+      "z": -7.977036214137461
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120806205
+  },
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 2433,
+    "totalRepDurationMs": 2433,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 631.2412290206038,
+    "minEnergy": 110.6555251218083,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 1.6214860848614427,
+      "y": 1.0885860155998777,
+      "z": -8.665713345210424
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120808638
+  },
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 2733,
+    "totalRepDurationMs": 2733,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 1080.9301893012985,
+    "minEnergy": 116.89452206789693,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 1.3680557362287706,
+      "y": 0.683610824579714,
+      "z": -10.28289567454599
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120811371
+  },
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 2516,
+    "totalRepDurationMs": 2516,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 671.6998825485263,
+    "minEnergy": 113.67969077172786,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 0.9492150333408181,
+      "y": 9.345331215949821,
+      "z": -0.8967158973649305
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120813887
+  }
+]
+
+fatte: 5
+obbiettivo: NON MESSO
+contate: 4
+[
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 5730,
+    "totalRepDurationMs": 5730,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 910.3417425430928,
+    "minEnergy": 116.16171152790594,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 4.48229983428566,
+      "y": 4.847268695939842,
+      "z": -7.108249614970848
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120834037
+  },
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 2183,
+    "totalRepDurationMs": 2183,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 868.3211802751363,
+    "minEnergy": 114.54088067744249,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 1.8322621425360186,
+      "y": 0.5540858566825637,
+      "z": -10.2411800342583
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120836220
+  },
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 2267,
+    "totalRepDurationMs": 2267,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 776.148218936692,
+    "minEnergy": 111.35369255687391,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 1.592559254210004,
+      "y": 0.7917715346784786,
+      "z": -8.377848962021504
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120838487
+  },
+  {
+    "status": "valid",
+    "burstIndex": 1,
+    "exerciseType": "pushups",
+    "burstDurationMs": 3767,
+    "totalRepDurationMs": 3767,
+    "energyRampMs": 0,
+    "sampleCount": 0,
+    "maxEnergy": 648.5915481990559,
+    "minEnergy": 119.14139123913087,
+    "avgEnergy": 0,
+    "energyAt25pct": 0,
+    "energyAt50pct": 0,
+    "energyAt75pct": 0,
+    "maxLinAcc": 0,
+    "peakAccRaw": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "maxGyro": 0,
+    "maxGyroAlpha": 0,
+    "maxGyroBeta": 0,
+    "maxGyroGamma": 0,
+    "orientationStart": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationEnd": {
+      "alpha": 0,
+      "beta": 0,
+      "gamma": 0
+    },
+    "orientationDelta": {
+      "beta": 0,
+      "gamma": 0
+    },
+    "gravityVec": {
+      "x": 2.999838881938529,
+      "y": 8.239503478140417,
+      "z": 1.3685300371317626
+    },
+    "tiltAngleDeg": 0,
+    "timestamp": 1779120842254
+  }
+]

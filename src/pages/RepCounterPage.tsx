@@ -121,6 +121,11 @@ const RepCounterPage: React.FC = () => {
   const [repTarget, setRepTarget] = useState<number | null>(null);
   const [repTargetInput, setRepTargetInput] = useState('');
 
+  // Calibration logic
+  const [isCalibrationMode, setIsCalibrationMode] = useState(false);
+  const [calibrationLogs, setCalibrationLogs] = useState<any[]>([]);
+  const [showCalibrationLogs, setShowCalibrationLogs] = useState(false);
+
   // Setup logic states
   const [selectedExercise, setSelectedExercise] = useState<ExerciseType | null>(null);
   const { detectPose, isLoading, error: poseError } = usePoseLandmarker(countingMode === 'video' && selectedExercise !== null);
@@ -164,16 +169,22 @@ const RepCounterPage: React.FC = () => {
     pauseSession: pauseAccelerometerSession,
     resumeSession: resumeAccelerometerSession,
     resetSession: resetAccelerometerSession,
+    stopSession: stopAccelerometerSession,
   } = useAccelerometerRepCounter({
+    exerciseType: selectedExercise ?? undefined,
     onCountChange: (newCount) => {
       setCount(newCount);
-      // Verifica obiettivo per la modalità accelerometro
+      // Ferma la sessione al raggiungimento del target
       if (repTarget !== null && newCount >= repTarget) {
         playGoalReachedSound();
-        speak('finish reps');
-        resetAccelerometerSession();
+        stopAccelerometerSession();
       }
     },
+    onRepData: (data) => {
+      if (isCalibrationMode) {
+        setCalibrationLogs(prev => [...prev, data]);
+      }
+    }
   });
 
   // Sync refs for the animation frame (avoids stale closures)
@@ -492,6 +503,9 @@ const RepCounterPage: React.FC = () => {
     setIsCountingActive(false);
     setShowVoiceCommandsBanner(false);
     setCount(0);
+    setIsCalibrationMode(false);
+    setShowCalibrationLogs(false);
+    setCalibrationLogs([]);
     resetAccelerometerSession();
     trackerRef.current?.reset();
     finishPoseCsvSession();
@@ -510,6 +524,7 @@ const RepCounterPage: React.FC = () => {
         : isAccelerometerPaused
           ? (prepRemaining > 0 ? 'Preparation paused' : 'Counting paused')
           : 'Starting accelerometer';
+  const videoStatusLabel = isCountingActive && !paused ? 'Active' : 'Paused';
 
   // --- RENDERING ---
 
@@ -572,7 +587,7 @@ const RepCounterPage: React.FC = () => {
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
-                maxLength={3}
+                maxLength={4}
                 placeholder="∞  no limit"
                 value={repTargetInput}
                 onChange={(e) => {
@@ -584,6 +599,32 @@ const RepCounterPage: React.FC = () => {
                 className="flex-1 rounded-2xl bg-black/40 border border-white/10 text-white placeholder:text-white/25 px-4 py-3 text-sm font-bold outline-none focus:border-brand-orange/60 focus:ring-1 focus:ring-brand-orange/30 transition-all"
               />
             </div>
+          </div>
+
+          {/* Calibrazione Sperimentale */}
+          <div className="w-full rounded-3xl border border-purple-500/20 bg-purple-500/5 p-4 shadow-lg flex items-center justify-between">
+             <div className="flex flex-col">
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-purple-400">Calibration Mode</span>
+                <span className="text-xs text-white/50 mt-1">Record 10 reps to analyze data</span>
+             </div>
+             <button
+               onClick={() => {
+                 const newVal = !isCalibrationMode;
+                 setIsCalibrationMode(newVal);
+                 if (newVal) {
+                   setCountingMode('accelerometer');
+                   setRepTarget(null);
+                   setRepTargetInput('');
+                   setCalibrationLogs([]);
+                 } else {
+                   setRepTarget(null);
+                   setRepTargetInput('');
+                 }
+               }}
+               className={`w-12 h-6 rounded-full transition-colors relative shadow-inner ${isCalibrationMode ? 'bg-purple-500' : 'bg-black/40 border border-white/10'}`}
+             >
+               <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-md ${isCalibrationMode ? 'left-7' : 'left-1'}`} />
+             </button>
           </div>
 
           <button
@@ -712,8 +753,68 @@ const RepCounterPage: React.FC = () => {
                 End exercise
               </span>
             </button>
+            {isCalibrationMode ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCalibrationLogs(true);
+                  pauseAccelerometerSession();
+                }}
+                className="flex-1 rounded-2xl border border-purple-500/50 bg-purple-500/20 px-5 py-4 text-sm font-bold text-purple-200 transition-colors hover:bg-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.2)]"
+              >
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Flag className="h-4 w-4" />
+                  Save Log
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={cancelWorkout}
+                className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm font-bold text-red-100 transition-colors hover:bg-red-500/20"
+              >
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Square className="h-4 w-4" />
+                  End exercise
+                </span>
+              </button>
+            )}
           </div>
         </main>
+
+        {showCalibrationLogs && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-6">
+            <div className="bg-brand-dark border border-purple-500/50 rounded-3xl p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
+              <h3 className="text-xl font-black text-purple-400 mb-1 uppercase tracking-wider">Calibration Log</h3>
+              <p className="text-xs text-white/50 mb-4 leading-relaxed">Copy this data to analyze your motion signatures. {calibrationLogs.length} events have been recorded (including rejected ones).</p>
+              
+              <div className="flex-1 min-h-[200px] max-h-[400px] mb-4 relative rounded-xl overflow-hidden border border-white/10 bg-black/50">
+                <textarea 
+                  readOnly 
+                  className="absolute inset-0 w-full h-full p-4 text-[11px] font-mono text-white/80 outline-none bg-transparent resize-none"
+                  value={JSON.stringify(calibrationLogs, null, 2)}
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(calibrationLogs, null, 2));
+                  }}
+                  className="flex-1 bg-white/10 border border-white/20 text-white font-bold py-3 px-4 rounded-xl hover:bg-white/20 transition-colors text-sm"
+                >
+                  Copy JSON
+                </button>
+                <button 
+                  onClick={cancelWorkout}
+                  className="flex-1 bg-purple-500 text-white font-bold py-3 px-4 rounded-xl hover:bg-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-colors text-sm"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -836,7 +937,15 @@ const RepCounterPage: React.FC = () => {
           </div>
         )}
 
-
+        {/* Debug Info Overlay */}
+        <div className="absolute top-24 left-6 z-20 flex flex-col gap-3">
+          <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10">
+            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">AI Data</p>
+            <div className="flex flex-col">
+              <span className="text-xs text-white font-mono">Session: <span className={`${videoStatusLabel === 'Active' ? 'text-green-400' : 'text-yellow-300'} font-bold`}>{videoStatusLabel}</span></span>
+            </div>
+          </div>
+        </div>
 
         {paused && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm">

@@ -27,7 +27,7 @@ const EXERCISE_CONFIG: Record<ExerciseType, { connections: [number, number][]; p
       [11, 13], [13, 15],
       [12, 14], [14, 16],
     ],
-    points: [11, 12, 13, 14, 15, 16],
+    points: [11, 12, 13, 14, 15, 16, 23, 24],
   },
 };
 

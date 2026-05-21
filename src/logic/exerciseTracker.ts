@@ -28,6 +28,7 @@ const applyEMA = (current: number, prev: number | null, alpha = 0.4): number => 
 };
 
 
+<<<<<<< HEAD
 
 interface LandmarkSample {
   y: number;
@@ -42,6 +43,8 @@ interface DownPhaseSnapshot {
   rightWristVisible: boolean;
   peakShoulderMovement?: number;
 }
+=======
+>>>>>>> all-together
 
 export class ExerciseTracker {
   private stage: 'UP' | 'DOWN' | null = null;
@@ -81,6 +84,7 @@ export class ExerciseTracker {
   }
 
 
+<<<<<<< HEAD
 
   /**
    * Aggiorna lo storico Y del polso (usa la media tra left e right se visibili)
@@ -117,6 +121,8 @@ export class ExerciseTracker {
       this.shoulderYHistory = this.shoulderYHistory.filter(s => s.timestamp >= cutoff);
     }
   }
+=======
+>>>>>>> all-together
 
   updatePullup(landmarks: NormalizedLandmark[]) {
     // Per le trazioni bastano: spalle (11,12) e polsi (15,16)
@@ -361,6 +367,7 @@ export class ExerciseTracker {
           okMsg: wristsStable ? `Rep Valida (L:${leftVal.toFixed(2)} R:${rightVal.toFixed(2)})` : undefined
         });
 
+<<<<<<< HEAD
         // Reset stato per la prossima ripetizione
         this.stage = 'UP';
         this.downPhaseSnapshot = {
@@ -374,6 +381,8 @@ export class ExerciseTracker {
       }
     }
   }
+=======
+>>>>>>> all-together
 
 
 
