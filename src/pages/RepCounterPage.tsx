@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Loader2, Play, Pause, Target, Repeat, Video, Smartphone, Timer, Square, Flag, Bug } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 import { useVoiceCommands } from '../hooks/useVoiceCommands';
@@ -116,6 +116,7 @@ const downloadTextFile = (filename: string, content: string) => {
 
 const RepCounterPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [countingMode, setCountingMode] = useState<CountingMode>('video');
   // Obiettivo ripetizioni: null = infinito
   const [repTarget, setRepTarget] = useState<number | null>(null);
@@ -133,6 +134,16 @@ const RepCounterPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [autoStarted, setAutoStarted] = useState(false);
+
+  useEffect(() => {
+    if (location.state?.autoCountExercise && location.state?.targetReps && !autoStarted) {
+      setAutoStarted(true);
+      setRepTarget(location.state.targetReps);
+      setRepTargetInput(String(location.state.targetReps));
+      handleSelectExercise(location.state.autoCountExercise, location.state.targetReps);
+    }
+  }, [location.state, autoStarted]);
 
   // Tracking states
   const [count, setCount] = useState(0);
@@ -291,9 +302,9 @@ const RepCounterPage: React.FC = () => {
     return () => window.clearTimeout(bannerTimer);
   }, [selectedExercise, countingMode]);
 
-  const initTracker = () => {
+  const initTracker = (overrideTarget?: number | null) => {
     trackerRef.current = new ExerciseTracker(
-      repTarget ?? Infinity,
+      overrideTarget ?? repTarget ?? Infinity,
       (newCount) => {
         setCount(newCount);
         speakNumber(newCount);
@@ -479,7 +490,7 @@ const RepCounterPage: React.FC = () => {
   }, [selectedExercise, countingMode, isCameraReady, detectPose]);
 
 
-  const handleSelectExercise = async (type: ExerciseType) => {
+  const handleSelectExercise = async (type: ExerciseType, overrideTarget?: number | null) => {
     setCount(0);
     setPoseResults(null);
     setIsCameraReady(false);
@@ -487,7 +498,7 @@ const RepCounterPage: React.FC = () => {
     setPaused(false);
     setIsCountingActive(false);
     resetAccelerometerSession();
-    initTracker();
+    initTracker(overrideTarget);
     setSelectedExercise(type);
 
     if (countingMode === 'accelerometer') {
@@ -496,6 +507,13 @@ const RepCounterPage: React.FC = () => {
   };
 
   const cancelWorkout = () => {
+    if (location.state?.returnUrl) {
+      finishPoseCsvSession();
+      trackerRef.current?.reset();
+      resetAccelerometerSession();
+      navigate(location.state.returnUrl);
+      return;
+    }
     setSelectedExercise(null);
     setIsCameraReady(false);
     setCameraError(null);
@@ -533,7 +551,7 @@ const RepCounterPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-brand-dark flex flex-col">
         <header className="p-4 flex items-center bg-black/50">
-          <button onClick={() => navigate('/')} className="p-2 text-white hover:text-brand-orange transition-colors">
+          <button onClick={() => location.state?.returnUrl ? navigate(location.state.returnUrl) : navigate('/')} className="p-2 text-white hover:text-brand-orange transition-colors">
             <ArrowLeft size={28} />
           </button>
           <h1 className="text-xl font-bold ml-4 text-white">New Workout</h1>

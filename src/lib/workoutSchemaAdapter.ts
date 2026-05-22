@@ -31,6 +31,7 @@ export interface UiExercise {
   pyramid_steps?: UiPyramidStep[];
   subExercises?: UiSubExercise[];
   instruction_note?: string | null;
+  auto_count_type?: 'pushups' | 'pullups' | null;
 }
 
 const toSafeInt = (value: unknown, fallback: number) => {
@@ -46,6 +47,21 @@ const toSafeDecimal = (value: unknown, fallback: number | null) => {
 const toOptionalNote = (value: unknown) => {
   const note = String(value || '').trim();
   return note.length > 0 ? note : null;
+};
+
+const extractNoteMeta = (rawNote: unknown): { note: string | null; meta: any } => {
+  const str = String(rawNote || '').trim();
+  const metaIdx = str.indexOf('@@@meta:');
+  if (metaIdx === -1) {
+    return { note: str.length > 0 ? str : null, meta: {} };
+  }
+  const notePart = str.substring(0, metaIdx).trim();
+  const metaStr = str.substring(metaIdx + 8).trim();
+  let meta = {};
+  try {
+    meta = JSON.parse(metaStr);
+  } catch {}
+  return { note: notePart.length > 0 ? notePart : null, meta };
 };
 
 const stripStorageMeta = (name: string) => name.replace(/@@@meta:.*$/, '').trim();
@@ -251,6 +267,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       return;
     }
 
+    const noteData = extractNoteMeta(row.note_esercizio);
     output.push({
       id: String(row.id_esecuzione),
       type: rowType,
@@ -262,7 +279,8 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       transition_rest_seconds: transitionRestSeconds,
       weight_kg: toSafeDecimal(row.peso_kg, null),
       order_index: orderIndex,
-      instruction_note: toOptionalNote(row.note_esercizio),
+      instruction_note: noteData.note,
+      auto_count_type: noteData.meta?.autoCountType || null,
     });
   });
 

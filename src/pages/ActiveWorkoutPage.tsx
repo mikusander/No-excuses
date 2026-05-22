@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import {
   buildWorkoutProgressStorageKey,
@@ -18,6 +18,7 @@ interface Exercise {
   type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string | null;
+  auto_count_type?: 'pushups' | 'pullups' | null;
   sets: number;
   reps: number;
   duration_seconds: number;
@@ -165,6 +166,7 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
         type,
         name: String(item.name || `Exercise ${idx + 1}`),
         instruction_note: String(item.instruction_note || '').trim() || null,
+        auto_count_type: (item as any).auto_count_type || null,
         sets: Math.max(1, Math.trunc(toSafeSnapshotNumber(item.sets, 1))),
         reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.reps, 0))),
         duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.duration_seconds, 0))),
@@ -187,6 +189,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const { id, workoutRunId } = useParams<{ id?: string; workoutRunId?: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
@@ -3570,6 +3573,26 @@ const ActiveWorkoutPage: React.FC = () => {
               <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-2">
                 Upcoming Recovery: {nextRecoveryLabel}
               </p>
+
+              {!isSuperset && currentExercise.auto_count_type && (
+                <button
+                  onClick={() => {
+                    persistWorkoutProgress(true);
+                    navigate('/rep-counter', { 
+                      state: { 
+                        autoCountExercise: currentExercise.auto_count_type,
+                        targetReps: currentExercise.reps,
+                        returnUrl: location.pathname
+                      } 
+                    });
+                  }}
+                  className="mt-6 mx-auto w-full max-w-xs bg-brand-darkGrey/40 border border-purple-500/35 rounded-xl py-3 px-4 text-center text-purple-400 hover:text-purple-300 hover:border-purple-500/70 hover:bg-purple-500/10 transition-colors flex items-center justify-center gap-2 font-bold shadow-lg"
+                  title="Use Camera/Sensor Auto-Count"
+                >
+                  <Video size={18} />
+                  <span>USE AUTO-COUNT</span>
+                </button>
+              )}
             </div>
           )}
         </div>

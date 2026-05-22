@@ -10,6 +10,7 @@ interface ExerciseDraft {
   type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
+  auto_count_type?: 'pushups' | 'pullups' | null;
   sets: number;
   reps: number;
   duration_seconds: number;
@@ -108,6 +109,7 @@ const normalizeExerciseDraft = (raw: unknown): ExerciseDraft => {
     rest_seconds: toSafeInteger(ex.rest_seconds, 60, 0),
     transition_rest_seconds: toSafeInteger(ex.transition_rest_seconds, 0, 0),
     weight_kg: toSafeWeight(ex.weight_kg),
+    auto_count_type: (ex.auto_count_type === 'pushups' || ex.auto_count_type === 'pullups') ? ex.auto_count_type : null,
   };
 
   if (type === 'emom') {
@@ -1353,6 +1355,11 @@ const NewTrainPage: React.FC = () => {
         const idEsercizio = await ensureExerciseDictionaryId(ex.name);
         const isIsometry = ex.type === 'isometry';
 
+        let noteToSave = String(ex.instruction_note || '').trim();
+        if (ex.auto_count_type) {
+          noteToSave += (noteToSave ? ' ' : '') + `@@@meta:${JSON.stringify({ autoCountType: ex.auto_count_type })}`;
+        }
+
         rowsToInsert.push({
           id_scheda: Number(workoutIdToUse),
           id_esercizio: idEsercizio,
@@ -1361,7 +1368,7 @@ const NewTrainPage: React.FC = () => {
           rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
           rest_tra_esercizi: transitionRestToPersist,
           peso_kg: toDbWeight(ex.weight_kg),
-          note_esercizio: String(ex.instruction_note || '').trim() || null,
+          note_esercizio: noteToSave || null,
           tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
           reps: isIsometry ? null : Math.max(0, ex.reps ?? 0),
           durata_secondi: isIsometry ? Math.max(0, ex.duration_seconds ?? 0) : null,
@@ -1857,6 +1864,34 @@ const NewTrainPage: React.FC = () => {
                         className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
                       />
                     </div>
+
+                    {ex.type === 'reps' && (
+                      <div className="mt-2">
+                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                          Auto-Count Feature
+                        </label>
+                        <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                          <button
+                            onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${!ex.auto_count_type ? 'bg-brand-grey text-black' : 'text-brand-grey hover:text-white'}`}
+                          >
+                            NONE
+                          </button>
+                          <button
+                            onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pushups' ? 'bg-purple-500 text-white' : 'text-brand-grey hover:text-white'}`}
+                          >
+                            PUSH-UPS
+                          </button>
+                          <button
+                            onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pullups' ? 'bg-purple-500 text-white' : 'text-brand-grey hover:text-white'}`}
+                          >
+                            PULL-UPS
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
 
