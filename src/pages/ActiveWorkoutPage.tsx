@@ -3633,7 +3633,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 <button
                   onClick={() => {
                     persistWorkoutProgress(true);
-                    navigate('/rep-counter', { 
+                    navigate('/reps-count', { 
                       state: { 
                         autoCountExercise: currentExercise.auto_count_type,
                         targetReps: currentExercise.reps,

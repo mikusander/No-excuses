@@ -536,7 +536,7 @@ const RepCounterPage: React.FC = () => {
   const videoStatusLabel = isCountingActive && !paused ? 'Active' : 'Paused';
 
   useEffect(() => {
-    if (location.state?.autoCountExercise && location.state?.targetReps && !autoStarted) {
+    if (location.state?.autoCountExercise && location.state?.targetReps !== undefined && !autoStarted) {
       setAutoStarted(true);
       setRepTarget(location.state.targetReps);
       setRepTargetInput(String(location.state.targetReps));
