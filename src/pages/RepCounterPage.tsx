@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Loader2, Play, Pause, Target, Repeat, Video, Smartphone, Timer, Square, Flag, Bug } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Target, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
-import { useVoiceCommands } from '../hooks/useVoiceCommands';
+
 import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
@@ -144,10 +144,10 @@ const RepCounterPage: React.FC = () => {
   const [paused, setPaused] = useState(false);
   const [isCountingActive, setIsCountingActive] = useState(false);
   const [showHint, setShowHint] = useState(false);
-  const [showVoiceCommandsBanner, setShowVoiceCommandsBanner] = useState(false);
+
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
-  const [isPoseDebuggerEnabled, setIsPoseDebuggerEnabled] = useState(false);
+  const [isPoseDebuggerEnabled] = useState(false);
   const isPoseDebuggerEnabledRef = useRef(isPoseDebuggerEnabled);
 
   const trackerRef = useRef<ExerciseTracker | null>(null);
@@ -168,8 +168,6 @@ const RepCounterPage: React.FC = () => {
     prepRemaining,
     error: accelerometerError,
     startSession: startAccelerometerSession,
-    pauseSession: pauseAccelerometerSession,
-    resumeSession: resumeAccelerometerSession,
     resetSession: resetAccelerometerSession,
     stopSession: stopAccelerometerSession,
   } = useAccelerometerRepCounter({
@@ -179,7 +177,10 @@ const RepCounterPage: React.FC = () => {
       // Ferma la sessione al raggiungimento del target
       if (repTarget !== null && newCount >= repTarget) {
         playGoalReachedSound();
+        speak('finish');
         stopAccelerometerSession();
+      } else if (newCount > 0) {
+        speakNumber(newCount);
       }
     },
     onRepData: (data) => {
@@ -282,29 +283,22 @@ const RepCounterPage: React.FC = () => {
     });
   };
 
-  useEffect(() => {
-    if (!selectedExercise || countingMode !== 'video') {
-      setShowVoiceCommandsBanner(false);
-      return;
-    }
 
-    setShowVoiceCommandsBanner(true);
-    const bannerTimer = window.setTimeout(() => setShowVoiceCommandsBanner(false), 5000);
-    return () => window.clearTimeout(bannerTimer);
-  }, [selectedExercise, countingMode]);
 
   const initTracker = (overrideTarget?: number | null) => {
+    const target = overrideTarget ?? repTarget;
     trackerRef.current = new ExerciseTracker(
-      overrideTarget ?? repTarget ?? Infinity,
+      target ?? Infinity,
       (newCount) => {
         setCount(newCount);
-        speakNumber(newCount);
         // Verifica obiettivo per la modalità video
-        if (repTarget !== null && newCount >= repTarget) {
+        if (target !== null && newCount >= target) {
           playGoalReachedSound();
-          speak('finish reps');
+          speak('finish');
           // Stop automatico al raggiungimento del target
           setIsCountingActive(false);
+        } else if (newCount > 0) {
+          speakNumber(newCount);
         }
       },
       (msg) => speak(msg)
@@ -343,19 +337,15 @@ const RepCounterPage: React.FC = () => {
     setIsCountingActive(true);
   };
 
-  const stopVideoCounting = () => {
-    if (!isCountingActive) return;
-    trackerRef.current?.resetTrackingState();
-    setIsCountingActive(false);
-  };
 
-  useVoiceCommands({
-    onStart: startVideoCounting,
-    onStop: stopVideoCounting,
-    onPause: () => setPaused(true),
-    onResume: () => setPaused(false),
-    enabled: countingMode === 'video' && selectedExercise !== null && isCameraReady && !isLoading
-  });
+
+  // Auto-start camera when ready
+  useEffect(() => {
+    if (countingMode === 'video' && isCameraReady && !isLoading && !isCountingActive) {
+      startVideoCounting();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCameraReady, isLoading]);
 
   // Start Camera when exercise is selected
   useEffect(() => {
@@ -510,7 +500,7 @@ const RepCounterPage: React.FC = () => {
     setCameraError(null);
     setPaused(false);
     setIsCountingActive(false);
-    setShowVoiceCommandsBanner(false);
+
     setCount(0);
     setIsCalibrationMode(false);
     setShowCalibrationLogs(false);
@@ -533,7 +523,7 @@ const RepCounterPage: React.FC = () => {
         : isAccelerometerPaused
           ? (prepRemaining > 0 ? 'Preparation paused' : 'Counting paused')
           : 'Starting accelerometer';
-  const videoStatusLabel = isCountingActive && !paused ? 'Active' : 'Paused';
+
 
   useEffect(() => {
     if (location.state?.autoCountExercise && location.state?.targetReps !== undefined && !autoStarted) {
@@ -752,17 +742,6 @@ const RepCounterPage: React.FC = () => {
           <div className="flex w-full max-w-sm gap-3">
             <button
               type="button"
-              onClick={isAccelerometerPaused ? resumeAccelerometerSession : pauseAccelerometerSession}
-              disabled={!!accelerometerError || accelerometerPhase === 'idle'}
-              className="flex-1 rounded-2xl border border-white/10 bg-white/10 px-5 py-4 text-sm font-bold text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="inline-flex items-center justify-center gap-2">
-                {isAccelerometerPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                {isAccelerometerPaused ? 'Resume' : 'Pause'}
-              </span>
-            </button>
-            <button
-              type="button"
               onClick={cancelWorkout}
               className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm font-bold text-red-100 transition-colors hover:bg-red-500/20"
             >
@@ -771,32 +750,6 @@ const RepCounterPage: React.FC = () => {
                 End exercise
               </span>
             </button>
-            {isCalibrationMode ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCalibrationLogs(true);
-                  pauseAccelerometerSession();
-                }}
-                className="flex-1 rounded-2xl border border-purple-500/50 bg-purple-500/20 px-5 py-4 text-sm font-bold text-purple-200 transition-colors hover:bg-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.2)]"
-              >
-                <span className="inline-flex items-center justify-center gap-2">
-                  <Flag className="h-4 w-4" />
-                  Save Log
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={cancelWorkout}
-                className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm font-bold text-red-100 transition-colors hover:bg-red-500/20"
-              >
-                <span className="inline-flex items-center justify-center gap-2">
-                  <Square className="h-4 w-4" />
-                  End exercise
-                </span>
-              </button>
-            )}
           </div>
         </main>
 
@@ -851,44 +804,7 @@ const RepCounterPage: React.FC = () => {
               : selectedExercise === 'pushups' ? 'Pushups'
                 : ''}
           </h2>
-          <button
-            onClick={() => setPaused(!paused)}
-            className={`p-2 rounded-full transition-all ${paused ? 'bg-brand-orange text-white scale-110' : 'bg-white/10 text-white hover:bg-white/20'}`}
-          >
-            {paused ? <Play className="w-6 h-6 fill-current" /> : <Pause className="w-6 h-6 fill-current" />}
-          </button>
-        </div>
-        <div className="mt-4 flex justify-center gap-3">
-          <button
-            type="button"
-            onClick={startVideoCounting}
-            disabled={!isCameraReady || isLoading || isCountingActive}
-            className="rounded-full border border-green-500/40 bg-green-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-green-100 transition-colors hover:bg-green-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Start
-          </button>
-          <button
-            type="button"
-            onClick={() => setPaused((current) => !current)}
-            disabled={!isCameraReady || isLoading}
-            className="rounded-full border border-yellow-500/40 bg-yellow-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-yellow-100 transition-colors hover:bg-yellow-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {paused ? 'Resume' : 'Pause'}
-          </button>
-          {selectedExercise === 'pushups' && (
-            <button
-              type="button"
-              onClick={() => setIsPoseDebuggerEnabled((prev) => !prev)}
-              className={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition-colors flex items-center gap-1 ${
-                isPoseDebuggerEnabled 
-                  ? 'border-red-500/40 bg-red-500/20 text-red-100 hover:bg-red-500/30' 
-                  : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/10'
-              }`}
-            >
-              <Bug className="w-3 h-3" />
-              {isPoseDebuggerEnabled ? 'Debug On' : 'Debug Off'}
-            </button>
-          )}
+          <div className="w-10"></div>
         </div>
       </div>
 
@@ -917,24 +833,12 @@ const RepCounterPage: React.FC = () => {
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-xl p-6 rounded-3xl border border-brand-orange/50 text-center max-w-[90%] w-sm shadow-2xl animate-in fade-in duration-300">
             <h3 className="text-xl font-black text-brand-orange mb-2 uppercase tracking-wider">Get in Position</h3>
             <p className="text-white/80 text-sm leading-relaxed">
-              {selectedExercise === 'pullups' ? 'Frame your whole body and the pullup bar.'
-                : selectedExercise === 'pushups' ? 'Position yourself sideways. Back and legs must be framed.'
-                  : ''}
+              Position yourself in front of the camera and start your execution.
             </p>
           </div>
         )}
 
-        {showVoiceCommandsBanner && (
-          <div className="absolute left-1/2 top-28 z-40 w-[92%] max-w-md -translate-x-1/2 rounded-3xl border border-brand-orange/40 bg-black/85 p-4 text-center shadow-2xl backdrop-blur-xl">
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-brand-orange/80">Voice Commands</p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/80 sm:grid-cols-4">
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2"><span className="block font-bold text-white">Go / Start</span><span className="text-white/50">Activate</span></div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2"><span className="block font-bold text-white">Stop</span><span className="text-white/50">Pause</span></div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2"><span className="block font-bold text-white">Pause</span><span className="text-white/50">Halt</span></div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2"><span className="block font-bold text-white">Resume</span><span className="text-white/50">Continue</span></div>
-            </div>
-          </div>
-        )}
+
 
         {isLoading && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/55 backdrop-blur-sm">
@@ -955,15 +859,7 @@ const RepCounterPage: React.FC = () => {
           </div>
         )}
 
-        {/* Debug Info Overlay */}
-        <div className="absolute top-24 left-6 z-20 flex flex-col gap-3">
-          <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10">
-            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">AI Data</p>
-            <div className="flex flex-col">
-              <span className="text-xs text-white font-mono">Session: <span className={`${videoStatusLabel === 'Active' ? 'text-green-400' : 'text-yellow-300'} font-bold`}>{videoStatusLabel}</span></span>
-            </div>
-          </div>
-        </div>
+
 
         {paused && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm">
