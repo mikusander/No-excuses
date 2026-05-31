@@ -343,11 +343,13 @@ const RepCounterPage: React.FC = () => {
 
   // Auto-start camera when ready, using device stillness
   useEffect(() => {
-    if (countingMode === 'video' && isCameraReady && !isLoading && !isCountingActive) {
+    if (countingMode === 'video' && isCameraReady && !isLoading) {
       if (accelerometerPhase === 'idle' || accelerometerPhase === 'paused') {
-        startAccelerometerSession();
+        if (!isCountingActive) startAccelerometerSession();
+      } else if (accelerometerPhase === 'preparing') {
+        if (isCountingActive) setIsCountingActive(false);
       } else if (accelerometerPhase === 'active') {
-        startVideoCounting();
+        if (!isCountingActive) startVideoCounting();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

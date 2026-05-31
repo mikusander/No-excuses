@@ -450,11 +450,21 @@ export const useAccelerometerRepCounter = ({
       const gGamma  = Math.abs(rr?.gamma || 0);
       const gyroMag = Math.hypot(gAlpha, gBeta, gGamma);
 
-      // 4. Energia Cinetica combinata
       const rawEnergy = gyroMag + 40 * linMag;
       prevEnergyRef.current = energyRef.current;
       energyRef.current = energyRef.current * 0.6 + rawEnergy * 0.4;
       const energy = energyRef.current;
+
+      // 5. Ritorno in 'preparing' se il dispositivo viene mosso bruscamente (solo in waitForStillness)
+      if (waitForStillness && phaseRef.current === 'active') {
+        if (energy > 40) {
+          prepEndsAtRef.current = Date.now() + prepDurationSeconds * 1000;
+          previousPhaseRef.current = 'preparing';
+          setPrepRemaining(prepDurationSeconds);
+          setPhase('preparing');
+          return;
+        }
+      }
 
       const cfg_peek = (exerciseType && EXERCISE_CONFIG[exerciseType])
         ? EXERCISE_CONFIG[exerciseType]
