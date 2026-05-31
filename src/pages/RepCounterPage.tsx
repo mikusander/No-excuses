@@ -177,7 +177,7 @@ const RepCounterPage: React.FC = () => {
       // Ferma la sessione al raggiungimento del target
       if (repTarget !== null && newCount >= repTarget) {
         playGoalReachedSound();
-        speak('finish');
+        speak('finish exercise');
         stopAccelerometerSession();
       } else if (newCount > 0) {
         speakNumber(newCount);
@@ -294,7 +294,7 @@ const RepCounterPage: React.FC = () => {
         // Verifica obiettivo per la modalità video
         if (target !== null && newCount >= target) {
           playGoalReachedSound();
-          speak('finish');
+          speak('finish exercise');
           // Stop automatico al raggiungimento del target
           setIsCountingActive(false);
         } else if (newCount > 0) {
