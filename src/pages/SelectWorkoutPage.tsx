@@ -1,20 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Calendar, ArrowLeft, PlayCircle, Clock, Timer, Repeat, X } from 'lucide-react';
+import { Dumbbell, Calendar, ArrowLeft, PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { useNavigate } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
+import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
 
 interface Exercise {
   id: string;
   type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
+  instruction_note?: string;
+  auto_count_type?: 'pushups' | 'pullups' | null;
   sets: number;
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  transition_rest_seconds?: number;
   weight_kg?: number | null;
   order_index: number;
   emom_rounds?: number;
@@ -26,6 +30,7 @@ interface Exercise {
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
+    instruction_note?: string;
   }[];
 }
 
@@ -39,6 +44,17 @@ interface WorkoutPreview extends Workout {
   exercises: Exercise[];
 }
 
+const parseTaggedNote = (rawNote: string) => {
+  const match = /^\[(.*?)\]\s*(.*)$/.exec(rawNote.trim());
+  if (!match) return null;
+  return {
+    exerciseName: match[1].trim(),
+    text: match[2].trim(),
+  };
+};
+
+const normalizeNoteKey = (name: string) => name.toLowerCase().trim();
+
 const SelectWorkoutPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -46,8 +62,11 @@ const SelectWorkoutPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [selectedWorkoutPreview, setSelectedWorkoutPreview] = useState<WorkoutPreview | null>(null);
+  const [latestExerciseNotes, setLatestExerciseNotes] = useState<Record<string, string>>({});
+  const [editableExercises, setEditableExercises] = useState<Exercise[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isSavingAndStarting, setIsSavingAndStarting] = useState(false);
 
   useEffect(() => {
     fetchWorkouts();
@@ -74,46 +93,72 @@ const SelectWorkoutPage: React.FC = () => {
     }
   };
 
-  const formatSecs = (totalSecs: number) => {
-    const m = Math.floor(totalSecs / 60);
-    const s = totalSecs % 60;
-    if (m === 0) return `${s}s`;
-    return `${m}m ${s}s`;
-  };
-
-  const formatWeightLabel = (weight?: number | null) => {
-    const n = Number(weight);
-    if (!Number.isFinite(n) || n <= 0) return 'Body Weight';
-    return `${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg`;
-  };
-
-  const getExerciseWeightLabel = (exercise: Exercise) => {
-    if (exercise.type === 'pyramid') {
-      const labels = Array.from(new Set((exercise.pyramid_steps || []).map((step) => formatWeightLabel(step.weight_kg))));
-      if (labels.length === 0) return 'Body Weight';
-      return labels.length === 1 ? labels[0] : 'Varies';
-    }
-
-    if ((exercise.type === 'superset' || exercise.type === 'emom') && exercise.subExercises?.length) {
-      const labels = Array.from(new Set(exercise.subExercises.map((sub) => formatWeightLabel(sub.weight_kg))));
-      if (labels.length === 0) return 'Body Weight';
-      return labels.length === 1 ? labels[0] : 'Varies';
-    }
-
-    return formatWeightLabel(exercise.weight_kg);
-  };
 
   const closePreviewModal = () => {
     setSelectedWorkout(null);
     setSelectedWorkoutPreview(null);
+    setLatestExerciseNotes({});
+    setEditableExercises([]);
     setPreviewLoading(false);
     setPreviewError(null);
+    setIsSavingAndStarting(false);
   };
 
   const clearSavedWorkoutCheckpoint = () => {
     if (!user?.id) return;
     clearAllWorkoutProgressCheckpoints(user.id);
   };
+
+  // --- Editable exercise helpers ---
+
+  const updateExerciseField = (index: number, field: keyof Exercise, value: any) => {
+    setEditableExercises((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const updateSubExerciseField = (exIndex: number, subIndex: number, field: string, value: any) => {
+    setEditableExercises((prev) => {
+      const next = [...prev];
+      const ex = { ...next[exIndex] };
+      if (ex.subExercises) {
+        const newSubs = [...ex.subExercises];
+        newSubs[subIndex] = { ...newSubs[subIndex], [field]: value };
+        ex.subExercises = newSubs;
+      }
+      next[exIndex] = ex;
+      return next;
+    });
+  };
+
+  const updatePyramidStepField = (exIndex: number, stepIndex: number, field: string, value: any) => {
+    setEditableExercises((prev) => {
+      const next = [...prev];
+      const ex = { ...next[exIndex] };
+      if (ex.pyramid_steps) {
+        const newSteps = [...ex.pyramid_steps];
+        newSteps[stepIndex] = { ...newSteps[stepIndex], [field]: value };
+        ex.pyramid_steps = newSteps;
+      }
+      next[exIndex] = ex;
+      return next;
+    });
+  };
+
+  const parseNumericInput = (raw: string, fallback: number) => {
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : fallback;
+  };
+
+  const parseWeightInput = (raw: string): number | null => {
+    if (raw.trim() === '' || raw.trim() === '0') return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+  };
+
+  // --- Data fetching ---
 
   const loadWorkoutPreview = async (workout: Workout) => {
     try {
@@ -136,6 +181,7 @@ const SelectWorkoutPage: React.FC = () => {
             tipo,
             reps,
             durata_secondi,
+            note_esercizio,
             id_superset,
             id_piramide,
             stepindex_piramide,
@@ -167,6 +213,33 @@ const SelectWorkoutPage: React.FC = () => {
         created_at: String(data.data_creazione || workout.created_at),
         exercises: parsedExercises,
       });
+      setEditableExercises(JSON.parse(JSON.stringify(parsedExercises)));
+
+      if (user?.id) {
+        const { data: runsData } = await supabase
+          .from('workout_run')
+          .select('data_esecuzione, note_workout!inner(testo)')
+          .eq('id_utente', user.id)
+          .order('data_esecuzione', { ascending: false });
+
+        const notesMap: Record<string, string> = {};
+        if (runsData) {
+          for (const run of runsData) {
+            const notes = Array.isArray(run.note_workout) ? run.note_workout : [run.note_workout];
+            for (const noteRow of notes) {
+              if (!noteRow) continue;
+              const parsed = parseTaggedNote(String(noteRow.testo || ''));
+              if (parsed?.exerciseName && parsed?.text) {
+                const key = normalizeNoteKey(parsed.exerciseName);
+                if (!notesMap[key]) {
+                  notesMap[key] = parsed.text;
+                }
+              }
+            }
+          }
+        }
+        setLatestExerciseNotes(notesMap);
+      }
     } catch (error) {
       console.error('Error loading workout preview:', error);
       setPreviewError('Unable to load workout preview.');
@@ -178,6 +251,64 @@ const SelectWorkoutPage: React.FC = () => {
   const openWorkoutPreview = (workout: Workout) => {
     setSelectedWorkout(workout);
     void loadWorkoutPreview(workout);
+  };
+
+  const handleSaveAndStart = async () => {
+    if (!selectedWorkoutPreview || isSavingAndStarting) return;
+    const schedaId = Number(selectedWorkoutPreview.id);
+    if (Number.isNaN(schedaId)) return;
+
+    try {
+      setIsSavingAndStarting(true);
+      await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
+      clearSavedWorkoutCheckpoint();
+      navigate(`/active-workout/${selectedWorkoutPreview.id}`);
+    } catch (err: any) {
+      console.error('Error saving workout before start:', err);
+      setPreviewError(err.message || 'Error saving changes.');
+      setIsSavingAndStarting(false);
+    }
+  };
+
+  // --- Inline input component ---
+
+  const InlineNumberInput: React.FC<{
+    label: string;
+    value: number;
+    onChange: (v: number) => void;
+    placeholder?: string;
+    isWeight?: boolean;
+    weightValue?: number | null;
+    onWeightChange?: (v: number | null) => void;
+  }> = ({ label, value, onChange, placeholder, isWeight, weightValue, onWeightChange }) => {
+    if (isWeight && onWeightChange) {
+      return (
+        <div className="flex-1 bg-white/5 py-2 px-2 rounded-lg text-center flex flex-col justify-center border border-white/10">
+          <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">{label}</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={weightValue != null && weightValue > 0 ? String(weightValue) : ''}
+            onChange={(e) => onWeightChange(parseWeightInput(e.target.value))}
+            placeholder="BW"
+            className="w-full bg-transparent text-sm text-brand-lightOrange text-center outline-none font-bold"
+          />
+        </div>
+      );
+    }
+    return (
+      <div className="flex-1 bg-white/5 py-2 px-2 rounded-lg text-center flex flex-col justify-center border border-white/10">
+        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">{label}</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={value > 0 ? String(value) : ''}
+          onChange={(e) => onChange(parseNumericInput(e.target.value, 0))}
+          placeholder={placeholder || '0'}
+          className="w-full bg-transparent text-sm text-brand-orange text-center outline-none font-bold"
+        />
+      </div>
+    );
   };
 
   return (
@@ -251,8 +382,9 @@ const SelectWorkoutPage: React.FC = () => {
                 <h3 className="text-2xl font-black text-white leading-tight break-words">
                   {selectedWorkoutPreview?.name || selectedWorkout.name}
                 </h3>
-                <p className="text-xs text-brand-grey/70 font-semibold mt-1">
-                  Created on {new Date(selectedWorkoutPreview?.created_at || selectedWorkout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                <p className="text-xs text-brand-grey/70 font-semibold mt-1 flex items-center">
+                  <Pencil size={10} className="mr-1 text-brand-orange" />
+                  Tap values to edit before starting
                 </p>
               </div>
 
@@ -279,7 +411,7 @@ const SelectWorkoutPage: React.FC = () => {
                   )}
 
                   <div className="space-y-4">
-                    {selectedWorkoutPreview?.exercises.map((ex, i) => {
+                    {editableExercises.map((ex, i) => {
                       const showInlineWeightNearName =
                         (ex.type === 'superset' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
 
@@ -299,25 +431,71 @@ const SelectWorkoutPage: React.FC = () => {
                                   </span>
                                 )}
                               </div>
-                              <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
+                              <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-2 mt-1">
                                 {ex.type === 'pyramid'
                                   ? ex.pyramid_steps?.map((step, sIdx) => (
-                                    <div key={sIdx} className="text-sm font-semibold text-white/80">
-                                      Step {sIdx + 1}: <span className="text-brand-orange ml-1 text-xs">{step.reps > 0 ? `${step.reps} reps` : 'MAX'}</span>{' '}
-                                      <span className="text-brand-grey/70 text-xs">/ rest {formatSecs(step.rest_seconds)}</span>
+                                    <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
+                                      <p className="text-xs font-bold text-brand-grey uppercase">Step {sIdx + 1}</p>
+                                      <div className="grid grid-cols-3 gap-2">
+                                        <InlineNumberInput
+                                          label="Reps"
+                                          value={step.reps}
+                                          onChange={(v) => updatePyramidStepField(i, sIdx, 'reps', v)}
+                                          placeholder="MAX"
+                                        />
+                                        <InlineNumberInput
+                                          label="Rest (s)"
+                                          value={step.rest_seconds}
+                                          onChange={(v) => updatePyramidStepField(i, sIdx, 'rest_seconds', v)}
+                                        />
+                                        <InlineNumberInput
+                                          label="Kg"
+                                          value={0}
+                                          onChange={() => {}}
+                                          isWeight
+                                          weightValue={step.weight_kg}
+                                          onWeightChange={(v) => updatePyramidStepField(i, sIdx, 'weight_kg', v)}
+                                        />
+                                      </div>
                                     </div>
                                   ))
-                                  : ex.subExercises?.map((sub, sIdx) => (
-                                    <div key={sIdx} className="text-sm font-semibold text-white/80">
-                                      {sub.name}{' '}
-                                      <span className="text-brand-orange ml-1 text-xs">
-                                        ({sub.type === 'reps' ? (sub.reps > 0 ? `${sub.reps} reps` : 'MAX REPS') : (sub.duration_seconds > 0 ? `${sub.duration_seconds} s` : 'MAX TIME')})
-                                      </span>
-                                      {showInlineWeightNearName && (
-                                        <span className="text-brand-grey/70 text-xs ml-1">{formatWeightLabel(sub.weight_kg)}</span>
-                                      )}
-                                    </div>
-                                  ))}
+                                  : ex.subExercises?.map((sub, sIdx) => {
+                                      const subNote = latestExerciseNotes[normalizeNoteKey(sub.name)];
+                                      return (
+                                        <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
+                                          <p className="text-xs font-bold text-white">{sub.name}</p>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            {sub.type === 'reps' ? (
+                                              <InlineNumberInput
+                                                label="Reps"
+                                                value={sub.reps}
+                                                onChange={(v) => updateSubExerciseField(i, sIdx, 'reps', v)}
+                                                placeholder="MAX"
+                                              />
+                                            ) : (
+                                              <InlineNumberInput
+                                                label="Time (s)"
+                                                value={sub.duration_seconds}
+                                                onChange={(v) => updateSubExerciseField(i, sIdx, 'duration_seconds', v)}
+                                              />
+                                            )}
+                                            <InlineNumberInput
+                                              label="Kg"
+                                              value={0}
+                                              onChange={() => {}}
+                                              isWeight
+                                              weightValue={sub.weight_kg}
+                                              onWeightChange={(v) => updateSubExerciseField(i, sIdx, 'weight_kg', v)}
+                                            />
+                                          </div>
+                                          {subNote && (
+                                            <div className="text-xs text-brand-grey italic pl-2 border-l border-brand-orange/30">
+                                              "{subNote}"
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                               </div>
                             </div>
                           ) : (
@@ -333,44 +511,93 @@ const SelectWorkoutPage: React.FC = () => {
                             </div>
                           )}
 
-                          <div className="grid grid-cols-2 min-[450px]:grid-cols-4 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
-                            <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                              <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                                {ex.type === 'superset' ? 'Round' : ex.type === 'emom' ? 'Rounds' : ex.type === 'pyramid' ? 'Steps' : 'Sets'}
-                              </span>
-                              <span className="text-sm text-white">{ex.type === 'pyramid' ? ex.pyramid_steps?.length || 0 : ex.sets}</span>
-                            </div>
+                          <div className={`grid ${
+                            ex.type === 'pyramid' ? 'grid-cols-1' :
+                            ex.type === 'superset' ? 'grid-cols-2' :
+                            ex.type === 'emom' ? 'grid-cols-2 sm:grid-cols-4' :
+                            showInlineWeightNearName ? 'grid-cols-2 min-[450px]:grid-cols-3' :
+                            'grid-cols-2 min-[450px]:grid-cols-4'
+                          } gap-2 text-xs text-brand-grey font-bold w-full mt-2`}>
 
-                            {ex.type !== 'superset' && ex.type !== 'pyramid' && (
-                              <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
-                                <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                                  {ex.type === 'isometry' ? 'Duration' : ex.type === 'emom' ? 'Time/Rnd' : 'Reps'}
-                                </span>
-                                <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'emom' ? (ex.duration_seconds > 0 ? formatSecs(ex.duration_seconds) : 'MAX TIME') : (ex.reps > 0 ? ex.reps : 'MAX REPS')}</span>
+                            {ex.type === 'pyramid' ? (
+                              <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                                <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Steps</span>
+                                <span className="text-sm text-white">{ex.pyramid_steps?.length || 0}</span>
                               </div>
+                            ) : (
+                              <InlineNumberInput
+                                label={ex.type === 'superset' ? 'Round' : ex.type === 'emom' ? 'Sets' : 'Sets'}
+                                value={ex.sets}
+                                onChange={(v) => updateExerciseField(i, 'sets', Math.max(1, v))}
+                              />
+                            )}
+
+                            {ex.type === 'emom' && (
+                              <>
+                                <InlineNumberInput
+                                  label="Rounds"
+                                  value={ex.emom_rounds || 1}
+                                  onChange={(v) => updateExerciseField(i, 'emom_rounds', Math.max(1, v))}
+                                />
+                                <InlineNumberInput
+                                  label="Time/Rnd (s)"
+                                  value={ex.emom_round_duration || ex.duration_seconds}
+                                  onChange={(v) => {
+                                    updateExerciseField(i, 'emom_round_duration', Math.max(1, v));
+                                    updateExerciseField(i, 'duration_seconds', Math.max(1, v));
+                                  }}
+                                />
+                              </>
+                            )}
+
+                            {ex.type !== 'superset' && ex.type !== 'pyramid' && ex.type !== 'emom' && (
+                              <InlineNumberInput
+                                label={ex.type === 'isometry' ? 'Duration (s)' : 'Reps'}
+                                value={ex.type === 'isometry' ? ex.duration_seconds : ex.reps}
+                                onChange={(v) => updateExerciseField(i, ex.type === 'isometry' ? 'duration_seconds' : 'reps', v)}
+                                placeholder={ex.type === 'isometry' ? 'MAX' : 'MAX'}
+                              />
                             )}
 
                             {ex.type !== 'pyramid' && (
-                              <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                              <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-2 rounded-lg text-center flex flex-col justify-center">
                                 <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
-                                  <Clock size={9} className="mr-1" /> Rest
+                                  <Clock size={9} className="mr-1" /> Rest (s)
                                 </span>
-                                <span className="text-sm text-brand-lightOrange">{formatSecs(ex.rest_seconds)}</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={ex.rest_seconds > 0 ? String(ex.rest_seconds) : ''}
+                                  onChange={(e) => updateExerciseField(i, 'rest_seconds', parseNumericInput(e.target.value, 0))}
+                                  placeholder="0"
+                                  className="w-full bg-transparent text-sm text-brand-lightOrange text-center outline-none font-bold"
+                                />
                               </div>
                             )}
 
-                            {!showInlineWeightNearName && (
-                              <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
-                                <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Weights</span>
-                                <span className="text-sm text-brand-lightOrange truncate">{getExerciseWeightLabel(ex)}</span>
-                              </div>
+                            {!showInlineWeightNearName && ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
+                              <InlineNumberInput
+                                label="Kg"
+                                value={0}
+                                onChange={() => {}}
+                                isWeight
+                                weightValue={ex.weight_kg}
+                                onWeightChange={(v) => updateExerciseField(i, 'weight_kg', v)}
+                              />
                             )}
                           </div>
+
+                          {latestExerciseNotes[normalizeNoteKey(ex.name)] && (
+                            <div className="mt-3 bg-brand-darkGrey/30 p-3 rounded-xl border border-white/5">
+                              <span className="text-xs font-bold text-brand-orange uppercase block mb-1">Note:</span>
+                              <span className="text-sm text-brand-grey italic">"{latestExerciseNotes[normalizeNoteKey(ex.name)]}"</span>
+                            </div>
+                          )}
                         </div>
                       )
                     })}
 
-                    {(!selectedWorkoutPreview || selectedWorkoutPreview.exercises.length === 0) && !previewError && (
+                    {editableExercises.length === 0 && !previewError && (
                       <p className="text-sm text-brand-grey/50 italic text-center py-4 bg-black/20 rounded-2xl">No exercises in this workout.</p>
                     )}
                   </div>
@@ -380,16 +607,21 @@ const SelectWorkoutPage: React.FC = () => {
 
             <div className="p-5 border-t border-white/10">
               <button
-                onClick={() => {
-                  if (!selectedWorkoutPreview) return;
-                  clearSavedWorkoutCheckpoint();
-                  navigate(`/active-workout/${selectedWorkoutPreview.id}`);
-                }}
-                disabled={!selectedWorkoutPreview || previewLoading}
+                onClick={() => void handleSaveAndStart()}
+                disabled={editableExercises.length === 0 || previewLoading || isSavingAndStarting}
                 className="w-full bg-brand-orange hover:bg-brand-lightOrange text-black font-black py-4 px-5 rounded-full flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <PlayCircle size={20} className="mr-2" />
-                Start Workout
+                {isSavingAndStarting ? (
+                  <>
+                    <Loader2 size={20} className="mr-2 animate-spin" />
+                    Saving & Starting...
+                  </>
+                ) : (
+                  <>
+                    <PlayCircle size={20} className="mr-2" />
+                    Start Workout
+                  </>
+                )}
               </button>
             </div>
           </div>

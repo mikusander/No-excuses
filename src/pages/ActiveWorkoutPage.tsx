@@ -2789,6 +2789,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const handleArrowNextExercise = () => {
+    suppressNextExerciseVoiceCueForCurrentTick();
     handleNextExercise();
   };
 
@@ -3084,6 +3085,60 @@ const ActiveWorkoutPage: React.FC = () => {
                           </span>
                         ))}
                       </div>
+
+                      {exercise.type === 'superset' && exercise.subExercises && exercise.subExercises.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {exercise.subExercises.map((sub, subIndex) => (
+                            <div key={`${exercise.id}:sub:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
+                                <p className="text-[11px] text-brand-orange/90 font-black uppercase tracking-wide mt-1">
+                                  {formatSupersetTaskMetricLabel(sub)}
+                                </p>
+                              </div>
+                              <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                                {formatWeightLabel(sub.weight_kg)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {exercise.type === 'emom' && exercise.subExercises && exercise.subExercises.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {exercise.subExercises.map((sub, subIndex) => (
+                            <div key={`${exercise.id}:emom:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
+                                <p className="text-[11px] text-blue-400 font-black uppercase tracking-wide mt-1">
+                                  {formatEmomTaskMetricLabel(sub)}
+                                </p>
+                              </div>
+                              <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                                {formatWeightLabel(sub.weight_kg)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {exercise.type === 'pyramid' && exercise.pyramid_steps && exercise.pyramid_steps.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {exercise.pyramid_steps.map((step, stepIndex) => (
+                            <div key={`${exercise.id}:pyramid:${stepIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-white font-bold text-sm truncate">Step {stepIndex + 1}</p>
+                                <p className="text-[11px] text-amber-300 font-black uppercase tracking-wide mt-1">
+                                  {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
+                                </p>
+                              </div>
+                              <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                                {formatWeightLabel(step.weight_kg)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

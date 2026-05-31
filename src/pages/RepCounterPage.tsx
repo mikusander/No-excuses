@@ -136,15 +136,6 @@ const RepCounterPage: React.FC = () => {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [autoStarted, setAutoStarted] = useState(false);
 
-  useEffect(() => {
-    if (location.state?.autoCountExercise && location.state?.targetReps && !autoStarted) {
-      setAutoStarted(true);
-      setRepTarget(location.state.targetReps);
-      setRepTargetInput(String(location.state.targetReps));
-      handleSelectExercise(location.state.autoCountExercise, location.state.targetReps);
-    }
-  }, [location.state, autoStarted]);
-
   // Tracking states
   const [count, setCount] = useState(0);
 
@@ -543,6 +534,15 @@ const RepCounterPage: React.FC = () => {
           ? (prepRemaining > 0 ? 'Preparation paused' : 'Counting paused')
           : 'Starting accelerometer';
   const videoStatusLabel = isCountingActive && !paused ? 'Active' : 'Paused';
+
+  useEffect(() => {
+    if (location.state?.autoCountExercise && location.state?.targetReps && !autoStarted) {
+      setAutoStarted(true);
+      setRepTarget(location.state.targetReps);
+      setRepTargetInput(String(location.state.targetReps));
+      handleSelectExercise(location.state.autoCountExercise, location.state.targetReps);
+    }
+  }, [location.state, autoStarted, handleSelectExercise]);
 
   // --- RENDERING ---
 

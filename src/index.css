@@ -20,6 +20,13 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Prevent auto-zoom on mobile inputs */
+  @media screen and (max-width: 768px) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
+  }
 }
 
 @layer utilities {

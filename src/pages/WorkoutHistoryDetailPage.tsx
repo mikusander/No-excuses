@@ -70,6 +70,10 @@ const formatHistoryDuration = (value: number) => {
   return safe === 0 ? 'MAX' : formatSecs(safe);
 };
 
+const formatHistoryWeight = (value: number) => {
+  return value === 0 ? 'Body Weight' : `${value} kg`;
+};
+
 const formatWorkoutDuration = (totalSecs: number | null) => {
   if (totalSecs == null || !Number.isFinite(totalSecs)) return 'Not available';
 
@@ -596,7 +600,10 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                               <div key={`${exercise.id}:step:${stepIdx}`} className="text-sm font-semibold text-white/80">
                                 - Step {stepIdx + 1}:{' '}
                                   <span className="text-brand-orange ml-1 text-xs">{formatHistoryTarget(step.reps)} reps</span>{' '}
-                                <span className="text-brand-grey/70 text-xs">/ rest {formatSecs(step.rest_seconds)}</span>
+                                {step.weight_kg != null && (
+                                  <span className="text-white ml-1 text-xs">- {formatHistoryWeight(step.weight_kg)}</span>
+                                )}
+                                <span className="text-brand-grey/70 text-xs ml-1">/ rest {formatSecs(step.rest_seconds)}</span>
                               </div>
                             ))
                           ) : (
@@ -614,7 +621,10 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                               <div key={`${exercise.id}:sub:${subIdx}`} className="border border-white/5 bg-black/10 rounded-2xl p-3">
                                 <div className="flex items-center justify-between gap-3">
                                   <p className="font-bold text-white text-sm">{subExercise.name}</p>
-                                  <span className="text-xs text-brand-orange font-black uppercase tracking-wide">{subMetric}</span>
+                                  <span className="text-xs text-brand-orange font-black uppercase tracking-wide">
+                                    {subMetric}
+                                    {subExercise.weight_kg != null && <span className="text-white ml-1">- {formatHistoryWeight(subExercise.weight_kg)}</span>}
+                                  </span>
                                 </div>
 
                                 {subNotes.length > 0 && (
@@ -640,7 +650,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                   )}
 
                   {(exercise.type === 'reps' || exercise.type === 'isometry') && (
-                    <div className="grid grid-cols-3 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
+                    <div className={`grid ${exercise.weight_kg != null ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2 text-xs text-brand-grey font-bold w-full mt-2`}>
                       <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Sets</span>
                         <span className="text-sm text-white">{exercise.sets}</span>
@@ -656,6 +666,13 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                             : formatHistoryTarget(exercise.reps)}
                         </span>
                       </div>
+
+                      {exercise.weight_kg != null && (
+                        <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
+                          <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Weight</span>
+                          <span className="text-sm text-white">{formatHistoryWeight(exercise.weight_kg)}</span>
+                        </div>
+                      )}
 
                       <div className="bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                         <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">

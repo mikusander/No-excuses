@@ -1873,19 +1873,19 @@ const NewTrainPage: React.FC = () => {
                         <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                           <button
                             onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${!ex.auto_count_type ? 'bg-brand-grey text-black' : 'text-brand-grey hover:text-white'}`}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${!ex.auto_count_type ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
                             NONE
                           </button>
                           <button
                             onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pushups' ? 'bg-purple-500 text-white' : 'text-brand-grey hover:text-white'}`}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pushups' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
                             PUSH-UPS
                           </button>
                           <button
                             onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pullups' ? 'bg-purple-500 text-white' : 'text-brand-grey hover:text-white'}`}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pullups' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
                             PULL-UPS
                           </button>
