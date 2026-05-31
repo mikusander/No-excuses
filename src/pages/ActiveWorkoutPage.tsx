@@ -237,6 +237,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const lastHandledRestCompletionEndsAtMsRef = useRef<number | null>(null);
   const lastHandledEmomCompletionEndsAtMsRef = useRef<number | null>(null);
 
+  const handlePrimaryActionRef = useRef<() => void>(undefined);
+
   // Voice Command State
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -1782,6 +1784,17 @@ const ActiveWorkoutPage: React.FC = () => {
     wasIsometryActiveRef.current = isometryActive;
   }, [isometryActive, isometryRemaining]);
 
+  useEffect(() => {
+    if (location.state?.autoCompleteAction && workout && !loading) {
+      navigate(location.pathname, { replace: true, state: {} });
+      setTimeout(() => {
+        if (handlePrimaryActionRef.current) {
+          handlePrimaryActionRef.current();
+        }
+      }, 100);
+    }
+  }, [location.state?.autoCompleteAction, workout, loading, navigate, location.pathname]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-brand-dark flex items-center justify-center">
@@ -2934,14 +2947,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
     completeSet();
   };
-
-  useEffect(() => {
-    if (location.state?.autoCompleteAction && workout) {
-      navigate(location.pathname, { replace: true, state: {} });
-      handlePrimaryAction();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state?.autoCompleteAction, workout, navigate, location.pathname]);
+  handlePrimaryActionRef.current = handlePrimaryAction;
 
   const voiceCommandsHelpBubble = isVoiceHelpVisible ? (
     <div className="fixed top-20 right-4 z-50 w-[min(92vw,430px)] pointer-events-none">
