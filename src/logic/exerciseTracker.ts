@@ -49,11 +49,8 @@ interface DownPhaseSnapshot {
 export class ExerciseTracker {
   private stage: 'UP' | 'DOWN' | null = null;
   private count: number = 0;
-  private lastAnnouncement: number = -1;
-  private target: number;
   
   private onCount: (count: number) => void;
-  private onAnnounce: (msg: string) => void;
   private onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void;
   private hasStarted: boolean = false;
 
@@ -72,14 +69,10 @@ export class ExerciseTracker {
   private WRIST_MOVE_THRESHOLD = 0.02; // max movimento polsi per considerarli fermi (calibrato dai test)
 
   constructor(
-    target: number, 
     onCount: (count: number) => void, 
-    onAnnounce: (msg: string) => void,
     onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void
   ) {
-    this.target = target;
     this.onCount = onCount;
-    this.onAnnounce = onAnnounce;
     this.onDebug = onDebug;
   }
 
@@ -253,7 +246,6 @@ export class ExerciseTracker {
       if (isValid) {
         this.count++;
         this.onCount(this.count);
-        this.checkAnnouncements();
       }
 
       // Pulisci snapshot
@@ -357,7 +349,6 @@ export class ExerciseTracker {
         if (wristsStable) {
           this.count++;
           this.onCount(this.count);
-          this.checkAnnouncements();
         }
 
         this.onDebug?.({
@@ -387,17 +378,6 @@ export class ExerciseTracker {
 
 
 
-  private checkAnnouncements() {
-    if (this.target !== Infinity) {
-      if (this.count === this.target) {
-        this.onAnnounce("ESERCIZIO FINITO");
-      } else if (this.target - this.count === 3 && this.lastAnnouncement !== this.count) {
-        this.onAnnounce("ULTIME TRE");
-        this.lastAnnouncement = this.count;
-      }
-    }
-  }
-
   getCount() {
     return this.count;
   }
@@ -413,7 +393,6 @@ export class ExerciseTracker {
 
   reset() {
     this.count = 0;
-    this.lastAnnouncement = -1;
     this.resetTrackingState();
   }
 }

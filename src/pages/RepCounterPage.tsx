@@ -143,7 +143,6 @@ const RepCounterPage: React.FC = () => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [isCountingActive, setIsCountingActive] = useState(false);
-  const [showHint, setShowHint] = useState(false);
 
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [poseResults, setPoseResults] = useState<any>(null);
@@ -173,6 +172,7 @@ const RepCounterPage: React.FC = () => {
   } = useAccelerometerRepCounter({
     exerciseType: selectedExercise ?? undefined,
     onCountChange: (newCount) => {
+      if (countingMode === 'video') return;
       setCount(newCount);
       // Ferma la sessione al raggiungimento del target
       if (repTarget !== null && newCount >= repTarget) {
@@ -288,7 +288,6 @@ const RepCounterPage: React.FC = () => {
   const initTracker = (overrideTarget?: number | null) => {
     const target = overrideTarget ?? repTarget;
     trackerRef.current = new ExerciseTracker(
-      target ?? Infinity,
       (newCount) => {
         setCount(newCount);
         // Verifica obiettivo per la modalità video
@@ -300,8 +299,7 @@ const RepCounterPage: React.FC = () => {
         } else if (newCount > 0) {
           speakNumber(newCount);
         }
-      },
-      (msg) => speak(msg)
+      }
     );
   };
 
@@ -339,13 +337,19 @@ const RepCounterPage: React.FC = () => {
 
 
 
-  // Auto-start camera when ready
+  // Auto-start camera when ready, using device stillness
   useEffect(() => {
     if (countingMode === 'video' && isCameraReady && !isLoading && !isCountingActive) {
-      startVideoCounting();
+      if (accelerometerError) {
+        startVideoCounting();
+      } else if (accelerometerPhase === 'idle' || accelerometerPhase === 'paused') {
+        startAccelerometerSession();
+      } else if (accelerometerPhase === 'active') {
+        startVideoCounting();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCameraReady, isLoading]);
+  }, [countingMode, isCameraReady, isLoading, isCountingActive, accelerometerPhase, startAccelerometerSession, accelerometerError]);
 
   // Start Camera when exercise is selected
   useEffect(() => {
@@ -377,12 +381,9 @@ const RepCounterPage: React.FC = () => {
     };
 
     startCamera();
-    setShowHint(true);
-    const hintTimer = setTimeout(() => setShowHint(false), 8000);
 
     return () => {
       isCancelled = true;
-      clearTimeout(hintTimer);
       setCameraStream((currentStream) => {
         currentStream?.getTracks().forEach(track => track.stop());
         return null;
@@ -828,13 +829,16 @@ const RepCounterPage: React.FC = () => {
           />
         )}
 
-        {/* Hint Overlays */}
-        {showHint && isCameraReady && (
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-xl p-6 rounded-3xl border border-brand-orange/50 text-center max-w-[90%] w-sm shadow-2xl animate-in fade-in duration-300">
-            <h3 className="text-xl font-black text-brand-orange mb-2 uppercase tracking-wider">Get in Position</h3>
-            <p className="text-white/80 text-sm leading-relaxed">
-              Position yourself in front of the camera and start your execution.
+        {/* Device Stillness Countdown Overlay */}
+        {accelerometerPhase === 'preparing' && isCameraReady && !isCountingActive && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-xl p-8 rounded-3xl border border-brand-orange/50 text-center max-w-[90%] w-sm shadow-[0_0_40px_rgba(196,90,0,0.3)] animate-in fade-in zoom-in duration-300">
+            <h3 className="text-xl font-black text-brand-orange mb-2 uppercase tracking-wider">Device Stillness</h3>
+            <p className="text-white/80 text-sm leading-relaxed mb-6">
+              Place your device down and get in position. The tracking will start automatically when the phone is still.
             </p>
+            <div className="text-8xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">
+              {prepRemaining}
+            </div>
           </div>
         )}
 
