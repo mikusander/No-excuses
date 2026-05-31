@@ -3645,11 +3645,18 @@ const ActiveWorkoutPage: React.FC = () => {
 
               {!isSuperset && currentExercise.auto_count_type && (
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
                       const u = new SpeechSynthesisUtterance('');
                       u.volume = 0;
                       window.speechSynthesis.speak(u);
+                    }
+                    if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
+                      try {
+                        await (window as any).DeviceMotionEvent.requestPermission();
+                      } catch (e) {
+                        console.warn('DeviceMotionEvent permission request failed', e);
+                      }
                     }
                     persistWorkoutProgress(true);
                     navigate('/reps-count', { 

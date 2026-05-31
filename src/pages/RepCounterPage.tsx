@@ -475,6 +475,13 @@ const RepCounterPage: React.FC = () => {
 
 
   const handleSelectExercise = async (type: ExerciseType, overrideTarget?: number | null) => {
+    if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
+      try {
+        await (window as any).DeviceMotionEvent.requestPermission();
+      } catch (e) {
+        console.warn('DeviceMotionEvent permission request failed', e);
+      }
+    }
     setCount(0);
     setPoseResults(null);
     setIsCameraReady(false);

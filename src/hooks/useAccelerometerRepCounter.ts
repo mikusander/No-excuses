@@ -372,7 +372,7 @@ export const useAccelerometerRepCounter = ({
       if (!prepEndsAtRef.current) return;
       
       if (waitForStillness) {
-        if (energyRef.current > 30) {
+        if (energyRef.current > 10) {
           // Device is not still, reset the countdown
           prepEndsAtRef.current = Date.now() + prepDurationSeconds * 1000;
           setIsDeviceStill(false);
