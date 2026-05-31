@@ -53,6 +53,8 @@ export interface RepData {
 
 interface UseAccelerometerRepCounterOptions {
   prepDurationSeconds?: number;
+  waitForStillness?: boolean;
+  fallbackToTimer?: boolean;
   exerciseType?: string; // Es. 'pushups', 'pullups' — usato nei log di calibrazione
   onCountChange: (count: number) => void;
   onRepData?: (data: RepData) => void;
@@ -151,6 +153,8 @@ const triggerStartHaptic = () => {
 
 export const useAccelerometerRepCounter = ({
   prepDurationSeconds = 5,
+  waitForStillness = false,
+  fallbackToTimer = false,
   exerciseType,
   onCountChange,
   onRepData,
@@ -163,6 +167,7 @@ export const useAccelerometerRepCounter = ({
   useEffect(() => { onRepDataRef.current = onRepData; }, [onRepData]);
   const [phase, setPhase] = useState<AccelerometerSessionPhase>('idle');
   const [prepRemaining, setPrepRemaining] = useState(prepDurationSeconds);
+  const [isDeviceStill, setIsDeviceStill] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [permissionState, setPermissionState] = useState<MotionPermissionState>('unknown');
 
@@ -309,7 +314,7 @@ export const useAccelerometerRepCounter = ({
   const startSession = useCallback(async () => {
     setError(null);
     const granted = await requestMotionPermission();
-    if (!granted) return false;
+    if (!granted && !fallbackToTimer) return false;
 
     // Crea/resume AudioContext dentro la user gesture per sbloccare l'audio su iOS
     getAudioCtx();
@@ -365,6 +370,17 @@ export const useAccelerometerRepCounter = ({
 
     const updateCountdown = () => {
       if (!prepEndsAtRef.current) return;
+      
+      if (waitForStillness) {
+        if (energyRef.current > 30) {
+          // Device is not still, reset the countdown
+          prepEndsAtRef.current = Date.now() + prepDurationSeconds * 1000;
+          setIsDeviceStill(false);
+        } else {
+          setIsDeviceStill(true);
+        }
+      }
+
       const remainingMs = Math.max(0, prepEndsAtRef.current - Date.now());
       setPrepRemaining(Math.max(0, Math.ceil(remainingMs / 1000)));
       if (remainingMs <= 0) {
@@ -702,14 +718,13 @@ export const useAccelerometerRepCounter = ({
   return {
     phase,
     prepRemaining,
+    isDeviceStill,
     error,
-    isSupported,
     permissionState,
     startSession,
     pauseSession,
     resumeSession,
-    resetSession,
     stopSession,
+    resetSession,
   };
 };
-

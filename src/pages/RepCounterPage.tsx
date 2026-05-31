@@ -165,11 +165,15 @@ const RepCounterPage: React.FC = () => {
   const {
     phase: accelerometerPhase,
     prepRemaining,
+    isDeviceStill,
     error: accelerometerError,
     startSession: startAccelerometerSession,
     resetSession: resetAccelerometerSession,
     stopSession: stopAccelerometerSession,
   } = useAccelerometerRepCounter({
+    prepDurationSeconds: countingMode === 'video' ? 3 : 10,
+    waitForStillness: countingMode === 'video',
+    fallbackToTimer: countingMode === 'video',
     exerciseType: selectedExercise ?? undefined,
     onCountChange: (newCount) => {
       if (countingMode === 'video') return;
@@ -340,16 +344,14 @@ const RepCounterPage: React.FC = () => {
   // Auto-start camera when ready, using device stillness
   useEffect(() => {
     if (countingMode === 'video' && isCameraReady && !isLoading && !isCountingActive) {
-      if (accelerometerError) {
-        startVideoCounting();
-      } else if (accelerometerPhase === 'idle' || accelerometerPhase === 'paused') {
+      if (accelerometerPhase === 'idle' || accelerometerPhase === 'paused') {
         startAccelerometerSession();
       } else if (accelerometerPhase === 'active') {
         startVideoCounting();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countingMode, isCameraReady, isLoading, isCountingActive, accelerometerPhase, startAccelerometerSession, accelerometerError]);
+  }, [countingMode, isCameraReady, isLoading, isCountingActive, accelerometerPhase, startAccelerometerSession]);
 
   // Start Camera when exercise is selected
   useEffect(() => {
@@ -833,10 +835,13 @@ const RepCounterPage: React.FC = () => {
         {accelerometerPhase === 'preparing' && isCameraReady && !isCountingActive && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-xl p-8 rounded-3xl border border-brand-orange/50 text-center max-w-[90%] w-sm shadow-[0_0_40px_rgba(196,90,0,0.3)] animate-in fade-in zoom-in duration-300">
             <h3 className="text-xl font-black text-brand-orange mb-2 uppercase tracking-wider">Device Stillness</h3>
-            <p className="text-white/80 text-sm leading-relaxed mb-6">
+            <p className="text-white/80 text-sm leading-relaxed mb-4">
               Place your device down and get in position. The tracking will start automatically when the phone is still.
             </p>
-            <div className="text-8xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">
+            <div className={`text-sm font-bold uppercase tracking-widest mb-6 ${accelerometerError ? 'text-yellow-400' : isDeviceStill ? 'text-green-400' : 'text-red-500 animate-pulse'}`}>
+              {accelerometerError ? 'Timer Fallback' : isDeviceStill ? 'Device is stable' : 'Device is moving...'}
+            </div>
+            <div className={`text-8xl font-black drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] transition-colors ${isDeviceStill ? 'text-white' : 'text-red-500/50'}`}>
               {prepRemaining}
             </div>
           </div>
