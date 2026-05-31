@@ -866,6 +866,25 @@ const RepCounterPage: React.FC = () => {
             <h3 className="text-3xl font-black text-white mt-4 uppercase tracking-tighter">Paused</h3>
           </div>
         )}
+
+        {repTarget !== null && count >= repTarget && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md p-6">
+            <h3 className="text-4xl font-black text-brand-orange mb-6 uppercase tracking-widest text-center shadow-black drop-shadow-xl">Goal Reached!</h3>
+            <button
+              onClick={() => {
+                if (location.state?.returnUrl) {
+                  finishPoseCsvSession();
+                  trackerRef.current?.reset();
+                  resetAccelerometerSession();
+                  navigate(location.state.returnUrl, { state: { autoCompleteAction: true } });
+                }
+              }}
+              className="bg-brand-orange text-black font-black uppercase tracking-widest py-4 px-10 rounded-full text-xl hover:scale-105 transition-transform shadow-[0_0_30px_rgba(255,102,0,0.6)]"
+            >
+              Continue Workout
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Stats Overlay Bottom */}

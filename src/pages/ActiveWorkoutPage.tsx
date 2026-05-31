@@ -2880,7 +2880,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const handleLeaveWorkout = () => {
     suppressProgressPersistenceRef.current = true;
     clearPersistedWorkoutProgress();
-    navigate(-1);
+    navigate('/');
   };
 
   const markWorkoutComplete = async () => {
@@ -2934,6 +2934,14 @@ const ActiveWorkoutPage: React.FC = () => {
 
     completeSet();
   };
+
+  useEffect(() => {
+    if (location.state?.autoCompleteAction && workout) {
+      navigate(location.pathname, { replace: true, state: {} });
+      handlePrimaryAction();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.autoCompleteAction, workout, navigate, location.pathname]);
 
   const voiceCommandsHelpBubble = isVoiceHelpVisible ? (
     <div className="fixed top-20 right-4 z-50 w-[min(92vw,430px)] pointer-events-none">
@@ -3632,6 +3640,11 @@ const ActiveWorkoutPage: React.FC = () => {
               {!isSuperset && currentExercise.auto_count_type && (
                 <button
                   onClick={() => {
+                    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                      const u = new SpeechSynthesisUtterance('');
+                      u.volume = 0;
+                      window.speechSynthesis.speak(u);
+                    }
                     persistWorkoutProgress(true);
                     navigate('/reps-count', { 
                       state: { 
