@@ -1,14 +1,6 @@
 // Keep a reference to prevent garbage collection
 export let lastUtterance: SpeechSynthesisUtterance | null = null;
-let voices: SpeechSynthesisVoice[] = [];
 
-if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-  // Load voices
-  voices = window.speechSynthesis.getVoices();
-  window.speechSynthesis.onvoiceschanged = () => {
-    voices = window.speechSynthesis.getVoices();
-  };
-}
 
 export const speak = (text: string) => {
   const isVoiceAssistantEnabled = localStorage.getItem('voice_assistance_enabled') !== 'false';
