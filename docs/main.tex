@@ -1,0 +1,135 @@
+\documentclass[11pt]{article}
+\usepackage{acl2015}
+\usepackage{times}
+\usepackage{url}
+\usepackage{latexsym}
+\usepackage{natbib}
+\usepackage{color}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{amsmath}
+\definecolor{citecolor}{RGB}{34,139,34}
+\usepackage[pagebackref=true,breaklinks=true,letterpaper=true,citecolor=citecolor,colorlinks,bookmarks=false]{hyperref}
+\usepackage[capitalise]{cleveref}
+\usepackage[labelfont={bf,small},font=small]{caption}
+
+\newcommand{\minisection}[1]{\noindent{\textbf{#1.}}}
+
+\title{No-Excuses: A Multimodal Web Application for Hands-Free, Eyes-Free Workout Tracking}
+
+\author{Alessandro Gautieri \\
+  Independent Developer \\
+  Italy \\
+  {\tt alessandro.gautieri@example.com} \\
+}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Workout tracking remains a disruptive element in physical exercise, forcing athletes to break their focus to interact with smartphone screens or requiring the purchase of expensive wearable devices. This report introduces \textit{No-Excuses}, a fully client-side, multimodal web application designed to automate fitness tracking through seamless, hands-free, and eyes-free interactions. By exploiting native smartphone hardware—specifically the camera for computer vision-based pose estimation and the accelerometer/gyroscope for pocket-based inertial tracking—the system accurately counts repetitions for various exercises such as pushups, pullups, and squats. Furthermore, the application features complete voice-control navigation for training routines and provides real-time audio-haptic feedback, acting as a digital spotter. We detail the system's architecture, the algorithmic solutions implemented to filter out complex false positives during device handling (e.g., a real-time 66-degree gravity orientation filter), and a comparative evaluation demonstrating the superiority of our sensor-fusion peak-counting algorithm over naive thresholding baselines.
+\end{abstract}
+
+\section{Task description/Problem statement}
+The core NLP and algorithmic task addressed in this work is \textbf{Multimodal Activity Recognition and Repetition Counting} in unconstrained environments using off-the-shelf mobile hardware. The problem is defined as accurately identifying the concentric and eccentric phases of specific physical exercises, tallying them in real-time, and communicating the state of the workout to the user without requiring direct visual or physical interaction with the device.
+
+During intense exercises like calisthenics or heavy weightlifting, athletes cannot safely or comfortably interact with a touchscreen. Traditional fitness tracking applications fall short because they demand manual input between sets, which breaks focus and inaccurately inflates rest times. The challenge is to construct a system that tracks activity autonomously while circumventing the limitations of standard smartphones, such as high sensor noise, unpredictable device placement (e.g., loose pockets), and strict mobile browser security policies.
+
+\subsection{Examples}
+The system operates under two primary multimodal paradigms:
+\begin{itemize}
+    \item \textbf{Pocket Mode (Inertial):} The user starts the session, places the smartphone in their pocket, and begins performing pushups. The expected output is a real-time auditory count (``One'', ``Two'') and a final chime when the target (e.g., 5 reps) is reached, without counting the motion of taking the phone out of the pocket at the end.
+    \item \textbf{Stand Mode (Vision):} The user leans the phone against a wall and performs pullups in front of the front-facing camera. The expected output is the extraction of 33 anatomical landmarks, angle computation of the elbow/shoulder joints, and accurate rep counting.
+    \item \textbf{Voice Control:} The user says ``Start routine'' or ``Skip exercise''. The expected output is the seamless progression of the workout plan without touching the screen.
+\end{itemize}
+
+\subsection{Real-world applications}
+The primary downstream applications involve personal fitness, home workouts, and outdoor calisthenics. By eliminating the friction of manual tracking, \textit{No-Excuses} serves as an automated digital personal trainer. This technology is highly applicable to rehabilitation monitoring, where precise movement counts are medically necessary, and to gym environments where users wish to maintain strict hygiene by not touching their devices during a workout.
+
+\section{Related work}
+The current state-of-the-art in digital fitness tracking is fragmented. Manual logging applications (e.g., MyFitnessPal, Strong) offer comprehensive routine management but rely entirely on high user compliance for manual data entry, which often fails during high-intensity interval training (HIIT).
+
+Wearable-based tracking systems, such as the Apple Watch or Garmin ecosystems, utilize localized Inertial Measurement Units (IMUs) to automatically detect exercise types and count repetitions. While highly robust, these systems require proprietary hardware, operate within closed ecosystems, and are generally disliked by weightlifters due to wrist discomfort and hardware vulnerability.
+
+Recent advancements in computer vision have introduced camera-based fitness tracking, such as the Peloton Guide or various smartphone apps utilizing PoseNet. While effective, vision-based systems suffer from occlusion, poor lighting, and require the user to stay perfectly within the camera frame, rendering them useless for exercises where the phone cannot be safely propped up. \textit{No-Excuses} innovates by offering a hybrid, multimodal approach—combining both vision and inertial sensors with voice control—accessible entirely through a standard web browser (PWA) without any proprietary hardware or app store installation.
+
+\section{Datasets and benchmarks}
+Unlike traditional machine learning models that rely on massive, pre-labeled datasets like FallAllD, \textit{No-Excuses} operates using deterministic, real-time algorithms tuned via empirical calibration data. 
+Our primary benchmark dataset consisted of raw JSON logs extracted from the application during live testing sessions. The data logs capture:
+\begin{itemize}
+    \item \texttt{burstDurationMs}: Time elapsed between the start and end of a rep.
+    \item \texttt{maxEnergy} and \texttt{minEnergy}: The peak and trough of the fused kinetic energy metric.
+    \item \texttt{gravityVec}: A 3D vector representing the baseline device orientation.
+\end{itemize}
+By actively analyzing these logs during field tests (specifically during pushups), we established robust benchmarks for human pacing (average rep duration: 1.5s to 3.5s) and energy thresholds (resting baseline $\approx 75$, active threshold $\approx 120$).
+
+\section{Existing tools, libraries, papers with code}
+The architecture of \textit{No-Excuses} relies heavily on modern web technologies and open-source libraries:
+\begin{itemize}
+    \item \textbf{React, TypeScript, and Vite:} Serve as the foundation for the Progressive Web App (PWA), ensuring fast hot-module replacement and strict type safety.
+    \item \textbf{MediaPipe Pose:} Developed by Google, this computer vision library provides high-fidelity, real-time body landmark tracking directly in the browser via WebAssembly.
+    \item \textbf{HTML5 Device APIs:} 
+    \begin{itemize}
+        \item \texttt{DeviceMotion} and \texttt{DeviceOrientation} for high-frequency access to the accelerometer and gyroscope.
+        \item \texttt{Web Speech API} (SpeechRecognition and SpeechSynthesis) for voice control and auditory feedback.
+        \item \texttt{Web Audio API} for generating low-latency haptic signals and distinct workout chimes.
+    \end{itemize}
+\end{itemize}
+
+\section{State-of-the-art evaluation}
+In the literature, activity recognition and repetition counting systems are typically evaluated using standard classification metrics: Accuracy, Precision, Recall, and F1-Score. Precision is particularly critical in fitness applications: false positives (counting a rep that did not occur) are highly frustrating for users trying to hit specific targets. Recall ensures that actual exertion is recognized, preventing the user from performing unnecessary extra repetitions to satisfy the tracker. 
+
+In inertial tracking, a common metric is the Absolute Error ($AE = | \text{Predicted Reps} - \text{Actual Reps} |$). For our specific system, we focus heavily on the elimination of false positives during non-exercise actions, such as device handling.
+
+\section{Comparative evaluation}
+To validate the effectiveness of our tracking logic, we conducted a comparative evaluation focusing on the \textit{Pocket Mode} (inertial tracking) during pushup exercises.
+
+\begin{itemize}
+    \item \textbf{Datasets/Testing Protocol:} The user performed multiple sets of pushups with the smartphone in their pocket. Each set concluded with the user standing up and extracting the phone to terminate the session. The ground truth (Actual Reps) was strictly monitored.
+    \item \textbf{Baseline System (Naive Thresholding):} The baseline algorithm utilized a simple energy threshold ($E > \tau$) based solely on linear acceleration. It employed a static 2000ms cooldown to prevent double-counting sub-peaks (e.g., the pause at the bottom of a pushup) and lacked any orientation filtering.
+    \item \textbf{Proposed System (Sensor Fusion + Gravity Filter):} The proposed algorithm fuses linear acceleration and gyroscope data into a ``Motion Energy'' metric to capture rotational exertion. It utilizes an optimized 1200ms cooldown. Crucially, it incorporates a \textit{Real-Time Gravity Orientation Filter}: during a 5-second pre-workout countdown, the app captures a baseline gravity vector. It continuously calculates the dot product between the baseline and current gravity. If the deviation exceeds 66 degrees ($\approx 1.15$ radians), the movement is discarded as a non-exercise motion (e.g., standing up).
+    \item \textbf{Evaluation Protocol:} We measured the Absolute Error in repetition counting and the system's ability to reject the post-workout extraction motion.
+\end{itemize}
+
+\subsection{Results}
+The baseline system severely underperformed. During a test set of 6 actual pushups, the baseline system counted 8 repetitions. Furthermore, when the user performed rapid pushups (duration $< 2.0$ seconds), the 2000ms cooldown caused the baseline system to miss actual reps. When the user stood up and extracted the phone, the massive kinetic energy spike easily bypassed the naive threshold, registering false positives.
+
+The proposed system demonstrated flawless performance. In a test with a predefined target of 5 repetitions, the user performed 5 reps. The system counted exactly 5 repetitions and automatically halted. In a subsequent unbounded test (no target set), the user performed 4 rapid pushups. The optimized 1200ms cooldown successfully registered every rapid rep without double-counting the sub-peaks. More importantly, when the user stood up to extract the phone, the gravity orientation filter detected a deviation exceeding 66 degrees and instantly discarded the motion, resulting in 0 false positives during device handling.
+
+\subsection{Discussion}
+The comparative evaluation highlights critical flaws in naive inertial tracking. The most prominent error committed by the baseline system was its inability to distinguish between the physical exertion of a pushup and the chaotic motion of taking a phone out of a pocket. Both actions generate massive spikes in linear acceleration. 
+
+The success of the proposed system lies in the geometric interpretation of the workout stance. By calculating the angle $\theta$:
+\begin{equation}
+\theta = \arccos\left(\frac{v_{base} \cdot v_{current}}{|v_{base}| |v_{current}|}\right)
+\end{equation}
+we exploit the fact that a user's thigh (and pocket) shifts by approximately 90 degrees when transitioning from a horizontal pushup position to a vertical standing position. We empirically determined that an angle threshold of 45 degrees was too strict, as it rejected genuine repetitions due to the phone shifting inside loose gym shorts. Expanding the tolerance to 66 degrees proved optimal: it allows the phone to bounce freely within a loose pocket during the exercise, but strictly blocks the 90-degree shift of standing up.
+
+Another significant challenge discussed was mobile browser security. Modern OS environments (iOS Safari, Android Chrome) block the \texttt{AudioContext} from playing unless instantiated via synchronous user interaction. To solve this, our proposed architecture utilizes strict lazy-loading, unlocking the Speech Synthesis and Audio APIs precisely within the \texttt{onClick} handler of the ``Start Session'' button, ensuring robust auditory feedback.
+
+\section{Conclusions}
+In this report, we presented \textit{No-Excuses}, a comprehensive multimodal workout tracking web application. We demonstrated that by fusing computer vision, inertial sensor data, and voice-controlled navigation, athletes can experience a truly hands-free, eyes-free tracking environment without proprietary wearables. 
+
+The implementation of our sensor-fusion peak-counting algorithm, combined with a 66-degree gravity orientation filter, successfully eliminated one of the most persistent issues in mobile fitness tracking: device handling false positives. Our dynamic 1200ms cooldown further optimized the capture of rapid human movement. 
+
+\minisection{Future Work} Future iterations of the system will focus on expanding the MediaPipe pose-estimation library to recognize a broader array of exercises, integrating the onboard barometer to track elevation changes for outdoor calisthenics, and exploring Large Language Models (LLMs) to parse unstructured voice commands into complex routine modifications on the fly.
+
+\minisection{Contributions} Alessandro Gautieri served as the sole architect and developer of the project, responsible for the UI/UX design, React state management, sensor fusion algorithm engineering, MediaPipe integration, and empirical data analysis.
+
+\begin{thebibliography}{9}
+
+\bibitem{DevlinCLT19}
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova.
+\newblock BERT: Pre-training of deep bidirectional transformers for language understanding.
+\newblock In \textit{Proceedings of NAACL-HLT}, pages 4171--4186, 2019.
+
+\bibitem{mediapipe2020}
+Camillo Lugaresi, Jiuqiang Tang, et al.
+\newblock MediaPipe: A Framework for Building Perception Pipelines.
+\newblock \textit{arXiv preprint arXiv:1906.08172}, 2019.
+
+\end{thebibliography}
+
+\end{document}
