@@ -322,7 +322,8 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const speakCue = (text: string) => {
-    if (!voiceAssistanceEnabled) return;
+    const isVoiceAssistantEnabled = localStorage.getItem('voice_assistance_enabled') !== 'false';
+    if (!isVoiceAssistantEnabled || !voiceAssistanceEnabled) return;
     const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
     if (!synth) return;
     const utterance = new SpeechSynthesisUtterance(text);
