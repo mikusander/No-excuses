@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Loader2, Play, Target, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 
-import { useAccelerometerRepCounter } from '../hooks/useAccelerometerRepCounter';
+import { useAccelerometerRepCounter, triggerStartHaptic } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
 import { speak, speakNumber } from '../utils/voice';
 import { playGoalReachedSound } from '../utils/audio';
@@ -180,7 +180,7 @@ const RepCounterPage: React.FC = () => {
       setCount(newCount);
       // Ferma la sessione al raggiungimento del target
       if (repTarget !== null && newCount >= repTarget) {
-        playGoalReachedSound();
+        triggerStartHaptic(); // stesso AudioContext già sbloccato dall'avvio sessione
         speak('finish exercise');
         stopAccelerometerSession();
       } else if (newCount > 0) {

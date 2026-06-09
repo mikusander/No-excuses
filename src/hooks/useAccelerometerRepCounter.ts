@@ -141,7 +141,8 @@ const triggerHaptic = () => {
 };
 
 // Vibrazione/audio distinta per segnalare l'inizio dell'esercizio.
-const triggerStartHaptic = () => {
+// Esportata perché usata anche in RepCounterPage come suono di "obiettivo raggiunto".
+export const triggerStartHaptic = () => {
   if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
     navigator.vibrate([150, 80, 150, 80, 300]);
   }
