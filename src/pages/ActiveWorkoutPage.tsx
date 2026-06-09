@@ -1826,18 +1826,19 @@ const ActiveWorkoutPage: React.FC = () => {
   const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : isPyramid ? isLastPyramidStep : isLastSet);
 
   const getCurrentExerciseNoteContext = () => {
+    const orderStr = `${currentExerciseIdx + 1}`;
     if (isSuperset) {
       const supersetName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
       return {
         key: currentExercise.id,
-        name: supersetName,
+        name: `${orderStr}. ${supersetName}`,
       };
     }
 
     const baseName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
     return {
       key: currentExercise.id,
-      name: baseName,
+      name: `${orderStr}. ${baseName}`,
     };
   };
 

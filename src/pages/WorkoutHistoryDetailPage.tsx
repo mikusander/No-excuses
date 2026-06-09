@@ -21,6 +21,7 @@ interface WorkoutHistoryDetail {
 
 interface ExerciseNoteModalContext {
   exerciseName: string;
+  index: number;
 }
 
 const formatExecutedAt = (value: string) => {
@@ -43,12 +44,25 @@ const parseTaggedNote = (raw: string) => {
 
   const match = trimmed.match(/^\[([^\]]+)\]\s*(.+)$/);
   if (!match) {
-    return { exerciseName: '', text: trimmed };
+    return { orderIndex: null, exerciseName: '', text: trimmed };
+  }
+
+  const tag = match[1].trim();
+  const text = match[2].trim();
+  
+  const orderMatch = /^(\d+)\.\s*(.*)$/.exec(tag);
+  if (orderMatch) {
+    return {
+      orderIndex: parseInt(orderMatch[1], 10) - 1,
+      exerciseName: orderMatch[2].trim(),
+      text,
+    };
   }
 
   return {
-    exerciseName: match[1].trim(),
-    text: match[2].trim(),
+    orderIndex: null,
+    exerciseName: tag,
+    text,
   };
 };
 
@@ -327,44 +341,59 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
   const notesGrouped = useMemo(() => {
     const notesMap = new Map<string, string[]>();
+    const legacyMap = new Map<string, string[]>();
     const genericNotes: string[] = [];
 
-    (detail?.notes || []).forEach((rawNote) => {
-      const parsed = parseTaggedNote(rawNote);
-      if (!parsed || !parsed.text) return;
-
-      if (!parsed.exerciseName) {
-        genericNotes.push(parsed.text);
+    (detail?.notes || []).forEach((noteText) => {
+      const parsed = parseTaggedNote(noteText);
+      if (!parsed) {
+        genericNotes.push(noteText);
         return;
       }
 
-      const key = normalizeNoteKey(parsed.exerciseName);
-      const current = notesMap.get(key) || [];
-      current.push(parsed.text);
-      notesMap.set(key, current);
+      if (parsed.orderIndex !== null) {
+        const key = `${parsed.orderIndex}_${normalizeNoteKey(parsed.exerciseName)}`;
+        const current = notesMap.get(key) || [];
+        current.push(parsed.text);
+        notesMap.set(key, current);
+      } else {
+        const key = normalizeNoteKey(parsed.exerciseName);
+        const current = legacyMap.get(key) || [];
+        current.push(parsed.text);
+        legacyMap.set(key, current);
+      }
     });
 
-    return { notesMap, genericNotes };
+    return { notesMap, legacyMap, genericNotes };
   }, [detail?.notes]);
 
-  const getNotesForName = (name: string) => {
-    return notesGrouped.notesMap.get(normalizeNoteKey(name)) || [];
+  const getNotesForExercise = (name: string, index: number) => {
+    const key = `${index}_${normalizeNoteKey(name)}`;
+    const specificNotes = notesGrouped.notesMap.get(key);
+    if (specificNotes && specificNotes.length > 0) return specificNotes;
+    
+    return notesGrouped.legacyMap.get(normalizeNoteKey(name)) || [];
   };
 
-  const getNoteTextsForExercise = (exerciseName: string, sourceNotes: string[]) => {
+  const getNoteTextsForExercise = (exerciseName: string, sourceNotes: string[], index: number) => {
     const targetKey = normalizeNoteKey(exerciseName);
     return sourceNotes
       .map((rawNote) => parseTaggedNote(rawNote))
-      .filter((parsed): parsed is { exerciseName: string; text: string } => {
+      .filter((parsed): parsed is { orderIndex: number | null; exerciseName: string; text: string } => {
         if (!parsed || !parsed.exerciseName || !parsed.text) return false;
-        return normalizeNoteKey(parsed.exerciseName) === targetKey;
+        
+        if (parsed.orderIndex !== null) {
+          return parsed.orderIndex === index && normalizeNoteKey(parsed.exerciseName) === targetKey;
+        } else {
+          return normalizeNoteKey(parsed.exerciseName) === targetKey;
+        }
       })
       .map((parsed) => parsed.text);
   };
 
-  const openExerciseNoteModal = (exerciseName: string) => {
-    const initialNotes = getNoteTextsForExercise(exerciseName, detail?.notes || []);
-    setExerciseNoteModalContext({ exerciseName });
+  const openExerciseNoteModal = (exerciseName: string, index: number) => {
+    const initialNotes = getNoteTextsForExercise(exerciseName, detail?.notes || [], index);
+    setExerciseNoteModalContext({ exerciseName, index });
     setExerciseNoteDraft(initialNotes.join('\n'));
     setIsExerciseNoteModalOpen(true);
   };
@@ -385,21 +414,24 @@ const WorkoutHistoryDetailPage: React.FC = () => {
       return;
     }
 
-    const trimmedNote = exerciseNoteDraft.trim();
-    const currentNotes = detail.notes || [];
-    const targetExerciseName = exerciseNoteModalContext.exerciseName;
-    const notesWithoutCurrentExercise = currentNotes.filter((rawNote) => {
-      const parsed = parseTaggedNote(rawNote);
-      if (!parsed || !parsed.exerciseName) return true;
-      return normalizeNoteKey(parsed.exerciseName) !== normalizeNoteKey(targetExerciseName);
-    });
-
-    const nextNotes = trimmedNote
-      ? [...notesWithoutCurrentExercise, `[${targetExerciseName}] ${trimmedNote}`]
-      : notesWithoutCurrentExercise;
-
     try {
       setIsSavingExerciseNote(true);
+      const targetKey = normalizeNoteKey(exerciseNoteModalContext.exerciseName);
+      const targetIndex = exerciseNoteModalContext.index;
+      
+      const newSourceNotes = (detail?.notes || []).filter((raw) => {
+        const parsed = parseTaggedNote(raw);
+        if (!parsed || !parsed.exerciseName) return true;
+        if (parsed.orderIndex !== null) {
+          return !(parsed.orderIndex === targetIndex && normalizeNoteKey(parsed.exerciseName) === targetKey);
+        }
+        return normalizeNoteKey(parsed.exerciseName) !== targetKey;
+      });
+
+      if (exerciseNoteDraft.trim()) {
+        const orderStr = `${targetIndex + 1}`;
+        newSourceNotes.push(`[${orderStr}. ${exerciseNoteModalContext.exerciseName}] ${exerciseNoteDraft.trim()}`);
+      }
 
       const { error: deleteNotesError } = await supabase
         .from('note_workout')
@@ -408,8 +440,8 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
       if (deleteNotesError) throw deleteNotesError;
 
-      if (nextNotes.length > 0) {
-        const rowsToInsert = nextNotes.map((note) => ({
+      if (newSourceNotes.length > 0) {
+        const rowsToInsert = newSourceNotes.map((note) => ({
           id_workout: workoutRunNumericId,
           testo: note,
         }));
@@ -425,7 +457,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         if (!prev) return prev;
         return {
           ...prev,
-          notes: nextNotes,
+          notes: newSourceNotes,
         };
       });
 
@@ -537,7 +569,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           </div>
         ) : (
           exercises.map((exercise, idx) => {
-            const directNotes = getNotesForName(exercise.name);
+            const directNotes = getNotesForExercise(exercise.name, idx);
             const hasDirectExerciseNote = directNotes.length > 0;
             const typeLabel =
               exercise.type === 'reps'
@@ -580,7 +612,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
                   <div className="mb-3 flex justify-end">
                     <button
-                      onClick={() => openExerciseNoteModal(exercise.name)}
+                      onClick={() => openExerciseNoteModal(exercise.name, idx)}
                       className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wide transition-colors border ${hasDirectExerciseNote
                           ? 'bg-brand-orange/20 text-brand-orange border-brand-orange/40 hover:bg-brand-orange/25'
                           : 'bg-brand-darkGrey/40 text-brand-grey border-brand-grey/30 hover:text-white hover:border-brand-grey/50'
@@ -611,7 +643,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                           )
                         ) : exercise.subExercises && exercise.subExercises.length > 0 ? (
                           exercise.subExercises.map((subExercise: UiSubExercise, subIdx) => {
-                            const subNotes = getNotesForName(subExercise.name);
+                            const subNotes = getNotesForExercise(subExercise.name, idx);
                             const subMetric =
                               subExercise.type === 'reps'
                                 ? `${formatHistoryTarget(subExercise.reps)} reps`

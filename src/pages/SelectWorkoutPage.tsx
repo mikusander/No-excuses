@@ -47,13 +47,77 @@ interface WorkoutPreview extends Workout {
 const parseTaggedNote = (rawNote: string) => {
   const match = /^\[(.*?)\]\s*(.*)$/.exec(rawNote.trim());
   if (!match) return null;
+  
+  const tag = match[1].trim();
+  const text = match[2].trim();
+  
+  const orderMatch = /^(\d+)\.\s*(.*)$/.exec(tag);
+  if (orderMatch) {
+    return {
+      orderIndex: parseInt(orderMatch[1], 10) - 1,
+      exerciseName: orderMatch[2].trim(),
+      text,
+    };
+  }
+  
   return {
-    exerciseName: match[1].trim(),
-    text: match[2].trim(),
+    orderIndex: null,
+    exerciseName: tag,
+    text,
   };
 };
 
 const normalizeNoteKey = (name: string) => name.toLowerCase().trim();
+
+const parseNumericInput = (raw: string, fallback: number) => {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : fallback;
+};
+
+const parseWeightInput = (raw: string): number | null => {
+  if (raw.trim() === '' || raw.trim() === '0') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+};
+
+const InlineNumberInput: React.FC<{
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  placeholder?: string;
+  isWeight?: boolean;
+  weightValue?: number | null;
+  onWeightChange?: (v: number | null) => void;
+}> = ({ label, value, onChange, placeholder, isWeight, weightValue, onWeightChange }) => {
+  if (isWeight && onWeightChange) {
+    return (
+      <div className="flex-1 bg-white/5 py-2 px-2 rounded-lg text-center flex flex-col justify-center border border-white/10">
+        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">{label}</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={weightValue != null && weightValue > 0 ? String(weightValue) : ''}
+          onChange={(e) => onWeightChange(parseWeightInput(e.target.value))}
+          placeholder="BW"
+          className="w-full bg-transparent text-sm text-brand-lightOrange text-center outline-none font-bold"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 bg-white/5 py-2 px-2 rounded-lg text-center flex flex-col justify-center border border-white/10">
+      <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">{label}</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={value > 0 ? String(value) : ''}
+        onChange={(e) => onChange(parseNumericInput(e.target.value, 0))}
+        placeholder={placeholder || '0'}
+        className="w-full bg-transparent text-sm text-brand-orange text-center outline-none font-bold"
+      />
+    </div>
+  );
+};
 
 const SelectWorkoutPage: React.FC = () => {
   const { user } = useAuth();
@@ -147,16 +211,7 @@ const SelectWorkoutPage: React.FC = () => {
     });
   };
 
-  const parseNumericInput = (raw: string, fallback: number) => {
-    const n = Number(raw);
-    return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : fallback;
-  };
 
-  const parseWeightInput = (raw: string): number | null => {
-    if (raw.trim() === '' || raw.trim() === '0') return null;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
-  };
 
   // --- Data fetching ---
 
@@ -231,9 +286,16 @@ const SelectWorkoutPage: React.FC = () => {
               if (!noteRow) continue;
               const parsed = parseTaggedNote(String(noteRow.testo || ''));
               if (parsed?.exerciseName && parsed?.text) {
-                const key = normalizeNoteKey(parsed.exerciseName);
-                if (!notesMap[key]) {
-                  notesMap[key] = parsed.text;
+                if (parsed.orderIndex !== null) {
+                  const key = `${parsed.orderIndex}_${normalizeNoteKey(parsed.exerciseName)}`;
+                  if (!notesMap[key]) {
+                    notesMap[key] = parsed.text;
+                  }
+                } else {
+                  const key = `legacy_${normalizeNoteKey(parsed.exerciseName)}`;
+                  if (!notesMap[key]) {
+                    notesMap[key] = parsed.text;
+                  }
                 }
               }
             }
@@ -271,46 +333,7 @@ const SelectWorkoutPage: React.FC = () => {
     }
   };
 
-  // --- Inline input component ---
 
-  const InlineNumberInput: React.FC<{
-    label: string;
-    value: number;
-    onChange: (v: number) => void;
-    placeholder?: string;
-    isWeight?: boolean;
-    weightValue?: number | null;
-    onWeightChange?: (v: number | null) => void;
-  }> = ({ label, value, onChange, placeholder, isWeight, weightValue, onWeightChange }) => {
-    if (isWeight && onWeightChange) {
-      return (
-        <div className="flex-1 bg-white/5 py-2 px-2 rounded-lg text-center flex flex-col justify-center border border-white/10">
-          <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">{label}</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={weightValue != null && weightValue > 0 ? String(weightValue) : ''}
-            onChange={(e) => onWeightChange(parseWeightInput(e.target.value))}
-            placeholder="BW"
-            className="w-full bg-transparent text-sm text-brand-lightOrange text-center outline-none font-bold"
-          />
-        </div>
-      );
-    }
-    return (
-      <div className="flex-1 bg-white/5 py-2 px-2 rounded-lg text-center flex flex-col justify-center border border-white/10">
-        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">{label}</span>
-        <input
-          type="text"
-          inputMode="numeric"
-          value={value > 0 ? String(value) : ''}
-          onChange={(e) => onChange(parseNumericInput(e.target.value, 0))}
-          placeholder={placeholder || '0'}
-          className="w-full bg-transparent text-sm text-brand-orange text-center outline-none font-bold"
-        />
-      </div>
-    );
-  };
 
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
@@ -461,7 +484,9 @@ const SelectWorkoutPage: React.FC = () => {
                                     </div>
                                   ))
                                   : ex.subExercises?.map((sub, sIdx) => {
-                                      const subNote = latestExerciseNotes[normalizeNoteKey(sub.name)];
+                                      const subNoteKey = `${i}_${normalizeNoteKey(sub.name)}`;
+                                    const subNoteLegacyKey = `legacy_${normalizeNoteKey(sub.name)}`;
+                                    const subNote = latestExerciseNotes[subNoteKey] || latestExerciseNotes[subNoteLegacyKey];
                                       return (
                                         <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
                                           <p className="text-xs font-bold text-white">{sub.name}</p>
@@ -588,13 +613,23 @@ const SelectWorkoutPage: React.FC = () => {
                             )}
                           </div>
 
-                          {latestExerciseNotes[normalizeNoteKey(ex.name)] && (
-                            <div className="mt-3 bg-brand-darkGrey/30 p-3 rounded-xl border border-white/5">
-                              <span className="text-xs font-bold text-brand-orange uppercase block mb-1">Note:</span>
-                              <span className="text-sm text-brand-grey italic">"{latestExerciseNotes[normalizeNoteKey(ex.name)]}"</span>
+                        {(() => {
+                          const noteKey = `${i}_${normalizeNoteKey(ex.name)}`;
+                          const noteLegacyKey = `legacy_${normalizeNoteKey(ex.name)}`;
+                          const latestNote = latestExerciseNotes[noteKey] || latestExerciseNotes[noteLegacyKey];
+                          return latestNote ? (
+                            <div className="mt-4 px-4 py-3 bg-black/40 rounded-xl border border-white/5 relative">
+                              <div className="absolute -top-2 left-4 bg-brand-dark px-2">
+                                <span className="text-[9px] uppercase tracking-widest font-bold text-brand-grey/80 flex items-center gap-1">
+                                  <Pencil size={10} />
+                                  Last time you wrote
+                                </span>
+                              </div>
+                              <span className="text-sm text-brand-grey italic">"{latestNote}"</span>
                             </div>
-                          )}
-                        </div>
+                          ) : null;
+                        })()}
+                      </div>
                       )
                     })}
 
