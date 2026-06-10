@@ -117,7 +117,7 @@ const downloadTextFile = (filename: string, content: string) => {
 const RepCounterPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [countingMode, setCountingMode] = useState<CountingMode>('video');
+  const [countingMode, setCountingMode] = useState<CountingMode>((location.state?.mode as CountingMode) || 'video');
   // Obiettivo ripetizioni: null = infinito
   const [repTarget, setRepTarget] = useState<number | null>(null);
   const [repTargetInput, setRepTargetInput] = useState('');

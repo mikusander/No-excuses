@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import {
   buildWorkoutProgressStorageKey,
@@ -251,6 +251,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [instructionModalContext, setInstructionModalContext] = useState<InstructionModalContext | null>(null);
   const [isWorkoutOverviewModalOpen, setIsWorkoutOverviewModalOpen] = useState(false);
   const [isWorkoutOverviewAdvancePending, setIsWorkoutOverviewAdvancePending] = useState(false);
+  const [isAutoCountModalOpen, setIsAutoCountModalOpen] = useState(false);
   const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
   const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
     sets: '',
@@ -3655,28 +3656,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
               {!isSuperset && currentExercise.auto_count_type && (
                 <button
-                  onClick={async () => {
-                    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                      const u = new SpeechSynthesisUtterance('');
-                      u.volume = 0;
-                      window.speechSynthesis.speak(u);
-                    }
-                    if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
-                      try {
-                        await (window as any).DeviceMotionEvent.requestPermission();
-                      } catch (e) {
-                        console.warn('DeviceMotionEvent permission request failed', e);
-                      }
-                    }
-                    persistWorkoutProgress(true);
-                    navigate('/reps-count', { 
-                      state: { 
-                        autoCountExercise: currentExercise.auto_count_type,
-                        targetReps: currentExercise.reps,
-                        returnUrl: location.pathname
-                      } 
-                    });
-                  }}
+                  onClick={() => setIsAutoCountModalOpen(true)}
                   className="mt-6 mx-auto w-full max-w-xs bg-brand-darkGrey/40 border border-purple-500/35 rounded-xl py-3 px-4 text-center text-purple-400 hover:text-purple-300 hover:border-purple-500/70 hover:bg-purple-500/10 transition-colors flex items-center justify-center gap-2 font-bold shadow-lg"
                   title="Use Camera/Sensor Auto-Count"
                 >
@@ -4287,6 +4267,100 @@ const ActiveWorkoutPage: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60"
               >
                 {isSavingExerciseEdit ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Auto-Count Choice Modal */}
+      {isAutoCountModalOpen && currentExercise && !isSuperset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-brand-dark p-6 shadow-2xl border border-white/10">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-black text-white uppercase tracking-wider">Choose Method</h3>
+              <button
+                onClick={() => setIsAutoCountModalOpen(false)}
+                className="text-brand-grey hover:text-white transition-colors p-2"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <p className="text-brand-grey mb-8 text-sm">
+              How would you like to count your {currentExercise.reps} {currentExercise.name} reps?
+            </p>
+
+            <div className="flex flex-col gap-4">
+              <button
+                onClick={async () => {
+                  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    const u = new SpeechSynthesisUtterance('');
+                    u.volume = 0;
+                    window.speechSynthesis.speak(u);
+                  }
+                  if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
+                    try {
+                      await (window as any).DeviceMotionEvent.requestPermission();
+                    } catch (e) {
+                      console.warn('DeviceMotionEvent permission request failed', e);
+                    }
+                  }
+                  persistWorkoutProgress(true);
+                  setIsAutoCountModalOpen(false);
+                  navigate('/reps-count', { 
+                    state: { 
+                      autoCountExercise: currentExercise.auto_count_type,
+                      targetReps: currentExercise.reps,
+                      returnUrl: location.pathname,
+                      mode: 'video'
+                    } 
+                  });
+                }}
+                className="w-full bg-brand-darkGrey/60 border border-purple-500/50 rounded-2xl p-4 flex items-center gap-4 hover:bg-purple-500/20 transition-colors group"
+              >
+                <div className="bg-purple-500/20 p-3 rounded-xl group-hover:bg-purple-500/40 transition-colors flex-shrink-0">
+                  <Video size={24} className="text-purple-400" />
+                </div>
+                <div className="text-left">
+                  <h4 className="text-white font-bold text-lg uppercase tracking-wide">Camera</h4>
+                  <p className="text-brand-grey text-xs mt-1">Place phone down and step back</p>
+                </div>
+              </button>
+
+              <button
+                onClick={async () => {
+                  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    const u = new SpeechSynthesisUtterance('');
+                    u.volume = 0;
+                    window.speechSynthesis.speak(u);
+                  }
+                  if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
+                    try {
+                      await (window as any).DeviceMotionEvent.requestPermission();
+                    } catch (e) {
+                      console.warn('DeviceMotionEvent permission request failed', e);
+                    }
+                  }
+                  persistWorkoutProgress(true);
+                  setIsAutoCountModalOpen(false);
+                  navigate('/reps-count', { 
+                    state: { 
+                      autoCountExercise: currentExercise.auto_count_type,
+                      targetReps: currentExercise.reps,
+                      returnUrl: location.pathname,
+                      mode: 'accelerometer'
+                    } 
+                  });
+                }}
+                className="w-full bg-brand-darkGrey/60 border border-brand-orange/50 rounded-2xl p-4 flex items-center gap-4 hover:bg-brand-orange/20 transition-colors group"
+              >
+                <div className="bg-brand-orange/20 p-3 rounded-xl group-hover:bg-brand-orange/40 transition-colors flex-shrink-0">
+                  <Smartphone size={24} className="text-brand-orange" />
+                </div>
+                <div className="text-left">
+                  <h4 className="text-white font-bold text-lg uppercase tracking-wide">Accelerometer</h4>
+                  <p className="text-brand-grey text-xs mt-1">Keep phone in your pocket</p>
+                </div>
               </button>
             </div>
           </div>
