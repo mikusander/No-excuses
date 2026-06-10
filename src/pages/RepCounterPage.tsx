@@ -171,7 +171,7 @@ const RepCounterPage: React.FC = () => {
     resetSession: resetAccelerometerSession,
     stopSession: stopAccelerometerSession,
   } = useAccelerometerRepCounter({
-    prepDurationSeconds: countingMode === 'video' ? 3 : 5,
+    prepDurationSeconds: countingMode === 'video' ? 3 : 10,
     waitForStillness: countingMode === 'video',
     fallbackToTimer: countingMode === 'video',
     exerciseType: selectedExercise ?? undefined,
