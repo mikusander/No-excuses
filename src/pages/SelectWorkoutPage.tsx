@@ -272,30 +272,33 @@ const SelectWorkoutPage: React.FC = () => {
       setEditableExercises(JSON.parse(JSON.stringify(parsedExercises)));
 
       if (user?.id) {
+        const schedaId = Number(workout.id);
+        // Fetch only the most recent workout run (n-1) for THIS specific scheda
         const { data: runsData } = await supabase
           .from('workout_run')
           .select('data_esecuzione, note_workout!inner(testo)')
           .eq('id_utente', user.id)
-          .order('data_esecuzione', { ascending: false });
+          .eq('id_scheda', schedaId)
+          .order('data_esecuzione', { ascending: false })
+          .limit(1);
 
         const notesMap: Record<string, string> = {};
-        if (runsData) {
-          for (const run of runsData) {
-            const notes = Array.isArray(run.note_workout) ? run.note_workout : [run.note_workout];
-            for (const noteRow of notes) {
-              if (!noteRow) continue;
-              const parsed = parseTaggedNote(String(noteRow.testo || ''));
-              if (parsed?.exerciseName && parsed?.text) {
-                if (parsed.orderIndex !== null) {
-                  const key = `${parsed.orderIndex}_${normalizeNoteKey(parsed.exerciseName)}`;
-                  if (!notesMap[key]) {
-                    notesMap[key] = parsed.text;
-                  }
-                } else {
-                  const key = `legacy_${normalizeNoteKey(parsed.exerciseName)}`;
-                  if (!notesMap[key]) {
-                    notesMap[key] = parsed.text;
-                  }
+        if (runsData && runsData.length > 0) {
+          const lastRun = runsData[0];
+          const notes = Array.isArray(lastRun.note_workout) ? lastRun.note_workout : [lastRun.note_workout];
+          for (const noteRow of notes) {
+            if (!noteRow) continue;
+            const parsed = parseTaggedNote(String(noteRow.testo || ''));
+            if (parsed?.exerciseName && parsed?.text) {
+              if (parsed.orderIndex !== null) {
+                const key = `${parsed.orderIndex}_${normalizeNoteKey(parsed.exerciseName)}`;
+                if (!notesMap[key]) {
+                  notesMap[key] = parsed.text;
+                }
+              } else {
+                const key = `legacy_${normalizeNoteKey(parsed.exerciseName)}`;
+                if (!notesMap[key]) {
+                  notesMap[key] = parsed.text;
                 }
               }
             }

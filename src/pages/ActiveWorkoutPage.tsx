@@ -1224,11 +1224,6 @@ const ActiveWorkoutPage: React.FC = () => {
   }, [
     workout,
     sourceSchedaId,
-    currentExerciseIdx,
-    currentSetIdx,
-    currentSubExerciseIdx,
-    currentPyramidStepIdx,
-    currentEmomRoundIdx,
     pendingPyramidAdvance,
     pendingExerciseAdvance,
     isResting,
@@ -1240,6 +1235,19 @@ const ActiveWorkoutPage: React.FC = () => {
     emomRoundRemaining,
     emomRoundEndsAtMs,
     exerciseNotesByKey,
+  ]);
+
+  // Force-save (bypass throttle) whenever exercise navigation changes.
+  // This prevents stale checkpoints when the user advances to a new exercise
+  // and immediately leaves the page before the throttle window expires.
+  useEffect(() => {
+    persistWorkoutProgress(true);
+  }, [
+    currentExerciseIdx,
+    currentSetIdx,
+    currentSubExerciseIdx,
+    currentPyramidStepIdx,
+    currentEmomRoundIdx,
   ]);
 
   useEffect(() => {
