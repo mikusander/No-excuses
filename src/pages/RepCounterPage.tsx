@@ -171,7 +171,7 @@ const RepCounterPage: React.FC = () => {
     resetSession: resetAccelerometerSession,
     stopSession: stopAccelerometerSession,
   } = useAccelerometerRepCounter({
-    prepDurationSeconds: countingMode === 'video' ? 3 : 10,
+    prepDurationSeconds: countingMode === 'video' ? 3 : 5,
     waitForStillness: countingMode === 'video',
     fallbackToTimer: countingMode === 'video',
     exerciseType: selectedExercise ?? undefined,
@@ -258,8 +258,8 @@ const RepCounterPage: React.FC = () => {
     const countSnapshot = countRef.current;
     const pausedSnapshot = pausedRef.current;
 
-    const exportIndices = selectedExerciseRef.current === 'pushups' 
-      ? [11, 12, 13, 14, 15, 16] 
+    const exportIndices = selectedExerciseRef.current === 'pushups'
+      ? [11, 12, 13, 14, 15, 16]
       : POSE_LANDMARK_EXPORT_INDICES;
 
     exportIndices.forEach((landmarkIndex) => {
@@ -623,28 +623,28 @@ const RepCounterPage: React.FC = () => {
 
           {/* Calibrazione Sperimentale */}
           <div className="w-full rounded-3xl border border-purple-500/20 bg-purple-500/5 p-4 shadow-lg flex items-center justify-between">
-             <div className="flex flex-col">
-                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-purple-400">Calibration Mode</span>
-                <span className="text-xs text-white/50 mt-1">Record 10 reps to analyze data</span>
-             </div>
-             <button
-               onClick={() => {
-                 const newVal = !isCalibrationMode;
-                 setIsCalibrationMode(newVal);
-                 if (newVal) {
-                   setCountingMode('accelerometer');
-                   setRepTarget(null);
-                   setRepTargetInput('');
-                   setCalibrationLogs([]);
-                 } else {
-                   setRepTarget(null);
-                   setRepTargetInput('');
-                 }
-               }}
-               className={`w-12 h-6 rounded-full transition-colors relative shadow-inner ${isCalibrationMode ? 'bg-purple-500' : 'bg-black/40 border border-white/10'}`}
-             >
-               <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-md ${isCalibrationMode ? 'left-7' : 'left-1'}`} />
-             </button>
+            <div className="flex flex-col">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-purple-400">Calibration Mode</span>
+              <span className="text-xs text-white/50 mt-1">Record 10 reps to analyze data</span>
+            </div>
+            <button
+              onClick={() => {
+                const newVal = !isCalibrationMode;
+                setIsCalibrationMode(newVal);
+                if (newVal) {
+                  setCountingMode('accelerometer');
+                  setRepTarget(null);
+                  setRepTargetInput('');
+                  setCalibrationLogs([]);
+                } else {
+                  setRepTarget(null);
+                  setRepTargetInput('');
+                }
+              }}
+              className={`w-12 h-6 rounded-full transition-colors relative shadow-inner ${isCalibrationMode ? 'bg-purple-500' : 'bg-black/40 border border-white/10'}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-md ${isCalibrationMode ? 'left-7' : 'left-1'}`} />
+            </button>
           </div>
 
           <button
@@ -770,17 +770,17 @@ const RepCounterPage: React.FC = () => {
             <div className="bg-brand-dark border border-purple-500/50 rounded-3xl p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
               <h3 className="text-xl font-black text-purple-400 mb-1 uppercase tracking-wider">Calibration Log</h3>
               <p className="text-xs text-white/50 mb-4 leading-relaxed">Copy this data to analyze your motion signatures. {calibrationLogs.length} events have been recorded (including rejected ones).</p>
-              
+
               <div className="flex-1 min-h-[200px] max-h-[400px] mb-4 relative rounded-xl overflow-hidden border border-white/10 bg-black/50">
-                <textarea 
-                  readOnly 
+                <textarea
+                  readOnly
                   className="absolute inset-0 w-full h-full p-4 text-[11px] font-mono text-white/80 outline-none bg-transparent resize-none"
                   value={JSON.stringify(calibrationLogs, null, 2)}
                 />
               </div>
 
               <div className="flex gap-3">
-                <button 
+                <button
                   onClick={() => {
                     navigator.clipboard.writeText(JSON.stringify(calibrationLogs, null, 2));
                   }}
@@ -788,7 +788,7 @@ const RepCounterPage: React.FC = () => {
                 >
                   Copy JSON
                 </button>
-                <button 
+                <button
                   onClick={cancelWorkout}
                   className="flex-1 bg-purple-500 text-white font-bold py-3 px-4 rounded-xl hover:bg-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-colors text-sm"
                 >
