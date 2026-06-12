@@ -1,87 +1,81 @@
-# React + TypeScript + Vite
+# No-Excuses 
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A multimodal web app for **hands-free, eyes-free workout tracking** — no smartwatch required.
 
-Currently, two official plugins are available:
+🔗 **Live app:** [no-excuses-cv39.vercel.app](https://no-excuses-cv39.vercel.app/)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## What it does
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+No-Excuses lets you track your workouts without ever touching your phone during a set. It uses your smartphone's built-in sensors and camera to count repetitions automatically, and speaks every count aloud so you never need to look at the screen.
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## How it works
 
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
+###  Workout Routines
+Create and manage training programs directly in the app. Each routine supports multiple exercise types:
+- **Reps** — classic sets with a fixed rep count
+- **Isometry** — timed holds (plank, wall sit)
+- **Superset** — two or more exercises back-to-back
+- **Pyramid** — progressive load/rep schemes
+- **EMOM** — Every Minute On the Minute
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+Once created, tap a routine to start a guided session. The app walks you through every exercise, automatically tracks rest timers, and saves your session history.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
-```
+### Pocket Mode (Accelerometer)
+Put your phone in your pocket and start a set. The app uses the accelerometer and gyroscope to detect each repetition and announces the count aloud. A 5-second countdown lets you get into position before counting starts.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Works for: **pushups, squats, lunges**, and other floor/ground exercises.
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
+###  Stand Mode (Camera)
+Prop your phone against a wall so the front camera frames your body. Google MediaPipe tracks your body landmarks in real time directly in the browser (no data is sent to any server) and counts your reps automatically.
 
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
-```
+Works for: **pullups, chin-ups**, and bar exercises.
 
-## MediaPipe Threshold Tuning
+### 🎤 Voice Commands
+During a guided workout session, control everything with your voice — no touching needed:
 
-Manual threshold explorer for a single pullup debug CSV:
+| Say | Action |
+|-----|--------|
+| *"Vai"* | Start / advance to next set |
+| *"Pausa"* | Pause the timer |
+| *"Riprendi"* | Resume |
+| *"Stop"* | End the session |
+
+###  Audio & Haptic Feedback
+The app communicates its state entirely through sound and vibration:
+- **3-tone chime** when the countdown ends and counting starts
+- **Short beep + vibration** on every confirmed repetition
+- **Spoken count** after each rep ("One", "Two", …)
+- **Goal chime** when you hit your target rep count
+- **Voice announcements** during rest timers
+
+---
+
+## Tech stack
+
+- **React + TypeScript** (Vite PWA)
+- **Google MediaPipe Pose** — on-device body landmark detection via WebAssembly
+- **Web Speech API** — voice recognition and speech synthesis
+- **Web Audio API** — real-time audio feedback
+- **DeviceMotion / DeviceOrientation** — accelerometer + gyroscope
+- **Supabase** — authentication and workout history (no sensor data is ever stored)
+
+---
+
+## Privacy
+
+All sensor and camera processing happens **100% on your device**. No video frames, motion data, or biometrics are ever sent to a server.
+
+---
+
+## Getting started (local dev)
 
 ```bash
-python scripts/manual_threshold_tuner.py --base "dati di debug" --test "1°"
+npm install
+npm run dev
 ```
 
-One-shot evaluation:
-
-```bash
-python scripts/manual_threshold_tuner.py --base "dati di debug" --test "1°" --eval 0.0243 0.0193
-```
+Requires HTTPS or localhost for `DeviceMotion` permission on iOS.
