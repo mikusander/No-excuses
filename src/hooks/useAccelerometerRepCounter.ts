@@ -94,12 +94,11 @@ const EXERCISE_CONFIG: Record<string, {
   // ── Flessioni: peak_count ─────────────────────────────────────────────────────
   // I dati (5 sessioni reali) mostrano picchi a 900-1100 e valley a 73-80.
   // Il burst NON si chiude tra rep ravvicinate (inter-rep energy = 73-90 ≈ rest=75).
-  // Soluzione: peak_count — conta ogni picco genuino che supera active*2.5 (=300)
-  // Nota: peakRatioThreshold abbassato da 3 a 2.5 perché la rep più debole
-  // registrata aveva maxEnergy=376, appena 4% sopra la soglia 360.
-  // Con 2.5 (soglia=300) il margine sale al 25%, coprendo rep stanche a fine set.
-  // Il rumore a riposo (~75-120) resta ben sotto 300, nessun rischio falsi positivi.
-  pushups: { active: 120, rest: 75, gyroShake: 1200, minDuration: 300, mode: 'peak_count', repCooldownMs: 1200, peakRatioThreshold: 2.5 },
+  // Soluzione: peak_count — conta ogni picco genuino che supera active*3 (=360)
+  // Nota: peakRatioThreshold=2.5 (soglia=300) introduceva falsi positivi sistematici
+  // (+1 rep fantasma). Rimesso a 3 (soglia=360). La rep più debole registrata
+  // aveva maxEnergy=376, margine stretto ma sufficiente.
+  pushups: { active: 120, rest: 75, gyroShake: 1200, minDuration: 300, mode: 'peak_count', repCooldownMs: 1200, peakRatioThreshold: 3 },
 
   default: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',  repCooldownMs: 0 },
 };
