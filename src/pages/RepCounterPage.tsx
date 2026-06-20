@@ -118,7 +118,6 @@ const RepCounterPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [countingMode, setCountingMode] = useState<CountingMode>((location.state?.mode as CountingMode) || 'video');
-  // Obiettivo ripetizioni: null = infinito
   const [repTarget, setRepTarget] = useState<number | null>(null);
   const [repTargetInput, setRepTargetInput] = useState('');
 
@@ -178,9 +177,8 @@ const RepCounterPage: React.FC = () => {
     onCountChange: (newCount) => {
       if (countingMode === 'video') return;
       setCount(newCount);
-      // Ferma la sessione al raggiungimento del target
       if (repTarget !== null && newCount >= repTarget) {
-        triggerStartHaptic(); // stesso AudioContext già sbloccato dall'avvio sessione
+        triggerStartHaptic();
         speak('finish exercise');
         stopAccelerometerSession();
       } else if (newCount > 0) {
@@ -294,11 +292,9 @@ const RepCounterPage: React.FC = () => {
     trackerRef.current = new ExerciseTracker(
       (newCount) => {
         setCount(newCount);
-        // Verifica obiettivo per la modalità video
         if (target !== null && newCount >= target) {
           playGoalReachedSound();
           speak('finish exercise');
-          // Stop automatico al raggiungimento del target
           setIsCountingActive(false);
         } else if (newCount > 0) {
           speakNumber(newCount);
@@ -433,9 +429,6 @@ const RepCounterPage: React.FC = () => {
   }, [cameraStream, countingMode]);
 
   // Frame processing loop
-  // IMPORTANT: isCountingActive and paused are read via refs to avoid stale closures.
-  // detectPose is stable (memoized with useCallback). The loop starts when the camera
-  // is ready and never restarts due to counting/pause state changes.
   useEffect(() => {
     if (!selectedExercise || countingMode !== 'video' || !isCameraReady) return;
 
@@ -443,9 +436,7 @@ const RepCounterPage: React.FC = () => {
     let lastRenderTime = 0;
 
     const processFrame = () => {
-      // Read current values from refs — NOT from closure (Bug #1 fix)
       if (!pausedRef.current && videoRef.current) {
-        // Bug #3 fix: use performance.now() for a monotonically-increasing timestamp
         const timestamp = performance.now();
         const results = detectPose(videoRef.current, timestamp);
 
@@ -460,7 +451,6 @@ const RepCounterPage: React.FC = () => {
 
           recordPoseCsvFrame(timestamp, landmarks);
 
-          // Read isCountingActive from ref, not stale closure (Bug #1 fix)
           if (isCountingActiveRef.current) {
             if (currentEx === 'pullups') trackerRef.current?.updatePullup(landmarks);
             else if (currentEx === 'pushups') trackerRef.current?.updatePushup(landmarks);
@@ -472,7 +462,6 @@ const RepCounterPage: React.FC = () => {
 
     animationId = requestAnimationFrame(processFrame);
     return () => cancelAnimationFrame(animationId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedExercise, countingMode, isCameraReady, detectPose]);
 
 

@@ -10,13 +10,13 @@ export const calculateAngle = (a: Point, b: Point, c: Point): number => {
   // Use 3D angle calculation to be invariant to camera perspective (frontal vs lateral)
   const v1 = { x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) };
   const v2 = { x: c.x - b.x, y: c.y - b.y, z: (c.z || 0) - (b.z || 0) };
-  
+
   const dot = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
   const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z);
   const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y + v2.z * v2.z);
-  
+
   if (mag1 === 0 || mag2 === 0) return 0;
-  
+
   // Math.acos expects value between -1 and 1
   const angleRad = Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2))));
   return angleRad * (180.0 / Math.PI);
@@ -49,7 +49,7 @@ interface DownPhaseSnapshot {
 export class ExerciseTracker {
   private stage: 'UP' | 'DOWN' | null = null;
   private count: number = 0;
-  
+
   private onCount: (count: number) => void;
   private onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void;
   private hasStarted: boolean = false;
@@ -69,7 +69,7 @@ export class ExerciseTracker {
   private WRIST_MOVE_THRESHOLD = 0.02; // max movimento polsi per considerarli fermi (calibrato dai test)
 
   constructor(
-    onCount: (count: number) => void, 
+    onCount: (count: number) => void,
     onDebug?: (data: { angle: number; stage: string | null; error?: boolean; warning?: string; okMsg?: string }) => void
   ) {
     this.onCount = onCount;
@@ -175,7 +175,7 @@ export class ExerciseTracker {
           this.downPhaseSnapshot.shoulderY = shoulderY;
         }
 
-        // 2. Polsi: AGGIORNAMENTO CONTINUO E INCONDIZIONATO (La soluzione)
+        // 2. Polsi: AGGIORNAMENTO CONTINUO E INCONDIZIONATO
         // Finché smoothed > 0.08, l'utente è considerato fermo in appensione.
         // Sovrascriviamo continuamente i polsi. Questo cancella ogni assestamento iniziale!
         // Appena l'utente inizia a tirare, smoothed scende sotto 0.08, questo if
@@ -301,7 +301,7 @@ export class ExerciseTracker {
       if (shoulderY < this.downPhaseSnapshot.shoulderY) {
         this.downPhaseSnapshot.shoulderY = shoulderY;
       }
-      
+
       // Se le spalle scendono (valore Y AUMENTA) oltre la soglia dal picco minimo
       if (shoulderY - this.downPhaseSnapshot.shoulderY > EXCURSION_THRESHOLD) {
         this.stage = 'DOWN';
@@ -320,7 +320,7 @@ export class ExerciseTracker {
         if (lWristVis) this.downPhaseSnapshot.leftWristY = lWrist.y;
         if (rWristVis) this.downPhaseSnapshot.rightWristY = rWrist.y;
       }
-      
+
       // Se le spalle risalgono (valore Y DIMINUISCE) oltre la soglia dal picco massimo
       if ((this.downPhaseSnapshot.peakShoulderMovement ?? shoulderY) - shoulderY > EXCURSION_THRESHOLD) {
         // VALIDAZIONE ANTI-FAKE: I polsi non devono essersi mossi drasticamente

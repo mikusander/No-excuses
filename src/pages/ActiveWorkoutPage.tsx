@@ -213,6 +213,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isometryActive, setIsometryActive] = useState(false);
   const [isometryRemaining, setIsometryRemaining] = useState(0);
   const [isometryEndsAtMs, setIsometryEndsAtMs] = useState<number | null>(null);
+  const [supersetIsometrySubIdx, setSupersetIsometrySubIdx] = useState<number | null>(null);
 
   // Timer State for EMOM
   const [emomActive, setEmomActive] = useState(false);
@@ -357,6 +358,46 @@ const ActiveWorkoutPage: React.FC = () => {
       return `recovery ${minutes} minute${minutes === 1 ? '' : 's'}`;
     }
     return `recovery ${seconds} second${seconds === 1 ? '' : 's'}`;
+  };
+
+  const buildSetAnnouncementCue = (exercise: Exercise, nextSetIdx: number, pyramidStepIdx?: number) => {
+    const name = String(exercise.name || '').trim();
+    const parts: string[] = [];
+    if (name) parts.push(name);
+
+    parts.push(`set ${nextSetIdx + 1}`);
+
+    if ((exercise.type === 'superset' || exercise.type === 'emom') && exercise.subExercises && exercise.subExercises.length > 0) {
+      const subParts = exercise.subExercises.map((sub) => {
+        const subName = String(sub.name || '').trim();
+        const subInfo: string[] = [];
+        if (subName) subInfo.push(subName);
+        if (sub.type === 'isometry') {
+          if (sub.duration_seconds > 0) subInfo.push(`${sub.duration_seconds} seconds`);
+        } else {
+          if (sub.reps > 0) subInfo.push(`${sub.reps} reps`);
+        }
+        if (sub.weight_kg != null && sub.weight_kg > 0) subInfo.push(`${sub.weight_kg} kilos`);
+        return subInfo.join(', ');
+      });
+      parts.push(subParts.join('. '));
+    } else if (exercise.type === 'pyramid' && exercise.pyramid_steps) {
+      const stepIdx = pyramidStepIdx != null ? pyramidStepIdx : 0;
+      const step = exercise.pyramid_steps[stepIdx];
+      if (step) {
+        if (step.reps > 0) parts.push(`${step.reps} reps`);
+        if (step.weight_kg != null && step.weight_kg > 0) parts.push(`${step.weight_kg} kilos`);
+      }
+    } else {
+      if (exercise.type === 'isometry') {
+        if (exercise.duration_seconds > 0) parts.push(`${exercise.duration_seconds} seconds`);
+      } else {
+        if (exercise.reps > 0) parts.push(`${exercise.reps} reps`);
+      }
+      if (exercise.weight_kg != null && exercise.weight_kg > 0) parts.push(`${exercise.weight_kg} kilos`);
+    }
+
+    return parts.join(', ');
   };
 
   const startRestCountdown = (durationSeconds: number) => {
@@ -1090,7 +1131,9 @@ const ActiveWorkoutPage: React.FC = () => {
 
   handleVoiceSkipRestRef.current = () => {
     if (!isResting) return false;
-    skipRest();
+    stopRestCountdown();
+    setRestRemaining(0);
+    finishRestAndNextSet(true);
     return true;
   };
 
@@ -1104,7 +1147,7 @@ const ActiveWorkoutPage: React.FC = () => {
         recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = false;
-        recognition.lang = 'it-IT'; // Support sia accento italiano che inglese se la parola è semplice
+        recognition.lang = 'it-IT';
 
         recognition.onresult = (event: any) => {
           const current = event.resultIndex;
@@ -1180,7 +1223,6 @@ const ActiveWorkoutPage: React.FC = () => {
               handleVoicePrevRef.current();
             }
           } else {
-            // Se ho sentito parole ma non sono comandi supportati:
             setVoiceStatus('error');
             setTimeout(() => setVoiceStatus('idle'), 1500);
           }
@@ -1210,7 +1252,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
     return () => {
       if (recognition) {
-        recognition.onend = null; // Prevent restart
+        recognition.onend = null;
         recognition.stop();
       }
     };
@@ -1238,9 +1280,6 @@ const ActiveWorkoutPage: React.FC = () => {
     exerciseNotesByKey,
   ]);
 
-  // Force-save (bypass throttle) whenever exercise navigation changes.
-  // This prevents stale checkpoints when the user advances to a new exercise
-  // and immediately leaves the page before the throttle window expires.
   useEffect(() => {
     persistWorkoutProgress(true);
   }, [
@@ -1627,7 +1666,7 @@ const ActiveWorkoutPage: React.FC = () => {
           return;
         }
         setIsResting(false);
-        finishRestAndNextSet();
+        finishRestAndNextSet(true);
       }
     };
 
@@ -2074,7 +2113,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isWorkoutOverviewAdvancePending) {
       setIsWorkoutOverviewAdvancePending(false);
       setIsResting(false);
-      finishRestAndNextSet();
+      finishRestAndNextSet(true);
     }
   };
 
@@ -2485,15 +2524,12 @@ const ActiveWorkoutPage: React.FC = () => {
    * Per esercizi con più sub-esercizi o esercizi standard, mostra il tipo.
    */
   const getWorkoutOverviewDisplayLabel = (exercise: Exercise) => {
-    // Se è superset, emom e ha un SOLO sub-esercizio
-    if ((exercise.type === 'superset' || exercise.type === 'emom') && 
-        exercise.subExercises && 
-        exercise.subExercises.length === 1) {
+    if ((exercise.type === 'superset' || exercise.type === 'emom') &&
+      exercise.subExercises &&
+      exercise.subExercises.length === 1) {
       return exercise.subExercises[0].name || getWorkoutOverviewTypeLabel(exercise);
     }
-    
-    // Se è pyramid, non ha sub-esercises ma il nome è il main exercise name
-    // Quindi mostra sempre il tipo
+
     return getWorkoutOverviewTypeLabel(exercise);
   };
 
@@ -2554,30 +2590,40 @@ const ActiveWorkoutPage: React.FC = () => {
           ? 'border-amber-300/60 bg-amber-300/10 text-amber-300'
           : '';
 
-  const buildNextExerciseVoiceCue = (nextExercise: Exercise, nextExerciseIndex: number) => {
-    const baseName = String(nextExercise.name || '').trim() || `exercise ${nextExerciseIndex + 1}`;
+  const buildNextExerciseVoiceCue = (nextExercise: Exercise, _nextExerciseIndex: number) => {
+    const name = String(nextExercise.name || '').trim();
+    const parts: string[] = ['next exercise'];
+    if (name) parts.push(name);
 
-    if (nextExercise.type === 'superset' || nextExercise.type === 'emom') {
-      const subExerciseNames = (nextExercise.subExercises || [])
-        .map((sub, idx) => String(sub.name || '').trim() || `exercise ${idx + 1}`)
-        .filter((name) => name.length > 0);
-
-      if (subExerciseNames.length > 1) {
-        return `next exercise, ${nextExercise.type}, ${baseName}. ${subExerciseNames.join(', ')}`;
+    if ((nextExercise.type === 'superset' || nextExercise.type === 'emom') && nextExercise.subExercises && nextExercise.subExercises.length > 0) {
+      const subParts = nextExercise.subExercises.map((sub) => {
+        const subName = String(sub.name || '').trim();
+        const subInfo: string[] = [];
+        if (subName) subInfo.push(subName);
+        if (sub.type === 'isometry') {
+          if (sub.duration_seconds > 0) subInfo.push(`${sub.duration_seconds} seconds`);
+        } else {
+          if (sub.reps > 0) subInfo.push(`${sub.reps} reps`);
+        }
+        if (sub.weight_kg != null && sub.weight_kg > 0) subInfo.push(`${sub.weight_kg} kilos`);
+        return subInfo.join(', ');
+      });
+      parts.push(subParts.join('. '));
+    } else if (nextExercise.type === 'pyramid' && nextExercise.pyramid_steps) {
+      const firstStep = nextExercise.pyramid_steps[0];
+      if (firstStep) {
+        if (firstStep.reps > 0) parts.push(`${firstStep.reps} reps`);
+        if (firstStep.weight_kg != null && firstStep.weight_kg > 0) parts.push(`${firstStep.weight_kg} kilos`);
       }
-
-      if (subExerciseNames.length === 1) {
-        return `next exercise, ${nextExercise.type}, ${baseName}, ${subExerciseNames[0]}`;
-      }
-
-      return `next exercise, ${nextExercise.type}, ${baseName}`;
+    } else if (nextExercise.type === 'isometry') {
+      if (nextExercise.duration_seconds > 0) parts.push(`${nextExercise.duration_seconds} seconds`);
+      if (nextExercise.weight_kg != null && nextExercise.weight_kg > 0) parts.push(`${nextExercise.weight_kg} kilos`);
+    } else {
+      if (nextExercise.reps > 0) parts.push(`${nextExercise.reps} reps`);
+      if (nextExercise.weight_kg != null && nextExercise.weight_kg > 0) parts.push(`${nextExercise.weight_kg} kilos`);
     }
 
-    if (nextExercise.type === 'pyramid') {
-      return `next exercise, pyramid, ${baseName}`;
-    }
-
-    return `next exercise, ${baseName}`;
+    return parts.join(', ');
   };
 
   const queueNextExerciseFlow = (sourceExercise: Exercise) => {
@@ -2710,7 +2756,6 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    // Altrimenti, abbiamo finito l'esercizio (o l'intero giro del superset)
     if (isLastSet) {
       queueNextExerciseFlow(currentExercise);
     } else {
@@ -2859,7 +2904,7 @@ const ActiveWorkoutPage: React.FC = () => {
     rewindWithinCurrentExercise();
   };
 
-  const finishRestAndNextSet = () => {
+  const finishRestAndNextSet = (naturalExpiry = false) => {
     stopRestCountdown();
 
     if (pendingExerciseAdvance) {
@@ -2870,7 +2915,11 @@ const ActiveWorkoutPage: React.FC = () => {
 
     if (currentExercise.type === 'pyramid' && pendingPyramidAdvance) {
       setPendingPyramidAdvance(false);
-      setCurrentPyramidStepIdx(prev => prev + 1);
+      const nextPyramidStepIdx = currentPyramidStepIdx + 1;
+      setCurrentPyramidStepIdx(nextPyramidStepIdx);
+      if (naturalExpiry) {
+        speakCue(buildSetAnnouncementCue(currentExercise, currentSetIdx, nextPyramidStepIdx));
+      }
       return;
     }
 
@@ -2881,6 +2930,11 @@ const ActiveWorkoutPage: React.FC = () => {
     if (currentExercise.type === 'emom') {
       setCurrentEmomRoundIdx(0);
       setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
+    }
+
+    // Announce exercise details for the upcoming set (only on natural rest timer expiry)
+    if (naturalExpiry) {
+      speakCue(buildSetAnnouncementCue(currentExercise, nextSetIdx));
     }
 
     // Reset isometry timer if needed
@@ -2932,7 +2986,6 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const handlePrimaryAction = () => {
     if (isEmom) {
-      // COMPLETE WORKOUT on final EMOM state must end workout immediately.
       if (isFinalCompletionAction) {
         void completeWorkoutNow();
         return;
@@ -3077,8 +3130,8 @@ const ActiveWorkoutPage: React.FC = () => {
                     <div
                       key={exercise.id}
                       className={`rounded-2xl border p-4 transition-colors ${isCurrentExercise
-                          ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
-                          : 'border-white/10 bg-black/30'
+                        ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
+                        : 'border-white/10 bg-black/30'
                         }`}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -3093,8 +3146,8 @@ const ActiveWorkoutPage: React.FC = () => {
                         </div>
 
                         <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${isCurrentExercise
-                            ? 'bg-brand-orange text-black'
-                            : 'bg-white/5 text-brand-grey'
+                          ? 'bg-brand-orange text-black'
+                          : 'bg-white/5 text-brand-grey'
                           }`}>
                           {isCurrentExercise ? 'You are here' : `#${index + 1}`}
                         </div>
@@ -3258,8 +3311,8 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             onClick={openCurrentExerciseNoteModal}
             className={`w-[68px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${hasCurrentWorkoutNote
-                ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
-                : 'bg-white/10 border-white/10 text-brand-grey hover:text-white hover:border-white/20'
+              ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
+              : 'bg-white/10 border-white/10 text-brand-grey hover:text-white hover:border-white/20'
               }`}
             title="Exercise Notes"
           >
@@ -3407,8 +3460,8 @@ const ActiveWorkoutPage: React.FC = () => {
             <div
               key={i}
               className={`h-2.5 rounded-full transition-all duration-300 ${i < currentSetIdx ? 'bg-brand-lightOrange w-8' :
-                  i === currentSetIdx ? 'bg-brand-orange w-12 shadow-[0_0_10px_rgba(255,107,0,0.5)]' :
-                    'bg-white/10 w-8'
+                i === currentSetIdx ? 'bg-brand-orange w-12 shadow-[0_0_10px_rgba(255,107,0,0.5)]' :
+                  'bg-white/10 w-8'
                 }`}
             />
           ))}
@@ -3513,39 +3566,86 @@ const ActiveWorkoutPage: React.FC = () => {
             </div>
           ) : isSuperset ? (
             <div className="text-center w-full max-w-md flex flex-col items-center">
-              <div className="w-full max-w-sm grid grid-cols-3 gap-2 mb-4">
+              <div className="w-full max-w-sm grid grid-cols-1 gap-2 mb-4">
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Round</span>
                   <span className="text-brand-orange font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
                 </div>
-                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Exercises</span>
-                  <span className="text-brand-orange font-black">{currentExercise.subExercises?.length || 0}</span>
-                </div>
-                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Rest</span>
-                  <span className="text-brand-orange font-black">{formatTime(currentExercise.rest_seconds || 0)}</span>
-                </div>
               </div>
 
               <div className="w-full max-h-[28vh] overflow-y-auto space-y-2 px-1">
-                {(currentExercise.subExercises || []).map((sub, idx) => (
-                  <div
-                    key={`${currentExercise.id}:superset:${idx}`}
-                    className="bg-brand-darkGrey/30 p-3 rounded-xl border border-white/5 flex justify-between items-start gap-3"
-                  >
-                    <div className="text-left min-w-0">
-                      <p className="text-white font-bold text-sm truncate">{idx + 1}. {sub.name || `Exercise ${idx + 1}`}</p>
-                      <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
-                        {formatSupersetTaskMetricLabel(sub)}
-                      </p>
+                {(currentExercise.subExercises || []).map((sub, idx) => {
+                  const isIsoSub = sub.type === 'isometry';
+                  const isClickableIsoTimer = isIsoSub && sub.duration_seconds > 0;
+                  const isThisTimerActive = isClickableIsoTimer && isometryActive && supersetIsometrySubIdx === idx;
+                  const targetDuration = isClickableIsoTimer ? Math.max(1, sub.duration_seconds || 1) : 1;
+                  const currentRemaining = isThisTimerActive || (isClickableIsoTimer && supersetIsometrySubIdx === idx) ? isometryRemaining : targetDuration;
+                  const fillPercent = isClickableIsoTimer && supersetIsometrySubIdx === idx ? Math.max(0, Math.min(100, ((targetDuration - currentRemaining) / targetDuration) * 100)) : 0;
+
+                  const handleSubIsoTap = () => {
+                    if (!isClickableIsoTimer) return;
+                    if (isThisTimerActive) {
+                      pauseIsometryCountdown();
+                      return;
+                    }
+                    if (isometryActive) stopIsometryCountdown();
+                    setSupersetIsometrySubIdx(idx);
+                    const duration = (supersetIsometrySubIdx === idx && isometryRemaining > 0) ? isometryRemaining : targetDuration;
+                    startIsometryCountdown(duration);
+                  };
+
+                  const handleSubIsoReset = () => {
+                    if (!isClickableIsoTimer) return;
+                    stopIsometryCountdown();
+                    setSupersetIsometrySubIdx(idx);
+                    setIsometryRemaining(targetDuration);
+                  };
+
+                  return (
+                    <div
+                      key={`${currentExercise.id}:superset:${idx}`}
+                      className={`relative overflow-hidden p-3 rounded-xl border flex justify-between items-start gap-3 select-none transition-colors ${
+                        isThisTimerActive
+                          ? 'border-brand-orange/60 bg-brand-darkGrey/30 shadow-[0_0_15px_rgba(255,107,0,0.15)]'
+                          : isClickableIsoTimer && supersetIsometrySubIdx === idx && fillPercent > 0
+                            ? 'border-brand-orange/40 bg-brand-darkGrey/30'
+                            : 'border-white/5 bg-brand-darkGrey/30'
+                      } ${isClickableIsoTimer ? 'cursor-pointer active:scale-[0.98]' : ''}`}
+                      {...(isClickableIsoTimer ? {
+                        onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerDown(event, handleSubIsoReset),
+                        onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerUp(event, handleSubIsoTap),
+                        onPointerCancel: handleTimerPointerAbort,
+                        onPointerLeave: handleTimerPointerAbort,
+                      } : {})}
+                    >
+                      {/* Fill animation for isometry progress */}
+                      {isClickableIsoTimer && fillPercent > 0 && (
+                        <div
+                          className="absolute inset-0 bg-brand-orange/20 transition-[width] duration-300 ease-linear pointer-events-none rounded-xl"
+                          style={{ width: `${fillPercent}%` }}
+                        />
+                      )}
+                      <div className="text-left min-w-0 relative z-10 flex flex-col justify-center">
+                        <p className="text-white font-bold text-sm truncate">{idx + 1}. {sub.name || `Exercise ${idx + 1}`}</p>
+                        <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
+                          {isClickableIsoTimer && supersetIsometrySubIdx === idx
+                            ? `${currentRemaining}s / ${targetDuration}s`
+                            : formatSupersetTaskMetricLabel(sub)
+                          }
+                        </p>
+                        {isClickableIsoTimer && (
+                          <p className="text-[9px] text-brand-grey/60 font-bold uppercase tracking-wider mt-1.5 opacity-80">
+                            Tap to start/pause • Hold to reset
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0 relative z-10">
+                        <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weight</span>
+                        <span className="text-xs text-brand-lightOrange font-bold block">{formatWeightLabel(sub.weight_kg)}</span>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weight</span>
-                      <span className="text-xs text-brand-lightOrange font-bold block">{formatWeightLabel(sub.weight_kg)}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {(!currentExercise.subExercises || currentExercise.subExercises.length === 0) && (
                   <p className="text-sm text-brand-grey/70">No exercises configured for this superset.</p>
@@ -3590,14 +3690,10 @@ const ActiveWorkoutPage: React.FC = () => {
               <p className="text-center text-xs text-brand-grey mt-6 uppercase tracking-wider font-bold">
                 Tap to {isometryActive ? 'pause' : 'start'} / hold to reset
               </p>
-              <div className="mt-4 w-full max-w-sm grid grid-cols-3 gap-2">
+              <div className="mt-4 w-full max-w-sm grid grid-cols-2 gap-2">
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Set</span>
                   <span className="text-brand-orange font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
-                </div>
-                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Rest</span>
-                  <span className="text-brand-orange font-black">{formatTime(currentExercise.rest_seconds || 0)}</span>
                 </div>
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Weights</span>
@@ -3606,7 +3702,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 {hasCurrentInstructionNote && (
                   <button
                     onClick={openCurrentInstructionModal}
-                    className="col-span-3 bg-brand-darkGrey/40 border border-brand-orange/35 rounded-lg py-2 px-3 text-center text-brand-orange hover:text-brand-lightOrange hover:border-brand-orange/70 hover:bg-brand-orange/10 transition-colors flex items-center justify-center gap-2"
+                    className="col-span-2 bg-brand-darkGrey/40 border border-brand-orange/35 rounded-lg py-2 px-3 text-center text-brand-orange hover:text-brand-lightOrange hover:border-brand-orange/70 hover:bg-brand-orange/10 transition-colors flex items-center justify-center gap-2"
                     title="Exercise Instructions"
                   >
                     <Info size={14} />
@@ -3682,8 +3778,8 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             onClick={openCurrentExerciseNoteModal}
             className={`w-[70px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center ${hasCurrentWorkoutNote
-                ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
-                : 'bg-brand-darkGrey/40 border-brand-grey/20 text-brand-grey hover:text-white hover:border-brand-grey/40'
+              ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
+              : 'bg-brand-darkGrey/40 border-brand-grey/20 text-brand-grey hover:text-white hover:border-brand-grey/40'
               }`}
             title="Exercise Notes"
           >
@@ -3693,8 +3789,8 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             onClick={handlePrimaryAction}
             className={`flex-1 h-[70px] rounded-2xl font-black text-xl flex items-center justify-center transition-all active:scale-95 shadow-xl ${isFinalCompletionAction
-                ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20'
-                : 'bg-brand-orange hover:bg-brand-lightOrange text-black shadow-brand-orange/20'
+              ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20'
+              : 'bg-brand-orange hover:bg-brand-lightOrange text-black shadow-brand-orange/20'
               }`}
           >
             {isFinalCompletionAction ? (
@@ -3835,8 +3931,8 @@ const ActiveWorkoutPage: React.FC = () => {
                   <div
                     key={exercise.id}
                     className={`rounded-2xl border p-4 transition-colors ${isCurrentExercise
-                        ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
-                        : 'border-white/10 bg-black/30'
+                      ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
+                      : 'border-white/10 bg-black/30'
                       }`}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -3851,8 +3947,8 @@ const ActiveWorkoutPage: React.FC = () => {
                       </div>
 
                       <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${isCurrentExercise
-                          ? 'bg-brand-orange text-black'
-                          : 'bg-white/5 text-brand-grey'
+                        ? 'bg-brand-orange text-black'
+                        : 'bg-white/5 text-brand-grey'
                         }`}>
                         {isCurrentExercise ? 'You are here' : `#${index + 1}`}
                       </div>
@@ -4285,7 +4381,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 <X size={24} />
               </button>
             </div>
-            
+
             <p className="text-brand-grey mb-8 text-sm">
               How would you like to count your {currentExercise.reps} {currentExercise.name} reps?
             </p>
@@ -4307,13 +4403,13 @@ const ActiveWorkoutPage: React.FC = () => {
                   }
                   persistWorkoutProgress(true);
                   setIsAutoCountModalOpen(false);
-                  navigate('/reps-count', { 
-                    state: { 
+                  navigate('/reps-count', {
+                    state: {
                       autoCountExercise: currentExercise.auto_count_type,
                       targetReps: currentExercise.reps,
                       returnUrl: location.pathname,
                       mode: 'video'
-                    } 
+                    }
                   });
                 }}
                 className="w-full bg-brand-darkGrey/60 border border-purple-500/50 rounded-2xl p-4 flex items-center gap-4 hover:bg-purple-500/20 transition-colors group"
@@ -4343,13 +4439,13 @@ const ActiveWorkoutPage: React.FC = () => {
                   }
                   persistWorkoutProgress(true);
                   setIsAutoCountModalOpen(false);
-                  navigate('/reps-count', { 
-                    state: { 
+                  navigate('/reps-count', {
+                    state: {
                       autoCountExercise: currentExercise.auto_count_type,
                       targetReps: currentExercise.reps,
                       returnUrl: location.pathname,
                       mode: 'accelerometer'
-                    } 
+                    }
                   });
                 }}
                 className="w-full bg-brand-darkGrey/60 border border-brand-orange/50 rounded-2xl p-4 flex items-center gap-4 hover:bg-brand-orange/20 transition-colors group"

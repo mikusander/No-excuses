@@ -6,7 +6,7 @@ import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move } fr
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface ExerciseDraft {
-  id: string; // Temporaneo per la UI
+  id: string;
   type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
@@ -386,7 +386,6 @@ const NewTrainPage: React.FC = () => {
     };
   }, []);
 
-  // Carica i dati della scheda se siamo in modalità modifica
   React.useEffect(() => {
     if (id) {
       loadWorkout(id);
@@ -468,9 +467,9 @@ const NewTrainPage: React.FC = () => {
             : 0,
           subExercises: Array.isArray(ex.subExercises)
             ? ex.subExercises.map((sub: any) => ({
-                ...sub,
-                instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
-              }))
+              ...sub,
+              instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
+            }))
             : ex.subExercises,
         }));
         setExercises(parsed as ExerciseDraft[]);
@@ -501,7 +500,7 @@ const NewTrainPage: React.FC = () => {
     ]);
   };
 
-  
+
 
   const convertToSuperset = (id: string) => {
     setExercises(exercises.map(ex => {
@@ -559,9 +558,9 @@ const NewTrainPage: React.FC = () => {
           subExercises: [
             {
               name: ex.name,
-              type: ex.type === 'isometry' ? 'isometry' : 'reps',
-              reps: ex.type === 'reps' ? ex.reps : 0,
-              duration_seconds: ex.type === 'isometry' ? ex.duration_seconds : 0,
+              type: 'reps',
+              reps: ex.type === 'reps' ? Math.max(1, ex.reps) : 1,
+              duration_seconds: 0,
               weight_kg: ex.weight_kg ?? null,
               instruction_note: ex.instruction_note || '',
             },
@@ -586,7 +585,6 @@ const NewTrainPage: React.FC = () => {
     const newExercises = [...exercises];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
 
-    // Scambia gli elementi
     const temp = newExercises[index];
     newExercises[index] = newExercises[targetIndex];
     newExercises[targetIndex] = temp;
@@ -1201,14 +1199,12 @@ const NewTrainPage: React.FC = () => {
       let workoutIdToUse = id;
 
       if (id) {
-        // UPDATE scheda esistente
         const { error: updateError } = await supabase
           .from('schede')
           .update({ nome: workoutName })
           .eq('id_scheda', Number(id));
         if (updateError) throw updateError;
 
-        // Rimuove i vecchi esercizi
         const { error: deleteError } = await supabase
           .from('esecuzioni')
           .delete()
@@ -1216,7 +1212,6 @@ const NewTrainPage: React.FC = () => {
         if (deleteError) throw deleteError;
 
       } else {
-        // INSERT nuova scheda
         await ensureUserProfileExists();
 
         const { data: workoutData, error: workoutError } = await supabase
@@ -1464,623 +1459,609 @@ const NewTrainPage: React.FC = () => {
           ) : (
             exercises.map((ex, index) => (
               <React.Fragment key={ex.id}>
-              <div
-                ref={(node) => {
-                  exerciseRefs.current[ex.id] = node;
-                }}
-                className={`bg-brand-darkGrey/40 border p-4 rounded-3xl flex flex-col space-y-4 relative shadow-lg transition-colors ${
-                  focusedExerciseId === ex.id ? 'border-brand-orange/70 ring-2 ring-brand-orange/30' : 'border-brand-grey/20'
-                }`}
-              >
+                <div
+                  ref={(node) => {
+                    exerciseRefs.current[ex.id] = node;
+                  }}
+                  className={`bg-brand-darkGrey/40 border p-4 rounded-3xl flex flex-col space-y-4 relative shadow-lg transition-colors ${focusedExerciseId === ex.id ? 'border-brand-orange/70 ring-2 ring-brand-orange/30' : 'border-brand-grey/20'
+                    }`}
+                >
 
-                {/* Header Esercizio: Frecce Ordine e Bottone Elimina */}
-                <div className="flex justify-between items-center bg-black/30 -mx-4 -mt-4 p-3 rounded-t-3xl border-b border-white/5">
-                  <div className="flex space-x-1">
+                  {/* Header Esercizio: Frecce Ordine e Bottone Elimina */}
+                  <div className="flex justify-between items-center bg-black/30 -mx-4 -mt-4 p-3 rounded-t-3xl border-b border-white/5">
+                    <div className="flex space-x-1">
+                      <button
+                        onClick={() => moveExercise(index, 'up')}
+                        disabled={index === 0}
+                        className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                      >
+                        <ChevronUp size={20} />
+                      </button>
+                      <button
+                        onClick={() => moveExercise(index, 'down')}
+                        disabled={index === exercises.length - 1}
+                        className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                      >
+                        <ChevronDown size={20} />
+                      </button>
+                    </div>
+                    <span className="text-xs font-bold text-brand-grey/40">EXERCISE {index + 1}</span>
                     <button
-                      onClick={() => moveExercise(index, 'up')}
-                      disabled={index === 0}
-                      className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                      onClick={() => removeExercise(ex.id)}
+                      className="p-1.5 text-brand-grey/60 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
                     >
-                      <ChevronUp size={20} />
-                    </button>
-                    <button
-                      onClick={() => moveExercise(index, 'down')}
-                      disabled={index === exercises.length - 1}
-                      className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    >
-                      <ChevronDown size={20} />
+                      <Trash2 size={20} />
                     </button>
                   </div>
-                  <span className="text-xs font-bold text-brand-grey/40">EXERCISE {index + 1}</span>
-                  <button
-                    onClick={() => removeExercise(ex.id)}
-                    className="p-1.5 text-brand-grey/60 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
-                  >
-                    <Trash2 size={20} />
-                  </button>
-                </div>
 
-                {/* Specific UI for SUPERSET vs SINGLE */}
-                {ex.type === 'emom' ? (
-                  <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-blue-500/20">
-                    <p className="text-xs font-bold text-blue-400 uppercase tracking-wider text-center mb-2 flex flex-col items-center justify-center">
-                      ⏱️ EMOM Circuit
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 mb-4 mt-2">
+                  {/* Specific UI for SUPERSET vs SINGLE */}
+                  {ex.type === 'emom' ? (
+                    <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-blue-500/20">
+                      <p className="text-xs font-bold text-blue-400 uppercase tracking-wider text-center mb-2 flex flex-col items-center justify-center">
+                        ⏱️ EMOM Circuit
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 mb-4 mt-2">
+                        <div className="flex flex-col">
+                          <label className="text-xs text-brand-grey mb-1">Total Rounds</label>
+                          <input
+                            type="number" inputMode="numeric"
+                            min="1"
+                            value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
+                            onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
+                            onBlur={() => commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1)}
+                            onFocus={onNumberFocus}
+                            className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                          />
+                        </div>
+                        <div className="flex flex-col">
+                          <label className="text-xs text-brand-grey mb-1">Round Time</label>
+                          <div className="flex bg-black/40 border border-brand-grey/20 rounded-lg overflow-hidden focus-within:border-blue-400 transition-colors h-[42px]">
+                            <div className="relative flex-1 border-r border-brand-grey/10">
+                              <input
+                                type="number" inputMode="numeric"
+                                min="0"
+                                value={getDraftOrValue(`${ex.id}:emom_round_duration:min`, Math.floor((ex.emom_round_duration || 60) / 60))}
+                                onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:min`, e.target.value)}
+                                onBlur={() => commitEmomRoundDurationPart(ex.id, 'min', `${ex.id}:emom_round_duration:min`, ex.emom_round_duration || 60)}
+                                onFocus={onNumberFocus}
+                                className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                              />
+                              <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                            </div>
+                            <div className="relative flex-1">
+                              <input
+                                type="number" inputMode="numeric"
+                                min="0"
+                                max="59"
+                                value={getDraftOrValue(`${ex.id}:emom_round_duration:sec`, (ex.emom_round_duration || 60) % 60)}
+                                onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:sec`, e.target.value)}
+                                onBlur={() => commitEmomRoundDurationPart(ex.id, 'sec', `${ex.id}:emom_round_duration:sec`, ex.emom_round_duration || 60)}
+                                onFocus={onNumberFocus}
+                                className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                              />
+                              <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {ex.subExercises?.map((sub, sIdx) => (
+                        <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
+                          <input
+                            type="text"
+                            placeholder={`Exercise Name ${sIdx + 1}`}
+                            value={sub.name}
+                            onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
+                            className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-400 outline-none"
+                          />
+
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                              {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                            </label>
+                            <input
+                              type="text" inputMode="numeric"
+                              value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
+                              onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
+                              onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
+                              onFocus={onNumberFocus}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                              placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                              Weight (kg)
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                              onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
+                              onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                              onFocus={onNumberFocus}
+                              placeholder="body Weight"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                              Exercise Note (optional)
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={sub.instruction_note || ''}
+                              onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
+                              placeholder="E.g. fermo in buca 1 secondo"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-400 outline-none resize-none"
+                            />
+                          </div>
+                          {ex.subExercises && ex.subExercises.length > 1 && (
+                            <button
+                              onClick={() => removeSubExercise(ex.id, sIdx)}
+                              className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => addSubExercise(ex.id)}
+                        className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                      >
+                        <Plus size={14} className="mr-1" /> ADD TO EMOM
+                      </button>
+                    </div>
+                  ) : ex.type === 'superset' ? (
+                    <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
+                      <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex items-center justify-center">
+                        🔁 Superset Circuit
+                      </p>
+                      {ex.subExercises?.map((sub, sIdx) => (
+                        <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
+                          <input
+                            type="text"
+                            placeholder={`Exercise Name ${sIdx + 1}`}
+                            value={sub.name}
+                            onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
+                            className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
+                          />
+                          <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                            <button
+                              onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
+                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                            >
+                              REPS
+                            </button>
+                            <button
+                              onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
+                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                            >
+                              ISOMETRIC
+                            </button>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                              {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                            </label>
+                            <input
+                              type="text" inputMode="numeric"
+                              value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
+                              onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
+                              onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
+                              onFocus={onNumberFocus}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                              placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                              Weight (kg)
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                              onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
+                              onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                              onFocus={onNumberFocus}
+                              placeholder="body Weight"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                              Exercise Note (optional)
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={sub.instruction_note || ''}
+                              onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
+                              placeholder="E.g. fermo a braccia stese"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
+                            />
+                          </div>
+                          {ex.subExercises && ex.subExercises.length > 1 && (
+                            <button
+                              onClick={() => removeSubExercise(ex.id, sIdx)}
+                              className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => addSubExercise(ex.id)}
+                        className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                      >
+                        <Plus size={14} className="mr-1" /> ADD TO SUPERSET
+                      </button>
+                    </div>
+                  ) : ex.type === 'pyramid' ? (
+                    <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
+                      <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2">
+                        Pyramid
+                      </p>
+
+                      <input
+                        type="text"
+                        placeholder="Exercise Name (e.g. Push Ups)"
+                        value={ex.name}
+                        onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
+                        className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
+                      />
+
+                      <div>
+                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                          Exercise Note (optional)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={ex.instruction_note || ''}
+                          onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
+                          placeholder="E.g. fermo in buca 1 secondo"
+                          className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
+                        />
+                      </div>
+
+                      {ex.pyramid_steps?.map((step, stepIdx) => (
+                        <div key={stepIdx} className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2 relative pr-8">
+                          <p className="text-[10px] uppercase tracking-wider text-brand-grey/70 font-bold">Step {stepIdx + 1}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Reps</label>
+                              <input
+                                type="text" inputMode="numeric"
+                                value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:reps`, step.reps, true)}
+                                onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:reps`, e.target.value)}
+                                onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'reps', `${ex.id}:pyr:${stepIdx}:reps`, 0, 0)}
+                                onFocus={onNumberFocus}
+                                placeholder="MAX REPS"
+                                className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1 flex items-center">
+                                <Clock size={10} className="mr-1" />
+                                Rest
+                              </label>
+                              <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
+                                <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
+                                  <input
+                                    type="number" inputMode="numeric"
+                                    min="0"
+                                    value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:min`, Math.floor(step.rest_seconds / 60))}
+                                    onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:min`, e.target.value)}
+                                    onBlur={() => commitPyramidRestPart(ex.id, stepIdx, 'min', `${ex.id}:pyr:${stepIdx}:rest:min`, step.rest_seconds)}
+                                    onFocus={onNumberFocus}
+                                    className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
+                                  />
+                                  <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                                </div>
+                                <div className="flex flex-col items-center justify-center w-1/2 relative">
+                                  <input
+                                    type="number" inputMode="numeric"
+                                    min="0"
+                                    max="59"
+                                    value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds % 60)}
+                                    onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, e.target.value)}
+                                    onBlur={() => commitPyramidRestPart(ex.id, stepIdx, 'sec', `${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds)}
+                                    onFocus={onNumberFocus}
+                                    className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
+                                  />
+                                  <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Weight (kg)</label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={getWeightDraftOrValue(`${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
+                              onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:weight`, e.target.value)}
+                              onBlur={() => commitPyramidStepWeight(ex.id, stepIdx, `${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
+                              onFocus={onNumberFocus}
+                              placeholder="body Weight"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
+                            />
+                          </div>
+                          {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
+                            <button
+                              onClick={() => removePyramidStep(ex.id, stepIdx)}
+                              className="absolute right-2 top-2 text-red-500/50 hover:text-red-500 p-1"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      <button
+                        onClick={() => addPyramidStep(ex.id)}
+                        className="w-full mt-1 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                      >
+                        <Plus size={14} className="mr-1" /> ADD PYRAMID STEP
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                        <button
+                          onClick={() => updateExercise(ex.id, 'type', 'reps')}
+                          className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                        >
+                          REPS
+                        </button>
+                        <button
+                          onClick={() => updateExercise(ex.id, 'type', 'isometry')}
+                          className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                        >
+                          ISOMETRIC
+                        </button>
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Exercise Name (e.g. Bench Press)"
+                          value={ex.name}
+                          onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
+                          className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white font-semibold focus:border-brand-orange focus:outline-none transition-colors"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                          Exercise Note (optional)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={ex.instruction_note || ''}
+                          onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
+                          placeholder="E.g. fermo a braccia stese"
+                          className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
+                        />
+                      </div>
+
+                      {ex.type === 'reps' && (
+                        <div className="mt-2">
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                            Auto-Count Feature
+                          </label>
+                          <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                            <button
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
+                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${!ex.auto_count_type ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                            >
+                              NONE
+                            </button>
+                            <button
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
+                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pushups' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                            >
+                              PUSH-UPS
+                            </button>
+                            <button
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
+                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pullups' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                            >
+                              PULL-UPS
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Dati Generici (Serie e Recupero) */}
+                  {ex.type !== 'pyramid' && (
+                    <div className={`grid ${ex.type === 'superset' || ex.type === 'emom' ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'} gap-3`}>
                       <div className="flex flex-col">
-                        <label className="text-xs text-brand-grey mb-1">Total Rounds</label>
+                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
+                          Sets
+                        </label>
                         <input
                           type="number" inputMode="numeric"
                           min="1"
-                          value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
-                          onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
-                          onBlur={() => commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1)}
+                          value={getDraftOrValue(`${ex.id}:sets`, ex.sets)}
+                          onChange={(e) => setDraftValue(`${ex.id}:sets`, e.target.value)}
+                          onBlur={() => commitExerciseNumber(ex.id, 'sets', `${ex.id}:sets`, 1, 1)}
                           onFocus={onNumberFocus}
-                          className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                          className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
                         />
                       </div>
-                      <div className="flex flex-col">
-                        <label className="text-xs text-brand-grey mb-1">Round Time</label>
-                        <div className="flex bg-black/40 border border-brand-grey/20 rounded-lg overflow-hidden focus-within:border-blue-400 transition-colors h-[42px]">
-                          <div className="relative flex-1 border-r border-brand-grey/10">
+
+                      {ex.type !== 'superset' && ex.type !== 'emom' && (
+                        <div className="flex flex-col">
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
+                            {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
+                          </label>
+                          <input
+                            type="text" inputMode="numeric"
+                            value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds, true)}
+                            onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
+                            onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, 0, 0)}
+                            onFocus={onNumberFocus}
+                            placeholder={ex.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
+                            className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors placeholder:text-brand-orange/60 placeholder:text-xs"
+                          />
+                        </div>
+                      )}
+
+                      {ex.type !== 'superset' && ex.type !== 'emom' && (
+                        <div className="flex flex-col">
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
+                            Weight (kg)
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={getWeightDraftOrValue(`${ex.id}:weight`, ex.weight_kg)}
+                            onChange={(e) => setDraftValue(`${ex.id}:weight`, e.target.value)}
+                            onBlur={() => commitExerciseWeight(ex.id, `${ex.id}:weight`, ex.weight_kg)}
+                            onFocus={onNumberFocus}
+                            placeholder="body Weight"
+                            className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex flex-col relative">
+                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 flex items-center">
+                          <Clock size={10} className="mr-1" />
+                          Rest
+                        </label>
+                        <div className="flex bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[46px]">
+                          <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
                             <input
                               type="number" inputMode="numeric"
                               min="0"
-                              value={getDraftOrValue(`${ex.id}:emom_round_duration:min`, Math.floor((ex.emom_round_duration || 60) / 60))}
-                              onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:min`, e.target.value)}
-                              onBlur={() => commitEmomRoundDurationPart(ex.id, 'min', `${ex.id}:emom_round_duration:min`, ex.emom_round_duration || 60)}
+                              value={getDraftOrValue(`${ex.id}:rest:min`, Math.floor(ex.rest_seconds / 60))}
+                              onChange={(e) => setDraftValue(`${ex.id}:rest:min`, e.target.value)}
+                              onBlur={() => commitRestPart(ex.id, 'min', `${ex.id}:rest:min`, ex.rest_seconds)}
                               onFocus={onNumberFocus}
-                              className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                              className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
                             />
                             <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
                           </div>
-                          <div className="relative flex-1">
+                          <div className="flex flex-col items-center justify-center w-1/2 relative">
                             <input
                               type="number" inputMode="numeric"
                               min="0"
                               max="59"
-                              value={getDraftOrValue(`${ex.id}:emom_round_duration:sec`, (ex.emom_round_duration || 60) % 60)}
-                              onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:sec`, e.target.value)}
-                              onBlur={() => commitEmomRoundDurationPart(ex.id, 'sec', `${ex.id}:emom_round_duration:sec`, ex.emom_round_duration || 60)}
+                              value={getDraftOrValue(`${ex.id}:rest:sec`, ex.rest_seconds % 60)}
+                              onChange={(e) => setDraftValue(`${ex.id}:rest:sec`, e.target.value)}
+                              onBlur={() => commitRestPart(ex.id, 'sec', `${ex.id}:rest:sec`, ex.rest_seconds)}
                               onFocus={onNumberFocus}
-                              className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                              className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
                             />
                             <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
                           </div>
                         </div>
                       </div>
                     </div>
+                  )}
 
-                    {ex.subExercises?.map((sub, sIdx) => (
-                      <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
-                        <input
-                          type="text"
-                          placeholder={`Exercise Name ${sIdx + 1}`}
-                          value={sub.name}
-                          onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                          className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-400 outline-none"
-                        />
-                        <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                          <button
-                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
-                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                          >
-                            REPS
-                          </button>
-                          <button
-                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
-                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                          >
-                            ISOMETRIC
-                          </button>
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                            {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
-                          </label>
-                          <input
-                            type="text" inputMode="numeric"
-                            value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
-                            onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
-                            onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
-                            onFocus={onNumberFocus}
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
-                            placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                            Weight (kg)
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                            onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
-                            onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                            onFocus={onNumberFocus}
-                            placeholder="body Weight"
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                            Exercise Note (optional)
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={sub.instruction_note || ''}
-                            onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
-                            placeholder="E.g. fermo in buca 1 secondo"
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-400 outline-none resize-none"
-                          />
-                        </div>
-                        {ex.subExercises && ex.subExercises.length > 1 && (
-                          <button
-                            onClick={() => removeSubExercise(ex.id, sIdx)}
-                            className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => addSubExercise(ex.id)}
-                      className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                    >
-                      <Plus size={14} className="mr-1" /> ADD TO EMOM
-                    </button>
-                  </div>
-                ) : ex.type === 'superset' ? (
-                  <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
-                    <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex items-center justify-center">
-                      🔁 Superset Circuit
-                    </p>
-                    {ex.subExercises?.map((sub, sIdx) => (
-                      <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
-                        <input
-                          type="text"
-                          placeholder={`Exercise Name ${sIdx + 1}`}
-                          value={sub.name}
-                          onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                          className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
-                        />
-                        <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                          <button
-                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
-                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                          >
-                            REPS
-                          </button>
-                          <button
-                            onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
-                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                          >
-                            ISOMETRIC
-                          </button>
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                            {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
-                          </label>
-                          <input
-                            type="text" inputMode="numeric"
-                            value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
-                            onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
-                            onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
-                            onFocus={onNumberFocus}
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
-                            placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                            Weight (kg)
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                            onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
-                            onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                            onFocus={onNumberFocus}
-                            placeholder="body Weight"
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                            Exercise Note (optional)
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={sub.instruction_note || ''}
-                            onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
-                            placeholder="E.g. fermo a braccia stese"
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
-                          />
-                        </div>
-                        {ex.subExercises && ex.subExercises.length > 1 && (
-                          <button
-                            onClick={() => removeSubExercise(ex.id, sIdx)}
-                            className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => addSubExercise(ex.id)}
-                      className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                    >
-                      <Plus size={14} className="mr-1" /> ADD TO SUPERSET
-                    </button>
-                  </div>
-                ) : ex.type === 'pyramid' ? (
-                  <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
-                    <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2">
-                      Pyramid
-                    </p>
+                  {ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        onClick={() => convertToSuperset(ex.id)}
+                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                      >
+                        <Plus size={14} className="mr-1" /> CREATE SUPERSET
+                      </button>
+                      <button
+                        onClick={() => convertToEmom(ex.id)}
+                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                      >
+                        <Plus size={14} className="mr-1" /> CREATE EMOM
+                      </button>
+                      <button
+                        onClick={() => convertToPyramid(ex.id)}
+                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                      >
+                        <Plus size={14} className="mr-1" /> CREATE PYRAMID
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-                    <input
-                      type="text"
-                      placeholder="Exercise Name (e.g. Push Ups)"
-                      value={ex.name}
-                      onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
-                      className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
-                    />
+                {index < exercises.length - 1 && (
+                  <div className="relative -mt-1 mb-1 px-1">
+                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-brand-grey/25" />
 
-                    <div>
-                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                        Exercise Note (optional)
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={ex.instruction_note || ''}
-                        onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
-                        placeholder="E.g. fermo in buca 1 secondo"
-                        className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
-                      />
+                    <div className="relative flex justify-center">
+                      <button
+                        onClick={() => setEditingTransitionForExerciseId((prev) => (prev === ex.id ? null : ex.id))}
+                        className="inline-flex items-center gap-2 rounded-full border border-brand-orange/30 bg-brand-dark px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-brand-orange hover:border-brand-orange/60 hover:text-brand-lightOrange transition-colors"
+                      >
+                        <Clock size={12} />
+                        {(ex.transition_rest_seconds || 0) > 0
+                          ? `Rest between exercises: ${formatTransitionRest(ex.transition_rest_seconds)}`
+                          : 'Add rest between exercises'}
+                      </button>
                     </div>
 
-                    {ex.pyramid_steps?.map((step, stepIdx) => (
-                      <div key={stepIdx} className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2 relative pr-8">
-                        <p className="text-[10px] uppercase tracking-wider text-brand-grey/70 font-bold">Step {stepIdx + 1}</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Reps</label>
+                    {editingTransitionForExerciseId === ex.id && (
+                      <div className="relative mt-2 bg-brand-darkGrey/30 border border-brand-grey/20 rounded-xl px-3 py-3">
+                        <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mb-2">
+                          Recovery between exercise {index + 1} and {index + 2}
+                        </p>
+
+                        <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
+                          <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
                             <input
-                              type="text" inputMode="numeric"
-                              value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:reps`, step.reps, true)}
-                              onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:reps`, e.target.value)}
-                              onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'reps', `${ex.id}:pyr:${stepIdx}:reps`, 0, 0)}
+                              type="number" inputMode="numeric"
+                              min="0"
+                              value={getDraftOrValue(`${ex.id}:transition_rest:min`, Math.floor((ex.transition_rest_seconds || 0) / 60))}
+                              onChange={(e) => setDraftValue(`${ex.id}:transition_rest:min`, e.target.value)}
+                              onBlur={() => commitTransitionRestPart(ex.id, 'min', `${ex.id}:transition_rest:min`, ex.transition_rest_seconds || 0)}
                               onFocus={onNumberFocus}
-                              placeholder="MAX REPS"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                              className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
                             />
+                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
                           </div>
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1 flex items-center">
-                              <Clock size={10} className="mr-1" />
-                              Rest
-                            </label>
-                            <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
-                              <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
-                                <input
-                                  type="number" inputMode="numeric"
-                                  min="0"
-                                  value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:min`, Math.floor(step.rest_seconds / 60))}
-                                  onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:min`, e.target.value)}
-                                  onBlur={() => commitPyramidRestPart(ex.id, stepIdx, 'min', `${ex.id}:pyr:${stepIdx}:rest:min`, step.rest_seconds)}
-                                  onFocus={onNumberFocus}
-                                  className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
-                                />
-                                <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
-                              </div>
-                              <div className="flex flex-col items-center justify-center w-1/2 relative">
-                                <input
-                                  type="number" inputMode="numeric"
-                                  min="0"
-                                  max="59"
-                                  value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds % 60)}
-                                  onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, e.target.value)}
-                                  onBlur={() => commitPyramidRestPart(ex.id, stepIdx, 'sec', `${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds)}
-                                  onFocus={onNumberFocus}
-                                  className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
-                                />
-                                <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
-                              </div>
-                            </div>
+                          <div className="flex flex-col items-center justify-center w-1/2 relative">
+                            <input
+                              type="number" inputMode="numeric"
+                              min="0"
+                              max="59"
+                              value={getDraftOrValue(`${ex.id}:transition_rest:sec`, (ex.transition_rest_seconds || 0) % 60)}
+                              onChange={(e) => setDraftValue(`${ex.id}:transition_rest:sec`, e.target.value)}
+                              onBlur={() => commitTransitionRestPart(ex.id, 'sec', `${ex.id}:transition_rest:sec`, ex.transition_rest_seconds || 0)}
+                              onFocus={onNumberFocus}
+                              className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
+                            />
+                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
                           </div>
                         </div>
-                        <div>
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Weight (kg)</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={getWeightDraftOrValue(`${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
-                            onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:weight`, e.target.value)}
-                            onBlur={() => commitPyramidStepWeight(ex.id, stepIdx, `${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
-                            onFocus={onNumberFocus}
-                            placeholder="body Weight"
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
-                          />
-                        </div>
-                        {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
+
+                        <div className="mt-3 flex justify-end gap-2">
                           <button
-                            onClick={() => removePyramidStep(ex.id, stepIdx)}
-                            className="absolute right-2 top-2 text-red-500/50 hover:text-red-500 p-1"
+                            onClick={() => {
+                              updateExercise(ex.id, 'transition_rest_seconds', 0);
+                              clearDraftValue(`${ex.id}:transition_rest:min`);
+                              clearDraftValue(`${ex.id}:transition_rest:sec`);
+                              setEditingTransitionForExerciseId(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-xs font-bold"
                           >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-
-                    <button
-                      onClick={() => addPyramidStep(ex.id)}
-                      className="w-full mt-1 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                    >
-                      <Plus size={14} className="mr-1" /> ADD PYRAMID STEP
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                      <button
-                        onClick={() => updateExercise(ex.id, 'type', 'reps')}
-                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                      >
-                        REPS
-                      </button>
-                      <button
-                        onClick={() => updateExercise(ex.id, 'type', 'isometry')}
-                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                      >
-                        ISOMETRIC
-                      </button>
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="Exercise Name (e.g. Bench Press)"
-                        value={ex.name}
-                        onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
-                        className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white font-semibold focus:border-brand-orange focus:outline-none transition-colors"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                        Exercise Note (optional)
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={ex.instruction_note || ''}
-                        onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
-                        placeholder="E.g. fermo a braccia stese"
-                        className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
-                      />
-                    </div>
-
-                    {ex.type === 'reps' && (
-                      <div className="mt-2">
-                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                          Auto-Count Feature
-                        </label>
-                        <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                          <button
-                            onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${!ex.auto_count_type ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                          >
-                            NONE
+                            Remove
                           </button>
                           <button
-                            onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pushups' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                            onClick={() => setEditingTransitionForExerciseId(null)}
+                            className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-xs font-black"
                           >
-                            PUSH-UPS
-                          </button>
-                          <button
-                            onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pullups' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                          >
-                            PULL-UPS
+                            Done
                           </button>
                         </div>
                       </div>
                     )}
-                  </>
-                )}
-
-                {/* Dati Generici (Serie e Recupero) */}
-                {ex.type !== 'pyramid' && (
-                <div className={`grid ${ex.type === 'superset' || ex.type === 'emom' ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'} gap-3`}>
-                  <div className="flex flex-col">
-                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                      Sets
-                    </label>
-                    <input
-                      type="number" inputMode="numeric"
-                      min="1"
-                      value={getDraftOrValue(`${ex.id}:sets`, ex.sets)}
-                      onChange={(e) => setDraftValue(`${ex.id}:sets`, e.target.value)}
-                      onBlur={() => commitExerciseNumber(ex.id, 'sets', `${ex.id}:sets`, 1, 1)}
-                      onFocus={onNumberFocus}
-                      className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
-                    />
-                  </div>
-
-                  {ex.type !== 'superset' && ex.type !== 'emom' && (
-                    <div className="flex flex-col">
-                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                        {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
-                      </label>
-                      <input
-                        type="text" inputMode="numeric"
-                        value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds, true)}
-                        onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
-                        onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, 0, 0)}
-                        onFocus={onNumberFocus}
-                        placeholder={ex.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                        className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors placeholder:text-brand-orange/60 placeholder:text-xs"
-                      />
-                    </div>
-                  )}
-
-                  {ex.type !== 'superset' && ex.type !== 'emom' && (
-                    <div className="flex flex-col">
-                      <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                        Weight (kg)
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={getWeightDraftOrValue(`${ex.id}:weight`, ex.weight_kg)}
-                        onChange={(e) => setDraftValue(`${ex.id}:weight`, e.target.value)}
-                        onBlur={() => commitExerciseWeight(ex.id, `${ex.id}:weight`, ex.weight_kg)}
-                        onFocus={onNumberFocus}
-                        placeholder="body Weight"
-                        className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex flex-col relative">
-                    <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 flex items-center">
-                      <Clock size={10} className="mr-1" />
-                      Rest
-                    </label>
-                    <div className="flex bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[46px]">
-                      <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
-                        <input
-                          type="number" inputMode="numeric"
-                          min="0"
-                          value={getDraftOrValue(`${ex.id}:rest:min`, Math.floor(ex.rest_seconds / 60))}
-                          onChange={(e) => setDraftValue(`${ex.id}:rest:min`, e.target.value)}
-                          onBlur={() => commitRestPart(ex.id, 'min', `${ex.id}:rest:min`, ex.rest_seconds)}
-                          onFocus={onNumberFocus}
-                          className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
-                        />
-                        <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
-                      </div>
-                      <div className="flex flex-col items-center justify-center w-1/2 relative">
-                        <input
-                          type="number" inputMode="numeric"
-                          min="0"
-                          max="59"
-                          value={getDraftOrValue(`${ex.id}:rest:sec`, ex.rest_seconds % 60)}
-                          onChange={(e) => setDraftValue(`${ex.id}:rest:sec`, e.target.value)}
-                          onBlur={() => commitRestPart(ex.id, 'sec', `${ex.id}:rest:sec`, ex.rest_seconds)}
-                          onFocus={onNumberFocus}
-                          className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
-                        />
-                        <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                )}
-
-                {ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
-                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <button
-                      onClick={() => convertToSuperset(ex.id)}
-                      className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                    >
-                      <Plus size={14} className="mr-1" /> CREATE SUPERSET
-                    </button>
-                    <button
-                      onClick={() => convertToEmom(ex.id)}
-                      className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                    >
-                      <Plus size={14} className="mr-1" /> CREATE EMOM
-                    </button>
-                    <button
-                      onClick={() => convertToPyramid(ex.id)}
-                      className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                    >
-                      <Plus size={14} className="mr-1" /> CREATE PYRAMID
-                    </button>
                   </div>
                 )}
-              </div>
-
-              {index < exercises.length - 1 && (
-                <div className="relative -mt-1 mb-1 px-1">
-                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-brand-grey/25" />
-
-                  <div className="relative flex justify-center">
-                    <button
-                      onClick={() => setEditingTransitionForExerciseId((prev) => (prev === ex.id ? null : ex.id))}
-                      className="inline-flex items-center gap-2 rounded-full border border-brand-orange/30 bg-brand-dark px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-brand-orange hover:border-brand-orange/60 hover:text-brand-lightOrange transition-colors"
-                    >
-                      <Clock size={12} />
-                      {(ex.transition_rest_seconds || 0) > 0
-                        ? `Rest between exercises: ${formatTransitionRest(ex.transition_rest_seconds)}`
-                        : 'Add rest between exercises'}
-                    </button>
-                  </div>
-
-                  {editingTransitionForExerciseId === ex.id && (
-                    <div className="relative mt-2 bg-brand-darkGrey/30 border border-brand-grey/20 rounded-xl px-3 py-3">
-                      <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mb-2">
-                        Recovery between exercise {index + 1} and {index + 2}
-                      </p>
-
-                      <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
-                        <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
-                          <input
-                            type="number" inputMode="numeric"
-                            min="0"
-                            value={getDraftOrValue(`${ex.id}:transition_rest:min`, Math.floor((ex.transition_rest_seconds || 0) / 60))}
-                            onChange={(e) => setDraftValue(`${ex.id}:transition_rest:min`, e.target.value)}
-                            onBlur={() => commitTransitionRestPart(ex.id, 'min', `${ex.id}:transition_rest:min`, ex.transition_rest_seconds || 0)}
-                            onFocus={onNumberFocus}
-                            className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
-                          />
-                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
-                        </div>
-                        <div className="flex flex-col items-center justify-center w-1/2 relative">
-                          <input
-                            type="number" inputMode="numeric"
-                            min="0"
-                            max="59"
-                            value={getDraftOrValue(`${ex.id}:transition_rest:sec`, (ex.transition_rest_seconds || 0) % 60)}
-                            onChange={(e) => setDraftValue(`${ex.id}:transition_rest:sec`, e.target.value)}
-                            onBlur={() => commitTransitionRestPart(ex.id, 'sec', `${ex.id}:transition_rest:sec`, ex.transition_rest_seconds || 0)}
-                            onFocus={onNumberFocus}
-                            className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
-                          />
-                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex justify-end gap-2">
-                        <button
-                          onClick={() => {
-                            updateExercise(ex.id, 'transition_rest_seconds', 0);
-                            clearDraftValue(`${ex.id}:transition_rest:min`);
-                            clearDraftValue(`${ex.id}:transition_rest:sec`);
-                            setEditingTransitionForExerciseId(null);
-                          }}
-                          className="px-3 py-1.5 rounded-lg border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-xs font-bold"
-                        >
-                          Remove
-                        </button>
-                        <button
-                          onClick={() => setEditingTransitionForExerciseId(null)}
-                          className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-xs font-black"
-                        >
-                          Done
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
               </React.Fragment>
             ))
           )}
