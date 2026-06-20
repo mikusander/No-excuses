@@ -69,16 +69,8 @@ interface UseAccelerometerRepCounterOptions {
 // Timeout se il burst si protrae senza mai invertire
 const MAX_REP_DURATION_MS = 8000;
 
-// ─── Auto-calibrazione (peak_count mode) ─────────────────────────────────────
-// Durante gli ultimi 5s del countdown (utente fermo in posizione), misuriamo
-// media e deviazione standard del rumore di E a riposo e deriviamo le soglie.
-const CALIBRATION_WINDOW_MS      = 5000;  // ultimi 5s del countdown
-const CALIBRATION_K_ENTER        = 6;     // enterThreshold = mean + 6·std
-const CALIBRATION_K_EXIT         = 2;     // exitThreshold  = mean + 2·std
-const CALIBRATION_K_PROMINENCE   = 4;     // minProminence  = 4·std
-const CALIBRATION_MIN_SAMPLES    = 20;    // campioni minimi per considerare valida la calibrazione
-
-// Vincoli di durata rep (sostituiscono il cooldown fisso per peak_count)
+// Vincoli di durata rep per peak_count (isteresi + prominenza)
+// Sostituiscono il cooldown fisso: validano che la durata del picco sia plausibile.
 const PEAK_MIN_REP_DURATION_MS   = 400;   // rep più breve plausibile
 const PEAK_MAX_REP_DURATION_MS   = 4000;  // rep più lunga plausibile
 
@@ -244,12 +236,7 @@ export const useAccelerometerRepCounter = ({
   // Metriche — Gravità
   const gravityAtBurstStartRef = useRef<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
 
-  // ─── Auto-calibrazione & isteresi (peak_count) ────────────────────────────────
-  const calibrationSamplesRef   = useRef<number[]>([]);
-  const isCalibrationWindowRef  = useRef(false);
-  const enterThresholdRef       = useRef(0); // 0 = non calibrato, usa fallback
-  const exitThresholdRef        = useRef(0);
-  const minProminenceRef        = useRef(0);
+  // ─── Isteresi (peak_count) ────────────────────────────────────────────────
   const peakHysteresisRef       = useRef<'idle' | 'peak'>('idle');
   const peakEnterTimeRef        = useRef(0);
   const valleyEnergyRef         = useRef(Infinity);
@@ -291,12 +278,7 @@ export const useAccelerometerRepCounter = ({
     lastRepTimeRef.current   = 0;
     resetBurstMetrics();
     gravityAtBurstStartRef.current = { x: 0, y: 0, z: 0 };
-    // Reset auto-calibrazione & isteresi
-    calibrationSamplesRef.current  = [];
-    isCalibrationWindowRef.current = false;
-    enterThresholdRef.current      = 0;
-    exitThresholdRef.current       = 0;
-    minProminenceRef.current       = 0;
+    // Reset isteresi
     peakHysteresisRef.current      = 'idle';
     peakEnterTimeRef.current       = 0;
     valleyEnergyRef.current        = Infinity;
@@ -418,11 +400,6 @@ export const useAccelerometerRepCounter = ({
 
       const remainingMs = Math.max(0, prepEndsAtRef.current - Date.now());
       setPrepRemaining(Math.max(0, Math.ceil(remainingMs / 1000)));
-      // Avvia la finestra di auto-calibrazione negli ultimi 5s
-      if (remainingMs <= CALIBRATION_WINDOW_MS && !isCalibrationWindowRef.current) {
-        isCalibrationWindowRef.current = true;
-        calibrationSamplesRef.current = [];
-      }
 
       if (remainingMs <= 0) {
         prepEndsAtRef.current = null;
@@ -431,23 +408,8 @@ export const useAccelerometerRepCounter = ({
         if (gravityRef.current) {
           initialGravityRef.current = { ...gravityRef.current };
         }
-
-        // ─── Calcola soglie auto-calibrate dalla distribuzione del rumore ─────
-        const samples = calibrationSamplesRef.current;
-        if (samples.length >= CALIBRATION_MIN_SAMPLES) {
-          const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
-          const variance = samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length;
-          const std = Math.sqrt(variance);
-          enterThresholdRef.current     = mean + CALIBRATION_K_ENTER * std;
-          exitThresholdRef.current      = Math.max(mean + CALIBRATION_K_EXIT * std, 1);
-          minProminenceRef.current      = CALIBRATION_K_PROMINENCE * std;
-        }
-        // Se la calibrazione fallisce, enterThresholdRef resta 0
-        // e il peak_count handler userà i fallback da EXERCISE_CONFIG.
-        isCalibrationWindowRef.current = false;
         valleyEnergyRef.current = Infinity; // pronto per il primo ciclo
         peakHysteresisRef.current = 'idle';
-
         triggerStartHaptic();
         setPhase('active');
       } else if (remainingMs <= 1000 && gravityRef.current === null) {
@@ -501,14 +463,6 @@ export const useAccelerometerRepCounter = ({
       // 2. Accelerazione Lineare (gravità rimossa)
       const linMag = Math.hypot(rawAcc.x - gravity.x, rawAcc.y - gravity.y, rawAcc.z - gravity.z);
 
-      // 2b. Proiezione verticale sull'asse gravità (segnale più pulito per peak_count)
-      // Cattura solo la componente del movimento lungo la direzione della gravità,
-      // rigettando naturalmente i movimenti laterali e l'estrazione del telefono.
-      const gMag = Math.hypot(gravity.x, gravity.y, gravity.z);
-      const aVert = gMag > 0
-        ? Math.abs(((rawAcc.x - gravity.x) * gravity.x + (rawAcc.y - gravity.y) * gravity.y + (rawAcc.z - gravity.z) * gravity.z) / gMag)
-        : linMag;
-
       // 3. Giroscopio per asse (valori assoluti)
       const rr      = event.rotationRate;
       const gAlpha  = Math.abs(rr?.alpha || 0);
@@ -516,22 +470,15 @@ export const useAccelerometerRepCounter = ({
       const gGamma  = Math.abs(rr?.gamma || 0);
       const gyroMag = Math.hypot(gAlpha, gBeta, gGamma);
 
-      // 4. Lookup configurazione esercizio (serve prima del calcolo energia)
+      // 4. Lookup configurazione esercizio
       const cfg_peek = (exerciseType && EXERCISE_CONFIG[exerciseType])
         ? EXERCISE_CONFIG[exerciseType]
         : EXERCISE_CONFIG.default;
 
-      // 5. Motion Energy: usa proiezione verticale per peak_count, magnitudine per altri
-      const linComponent = cfg_peek.mode === 'peak_count' ? aVert : linMag;
-      const rawEnergy = gyroMag + 40 * linComponent;
+      const rawEnergy = gyroMag + 40 * linMag;
       prevEnergyRef.current = energyRef.current;
       energyRef.current = energyRef.current * 0.6 + rawEnergy * 0.4;
       const energy = energyRef.current;
-
-      // 6. Raccolta campioni per auto-calibrazione (ultimi 5s del countdown)
-      if (isCalibrationWindowRef.current) {
-        calibrationSamplesRef.current.push(energy);
-      }
 
       // 5. Ritorno in 'preparing' se il dispositivo viene mosso bruscamente (solo in waitForStillness)
       if (waitForStillness && phaseRef.current === 'active') {
@@ -544,18 +491,15 @@ export const useAccelerometerRepCounter = ({
         }
       }
 
-      // ─── PEAK_COUNT: isteresi a doppia soglia + prominenza + auto-calibrazione ──
+      // ─── PEAK_COUNT: isteresi a doppia soglia + prominenza + vincoli durata ───
       if (cfg_peek.mode === 'peak_count') {
-        // Soglie: usa auto-calibrate se disponibili, altrimenti fallback da config
-        const enterThresh = enterThresholdRef.current > 0
-          ? enterThresholdRef.current
-          : cfg_peek.active * (cfg_peek.peakRatioThreshold ?? 3);
-        const exitThresh = exitThresholdRef.current > 0
-          ? exitThresholdRef.current
-          : cfg_peek.rest;
-        const minProm = minProminenceRef.current > 0
-          ? minProminenceRef.current
-          : cfg_peek.active; // fallback conservativo
+        // Soglie fisse derivate dai dati di calibrazione:
+        // enter = active * peakRatio (default 360): il picco deve superare questa soglia
+        // exit  = rest (default 75): l'energia deve scendere qui per chiudere il picco
+        // minProm = active (default 120): il picco deve risaltare almeno di tanto sulla valle
+        const enterThresh = cfg_peek.active * (cfg_peek.peakRatioThreshold ?? 3);
+        const exitThresh  = cfg_peek.rest;
+        const minProm     = cfg_peek.active;
 
         if (peakHysteresisRef.current === 'idle') {
           // ── Stato IDLE: traccia la valle e attendi la soglia di ingresso ────
