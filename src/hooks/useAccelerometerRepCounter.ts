@@ -69,6 +69,19 @@ interface UseAccelerometerRepCounterOptions {
 // Timeout se il burst si protrae senza mai invertire
 const MAX_REP_DURATION_MS = 8000;
 
+// ─── Auto-calibrazione (peak_count mode) ─────────────────────────────────────
+// Durante gli ultimi 5s del countdown (utente fermo in posizione), misuriamo
+// media e deviazione standard del rumore di E a riposo e deriviamo le soglie.
+const CALIBRATION_WINDOW_MS      = 5000;  // ultimi 5s del countdown
+const CALIBRATION_K_ENTER        = 6;     // enterThreshold = mean + 6·std
+const CALIBRATION_K_EXIT         = 2;     // exitThreshold  = mean + 2·std
+const CALIBRATION_K_PROMINENCE   = 4;     // minProminence  = 4·std
+const CALIBRATION_MIN_SAMPLES    = 20;    // campioni minimi per considerare valida la calibrazione
+
+// Vincoli di durata rep (sostituiscono il cooldown fisso per peak_count)
+const PEAK_MIN_REP_DURATION_MS   = 400;   // rep più breve plausibile
+const PEAK_MAX_REP_DURATION_MS   = 4000;  // rep più lunga plausibile
+
 // Soglie per esercizio — derivate dall'analisi dei dati di calibrazione reali.
 //
 // pullups — backtest su 32 sessioni / 168 rep reali:
@@ -87,18 +100,17 @@ const EXERCISE_CONFIG: Record<string, {
   minDuration: number;
   mode: 'single_burst' | 'dual_burst' | 'peak_count';
   repCooldownMs: number;
-  peakRatioThreshold?: number; // solo peak_count: energia min picco = active * ratio
-  minRestMs?: number;          // solo peak_count: ms minimi di idle prima di contare la rep
+  peakRatioThreshold?: number; // fallback peak_count: energia min picco = active * ratio
+  minRestMs?: number;
 }> = {
   pullups: { active: 140, rest: 78,  gyroShake: 673,  minDuration: 210, mode: 'single_burst', repCooldownMs: 500 },
-  // ── Flessioni: peak_count ─────────────────────────────────────────────────────
-  // I dati (5 sessioni reali) mostrano picchi a 900-1100 e valley a 73-80.
-  // Il burst NON si chiude tra rep ravvicinate (inter-rep energy = 73-90 ≈ rest=75).
-  // Soluzione: peak_count — conta ogni picco genuino che supera active*3 (=360)
-  // Nota: peakRatioThreshold=2.5 (soglia=300) introduceva falsi positivi sistematici
-  // (+1 rep fantasma). Rimesso a 3 (soglia=360). La rep più debole registrata
-  // aveva maxEnergy=376, margine stretto ma sufficiente.
-  pushups: { active: 120, rest: 75, gyroShake: 1200, minDuration: 300, mode: 'peak_count', repCooldownMs: 1200, peakRatioThreshold: 3 },
+  // ── Flessioni: peak_count con auto-calibrazione ────────────────────────────────
+  // Le soglie hardcodate (active/rest/peakRatio) servono solo da FALLBACK quando
+  // la calibrazione non raccoglie abbastanza campioni. In condizioni normali
+  // enterThreshold, exitThreshold e minProminence vengono calcolati automaticamente
+  // dalla distribuzione del rumore misurata durante il countdown.
+  // repCooldownMs=0: la validazione avviene tramite vincoli di durata (0.4-4s).
+  pushups: { active: 120, rest: 75, gyroShake: 1200, minDuration: 300, mode: 'peak_count', repCooldownMs: 0, peakRatioThreshold: 3 },
 
   default: { active: 180, rest: 100, gyroShake: 700, minDuration: 200, mode: 'dual_burst',  repCooldownMs: 0 },
 };
@@ -232,6 +244,16 @@ export const useAccelerometerRepCounter = ({
   // Metriche — Gravità
   const gravityAtBurstStartRef = useRef<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
 
+  // ─── Auto-calibrazione & isteresi (peak_count) ────────────────────────────────
+  const calibrationSamplesRef   = useRef<number[]>([]);
+  const isCalibrationWindowRef  = useRef(false);
+  const enterThresholdRef       = useRef(0); // 0 = non calibrato, usa fallback
+  const exitThresholdRef        = useRef(0);
+  const minProminenceRef        = useRef(0);
+  const peakHysteresisRef       = useRef<'idle' | 'peak'>('idle');
+  const peakEnterTimeRef        = useRef(0);
+  const valleyEnergyRef         = useRef(Infinity);
+
   const resetBurstMetrics = useCallback(() => {
     activeStartTimeRef.current   = 0;
     energyPeakTimeRef.current    = 0;
@@ -269,6 +291,15 @@ export const useAccelerometerRepCounter = ({
     lastRepTimeRef.current   = 0;
     resetBurstMetrics();
     gravityAtBurstStartRef.current = { x: 0, y: 0, z: 0 };
+    // Reset auto-calibrazione & isteresi
+    calibrationSamplesRef.current  = [];
+    isCalibrationWindowRef.current = false;
+    enterThresholdRef.current      = 0;
+    exitThresholdRef.current       = 0;
+    minProminenceRef.current       = 0;
+    peakHysteresisRef.current      = 'idle';
+    peakEnterTimeRef.current       = 0;
+    valleyEnergyRef.current        = Infinity;
   }, []);
 
   const resetSession = useCallback(() => {
@@ -387,6 +418,12 @@ export const useAccelerometerRepCounter = ({
 
       const remainingMs = Math.max(0, prepEndsAtRef.current - Date.now());
       setPrepRemaining(Math.max(0, Math.ceil(remainingMs / 1000)));
+      // Avvia la finestra di auto-calibrazione negli ultimi 5s
+      if (remainingMs <= CALIBRATION_WINDOW_MS && !isCalibrationWindowRef.current) {
+        isCalibrationWindowRef.current = true;
+        calibrationSamplesRef.current = [];
+      }
+
       if (remainingMs <= 0) {
         prepEndsAtRef.current = null;
         previousPhaseRef.current = 'active';
@@ -394,6 +431,23 @@ export const useAccelerometerRepCounter = ({
         if (gravityRef.current) {
           initialGravityRef.current = { ...gravityRef.current };
         }
+
+        // ─── Calcola soglie auto-calibrate dalla distribuzione del rumore ─────
+        const samples = calibrationSamplesRef.current;
+        if (samples.length >= CALIBRATION_MIN_SAMPLES) {
+          const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+          const variance = samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length;
+          const std = Math.sqrt(variance);
+          enterThresholdRef.current     = mean + CALIBRATION_K_ENTER * std;
+          exitThresholdRef.current      = Math.max(mean + CALIBRATION_K_EXIT * std, 1);
+          minProminenceRef.current      = CALIBRATION_K_PROMINENCE * std;
+        }
+        // Se la calibrazione fallisce, enterThresholdRef resta 0
+        // e il peak_count handler userà i fallback da EXERCISE_CONFIG.
+        isCalibrationWindowRef.current = false;
+        valleyEnergyRef.current = Infinity; // pronto per il primo ciclo
+        peakHysteresisRef.current = 'idle';
+
         triggerStartHaptic();
         setPhase('active');
       } else if (remainingMs <= 1000 && gravityRef.current === null) {
@@ -447,6 +501,14 @@ export const useAccelerometerRepCounter = ({
       // 2. Accelerazione Lineare (gravità rimossa)
       const linMag = Math.hypot(rawAcc.x - gravity.x, rawAcc.y - gravity.y, rawAcc.z - gravity.z);
 
+      // 2b. Proiezione verticale sull'asse gravità (segnale più pulito per peak_count)
+      // Cattura solo la componente del movimento lungo la direzione della gravità,
+      // rigettando naturalmente i movimenti laterali e l'estrazione del telefono.
+      const gMag = Math.hypot(gravity.x, gravity.y, gravity.z);
+      const aVert = gMag > 0
+        ? Math.abs(((rawAcc.x - gravity.x) * gravity.x + (rawAcc.y - gravity.y) * gravity.y + (rawAcc.z - gravity.z) * gravity.z) / gMag)
+        : linMag;
+
       // 3. Giroscopio per asse (valori assoluti)
       const rr      = event.rotationRate;
       const gAlpha  = Math.abs(rr?.alpha || 0);
@@ -454,10 +516,22 @@ export const useAccelerometerRepCounter = ({
       const gGamma  = Math.abs(rr?.gamma || 0);
       const gyroMag = Math.hypot(gAlpha, gBeta, gGamma);
 
-      const rawEnergy = gyroMag + 40 * linMag;
+      // 4. Lookup configurazione esercizio (serve prima del calcolo energia)
+      const cfg_peek = (exerciseType && EXERCISE_CONFIG[exerciseType])
+        ? EXERCISE_CONFIG[exerciseType]
+        : EXERCISE_CONFIG.default;
+
+      // 5. Motion Energy: usa proiezione verticale per peak_count, magnitudine per altri
+      const linComponent = cfg_peek.mode === 'peak_count' ? aVert : linMag;
+      const rawEnergy = gyroMag + 40 * linComponent;
       prevEnergyRef.current = energyRef.current;
       energyRef.current = energyRef.current * 0.6 + rawEnergy * 0.4;
       const energy = energyRef.current;
+
+      // 6. Raccolta campioni per auto-calibrazione (ultimi 5s del countdown)
+      if (isCalibrationWindowRef.current) {
+        calibrationSamplesRef.current.push(energy);
+      }
 
       // 5. Ritorno in 'preparing' se il dispositivo viene mosso bruscamente (solo in waitForStillness)
       if (waitForStillness && phaseRef.current === 'active') {
@@ -470,43 +544,66 @@ export const useAccelerometerRepCounter = ({
         }
       }
 
-      const cfg_peek = (exerciseType && EXERCISE_CONFIG[exerciseType])
-        ? EXERCISE_CONFIG[exerciseType]
-        : EXERCISE_CONFIG.default;
-
+      // ─── PEAK_COUNT: isteresi a doppia soglia + prominenza + auto-calibrazione ──
       if (cfg_peek.mode === 'peak_count') {
-        const peakThresh = cfg_peek.active * (cfg_peek.peakRatioThreshold ?? 3);
+        // Soglie: usa auto-calibrate se disponibili, altrimenti fallback da config
+        const enterThresh = enterThresholdRef.current > 0
+          ? enterThresholdRef.current
+          : cfg_peek.active * (cfg_peek.peakRatioThreshold ?? 3);
+        const exitThresh = exitThresholdRef.current > 0
+          ? exitThresholdRef.current
+          : cfg_peek.rest;
+        const minProm = minProminenceRef.current > 0
+          ? minProminenceRef.current
+          : cfg_peek.active; // fallback conservativo
 
-        if (energy > cfg_peek.active) {
-          if (energy > peakMaxEnergyRef.current) peakMaxEnergyRef.current = energy;
-          if (peakMaxEnergyRef.current > peakThresh) peakSeenRef.current = true;
-          peakIdleStartRef.current = 0;
+        if (peakHysteresisRef.current === 'idle') {
+          // ── Stato IDLE: traccia la valle e attendi la soglia di ingresso ────
+          valleyEnergyRef.current = Math.min(valleyEnergyRef.current, energy);
+
+          if (energy > enterThresh) {
+            // Transizione IDLE → PEAK
+            peakHysteresisRef.current = 'peak';
+            peakEnterTimeRef.current  = now;
+            peakMaxEnergyRef.current  = energy;
+          }
         } else {
-          if (peakIdleStartRef.current === 0) peakIdleStartRef.current = now;
+          // ── Stato PEAK: traccia il massimo e attendi la soglia di uscita ────
+          if (energy > peakMaxEnergyRef.current) peakMaxEnergyRef.current = energy;
 
-          // Conta solo durante la fase attiva (non durante la calibrazione)
-          if (phaseRef.current === 'active' && peakSeenRef.current) {
-            
-            // CONTROLLO GRAVITÀ: scarta il movimento se il telefono non è più 
-            // nell'orientamento iniziale (es. quando viene estratto dalla tasca).
-            let isSameOrientation = true;
-            if (initialGravityRef.current) {
-              const ig = initialGravityRef.current;
-              const cg = gravity;
-              const dot = ig.x * cg.x + ig.y * cg.y + ig.z * cg.z;
-              const magIg = Math.hypot(ig.x, ig.y, ig.z);
-              const magCg = Math.hypot(cg.x, cg.y, cg.z);
-              if (magIg > 0 && magCg > 0) {
-                const angleRad = Math.acos(Math.max(-1, Math.min(1, dot / (magIg * magCg))));
-                if (angleRad > Math.PI / 2.7) { // ~66 gradi: tollera tasche larghe, blocca l'alzata in piedi (~90 gradi)
-                  isSameOrientation = false;
+          if (energy < exitThresh) {
+            // Transizione PEAK → IDLE: valuta il picco appena completato
+            peakHysteresisRef.current = 'idle';
+
+            // Conta solo durante la fase attiva (non durante la calibrazione)
+            if (phaseRef.current === 'active') {
+              const duration   = now - peakEnterTimeRef.current;
+              const prominence = peakMaxEnergyRef.current - valleyEnergyRef.current;
+
+              // Validazione 1: vincoli di durata (sostituisce il cooldown fisso)
+              const isValidDuration = duration >= PEAK_MIN_REP_DURATION_MS
+                                   && duration <= PEAK_MAX_REP_DURATION_MS;
+
+              // Validazione 2: prominenza del picco (relativa, non assoluta)
+              const isProminentPeak = prominence > minProm;
+
+              // Validazione 3: orientamento gravità (anti-estrazione dalla tasca)
+              let isSameOrientation = true;
+              if (initialGravityRef.current) {
+                const ig = initialGravityRef.current;
+                const cg = gravity;
+                const dot = ig.x * cg.x + ig.y * cg.y + ig.z * cg.z;
+                const magIg = Math.hypot(ig.x, ig.y, ig.z);
+                const magCg = Math.hypot(cg.x, cg.y, cg.z);
+                if (magIg > 0 && magCg > 0) {
+                  const angleRad = Math.acos(Math.max(-1, Math.min(1, dot / (magIg * magCg))));
+                  if (angleRad > Math.PI / 2.7) { // ~66°
+                    isSameOrientation = false;
+                  }
                 }
               }
-            }
 
-            if (isSameOrientation) {
-              const sinceLastRep = now - lastRepTimeRef.current;
-              if (sinceLastRep >= cfg_peek.repCooldownMs) {
+              if (isValidDuration && isProminentPeak && isSameOrientation) {
                 countRef.current += 1;
                 onCountChangeRef.current(countRef.current);
                 lastRepTimeRef.current = now;
@@ -514,9 +611,9 @@ export const useAccelerometerRepCounter = ({
                 if (onRepDataRef.current) {
                   onRepDataRef.current({
                     status: 'valid', burstIndex: 1, exerciseType,
-                    burstDurationMs: sinceLastRep, totalRepDurationMs: sinceLastRep,
+                    burstDurationMs: duration, totalRepDurationMs: duration,
                     energyRampMs: 0, sampleCount: 0,
-                    maxEnergy: peakMaxEnergyRef.current, minEnergy: energy,
+                    maxEnergy: peakMaxEnergyRef.current, minEnergy: valleyEnergyRef.current,
                     avgEnergy: 0, energyAt25pct: 0, energyAt50pct: 0, energyAt75pct: 0,
                     maxLinAcc: 0, peakAccRaw: { x: 0, y: 0, z: 0 },
                     maxGyro: 0, maxGyroAlpha: 0, maxGyroBeta: 0, maxGyroGamma: 0,
@@ -528,8 +625,9 @@ export const useAccelerometerRepCounter = ({
                 }
               }
             }
-            
-            peakSeenRef.current      = false;
+
+            // Reset per il prossimo ciclo
+            valleyEnergyRef.current  = energy;
             peakMaxEnergyRef.current = 0;
           }
         }
