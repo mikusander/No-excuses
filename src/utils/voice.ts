@@ -7,10 +7,19 @@ export const speak = (text: string) => {
   if (!isVoiceAssistantEnabled) return;
 
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    try {
-      window.speechSynthesis.cancel();
-    } catch {
-      // ignore errors
+    const synth = window.speechSynthesis;
+    const isBusy = synth.speaking || synth.pending;
+
+    // Workaround per bug Chrome/Safari mobile: chiamare cancel() su un
+    // speechSynthesis inattivo può metterlo in uno stato rotto, causando
+    // il drop silenzioso della successiva speak(). Cancelliamo solo se
+    // c'è effettivamente qualcosa in riproduzione o in coda.
+    if (isBusy) {
+      try {
+        synth.cancel();
+      } catch {
+        // ignore errors
+      }
     }
 
     const utterance = new SpeechSynthesisUtterance(text);
@@ -20,7 +29,14 @@ export const speak = (text: string) => {
     utterance.pitch = 1;
     
     lastUtterance = utterance;
-    window.speechSynthesis.speak(utterance);
+
+    if (isBusy) {
+      // Se abbiamo appena cancellato, diamo al browser il tempo di
+      // processare il cancel prima di accodare la nuova utterance.
+      setTimeout(() => synth.speak(utterance), 10);
+    } else {
+      synth.speak(utterance);
+    }
   }
 };
 
