@@ -5,7 +5,7 @@ import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 
 import { useAccelerometerRepCounter, triggerStartHaptic } from '../hooks/useAccelerometerRepCounter';
 import { ExerciseTracker } from '../logic/exerciseTracker';
-import { speak, speakNumber } from '../utils/voice';
+import { speak, speakNumber, warmupSpeechSynthesis } from '../utils/voice';
 import { playGoalReachedSound } from '../utils/audio';
 import type { ExerciseType } from '../types';
 import PoseOverlay from '../components/PoseOverlay';
@@ -179,10 +179,10 @@ const RepCounterPage: React.FC = () => {
       setCount(newCount);
       if (repTarget !== null && newCount >= repTarget) {
         triggerStartHaptic();
-        speak('finish exercise');
+        setTimeout(() => speak('finish exercise'), 0);
         stopAccelerometerSession();
       } else if (newCount > 0) {
-        speakNumber(newCount);
+        setTimeout(() => speakNumber(newCount), 0);
       }
     },
     onRepData: (data) => {
@@ -294,10 +294,12 @@ const RepCounterPage: React.FC = () => {
         setCount(newCount);
         if (target !== null && newCount >= target) {
           playGoalReachedSound();
-          speak('finish exercise');
+          // setTimeout per uscire dal contesto requestAnimationFrame,
+          // altrimenti Chrome/Safari mobile bloccano silenziosamente speak()
+          setTimeout(() => speak('finish exercise'), 0);
           setIsCountingActive(false);
         } else if (newCount > 0) {
-          speakNumber(newCount);
+          setTimeout(() => speakNumber(newCount), 0);
         }
       }
     );
@@ -466,6 +468,11 @@ const RepCounterPage: React.FC = () => {
 
 
   const handleSelectExercise = async (type: ExerciseType, overrideTarget?: number | null) => {
+    // Sblocca speechSynthesis dal contesto del gesto utente (click/tap).
+    // Necessario su iOS Safari e Chrome mobile: senza questo warmup,
+    // le successive chiamate speak() da requestAnimationFrame vengono ignorate.
+    warmupSpeechSynthesis();
+
     if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
       try {
         await (window as any).DeviceMotionEvent.requestPermission();

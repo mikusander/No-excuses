@@ -1,6 +1,25 @@
 // Keep a reference to prevent garbage collection
 export let lastUtterance: SpeechSynthesisUtterance | null = null;
 
+/**
+ * Deve essere chiamato da un contesto di gesto utente (click/tap) per
+ * sbloccare speechSynthesis su iOS Safari e Chrome mobile.
+ * Senza questa chiamata iniziale, speak() può fallire silenziosamente
+ * quando invocata da requestAnimationFrame o altri contesti non-gesture.
+ */
+export const warmupSpeechSynthesis = () => {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  try {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(' ');
+    utterance.volume = 0.01;
+    utterance.lang = 'en-US';
+    synth.speak(utterance);
+  } catch {
+    // ignore errors
+  }
+};
 
 export const speak = (text: string) => {
   const isVoiceAssistantEnabled = localStorage.getItem('voice_assistance_enabled') !== 'false';
@@ -8,13 +27,17 @@ export const speak = (text: string) => {
 
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     const synth = window.speechSynthesis;
-    const isBusy = synth.speaking || synth.pending;
 
-    // Workaround per bug Chrome/Safari mobile: chiamare cancel() su un
-    // speechSynthesis inattivo può metterlo in uno stato rotto, causando
-    // il drop silenzioso della successiva speak(). Cancelliamo solo se
-    // c'è effettivamente qualcosa in riproduzione o in coda.
-    if (isBusy) {
+    // Chrome/Safari bug: dopo inattività speechSynthesis può entrare in
+    // stato "paused" senza che nessuno lo abbia esplicitamente messo in pausa.
+    // resume() lo riattiva.
+    if (synth.paused) {
+      synth.resume();
+    }
+
+    // Solo cancel se c'è qualcosa in riproduzione o in coda.
+    // Chiamare cancel() su un synth inattivo può rompere lo stato su Chrome mobile.
+    if (synth.speaking || synth.pending) {
       try {
         synth.cancel();
       } catch {
@@ -29,14 +52,7 @@ export const speak = (text: string) => {
     utterance.pitch = 1;
     
     lastUtterance = utterance;
-
-    if (isBusy) {
-      // Se abbiamo appena cancellato, diamo al browser il tempo di
-      // processare il cancel prima di accodare la nuova utterance.
-      setTimeout(() => synth.speak(utterance), 10);
-    } else {
-      synth.speak(utterance);
-    }
+    synth.speak(utterance);
   }
 };
 

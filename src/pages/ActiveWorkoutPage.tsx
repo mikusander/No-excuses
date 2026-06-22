@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import { warmupSpeechSynthesis } from '../utils/voice';
 import {
   buildWorkoutProgressStorageKey,
   clearAllWorkoutProgressCheckpoints,
@@ -4389,11 +4390,7 @@ const ActiveWorkoutPage: React.FC = () => {
             <div className="flex flex-col gap-4">
               <button
                 onClick={async () => {
-                  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                    const u = new SpeechSynthesisUtterance('');
-                    u.volume = 0;
-                    window.speechSynthesis.speak(u);
-                  }
+                  warmupSpeechSynthesis();
                   if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
                     try {
                       await (window as any).DeviceMotionEvent.requestPermission();
@@ -4425,11 +4422,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
               <button
                 onClick={async () => {
-                  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                    const u = new SpeechSynthesisUtterance('');
-                    u.volume = 0;
-                    window.speechSynthesis.speak(u);
-                  }
+                  warmupSpeechSynthesis();
                   if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
                     try {
                       await (window as any).DeviceMotionEvent.requestPermission();
