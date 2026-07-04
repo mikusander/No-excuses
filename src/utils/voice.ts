@@ -28,9 +28,7 @@ export const speak = (text: string) => {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     const synth = window.speechSynthesis;
 
-    // Chrome/Safari bug: dopo inattività speechSynthesis può entrare in
-    // stato "paused" senza che nessuno lo abbia esplicitamente messo in pausa.
-    // resume() lo riattiva.
+    // Workaround for Chrome/Safari speechSynthesis inactivity state issue
     if (synth.paused) {
       synth.resume();
     }

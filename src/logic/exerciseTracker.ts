@@ -27,9 +27,6 @@ const applyEMA = (current: number, prev: number | null, alpha = 0.4): number => 
   return alpha * current + (1 - alpha) * prev;
 };
 
-
-
-
 interface LandmarkSample {
   y: number;
   timestamp: number;
@@ -44,8 +41,6 @@ interface DownPhaseSnapshot {
   peakShoulderMovement?: number;
 }
 
-
-
 export class ExerciseTracker {
   private stage: 'UP' | 'DOWN' | null = null;
   private count: number = 0;
@@ -59,14 +54,14 @@ export class ExerciseTracker {
     L: null, R: null, Primary: null
   };
 
-  // Storico per validazione MediaPipe (trazioni)
+  // Tracking history for validation
   private wristYHistory: LandmarkSample[] = [];
   private shoulderYHistory: LandmarkSample[] = [];
   private downPhaseSnapshot: DownPhaseSnapshot | null = null;
 
-  // Calibri/thresholds (regolabili)
-  private SHOULDER_MOVE_THRESHOLD = 0.05; // min movimento spalle per considerare una rep (calibrato dai test)
-  private WRIST_MOVE_THRESHOLD = 0.02; // max movimento polsi per considerarli fermi (calibrato dai test)
+  // Motion threshold constants
+  private SHOULDER_MOVE_THRESHOLD = 0.05; // Minimum vertical shoulder displacement to count a rep
+  private WRIST_MOVE_THRESHOLD = 0.02; // Maximum wrist vertical movement to consider hands stationary
 
   constructor(
     onCount: (count: number) => void,
@@ -76,11 +71,8 @@ export class ExerciseTracker {
     this.onDebug = onDebug;
   }
 
-
-
-
   /**
-   * Aggiorna lo storico Y del polso (usa la media tra left e right se visibili)
+   * Updates wrist Y coordinate history using the average of visible wrist landmarks.
    */
   private updateWristHistory(lWrist: NormalizedLandmark | undefined, rWrist: NormalizedLandmark | undefined) {
     const wristYValues: number[] = [];
@@ -91,14 +83,14 @@ export class ExerciseTracker {
       const avgWristY = wristYValues.reduce((a, b) => a + b, 0) / wristYValues.length;
       this.wristYHistory.push({ y: avgWristY, timestamp: Date.now() });
 
-      // Mantieni solo gli ultimi 1000ms di storico
+      // Maintain only the last 1000ms of history
       const cutoff = Date.now() - 1000;
       this.wristYHistory = this.wristYHistory.filter(s => s.timestamp >= cutoff);
     }
   }
 
   /**
-   * Aggiorna lo storico Y delle spalle (usa la media tra left e right se visibili)
+   * Updates shoulder Y coordinate history using the average of visible shoulder landmarks.
    */
   private updateShoulderHistory(lShoulder: NormalizedLandmark | undefined, rShoulder: NormalizedLandmark | undefined) {
     const shoulderYValues: number[] = [];
@@ -109,22 +101,20 @@ export class ExerciseTracker {
       const avgShoulderY = shoulderYValues.reduce((a, b) => a + b, 0) / shoulderYValues.length;
       this.shoulderYHistory.push({ y: avgShoulderY, timestamp: Date.now() });
 
-      // Mantieni solo gli ultimi 1000ms di storico
+      // Maintain only the last 1000ms of history
       const cutoff = Date.now() - 1000;
       this.shoulderYHistory = this.shoulderYHistory.filter(s => s.timestamp >= cutoff);
     }
   }
 
-
-
   updatePullup(landmarks: NormalizedLandmark[]) {
-    // Per le trazioni bastano: spalle (11,12) e polsi (15,16)
+    // Pullup tracking requires shoulder (11, 12) and wrist (15, 16) landmarks
     const lShoulder = landmarks[11], rShoulder = landmarks[12];
     const lWrist = landmarks[15], rWrist = landmarks[16];
 
     if (!lShoulder || !rShoulder || (!lWrist && !rWrist)) return;
 
-    // Verifica che spalle e almeno un polso siano visibili
+    // Validate visibility of shoulders and at least one wrist
     const lShoulderVis = (lShoulder.visibility ?? 0) > 0.4;
     const rShoulderVis = (rShoulder.visibility ?? 0) > 0.4;
     const lWristVis = (lWrist?.visibility ?? 0) > 0.4;
@@ -132,18 +122,18 @@ export class ExerciseTracker {
     if (!lShoulderVis && !rShoulderVis) return;
     if (!lWristVis && !rWristVis) return;
 
-    // Aggiorna lo storico di polsi e spalle
+    // Update histories
     this.updateWristHistory(lWrist, rWrist);
     this.updateShoulderHistory(lShoulder, rShoulder);
 
-    // Y della sbarra = media dei polsi visibili (y più piccola = più in alto nello schermo)
+    // Bar height is calculated as the average Y of the visible wrists (lower Y = higher on screen)
     const wristYValues: number[] = [];
     if (lWristVis && lWrist) wristYValues.push(lWrist.y);
     if (rWristVis && rWrist) wristYValues.push(rWrist.y);
     const barY = wristYValues.reduce((a, b) => a + b, 0) / wristYValues.length;
 
-    // shoulderToBar > 0: spalle SOTTO la sbarra (posizione bassa, appeso)
-    // shoulderToBar < 0: spalle SOPRA la sbarra → ripetizione valida
+    // Distance metric: shoulderToBar > 0 means shoulders are below the bar (hanging phase)
+    // shoulderToBar < 0 means shoulders are above the bar (completed pullup phase)
     const shoulderYValues: number[] = [];
     if (lShoulderVis) shoulderYValues.push(lShoulder.y);
     if (rShoulderVis) shoulderYValues.push(rShoulder.y);
@@ -152,13 +142,13 @@ export class ExerciseTracker {
     const smoothed = applyEMA(rawShoulderToBar, this.lastAngles.Primary);
     this.lastAngles.Primary = smoothed;
 
-    // Mostra nel debug la distanza in % altezza frame (positivo = appeso, negativo = sopra sbarra)
+    // Send raw relative distance metric to debug callback
     this.onDebug?.({ angle: Math.round(smoothed * 1000) / 10, stage: this.stage });
 
-    // DOWN: spalle chiaramente sotto la sbarra (appeso, braccia distese)
+    // DOWN phase: shoulders are clearly below the bar (full hang position)
     if (smoothed > 0.08) {
       if (this.stage !== 'DOWN') {
-        // Entrato appena in DOWN → inizializzo snapshot
+        // Initialize down phase snapshot
         this.downPhaseSnapshot = {
           shoulderY,
           leftWristY: lWristVis && lWrist ? lWrist.y : undefined,
@@ -168,33 +158,28 @@ export class ExerciseTracker {
         };
         this.stage = 'DOWN';
       } else if (this.downPhaseSnapshot) {
-        // 1. Spalle: Trackiamo il picco massimo di discesa. 
-        // Qui i picchi di rumore non ci fanno danni, ci assicurano solo 
-        // che l'escursione superi la soglia a fine trazione.
+        // Track the lowest shoulder Y position during hang phase
         if (shoulderY > this.downPhaseSnapshot.shoulderY) {
           this.downPhaseSnapshot.shoulderY = shoulderY;
         }
 
-        // 2. Polsi: AGGIORNAMENTO CONTINUO E INCONDIZIONATO
-        // Finché smoothed > 0.08, l'utente è considerato fermo in appensione.
-        // Sovrascriviamo continuamente i polsi. Questo cancella ogni assestamento iniziale!
-        // Appena l'utente inizia a tirare, smoothed scende sotto 0.08, questo if
-        // smette di essere valutato e i polsi si "congelano" magicamente per la valutazione.
+        // Continuously update wrist Y coordinate while in full hang to clear initial settling noise.
+        // Once the pull movement starts (smoothed <= 0.08), coordinates will freeze for movement validation.
         if (lWristVis && lWrist) this.downPhaseSnapshot.leftWristY = lWrist.y;
         if (rWristVis && rWrist) this.downPhaseSnapshot.rightWristY = rWrist.y;
       }
     }
 
-    // UP: le spalle hanno raggiunto/superato il livello della sbarra
+    // UP phase: shoulders reach or exceed the bar level
     if (this.stage === 'DOWN' && smoothed < 0.04) {
       let isValid = false;
       const reasons: string[] = [];
 
       if (this.downPhaseSnapshot) {
-        // 1. Calcolo lo spostamento delle spalle
+        // Calculate total vertical shoulder displacement
         const shoulderMovement = Math.abs(shoulderY - this.downPhaseSnapshot.shoulderY);
 
-        // 2. Calcolo lo spostamento dei polsi
+        // Check if wrists remained stationary to avoid camera/phone movement false positives
         let leftWristMoved = false;
         let rightWristMoved = false;
         let leftVal = 0;
@@ -218,29 +203,25 @@ export class ExerciseTracker {
           }
         }
 
-        // 3. Definisco le variabili che prima mancavano
         const wristsStable = !(leftWristMoved || rightWristMoved);
         const shouldersMoved = shoulderMovement >= this.SHOULDER_MOVE_THRESHOLD;
 
-        if (!shouldersMoved) reasons.push('spalle_non_si_muovono');
-        if (!wristsStable) reasons.push('polsi_si_muovono');
+        if (!shouldersMoved) reasons.push('shoulders_not_moving');
+        if (!wristsStable) reasons.push('wrists_moving');
 
-        // Debug
         this.onDebug?.({
           angle: Math.round(smoothed * 1000) / 10,
           stage: this.stage,
-          warning: reasons.length ? `Ripetizione non valida: ${reasons.join(', ')}` : undefined,
+          warning: reasons.length ? `Invalid repetition: ${reasons.join(', ')}` : undefined,
           okMsg: `shoulderMove=${shoulderMovement.toFixed(3)} leftWrist=${leftVal.toFixed(3)} rightWrist=${rightVal.toFixed(3)}`
         });
 
         isValid = shouldersMoved && wristsStable;
       } else {
-        // Nessuno snapshot: considero non valida (più sicuro che regalare rep)
         isValid = false;
       }
 
-      // --- LA CORREZIONE DELLA MACCHINA A STATI ---
-      // Cambio stato in UP a prescindere dalla validità per non restare bloccati
+      // Reset phase state to UP to continue tracking subsequent repetitions
       this.stage = 'UP';
 
       if (isValid) {
@@ -248,7 +229,6 @@ export class ExerciseTracker {
         this.onCount(this.count);
       }
 
-      // Pulisci snapshot
       this.downPhaseSnapshot = null;
     }
   }
@@ -275,9 +255,9 @@ export class ExerciseTracker {
     if (rShoulderVis) shoulderYValues.push(rShoulder.y);
     const shoulderY = shoulderYValues.reduce((a, b) => a + b, 0) / shoulderYValues.length;
 
-    // Utilizziamo l'escursione relativa delle spalle invece della distanza assoluta
+    // Relational shoulder excursion relative to starting position
     const EXCURSION_THRESHOLD = 0.10;
-    const PUSHUP_WRIST_THRESHOLD = 0.05; // Tolleranza maggiore per i pushup rispetto alle trazioni
+    const PUSHUP_WRIST_THRESHOLD = 0.05; // Slightly higher wrist variance threshold for pushups
 
     this.onDebug?.({ angle: Math.round(shoulderY * 1000) / 1000, stage: this.stage });
 
@@ -296,34 +276,30 @@ export class ExerciseTracker {
     }
 
     if (this.stage === 'UP' && this.downPhaseSnapshot) {
-      // In fase UP, le spalle sono in alto (valore Y MINORE in MediaPipe)
-      // Cerchiamo il picco minimo (massima altezza)
+      // In the UP phase, track the minimum Y (highest vertical position)
       if (shoulderY < this.downPhaseSnapshot.shoulderY) {
         this.downPhaseSnapshot.shoulderY = shoulderY;
       }
 
-      // Se le spalle scendono (valore Y AUMENTA) oltre la soglia dal picco minimo
+      // If the shoulders move down past the excursion threshold
       if (shoulderY - this.downPhaseSnapshot.shoulderY > EXCURSION_THRESHOLD) {
         this.stage = 'DOWN';
-        // Usiamo peakShoulderMovement temporaneamente per tracciare il picco massimo (discesa massima)
         this.downPhaseSnapshot.peakShoulderMovement = shoulderY;
-        // Inizializziamo lo snapshot polsi
         if (lWristVis) this.downPhaseSnapshot.leftWristY = lWrist.y;
         if (rWristVis) this.downPhaseSnapshot.rightWristY = rWrist.y;
       }
     } else if (this.stage === 'DOWN' && this.downPhaseSnapshot) {
-      // In fase DOWN, cerchiamo il picco massimo (valore Y MAGGIORE, massima vicinanza al suolo)
+      // In the DOWN phase, track the maximum Y (lowest vertical position, closest to floor)
       if (shoulderY > (this.downPhaseSnapshot.peakShoulderMovement ?? shoulderY)) {
         this.downPhaseSnapshot.peakShoulderMovement = shoulderY;
-        // PRENDIAMO LO SNAPSHOT POLSI QUI!
-        // Al punto più basso del pushup, i polsi sono fermi a terra. Questo risolve il problema della prima ripetizione.
+        // Capture baseline wrist coordinates at the absolute bottom of the pushup
         if (lWristVis) this.downPhaseSnapshot.leftWristY = lWrist.y;
         if (rWristVis) this.downPhaseSnapshot.rightWristY = rWrist.y;
       }
 
-      // Se le spalle risalgono (valore Y DIMINUISCE) oltre la soglia dal picco massimo
+      // If the shoulders rise back up past the excursion threshold
       if ((this.downPhaseSnapshot.peakShoulderMovement ?? shoulderY) - shoulderY > EXCURSION_THRESHOLD) {
-        // VALIDAZIONE ANTI-FAKE: I polsi non devono essersi mossi drasticamente
+        // Validate that wrists remained stationary to filter out camera movement or translation
         let leftWristMoved = false;
         let rightWristMoved = false;
         let leftVal = 0;
@@ -354,12 +330,11 @@ export class ExerciseTracker {
         this.onDebug?.({
           angle: shoulderY,
           stage: 'UP',
-          warning: !wristsStable ? `Fake rep! Polsi mossi (L:${leftVal.toFixed(2)} R:${rightVal.toFixed(2)})` : undefined,
-          okMsg: wristsStable ? `Rep Valida (L:${leftVal.toFixed(2)} R:${rightVal.toFixed(2)})` : undefined
+          warning: !wristsStable ? `Motion validation failed (L:${leftVal.toFixed(2)} R:${rightVal.toFixed(2)})` : undefined,
+          okMsg: wristsStable ? `Repetition validated (L:${leftVal.toFixed(2)} R:${rightVal.toFixed(2)})` : undefined
         });
 
-
-        // Reset stato per la prossima ripetizione
+        // Reset state for next repetition tracking
         this.stage = 'UP';
         this.downPhaseSnapshot = {
           shoulderY,
@@ -372,11 +347,6 @@ export class ExerciseTracker {
       }
     }
   }
-
-
-
-
-
 
   getCount() {
     return this.count;

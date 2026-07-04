@@ -60,10 +60,10 @@ interface UseAccelerometerRepCounterOptions {
   onRepData?: (data: RepData) => void;
 }
 
-// ─── Helpers per stabilizzare le callback ────────────────────────────────────
-// Le callback vengono wrappate in ref per evitare che il listener devicemotion
-// si ri-registri ad ogni render (Bug #4). Il listener legge sempre la versione
-// più aggiornata tramite il ref, senza essere incluso nelle deps del useEffect.
+// ─── Callback stabilization helpers ──────────────────────────────────────────
+// Callbacks are wrapped in refs to prevent the devicemotion listener from
+// re-registering on every render. The listener always reads the latest version
+// through the ref, avoiding the need to include them in the useEffect dependencies.
 
 // ─── COSTANTI DI RILEVAMENTO ─────────────────────────────────────────────────
 // Timeout se il burst si protrae senza mai invertire
@@ -147,8 +147,8 @@ const triggerHaptic = () => {
   void playBeep(880, 100);
 };
 
-// Vibrazione/audio distinta per segnalare l'inizio dell'esercizio.
-// Esportata perché usata anche in RepCounterPage come suono di "obiettivo raggiunto".
+// Distinct vibration/audio to signal exercise start.
+// Exported as it's also used in RepCounterPage for "goal reached" feedback.
 export const triggerStartHaptic = () => {
   if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
     navigator.vibrate([150, 80, 150, 80, 300]);
@@ -167,8 +167,8 @@ export const useAccelerometerRepCounter = ({
   onCountChange,
   onRepData,
 }: UseAccelerometerRepCounterOptions) => {
-  // Bug #4 fix: stabilizzazione callback tramite ref — evita ri-registrazione
-  // del listener devicemotion ad ogni render quando le callback cambiano identità.
+  // Callback stabilization via refs prevents devicemotion listener
+  // re-registration on every render when callbacks change identity.
   const onCountChangeRef = useRef(onCountChange);
   const onRepDataRef = useRef(onRepData);
   useEffect(() => { onCountChangeRef.current = onCountChange; }, [onCountChange]);
@@ -495,7 +495,7 @@ export const useAccelerometerRepCounter = ({
       if (cfg_peek.mode === 'peak_count') {
         // Soglie fisse derivate dai dati di calibrazione:
         // enter = active * peakRatio (default 360): il picco deve superare questa soglia
-        // exit  = rest (default 75): l'energia deve scendere qui per chiudere il picco
+        // exit  = rest (default 75): energy must drop below this to close the peak
         // minProm = active (default 120): il picco deve risaltare almeno di tanto sulla valle
         const enterThresh = cfg_peek.active * (cfg_peek.peakRatioThreshold ?? 3);
         const exitThresh  = cfg_peek.rest;
@@ -594,7 +594,7 @@ export const useAccelerometerRepCounter = ({
         sampleCountRef.current += 1;
 
         // Snapshot energia a 25/50/75% — campionati "on the fly"
-        // (non conosciamo la durata totale in anticipo, quindi usiamo una stima mobile di 800ms)
+        // (total duration is unknown upfront, using an 800ms rolling estimate)
         const estimatedTotal = 800; // ms, stima di un burst medio
         if (!e25SetRef.current && elapsed >= estimatedTotal * 0.25) { energyAt25Ref.current = energy; e25SetRef.current = true; }
         if (!e50SetRef.current && elapsed >= estimatedTotal * 0.50) { energyAt50Ref.current = energy; e50SetRef.current = true; }
@@ -685,16 +685,16 @@ export const useAccelerometerRepCounter = ({
           };
 
           if (duration <= MIN_DURATION) {
-            // Bug #2 fix: se siamo in dual_burst e B1 era già stato contato,
-            // un B2 troppo corto deve resettare il contatore altrimenti il prossimo
-            // burst valido qualsiasi viene erroneamente contato come completamento rep.
+            // In dual_burst mode, if B1 was already counted, an excessively short B2
+            // must reset the counter to prevent the next valid burst from being 
+            // incorrectly counted as a rep completion.
             if (cfg.mode === 'dual_burst') burstCountRef.current = 0;
             if (onRepDataRef.current) onRepDataRef.current({ status: 'rejected_too_short', burstIndex: (burstCountRef.current + 1) as 1 | 2, ...burstData });
             return;
           }
 
           if (maxGyroRef.current > GYRO_SHAKE_LIMIT) {
-            // Bug #2 fix: stesso problema — reset esplicito in caso di shake su B2.
+            // Explicit reset in case of shake on B2 to maintain state consistency.
             burstCountRef.current = 0;
             if (onRepDataRef.current) onRepDataRef.current({ status: 'rejected_shake', burstIndex: (burstCountRef.current + 1) as 1 | 2, ...burstData });
             return;
@@ -738,7 +738,7 @@ export const useAccelerometerRepCounter = ({
 
         } else if (duration > MAX_REP_DURATION_MS) {
           trackStateRef.current = 'idle';
-          burstCountRef.current = 0; // Reset anche qui per sicurezza (Bug #2 defense)
+          burstCountRef.current = 0; // Safety reset for state consistency
           const avgEnergy    = sampleCountRef.current > 0 ? sumEnergyRef.current / sampleCountRef.current : 0;
           const energyRampMs = energyPeakTimeRef.current - activeStartTimeRef.current;
           const orientEnd    = { ...orientationRef.current };
@@ -764,10 +764,10 @@ export const useAccelerometerRepCounter = ({
 
     window.addEventListener('devicemotion', onMotion, { passive: true });
     return () => window.removeEventListener('devicemotion', onMotion);
-    // Bug #1 fix: aggiunto exerciseType alle deps — se l'utente cambia esercizio
-    // senza smontare il componente, il listener rilegge la cfg corretta.
-    // Bug #4 fix: onCountChange e onRepData sono letti tramite ref, non inclusi
-    // nelle deps — il listener non si ri-registra ad ogni render.
+    // `exerciseType` is included in deps so if the user switches exercise
+    // without unmounting, the listener reads the updated config.
+    // `onCountChange` and `onRepData` are accessed via refs to prevent
+    // listener re-registration on every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, exerciseType]);
 

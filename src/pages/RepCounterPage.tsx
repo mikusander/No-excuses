@@ -151,7 +151,7 @@ const RepCounterPage: React.FC = () => {
   const trackerRef = useRef<ExerciseTracker | null>(null);
   const selectedExerciseRef = useRef(selectedExercise);
   const countRef = useRef(count);
-  // Refs to avoid stale closures in the rAF loop (Bug #1 & #4)
+  // Refs to preserve current state in requestAnimationFrame loop closures
   const isCountingActiveRef = useRef(isCountingActive);
   const wasCountingActiveRef = useRef(false);
   const pausedRef = useRef(paused);
@@ -294,8 +294,7 @@ const RepCounterPage: React.FC = () => {
         setCount(newCount);
         if (target !== null && newCount >= target) {
           playGoalReachedSound();
-          // setTimeout per uscire dal contesto requestAnimationFrame,
-          // altrimenti Chrome/Safari mobile bloccano silenziosamente speak()
+          // Defer speech synthesis to execute outside requestAnimationFrame context to prevent mobile browser security blocks
           setTimeout(() => speak('finish exercise'), 0);
           setIsCountingActive(false);
         } else if (newCount > 0) {
@@ -468,9 +467,9 @@ const RepCounterPage: React.FC = () => {
 
 
   const handleSelectExercise = async (type: ExerciseType, overrideTarget?: number | null) => {
-    // Sblocca speechSynthesis dal contesto del gesto utente (click/tap).
-    // Necessario su iOS Safari e Chrome mobile: senza questo warmup,
-    // le successive chiamate speak() da requestAnimationFrame vengono ignorate.
+    // Unlock speechSynthesis in the context of user interaction (click/tap).
+    // This is required on iOS Safari and mobile Chrome to prevent subsequent speak() 
+    // calls from being silently ignored when triggered from requestAnimationFrame.
     warmupSpeechSynthesis();
 
     if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
