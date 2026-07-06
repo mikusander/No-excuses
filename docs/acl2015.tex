@@ -20,13 +20,11 @@
 \title{No-Excuses: A Multimodal Web Application for Hands-Free, Eyes-Free Workout Tracking}
 
 \author{
-  Alessandro Gautieri \\
-  2041850 \\
-  {\tt gautieri.2041850@studenti.uniroma1.it}
+ Crea Michelangelo \\
+  1993024 \\
   \And
-  Michelangelo Crea \\
-  2028714 \\
-  {\tt crea.2028714@studenti.uniroma1.it}
+  Gautieri Alessandro \\
+  2041850 \\
 }
 \date{}
 
@@ -37,7 +35,7 @@
 \begin{abstract}
 Workout tracking remains a disruptive element in physical exercise, forcing athletes to break their focus to interact with a smartphone screen or to purchase expensive wearable devices. This report introduces \textit{No-Excuses}, a fully client-side, multimodal Progressive Web Application (PWA) designed to automate fitness tracking through seamless, hands-free, and eyes-free interactions. The system fuses four distinct interaction modalities: (1)~\textbf{inertial sensor tracking} via accelerometer and gyroscope for pocket-mode exercise counting; (2)~\textbf{computer vision} via Google MediaPipe Pose for camera-based repetition counting; (3)~\textbf{voice command navigation} using the Web Speech API for controlling workout routines without touching the screen; and (4)~\textbf{audio-haptic state communication} via the Web Audio API and device vibration to relay session state to the user without any visual attention required. We describe the system architecture, the state-machine algorithms developed for each modality, and the engineering solutions to significant real-world challenges: false positives caused by post-exercise device handling (solved with a real-time gravity orientation filter), erratic repetition detection due to sensor noise (solved with a sensor fusion energy metric), and iOS audio policy restrictions (solved with lazy AudioContext initialization). A comparative evaluation against a naive threshold baseline validates our approach.
 \end{abstract}
-
+\newpage
 % ─────────────────────────────────────────────────────────────
 \section{Problem Statement}
 
@@ -68,16 +66,32 @@ The key findings are summarized below.
   \item \textbf{7.1\%}  — Do not own a smartwatch
 \end{itemize}
 
-\minisection{Would audio feedback replace the need to look at the screen?}
+\minisection{How would you prefer the app to communicate your workout status (e.g., valid reps, end of rest)?}
 \begin{itemize}
-  \item \textbf{78.6\%} — Yes, hearing the count announced aloud would be sufficient
-  \item \textbf{14.3\%} — Only if combined with haptic vibration
-  \item \textbf{7.1\%}  — No, they want to see the screen
+    \item \textbf{64.3\%} — Through voice prompts and sounds (e.g., counting out loud), to maintain correct posture without having to turn your head toward the display.
+    \item \textbf{25.0\%} — Through haptic vibrations on the body (if the phone is in your pocket), for immediate physical confirmation, essential in noisy environments like gyms.
+    \item \textbf{10.7\%} — I still prefer visual feedback, trying to position the screen in my field of vision.
 \end{itemize}
 
-\minisection{Interest in automatic repetition counting (no manual input)}
+\minisection{How do you rate the app navigation experience (e.g., starting timers, moving to the next exercise) during rest periods?}
 \begin{itemize}
-  \item \textbf{89.3\%} — Would use it if reliable and requiring no additional hardware
+    \item \textbf{50.0\%} — I'd like to manage everything in a way that doesn't require using my hands, as they can be dirty, sweaty, or sore.
+    \item \textbf{35.7\%} — Too tiring: I often let rest times expire inaccurately because I don't want to interact with the user interface.
+    \item \textbf{14.3\%} — I have no particular difficulty using the touchscreen between sets.
+\end{itemize}
+
+\minisection{Where do you usually place your smartphone during a bodyweight exercise?}
+\begin{itemize}
+    \item 46.4\% — Resting on the floor, on a bench, or against a water bottle, often a few meters away from your body.
+    \item 39.3\% — In your pocket or fanny pack, especially for dynamic exercises or when training outdoors/in the park.
+    \item 14.3\% — On a dedicated fixed mount or held in your hand.
+\end{itemize}
+
+\minisection{Why do you prefer to avoid using a smartwatch or fitness band for automatic movement tracking?}
+\begin{itemize}
+    \item 53.6\% — Physical discomfort: The watch limits wrist joint mobility (e.g., during push-ups) or interferes with the use of protective wrist wraps.
+    \item 32.1\% — Financial/hardware barrier: I don't own and don't want to have to purchase expensive proprietary hardware.
+    \item 14.3\% — Poor accuracy: Standard wearable algorithms often miscount bodyweight exercises and are difficult to correct in real time.
 \end{itemize}
 
 \subsection{Identified Needs}
@@ -156,14 +170,22 @@ where $\omega_t = \|(\dot\alpha_t, \dot\beta_t, \dot\gamma_t)\|_2$ is the gyrosc
 
 \subsubsection{Peak-Count Algorithm for Pushups}
 
-Calibration revealed that for pushups the motion energy does not fall cleanly to baseline between consecutive repetitions when performed at high tempo. The classic dual-burst (up/down) detection therefore systematically missed repetitions. We implemented a \textbf{peak-count algorithm}:
+Calibration revealed that for pushups the motion energy does not fall cleanly to baseline between consecutive repetitions when performed at high tempo. The classic dual-burst (up/down) detection therefore systematically missed repetitions. We implemented a \textbf{hysteresis-based peak-count algorithm} with a two-threshold state machine:
 
 \begin{enumerate}
-  \item A peak is \textit{rising} when $E_t > \tau_{\text{active}}$ (threshold $\tau_{\text{active}} = 120$).
-  \item A peak is \textit{confirmed} when the running maximum $E_{\max}$ exceeds $\rho \cdot \tau_{\text{active}}$ (peak ratio $\rho = 3$, i.e., 360).
-  \item A peak is \textit{completed} when $E_t$ drops back below $\tau_{\text{active}}$, indicating the movement has concluded.
-  \item A repetition is \textit{counted} when a completed, confirmed peak passes both the gravity orientation filter (Section~\ref{sec:gravity}) and the cooldown guard (Section~\ref{sec:cooldown}).
+  \item \textbf{IDLE state:} The system continuously tracks the \textit{valley energy} $E_{\text{valley}}$ (the minimum energy observed since the last peak). When $E_t > \tau_{\text{enter}}$ (threshold $\tau_{\text{enter}} = 360$), the system transitions to the PEAK state.
+  \item \textbf{PEAK state:} The system tracks the running maximum $E_{\max}$. When $E_t$ drops below $\tau_{\text{exit}}$ (threshold $\tau_{\text{exit}} = 75$), the system transitions back to IDLE and evaluates the completed peak.
+  \item \textbf{Validation:} A repetition is counted only if the completed peak passes three checks: (a)~the \textit{prominence} $E_{\max} - E_{\text{valley}} > \tau_{\text{prom}}$ ($\tau_{\text{prom}} = 120$), ensuring the peak is well-defined relative to its surrounding valley rather than just exceeding an absolute threshold; (b)~the \textit{duration} $\Delta t \in [400, 4000]$~ms, rejecting both sub-peak rebounds ($< 400$~ms) and prolonged positional adjustments ($> 4$~s); and (c)~the gravity orientation filter (Section~\ref{sec:gravity}).
 \end{enumerate}
+
+The dual-threshold hysteresis ($\tau_{\text{enter}} = 360$, $\tau_{\text{exit}} = 75$) eliminates chattering around a single threshold: the energy must rise \textit{well above} resting levels to enter the peak state, and must fall \textit{well below} the entry point to exit it. This separation is critical because inter-rep energy ($E \approx 75$--$120$) sits between the two thresholds, preventing spurious state transitions. The complete state machine is illustrated in \cref{fig:hysteresis}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.46\textwidth]{images/hysteresis_state_machine.jpg}
+  \caption{Hysteresis state machine for pushup repetition counting. The system transitions from IDLE to PEAK when energy exceeds $\tau_{\text{enter}} = 360$, and back to IDLE when energy drops below $\tau_{\text{exit}} = 75$. A repetition is counted only if the completed peak passes duration, prominence, and gravity orientation checks.}
+  \label{fig:hysteresis}
+\end{figure}
 
 For pullups, the dual-burst mode (single upward burst $=$ one repetition) is used instead, as the signal is cleaner when the phone is worn on the body at waist level.
 
@@ -187,12 +209,13 @@ These measurements directly informed the per-exercise configuration:
 \textbf{Parameter} & \textbf{Pushups} & \textbf{Pullups} \\
 \midrule
 Algorithm mode & \textit{peak\_count} & \textit{single\_burst} \\
-$\tau_{\text{active}}$ & 120 & 140 \\
-$\tau_{\text{rest}}$ & 75 & 78 \\
+$\tau_{\text{enter}}$ (enter threshold) & 360 & — \\
+$\tau_{\text{exit}}$ (exit threshold) & 75 & 78 \\
+$\tau_{\text{prom}}$ (min.\ prominence) & 120 & — \\
+$\tau_{\text{active}}$ & — & 140 \\
 $\tau_{\text{gyro}}$ (shake limit) & 1200 & 673 \\
-$\tau_{\text{dur}}$ (min. duration, ms) & 300 & 210 \\
-Cooldown (ms) & 1200 & 500 \\
-Peak ratio $\rho$ & 3 & — \\
+Duration range (ms) & 400--4000 & $\geq$210 \\
+Cooldown (ms) & — & 500 \\
 \bottomrule
 \end{tabular}
 \caption{Per-exercise algorithm configuration derived from calibration data.}
@@ -204,7 +227,7 @@ Peak ratio $\rho$ & 3 & — \\
 
 \textbf{Problem.} The most critical bug encountered during field testing was the generation of \textit{false positives at session end}. When the user completed a set and pulled the phone out of their pocket, the extraction motion generated an energy spike $E > 2000$—far above any genuine repetition. The naive algorithm counted this as 1--2 additional repetitions.
 
-\textbf{Solution.} During the final second of the 5-second pre-workout countdown (when the phone is guaranteed to be stationary in the user's pocket), the app captures a \textit{baseline gravity vector}:
+\textbf{Solution.} During the final second of the 10-second pre-workout countdown (when the phone is guaranteed to be stationary in the user's pocket), the app captures a \textit{baseline gravity vector}:
 \begin{equation}
   \mathbf{v}_{\text{base}} = \mathbf{g}_{T_0}
   \label{eq:base_gravity}
@@ -221,14 +244,19 @@ If $\theta > \theta_{\text{max}}$, the motion sample is discarded. We set $\thet
 \end{itemize}
 In all post-implementation field tests, this filter resulted in \textbf{zero false positives} during device extraction.
 
-\subsubsection{Repetition Cooldown Guard}
+\subsubsection{Duration and Prominence Validation}
 \label{sec:cooldown}
 
-\textbf{Problem.} Physical movements contain sub-peaks: brief secondary energy spikes at the bottom of a pushup (the elastic rebound). Without a minimum inter-repetition delay, these sub-peaks are double-counted.
+\textbf{Problem.} Physical movements contain sub-peaks: brief secondary energy spikes at the bottom of a pushup (the elastic rebound). Without temporal validation, these sub-peaks are double-counted. Conversely, slow positional adjustments can produce energy profiles similar to genuine repetitions.
 
-\textbf{Problem (opposite direction).} A cooldown that is too long causes the system to ignore rapid repetitions performed in under 2 seconds.
+\textbf{Solution.} Rather than using a fixed inter-repetition cooldown (which imposes a hard limit on exercise tempo), each completed peak is validated against two criteria:
 
-\textbf{Solution.} A repetition is counted only if the elapsed time since the last counted repetition exceeds \texttt{repCooldownMs}. Based on calibration data showing rapid reps as short as 1.2~s, we set this value to \textbf{1200~ms} for pushups. This is the lowest safe value that prevents double-counting sub-peaks while capturing all realistic human rep tempos.
+\begin{itemize}
+  \item \textbf{Duration constraints:} The time between entering and exiting the peak state must fall within $[400, 4000]$~ms. Peaks shorter than 400~ms correspond to elastic rebounds or sensor noise; peaks longer than 4~s correspond to postural adjustments rather than repetitions.
+  \item \textbf{Prominence:} The peak must rise at least $\tau_{\text{prom}} = 120$ energy units above the preceding valley ($E_{\max} - E_{\text{valley}} > 120$). This relative measure is more robust than an absolute threshold: a genuine repetition with a low peak but a well-defined rise-and-fall is counted, while a high-energy but flat oscillation (e.g., sustained walking) is rejected.
+\end{itemize}
+
+Combined with the hysteresis state machine described above, these checks replace the fixed cooldown entirely, allowing the system to support rep tempos as fast as 2.5~reps/s while rejecting noise.
 
 % ── 4.2 ──────────────────────────────────────────────────────
 \subsection{Channel 2: Computer Vision (Stand Mode)}
@@ -254,14 +282,19 @@ The \texttt{useVoiceCommands} hook uses the Web Speech API's \texttt{SpeechRecog
 \begin{table}[H]
 \centering
 \small
-\begin{tabular}{ll}
+\begin{tabular}{p{4.2cm} p{2.8cm}}
 \toprule
 \textbf{Spoken command} & \textbf{Action} \\
 \midrule
-\textit{``Vai''} / \textit{``Go''} & Start / advance to next set \\
-\textit{``Pausa''} & Pause active timer \\
-\textit{``Riprendi''} / \textit{``Continua''} & Resume paused timer \\
-\textit{``Stop''} / \textit{``Fermo''} & End the current session \\
+\textit{``Vai''} / \textit{``Start''} & Start timer \\
+\textit{``Stop''} / \textit{``Fermo''} & Pause timer \\
+\textit{``Reset''} / \textit{``Resetta''} & Reset active timer \\
+\textit{``Skip rest''} / \newline \textit{``Salta recupero''} & Skip active rest \\
+\textit{``Next''} / \textit{``Avanti''} & Next set or round \\
+\textit{``Back''} / \textit{``Indietro''} & Previous step \\
+\textit{``Next exercise''} / \newline \textit{``Prossimo esercizio''} & Jump to next exercise \\
+\textit{``Previous exercise''} / \newline \textit{``Esercizio precedente''} & Jump to previous exercise \\
+\textit{``End workout''} / \newline \textit{``Termina workout''} & Finish workout now \\
 \bottomrule
 \end{tabular}
 \caption{Voice commands recognized by the application.}
@@ -314,7 +347,7 @@ The primary metric for inertial tracking is \textbf{Absolute Counting Error} ($A
 
 We compare three algorithm configurations across multiple pushup sets; full results are reported in Table~\ref{tab:results} at the end of this document.
 
-The naive system with a 2000~ms cooldown missed rapid reps ($< 2$~s duration) and double-counted the post-extraction spike. The intermediate configuration (peak-count without orientation filter) correctly handled rep tempo but still produced extraction false positives. Our final system ($\theta_{\text{max}} = 66^{\circ}$, 1200~ms cooldown) achieved zero extraction false positives and perfect counting accuracy across all tested configurations.
+The naive system with a 2000~ms cooldown missed rapid reps ($< 2$~s duration) and double-counted the post-extraction spike. The intermediate configuration (peak-count without orientation filter) correctly handled rep tempo but still produced extraction false positives. Our final system (hysteresis with $\tau_{\text{enter}} = 360$, $\tau_{\text{exit}} = 75$, prominence and duration validation, $\theta_{\text{max}} = 66^{\circ}$) achieved zero extraction false positives and perfect counting accuracy across all tested configurations.
 
 \subsection{Voice Command Recognition}
 
@@ -322,9 +355,13 @@ Voice commands were tested across 20 sessions by the two developers. Recognition
 
 \subsection{Discussion}
 
+During the development of our app, one of the main challenges was determining the actual validity of repetitions, distinguishing a complete and correct movement from a null one.
+
 The most impactful improvement was the gravity orientation filter: it transformed an unreliable prototype into a deployable tool by eliminating the entire class of post-exercise false positives. The key insight is \textit{geometric}: exercise motion in pocket mode is characterized by a stable device orientation (the phone stays in the same angular reference frame as the user's thigh), while the device extraction motion necessarily involves a large orientation change.
 
-The 1200~ms cooldown is a hard constraint on the maximum exercise tempo the system can support (one rep per 1.2~s). For highly trained athletes performing explosive reps faster than this rate, the system would undercount. This is a fundamental limitation of threshold-based counting and could be addressed in future work by learning a user-specific tempo profile.
+The duration constraints ($400$--$4000$~ms) define the plausible rep tempo range: approximately $0.25$--$2.5$~reps/s. While this range covers the vast majority of realistic human exercise tempos, extremely explosive movements (e.g., plyometric pushups shorter than $400$~ms) would be rejected. This could be addressed in future work by learning a user-specific tempo profile.
+
+When implementing video tracking using MediaPipe, the initial algorithm relied solely on the relative distance between wrists and shoulders. This generated false positives: a standing user could simulate a pull-up simply by moving their arms freely, thus fooling the counter. To address this anomaly, we refined the control by analyzing the absolute displacement of landmarks in space. We based our approach on the real-world biomechanics of closed-chain exercises (such as push-ups and pull-ups), where the hands represent a fixed point. We therefore introduced two filters: a maximum movement threshold for the wrists, to ensure they remain firmly anchored (to the bar or the floor), and a minimum movement threshold for the shoulders, to verify the actual movement of the body. The system now validates the repetition only if the shoulders approach the immobile wrists, mathematically excluding the opposite movement (impossible in a real-world execution). This logic eliminated empty simulations, ensuring accurate counting.
 
 A separate challenge, documented here for reproducibility, was the iOS AudioContext policy. This was not a correctness bug but a platform compatibility issue that rendered the entire audio-haptic communication channel silent for an entire class of devices. The lazy-loading solution is straightforward once the root cause is known, but it is not obvious from the Web Audio API documentation and cost significant debugging time.
 
@@ -351,7 +388,7 @@ Planned extensions include: (1) expansion of the MediaPipe exercise library to s
 \midrule
 Naive threshold, 2000~ms cooldown, no gravity filter & 6 & 8 & 2 \\
 Peak-count, 2000~ms cooldown, no gravity filter & 5 & 4 & 2 \\
-\textbf{Peak-count, 1200~ms, gravity filter~(ours)} & \textbf{5} & \textbf{5} & \textbf{0} \\
+\textbf{Peak-count, hysteresis, prominence, gravity filter~(ours)} & \textbf{5} & \textbf{5} & \textbf{0} \\
 \bottomrule
 \end{tabular*}
 \caption{Pushup repetition counting accuracy in Pocket Mode. \textit{Ground Truth} = actual repetitions performed. \textit{Counted} = repetitions registered by the system. \textit{FP} = false positives generated by extracting the phone from the pocket at the end of the set. Results discussed in Section~\ref{sec:results}.}

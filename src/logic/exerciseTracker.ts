@@ -1,3 +1,62 @@
+/**
+ * exerciseTracker.ts — State machine per il conteggio automatico delle ripetizioni via MediaPipe.
+ *
+ * Riceve in input i landmark normalizzati di MediaPipe PoseLandmarker frame-per-frame e
+ * conta le ripetizioni valide per due esercizi: pull-up (trazioni) e push-up (flessioni).
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * ARCHITETTURA GENERALE
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * La classe `ExerciseTracker` implementa una macchina a stati con due fasi: UP e DOWN.
+ * La transizione tra le fasi viene rilevata monitorando il movimento verticale delle spalle
+ * (asse Y dei landmark, normalizzato [0,1] dove 0=cima, 1=fondo dello schermo).
+ *
+ * PULL-UP (trazioni):
+ *   - DOWN: le spalle sono SOTTO la sbarra (smoothed > 0.08)
+ *   - UP:   le spalle raggiungono/superano la sbarra (smoothed < 0.04)
+ *   - Metrica: `shoulderToBar` = shoulderY - barY (media Y dei polsi)
+ *             Valori positivi = spalle sotto la sbarra; negativi = spalle sopra
+ *   - Validazione: le spalle devono essersi spostate di almeno SHOULDER_MOVE_THRESHOLD (5%)
+ *                  e i polsi devono essere rimasti stabili (< WRIST_MOVE_THRESHOLD) per
+ *                  escludere falsi positivi da movimento della fotocamera
+ *
+ * PUSH-UP (flessioni):
+ *   - UP:   posizione di partenza (braccia distese)
+ *   - DOWN: le spalle scendono di oltre EXCURSION_THRESHOLD (10%)
+ *   - Rep contata quando le spalle risalgono oltre EXCURSION_THRESHOLD dalla posizione più bassa
+ *   - Validazione: stesso controllo sulla stabilità dei polsi (esclude movimento del telefono)
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * SMOOTHING / FILTRO EMA
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Per le trazioni, la metrica `shoulderToBar` viene filtrata con una media mobile
+ * esponenziale (EMA, alpha=0.4) per ridurre il rumore dei landmark frame-per-frame.
+ * L'EMA bilancia reattività (alpha alto) e stabilità (alpha basso).
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * VALIDAZIONE ANTI-FALSI-POSITIVI
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Il tracker mantiene uno snapshot della fase DOWN (`downPhaseSnapshot`) che registra:
+ *  - La posizione Y più bassa/alta delle spalle raggiunta
+ *  - Le coordinate Y dei polsi all'inizio del movimento
+ *
+ * Al termine di ogni rep, confronta le coordinate attuali dei polsi con quelle dello
+ * snapshot: se i polsi si sono spostati oltre la soglia, la rep viene rifiutata
+ * (il telefono probabilmente si è mosso, non le spalle dell'utente).
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * FUNZIONE `calculateAngle`
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Utility esportata per calcolare l'angolo 3D tra tre punti (a-b-c, con b come vertice).
+ * Usa il prodotto scalare dei vettori v1=(a-b) e v2=(c-b) per essere invariante
+ * alla prospettiva della fotocamera (frontale vs laterale).
+ * Non attualmente usata per il conteggio reps, ma disponibile per futuri esercizi
+ * basati sull'angolo delle articolazioni (es. squat, curl).
+ */
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
 export interface Point {

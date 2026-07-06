@@ -1,3 +1,30 @@
+/**
+ * App.tsx — Radice del routing dell'applicazione.
+ *
+ * Configura tutte le rotte con React Router v6.
+ * Le rotte "protette" tramite `ProtectedRoute` richiedono che l'utente sia autenticato;
+ * in caso contrario viene reindirizzato alla pagina di login (/auth).
+ *
+ * Struttura delle rotte:
+ *  - /           → HomePage          (pubblica)
+ *  - /auth       → AuthPage          (pubblica — login/signup)
+ *  - /reps-count → RepCounterPage    (protetta — contatore libero)
+ *  - /new-train  → NewTrainPage      (protetta — creazione scheda)
+ *  - /edit-train/:id → NewTrainPage  (protetta — modifica scheda esistente)
+ *  - /gym-card   → GymCardPage       (protetta — lista schede)
+ *  - /workout-history → WorkoutHistoryPage        (protetta)
+ *  - /workout-history/:workoutRunId → WorkoutHistoryDetailPage (protetta)
+ *  - /select-workout  → SelectWorkoutPage          (protetta)
+ *  - /active-workout/:id → ActiveWorkoutPage        (protetta — workout live da scheda)
+ *  - /active-workout-history/:workoutRunId → ActiveWorkoutPage (protetta — riesegui da storico)
+ *  - /settings   → SettingsPage      (protetta)
+ *
+ * Se la configurazione Supabase non è valida (env mancanti) viene mostrato un
+ * banner di errore al posto dell'intera applicazione.
+ *
+ * `ResetPasswordModal` viene montato in overlay globale quando l'utente atterra
+ * sull'app tramite link email di recupero password (evento PASSWORD_RECOVERY).
+ */
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import RepCounterPage from './pages/RepCounterPage';
@@ -14,6 +41,13 @@ import { useAuth } from './context/AuthContext';
 import ResetPasswordModal from './components/ResetPasswordModal';
 import { supabaseConfigError } from './lib/supabase';
 
+/**
+ * ProtectedRoute — Wrapper per le rotte che richiedono autenticazione.
+ *
+ * Mostra un loader mentre lo stato auth è in caricamento.
+ * Se l'utente non è loggato, reindirizza a /auth salvando la destinazione originale
+ * nello state di navigazione (così dopo il login si torna dove si voleva andare).
+ */
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -33,6 +67,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 function App() {
   const { isPasswordRecovery } = useAuth();
 
+  // Mostra un banner di errore se le variabili d'ambiente Supabase non sono configurate
   if (supabaseConfigError) {
     return (
       <div className="min-h-screen bg-brand-dark flex items-center justify-center p-6">
@@ -48,6 +83,7 @@ function App() {
 
   return (
     <>
+      {/* Modal globale per il reset password — visibile solo dopo click su link email di recupero */}
       {isPasswordRecovery && <ResetPasswordModal />}
       <Router>
       <Routes>
@@ -66,6 +102,7 @@ function App() {
             <NewTrainPage />
           </ProtectedRoute>
         } />
+        {/* Riusa NewTrainPage in modalità modifica, ricevendo l'id della scheda da :id */}
         <Route path="/edit-train/:id" element={
           <ProtectedRoute>
             <NewTrainPage />
@@ -81,6 +118,7 @@ function App() {
             <WorkoutHistoryPage />
           </ProtectedRoute>
         } />
+        {/* Dettaglio di una sessione workout già completata */}
         <Route path="/workout-history/:workoutRunId" element={
           <ProtectedRoute>
             <WorkoutHistoryDetailPage />
@@ -91,11 +129,13 @@ function App() {
             <SelectWorkoutPage />
           </ProtectedRoute>
         } />
+        {/* Workout live — avviato da una scheda */}
         <Route path="/active-workout/:id" element={
           <ProtectedRoute>
             <ActiveWorkoutPage />
           </ProtectedRoute>
         } />
+        {/* Workout live — rieseguito da uno storico (workoutRunId) */}
         <Route path="/active-workout-history/:workoutRunId" element={
           <ProtectedRoute>
             <ActiveWorkoutPage />

@@ -1,3 +1,85 @@
+/**
+ * useAccelerometerRepCounter.ts — Hook React per il conteggio reps tramite sensori IMU del dispositivo.
+ *
+ * Alternativa all'approccio visivo MediaPipe: usa l'accelerometro e il giroscopio del telefono
+ * per rilevare le ripetizioni degli esercizi, senza richiedere la fotocamera.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * SENSORI UTILIZZATI
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ *  - `DeviceMotionEvent`      : accelerazione lineare (gravità rimossa) + giroscopio
+ *  - `DeviceOrientationEvent` : angoli assoluti del dispositivo (alpha/beta/gamma)
+ *
+ * Su iOS 13+ e Android Chrome, i permessi per i sensori di movimento richiedono
+ * un'autorizzazione esplicita dell'utente tramite gesture (click).
+ * Il hook gestisce questo flusso con `requestPermission()`.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * MODALITÀ DI RILEVAMENTO (`mode`)
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ *  - `single_burst` (pull-up): ogni burst di energia sopra la soglia ACTIVE conta 1 rep.
+ *    Usato perché la discesa lenta delle trazioni non genera un secondo burst separato.
+ *    Accuratezza backtest: 88.1% su 168 rep reali.
+ *
+ *  - `dual_burst` (alternativo): richiede due burst (andata + ritorno) per 1 rep.
+ *    Più preciso ma con recall basso per esercizi con fase eccentrica lenta.
+ *
+ *  - `peak_count` (push-up): conta i picchi di energia con isteresi e prominenza.
+ *    Include auto-calibrazione adattiva: le soglie si aggiornano dinamicamente
+ *    in base ai picchi rilevati nelle prime rep, riducendo la necessità di
+ *    configurazione manuale per dispositivi con sensori diversi.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * FASE DI PREPARAZIONE (`prepDurationSeconds`)
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Opzionale: countdown di X secondi prima di iniziare il rilevamento.
+ * Permette all'utente di posizionarsi correttamente prima che il sensore
+ * inizi a rilevare movimenti. Se `waitForStillness` è true, il countdown
+ * si avvia solo quando il dispositivo è fermo (energia < soglia REST).
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * DATI DI CALIBRAZIONE (`RepData`)
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Per ogni ripetizione rilevata, il hook emette un oggetto `RepData` dettagliato
+ * con metriche di energia cinetica, giroscopio, orientamento e timing.
+ * Questi dati sono usati per la calibrazione offline e per il debug del rilevamento.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * CONFIGURAZIONE PER ESERCIZIO (`EXERCISE_CONFIG`)
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Ogni esercizio ha soglie dedicate (active, rest, gyroShake, minDuration) derivate
+ * dall'analisi statistica di sessioni di calibrazione reali.
+ * Le soglie gyroShake escludono i burst generati da movimenti rapidi di scuotimento
+ * che non corrispondono a ripetizioni effettive.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * GESTIONE PERMESSI SENSORI
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * `MotionPermissionAPI`: estende il tipo DeviceMotionEvent con il metodo
+ * `requestPermission()` disponibile su iOS 13+. Su Android e desktop il permesso
+ * è concesso implicitamente e la funzione non esiste.
+ *
+ * Flusso permessi:
+ *  1. Al montaggio: controlla se il browser supporta DeviceMotionEvent
+ *  2. Se iOS: chiama DeviceMotionEvent.requestPermission() dalla gesture utente
+ *  3. Imposta `motionPermission` a 'granted' | 'denied' | 'unsupported'
+ *  4. Solo con permesso 'granted' registra il listener devicemotion
+ *
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ * STABILIZZAZIONE CALLBACK (ref pattern)
+ * ──────────────────────────────────────────────────────────────────────────────────────
+ *
+ * I callback `onCountChange` e `onRepData` vengono salvati in ref invece di essere
+ * inclusi nelle dipendenze dell'effect del listener. Questo evita che il listener
+ * devicemotion venga de-registrato e ri-registrato ad ogni render (che causerebbe
+ * perdita di dati durante la transizione).
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 type MotionPermissionState = 'unknown' | 'granted' | 'denied' | 'unsupported';

@@ -1,3 +1,31 @@
+/**
+ * workoutSchemaAdapter.ts — Adattatore tra il formato DB (righe piatte Supabase) e il formato UI.
+ *
+ * Il database memorizza gli esercizi come righe denormalizzate nella tabella `esecuzioni`.
+ * Gli esercizi composti (superset, EMOM, piramide) sono suddivisi in più righe
+ * collegate tramite id_superset / id_emom / id_piramide.
+ *
+ * Questo modulo si occupa di:
+ *  1. Leggere le righe ordinate per `ordine`
+ *  2. Raggruppare le righe appartenenti allo stesso superset/EMOM/piramide
+ *  3. Estrarre e normalizzare i metadati inline (`@@@meta:` nel campo note_esercizio)
+ *  4. Restituire un array di `UiExercise` pronti per il rendering nei componenti
+ *
+ * Struttura dati UI esportata:
+ *  - UiExercise        : esercizio generico (contiene i campi di tutti i tipi)
+ *  - UiSubExercise     : sub-esercizio di un superset o EMOM
+ *  - UiPyramidStep     : step di una piramide (reps/rest/peso)
+ *  - UiExerciseType    : unione dei tipi supportati
+ *
+ * Helper interni:
+ *  - toSafeInt/toSafeDecimal : conversione sicura da DB (unknown) a number
+ *  - toOptionalNote          : normalizza le note testuali (stringa vuota → null)
+ *  - extractNoteMeta         : split del campo note_esercizio tra testo e @@@meta:
+ *  - stripStorageMeta        : rimuove il suffisso @@@meta: dal nome esercizio
+ *  - parseJsonIfAny          : tenta il parse JSON del nome esercizio (per payload legacy)
+ *
+ * Funzione principale esportata: `parseDbExerciseRows(rows)`
+ */
 export type UiExerciseType = 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
 
 export interface UiSubExercise {
