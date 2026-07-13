@@ -1,3 +1,105 @@
+/**
+ * ActiveWorkoutPage.tsx — Il cuore dell'app: esecuzione guidata di un workout.
+ *
+ * È la pagina più grande e complessa (~4500 righe). Guida l'utente attraverso
+ * ogni esercizio, serie e riposo di un workout, con timer, feedback vocale,
+ * conteggio automatico delle reps e salvataggio dello stato su DB.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * DUE MODALITÀ DI APERTURA (params URL)
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  - `/active-workout/:id`
+ *    Workout nuovo da una scheda (id = id_scheda).
+ *    Carica gli esercizi dalla scheda Supabase.
+ *
+ *  - `/active-workout-history/:workoutRunId`
+ *    Riesecuzione di un workout già completato (id = id_workout).
+ *    Carica gli esercizi dallo snapshot JSON salvato nel `workout_run`.
+ *    Se lo snapshot non è disponibile, ricade sulla scheda collegata.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * STATE MACHINE DEGLI ESERCIZI
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * La progressione è determinata da questi indici:
+ *  - `currentExerciseIdx`     : indice nell'array degli esercizi
+ *  - `currentSetIdx`          : indice della serie corrente
+ *  - `currentSubExerciseIdx`  : indice del sub-esercizio (superset / EMOM)
+ *  - `currentPyramidStepIdx`  : indice dello step della piramide
+ *  - `currentEmomRoundIdx`    : indice del round EMOM
+ *
+ * Flags di avanzamento pendente:
+ *  - `pendingPyramidAdvance`  : true quando si aspetta conferma per passare
+ *                               al prossimo step della piramide (dopo il riposo)
+ *  - `pendingExerciseAdvance` : true quando si aspetta conferma per passare
+ *                               al prossimo esercizio (dopo il riposo di transizione)
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * TIMER (riposo, isometria, EMOM)
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Tutti i timer usano la tecnica "deadline-based":
+ *   `endsAtMs = Date.now() + durationMs`
+ * In ogni tick dell'effect, si calcola `remaining = endsAtMs - Date.now()`.
+ * Questo rende i timer robusti ai rallentamenti del browser (tab in background,
+ * GC pauses, ecc.) perché non si accumulano errori nel tempo.
+ *
+ * I ref `lastHandledRestCompletionEndsAtMsRef` e `lastHandledEmomCompletionEndsAtMsRef`
+ * garantiscono che lo stesso timestamp di scadenza sia gestito una sola volta,
+ * evitando doppi avanzamenti anche se l'effect scatta più volte.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * FEEDBACK VOCALE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Usa `utils/voice.ts` per annunciare:
+ *  - Countdown del riposo (ultimi N secondi)
+ *  - Nome dell'esercizio successivo
+ *  - Conteggio delle reps (se contatore automatico attivo)
+ *  - Messaggi di completamento serie / workout
+ *
+ * Comandi vocali (Web Speech API riconoscimento): "next", "back", "skip", ecc.
+ * Gestiti tramite `handleVoiceNextRef`, `handleVoicePrevRef`, `handleVoiceNextExerciseRef`.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * CONTEGGIO AUTOMATICO REPS
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Per gli esercizi con `auto_count_type` (pushups/pullups) è possibile aprire
+ * il modal auto-count che porta a RepCounterPage.
+ * Il conteggio avviene in RepCounterPage e il risultato viene passato indietro
+ * tramite `location.state` al ritorno.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * CHECKPOINT PERSISTENCE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Ogni secondo (throttled a `WORKOUT_PROGRESS_THROTTLE_MS = 1000ms`) lo stato
+ * corrente viene serializzato e salvato nel localStorage via `workoutProgressStorage`.
+ * In caso di chiusura accidentale, la HomePage rileva il checkpoint e propone
+ * di riprendere il workout da dove si era interrotto.
+ *
+ * Il payload salvato (`PersistedWorkoutProgressState`) include tutti gli indici
+ * di progressione, lo stato dei timer (remainingMs), e le note degli esercizi.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * SALVATAGGIO RISULTATI SU DB
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Al completamento del workout:
+ *  1. Viene inserita una riga in `workout_run` (con snapshot nome + durata + esercizi)
+ *  2. Vengono inserite le note degli esercizi in `note_workout` (formato tagged)
+ *  3. Il checkpoint nel localStorage viene cancellato
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * MODIFICA ESERCIZIO IN-WORKOUT
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Un modal "Edit exercise" permette di modificare al volo i parametri
+ * (serie, reps, peso, riposo) dell'esercizio corrente senza interrompere il workout.
+ * La modifica aggiorna sia lo state locale che il record Supabase (se la scheda esiste).
+ */
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';

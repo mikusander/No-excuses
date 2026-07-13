@@ -1,3 +1,58 @@
+/**
+ * SelectWorkoutPage.tsx — Selezione e avvio di una scheda di allenamento.
+ *
+ * Permette all'utente di scegliere quale scheda eseguire dall'elenco delle
+ * schede salvate. Cliccando su una scheda si apre un modal di anteprima che
+ * mostra tutti gli esercizi e permette di regolare al volo i parametri
+ * (serie, reps, peso, riposo) prima di avviare il workout.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * FLUSSO PRINCIPALE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  1. Al mount: carica la lista schede da Supabase (`schede`)
+ *  2. Click su una scheda → `loadWorkoutPreview()`:
+ *     - Carica gli esercizi con join profondo (esecuzioni → esercizi/superset/emom)
+ *     - Carica le note dell'ultima sessione di questa scheda (`workout_run` + `note_workout`)
+ *     - Popola `editableExercises` con una copia modificabile degli esercizi
+ *  3. L'utente può modificare i parametri degli esercizi direttamente nel modal
+ *     tramite `InlineNumberInput` (componente locale inline)
+ *  4. Click "Start" → `handleSaveAndStart()`:
+ *     - Salva le modifiche agli esercizi su DB tramite `saveExercisesToDb()`
+ *     - Cancella i checkpoint di workout precedenti
+ *     - Naviga a `/active-workout/:id`
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * NOTE DELL'ULTIMA SESSIONE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Le note del workout precedente vengono precaricate e mostrate accanto a ciascun
+ * esercizio come riferimento ("ultima volta ho notato che...").
+ * Il formato è tagged: `[<orderIndex>. <exerciseName>] <testo>`.
+ * `parseTaggedNote()` estrae `orderIndex` + `exerciseName` + `text`.
+ * Le note vengono indicizzate con chiave `${orderIndex}_${normalizeNoteKey(name)}`
+ * per un lookup O(1) durante il render.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * ESERCIZI MODIFICABILI
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  - `editableExercises` : copia profonda degli esercizi della scheda
+ *  - `updateExerciseField(index, field, value)` : aggiorna un campo di un esercizio
+ *  - `updateSubExerciseField(exIdx, subIdx, field, value)` : aggiorna un sub-esercizio (superset/EMOM)
+ *  - `updatePyramidStepField(exIdx, stepIdx, field, value)` : aggiorna uno step di piramide
+ *
+ * Il componente locale `InlineNumberInput` gestisce sia input numerici interi
+ * che input decimali per il peso (con parsing sicuro e gestione stringa vuota = bodyweight).
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * CANCELLAZIONE CHECKPOINT
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Prima di avviare un nuovo workout, tutti i checkpoint di sessioni interrotte
+ * vengono eliminati (`clearAllWorkoutProgressCheckpoints`) per evitare che
+ * la HomePage proponga di riprendere una sessione ormai superata.
+ */
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';

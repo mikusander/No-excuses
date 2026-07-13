@@ -178,7 +178,7 @@ Calibration revealed that for pushups the motion energy does not fall cleanly to
   \item \textbf{Validation:} A repetition is counted only if the completed peak passes three checks: (a)~the \textit{prominence} $E_{\max} - E_{\text{valley}} > \tau_{\text{prom}}$ ($\tau_{\text{prom}} = 120$), ensuring the peak is well-defined relative to its surrounding valley rather than just exceeding an absolute threshold; (b)~the \textit{duration} $\Delta t \in [400, 4000]$~ms, rejecting both sub-peak rebounds ($< 400$~ms) and prolonged positional adjustments ($> 4$~s); and (c)~the gravity orientation filter (Section~\ref{sec:gravity}).
 \end{enumerate}
 
-The dual-threshold hysteresis ($\tau_{\text{enter}} = 360$, $\tau_{\text{exit}} = 75$) eliminates chattering around a single threshold: the energy must rise \textit{well above} resting levels to enter the peak state, and must fall \textit{well below} the entry point to exit it. This separation is critical because inter-rep energy ($E \approx 75$--$120$) sits between the two thresholds, preventing spurious state transitions. The complete state machine is illustrated in \cref{fig:hysteresis}.
+The dual-threshold hysteresis ($\tau_{\text{enter}} = 360$, $\tau_{\text{exit}} = 75$) eliminates chattering around a single threshold: the energy must rise \textit{well above} resting levels to enter the peak state, and must fall \textit{well below} the entry point to exit it. This wide separation is viable because the EMA-smoothed energy decays exponentially after each peak: from a typical peak of $E \approx 700$, the EMA passes through $\tau_{\text{exit}} = 75$ in approximately 5--6 samples ($\sim\! 100$~ms at 60~Hz), well within the inter-repetition pause. The intra-peak valley energies observed during calibration ($E_{\text{valley}} \approx 105$--$120$) reflect transient minima \textit{during} a rep, not the true resting baseline between reps, which drops to $E \approx 20$--$50$ when the device is stationary in the pocket. The complete state machine is illustrated in \cref{fig:hysteresis}.
 
 \begin{figure}[H]
   \centering
@@ -195,7 +195,8 @@ For pullups, the dual-burst mode (single upward burst $=$ one repetition) is use
 To tune all numerical thresholds, we conducted 20 to 30 dedicated in-the-wild calibration sessions. Each session consisted of sets of 1, 5, and 10 repetitions performed at slow, normal, and rapid pacing. For each burst the system logged: \texttt{burstDurationMs}, \texttt{maxEnergy}, \texttt{minEnergy}, \texttt{avgEnergy}, \texttt{maxGyro}, and \texttt{gravityVec}. Analysis of these logs revealed:
 \begin{itemize}
   \item Genuine pushup peaks: $E_{\max} \in [500, 1100]$, duration $\in [300, 2000]$~ms.
-  \item Resting energy between repetitions: $E \approx 75$--$120$.
+  \item Intra-peak valley energy (transient minima during a rep): $E_{\text{valley}} \approx 105$--$120$.
+  \item True resting baseline between repetitions (device stationary in pocket): $E \approx 20$--$50$.
   \item Phone extraction from pocket: $E_{\max} > 2000$, but orientation deviates $> 66^{\circ}$.
   \item Average human rep duration: 1.5--3.5~s; rapid reps as short as 1.2~s.
 \end{itemize}

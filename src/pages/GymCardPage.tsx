@@ -1,3 +1,52 @@
+/**
+ * GymCardPage.tsx — Libreria delle schede di allenamento dell'utente.
+ *
+ * Mostra tutte le schede (`schede`) salvate dall'utente con i rispettivi esercizi.
+ * Cliccando su una scheda si apre un modal di dettaglio che permette di:
+ *  - Visualizzare tutti gli esercizi con tipo, serie, reps/durata, peso e riposo
+ *  - Modificare rapidamente i parametri di un esercizio ("quick edit") senza
+ *    uscire dalla pagina
+ *  - Navigare all'editor completo (NewTrainPage)
+ *  - Eliminare la scheda
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * CARICAMENTO DATI
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Viene eseguito un join profondo su Supabase al mount:
+ *   schede → esecuzioni → esercizi (nome)
+ *              → superset (round_totali)
+ *              → emom (round_totali, durata_round_secondi)
+ *
+ * Il risultato raw viene normalizzato da `parseDbExerciseRows()` che raggruppa
+ * le righe piatte in strutture gerarchiche (superset, EMOM, piramide).
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * QUICK EDIT (modifica rapida parametri)
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * `ExerciseQuickEditDraft` è una copia locale (tutti i valori come stringa)
+ * dell'esercizio in modifica. Questa scelta consente di validare i valori
+ * solo al momento del salvataggio, lasciando libertà di input all'utente.
+ *
+ * La funzione `saveExerciseQuickEdit` esegue aggiornamenti specifici per tipo:
+ *  - reps/isometry : aggiorna la riga `esecuzioni` con UPDATE diretto
+ *  - superset      : aggiorna `superset.round_totali` + le righe `esecuzioni`
+ *                    (peso/reps per sub-esercizio) in modo ordinato
+ *  - emom          : aggiorna `emom` + le righe `esecuzioni`
+ *  - pyramid       : aggiorna nome + steps serializzati nel campo nome esercizio
+ *
+ * Dopo il salvataggio, lo state locale viene aggiornato ottimisticamente
+ * tramite `updateExerciseInLocalState` senza rifetch completo.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * VALIDAZIONE INPUT
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  - `parseStrictInt(raw, label, allowZero)` : lancia Error se non intero
+ *  - `parseOptionalWeight(raw)` : accetta virgola o punto come separatore decimale,
+ *    restituisce null se vuoto o zero (= nessun peso / bodyweight)
+ */
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';

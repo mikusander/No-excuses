@@ -1,3 +1,56 @@
+/**
+ * WorkoutHistoryDetailPage.tsx — Dettaglio di una singola sessione di allenamento completata.
+ *
+ * Riceve il `workoutRunId` dai parametri URL e carica dalla tabella `workout_run`
+ * i dettagli della sessione: nome, data, durata totale, note per esercizio
+ * e la lista degli esercizi eseguiti.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * SORGENTE DEGLI ESERCIZI
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * La lista degli esercizi è determinata con la seguente priorità:
+ *  1. `exercises_snapshot` — JSON salvato al momento del workout. Immutabile,
+ *     sopravvive alla modifica o cancellazione della scheda originale.
+ *     Viene deserializzato da `toSnapshotExercises()`.
+ *  2. Scheda collegata — se lo snapshot non è disponibile, si fa join su
+ *     `schede → esecuzioni → esercizi` e si usa `parseDbExerciseRows()`.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * NOTE PER ESERCIZIO
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Le note sono salvate nella tabella `note_workout` con un formato tagged:
+ *   `[<orderIndex>. <exerciseName>] <testo della nota>`
+ *
+ * `parseTaggedNote()` estrae:
+ *   - `orderIndex`    : posizione 0-based dell'esercizio nella scheda
+ *   - `exerciseName`  : nome dell'esercizio
+ *   - `text`          : corpo della nota
+ *
+ * Le note vengono abbinate agli esercizi tramite la chiave composita
+ * `${orderIndex}_${normalizeNoteKey(exerciseName)}`.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * AZIONI DISPONIBILI
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  - "Redo workout": riesegue la stessa sessione navigando a
+ *    `/active-workout-history/:workoutRunId` (usa lo snapshot come sorgente dati)
+ *  - "Edit in builder": apre NewTrainPage in modalità modifica per la scheda collegata
+ *    (solo se `canRestartFromTemplate` è true, cioè la scheda esiste ancora)
+ *  - "Delete": elimina prima le note, poi il `workout_run`
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * UTILITY HELPER
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  - `formatSecs`              : secondi → "Xm Ys"
+ *  - `formatHistoryTarget`     : 0 → "MAX", altrimenti stringa numerica
+ *  - `formatHistoryDuration`   : 0 → "MAX", altrimenti formatSecs
+ *  - `formatHistoryWeight`     : 0 → "Body Weight", altrimenti "X kg"
+ *  - `formatWorkoutDuration`   : secondi totali → "Xh Ym Zs" (con ore se > 3600)
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X } from 'lucide-react';

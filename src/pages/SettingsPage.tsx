@@ -1,3 +1,43 @@
+/**
+ * SettingsPage.tsx — Pagina impostazioni utente.
+ *
+ * Permette all'utente di:
+ *  1. Visualizzare e modificare il proprio username (tabella `profili` su Supabase)
+ *  2. Attivare/disattivare l'assistente vocale durante il workout
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * PROFILO UTENTE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Al caricamento della pagina viene letto il profilo dalla tabella `profili`.
+ * Se il profilo non esiste ancora (primo accesso), `ensureProfileExists` lo crea
+ * generando automaticamente un username dalla parte locale dell'email.
+ *
+ * Il salvataggio dello username usa un upsert Supabase per gestire sia la
+ * creazione che l'aggiornamento in un'unica chiamata.
+ * In caso di conflitto unicità (codice PostgreSQL 23505), viene mostrato un
+ * errore leggibile ("username già in uso").
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * VOICE ASSISTANCE TOGGLE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Il flag viene letto/scritto su due storage in parallelo:
+ *  - `localStorage` (chiave `voice_assistance_enabled`): lettura immediata, offline-first.
+ *    Questo è il valore letto da `utils/voice.ts` durante il workout.
+ *  - Tabella `profili` (colonna `voice_assistant`): sincronizzazione cross-device.
+ *
+ * Flusso ottimistico: lo state UI e il localStorage vengono aggiornati
+ * immediatamente (senza aspettare la risposta Supabase), e in caso di errore
+ * DB si fa rollback al valore precedente mostrando `voiceSyncError`.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * GENERAZIONE USERNAME UNICA
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * `buildProfileUsernameCandidate` tenta fino a 6 varianti con suffisso numerico
+ * casuale per evitare conflitti di unicità senza richiedere input all'utente.
+ */
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, User, Edit2, X, Check } from 'lucide-react';

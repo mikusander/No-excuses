@@ -1,3 +1,68 @@
+/**
+ * RepCounterPage.tsx — Contatore reps libero (senza scheda predefinita).
+ *
+ * Permette di contare le ripetizioni di pull-up e push-up in modalità libera,
+ * senza seguire una scheda strutturata. Supporta due modalità di rilevamento:
+ *
+ *  - `video` (default): usa la fotocamera + MediaPipe PoseLandmarker per
+ *    rilevare la posa e contare le reps tramite la classe `ExerciseTracker`
+ *  - `accelerometer`: usa l'accelerometro/giroscopio del dispositivo tramite
+ *    `useAccelerometerRepCounter` (non richiede fotocamera)
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * STATO DELL'ESERCIZIO
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * L'utente seleziona l'esercizio (pull-up / push-up) tramite toggle.
+ * Il target di reps è opzionale: se impostato, quando viene raggiunto
+ * vengono riprodotti un suono (`playGoalReachedSound`) e un annuncio vocale.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * MODALITÀ VIDEO (MediaPipe)
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  - `usePoseLandmarker` inizializza il modello WASM asincrono
+ *  - Il loop di rilevamento gira in `requestAnimationFrame` (rAF) leggendo
+ *    il frame corrente del video con `detectPose(videoEl, timestamp)`
+ *  - `ExerciseTracker` riceve i landmark e aggiorna il conteggio tramite callback
+ *  - `PoseOverlay` disegna lo scheletro rilevato su un canvas sovrapposto al video
+ *
+ * Il video viene avviato in `getUserMedia` con constraint `facingMode: 'user'`
+ * (fotocamera frontale) e rispecchiato con `scaleX(-1)` per effetto specchio.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * PANNELLO DEBUG
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Un pannello di debug opzionale (attivabile in-page) mostra in tempo reale:
+ *  - Angolo/metrica corrente dell'esercizio
+ *  - Fase (UP/DOWN)
+ *  - Eventuali warning (rep rifiutata) o messaggi OK (rep validata)
+ * Utile per la calibrazione delle soglie di rilevamento.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * ESPORTAZIONE DATI DI CALIBRAZIONE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * In modalità accelerometro, ogni rep rilevata genera un oggetto `RepData`
+ * con decine di metriche (energia cinetica, giroscopio, orientamento, timing).
+ * La funzione `handleDownloadData()` esporta questi dati in formato CSV per
+ * l'analisi offline e l'ottimizzazione delle soglie di rilevamento.
+ *
+ * Le costanti `POSE_LANDMARK_NAMES` e `POSE_LANDMARK_GROUPS` mappano gli indici
+ * di MediaPipe BlazePose (0-32) a nomi e gruppi anatomici, usate nell'header CSV.
+ * `POSE_LANDMARK_EXPORT_INDICES` limita l'export ai landmark dal bacino in su (11-32).
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * STATE MACHINE NAVIGAZIONE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * La pagina può essere aperta da ActiveWorkoutPage tramite `location.state`:
+ *   `{ mode: 'video' | 'accelerometer' }` — preseleziona la modalità
+ *
+ * Il contatore può essere resettato manualmente e il modal "Set Target"
+ * permette di impostare un obiettivo di reps mid-sessione.
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Loader2, Play, Target, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';

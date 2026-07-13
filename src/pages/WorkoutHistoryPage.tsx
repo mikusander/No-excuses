@@ -1,3 +1,39 @@
+/**
+ * WorkoutHistoryPage.tsx — Lista dello storico sessioni di allenamento completate.
+ *
+ * Mostra in ordine cronologico inverso (più recenti in cima) tutte le sessioni
+ * `workout_run` dell'utente, con nome del workout, data/ora di esecuzione e
+ * un pulsante di cancellazione per ogni voce.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * NOME DEL WORKOUT
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * La risoluzione del nome è a cascata (primo disponibile vince):
+ *  1. `workout_name_snapshot` — snapshot del nome al momento dell'esecuzione
+ *     (immutabile anche se la scheda originale viene rinominata o eliminata)
+ *  2. `schede.nome` — nome corrente della scheda collegata (join eager)
+ *  3. Fallback generato: `Workout #<id_scheda>` o `Workout #<id_workout>`
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * CANCELLAZIONE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * La cancellazione elimina in sequenza:
+ *  1. Le note collegate (`note_workout`) — per rispettare l'integrità referenziale
+ *  2. Il record `workout_run` — con filtro su `id_utente` per sicurezza (RLS)
+ *
+ * Durante la cancellazione, il bottone mostra uno spinner e tutti gli altri
+ * bottoni di delete vengono disabilitati (`deletingWorkoutId != null`) per
+ * evitare operazioni concorrenti che potrebbero corrompere lo stato.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * NAVIGAZIONE
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Ogni voce naviga a `/workout-history/:workoutRunId` (WorkoutHistoryDetailPage)
+ * per visualizzare il dettaglio completo della sessione.
+ */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, ChevronRight, Dumbbell, Loader2, Trash2 } from 'lucide-react';

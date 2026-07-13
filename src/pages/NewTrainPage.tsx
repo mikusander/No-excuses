@@ -1,3 +1,70 @@
+/**
+ * NewTrainPage.tsx — Editor completo per la creazione e modifica delle schede.
+ *
+ * È la pagina più grande dell'app (~2100 righe) e gestisce l'intera UX
+ * di costruzione di una scheda di allenamento con supporto a tutti i tipi
+ * di esercizio supportati dal sistema.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * MODALITÀ CREATE vs EDIT
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  - Create mode (`/new-train`): `isCreateMode = true`, `id` è undefined.
+ *    Gli esercizi vengono costruiti da zero nella scheda.
+ *  - Edit mode (`/edit-train/:id`): `isCreateMode = false`.
+ *    Gli esercizi esistenti vengono caricati da Supabase e popolano il form.
+ *
+ * Il salvataggio usa `saveExercisesToDb()` (lib/workoutSaveHelper) che esegue
+ * delete + re-insert di tutte le righe `esecuzioni` della scheda.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * TIPI DI ESERCIZIO SUPPORTATI (`ExerciseDraft`)
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ *  - `reps`     : serie × ripetizioni, peso opzionale
+ *  - `isometry` : serie × durata (secondi), peso opzionale (es. plank)
+ *  - `superset` : circuito di N sub-esercizi eseguiti in sequenza senza riposo,
+ *                 poi riposo tra i round
+ *  - `emom`     : Every Minute On the Minute — N esercizi in un round a tempo;
+ *                 configurabile per round totali e durata del round
+ *  - `pyramid`  : serie con reps/peso crescenti o decrescenti (ogni step ha
+ *                 reps, riposo e peso propri)
+ *
+ * Ogni esercizio può avere:
+ *  - `instruction_note`  : note testuali di esecuzione
+ *  - `auto_count_type`   : tipo per il conteggio automatico (pushups / pullups)
+ *  - `transition_rest_seconds` : riposo prima del prossimo esercizio
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * DRAFT PERSISTENCE (solo create mode)
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Ogni modifica alla scheda viene salvata automaticamente nel localStorage
+ * (chiave `new_workout_draft_v1:{userId}`) con throttle per evitare scritture
+ * eccessive. Il draft viene ripristinato al reload o alla prossima apertura
+ * della pagina (se la sessione è ancora valida).
+ *
+ * Il draft ha un TTL di 7 giorni (`NEW_WORKOUT_DRAFT_MAX_AGE_MS`).
+ * Al salvataggio o all'abbandono consapevole, il draft viene cancellato.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * NUMBER DRAFTS
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * `numberDrafts` è un dizionario `{ [fieldKey: string]: string }` che mantiene
+ * il valore "grezzo" (come stringa) degli input numerici mentre l'utente sta
+ * digitando. Questo permette input parziali (es. "1_" durante la digitazione di "10")
+ * senza forzare la conversione in numero ad ogni keystroke.
+ * La conversione sicura avviene tramite `toSafeInteger()` e `toSafeWeight()`.
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * AUTO-SCROLL ALL'ESERCIZIO
+ * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * Se la pagina viene aperta con il parametro `?exerciseIndex=N` in querystring
+ * (es. da ActiveWorkoutPage → "edit this exercise"), la pagina fa auto-scroll
+ * alla card dell'esercizio N e la mette a fuoco (`focusedExerciseId`).
+ */
 import React, { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
