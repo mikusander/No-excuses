@@ -34,6 +34,40 @@ Prop your phone against a wall so the front camera frames your body. Google Medi
 
 Works for: **pullups, chin-ups**, and bar exercises.
 
+## Project map
+
+```text
+src/
+├─ App.tsx
+├─ main.tsx
+├─ components/
+│  ├─ BottomNavigation.tsx
+│  ├─ HeaderLogo.tsx
+│  ├─ PoseOverlay.tsx
+│  ├─ ResetPasswordModal.tsx
+│  └─ WorkoutCard.tsx
+├─ context/
+│  └─ AuthContext.tsx
+├─ hooks/
+│  ├─ useAccelerometerRepCounter.ts   # Auto-counting with accelerometer + gyroscope
+│  └─ usePoseLandmarker.ts            # MediaPipe + WebAssembly pose loading
+├─ logic/
+│  └─ exerciseTracker.ts              # Rep validation logic for camera mode
+├─ lib/
+│  └─ supabase.ts                     # Supabase client and config
+└─ pages/
+	├─ ActiveWorkoutPage.tsx
+	├─ AuthPage.tsx
+	├─ GymCardPage.tsx
+	├─ HomePage.tsx
+	├─ NewTrainPage.tsx
+	├─ RepCounterPage.tsx              # Camera / MediaPipe and accelerometer entry point
+	├─ SelectWorkoutPage.tsx
+	├─ SettingsPage.tsx
+	├─ WorkoutHistoryDetailPage.tsx
+	└─ WorkoutHistoryPage.tsx
+```
+
 ### 🎤 Voice Commands
 During a guided workout session, control everything with your voice — no touching needed:
 
