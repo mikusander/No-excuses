@@ -79,3 +79,9 @@ npm run dev
 ```
 
 Requires HTTPS or localhost for `DeviceMotion` permission on iOS.
+
+---
+
+## link to the video demo
+
+🔗 **Video:** [VideoDemo](https://youtu.be/tBPbmQmYDGo?is=N2I2UZESG_gdOvsi)
