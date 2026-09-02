@@ -650,12 +650,12 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                   <div className="flex justify-between items-start mb-2 gap-2">
                     <span className="font-bold text-lg text-white drop-shadow-md flex items-center">
                       <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{idx + 1}.</span>
-                      {isComplexType ? <Repeat size={16} className={`mr-1 ${exercise.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange'}`} /> : null}
+                      {isComplexType ? <Repeat size={16} className="mr-1 text-brand-orange" /> : null}
                       {exercise.name}
                     </span>
                     {exercise.type === 'circuit' && (
-                      <div className="flex items-center text-xs font-black px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/40 text-cyan-400 shadow-inner whitespace-nowrap">
-                        <Timer size={12} className="mr-1 text-cyan-400" />
+                      <div className="flex items-center text-xs font-black px-2.5 py-1 rounded-full bg-brand-orange/10 border border-brand-orange/40 text-brand-orange shadow-inner whitespace-nowrap">
+                        <Timer size={12} className="mr-1 text-brand-orange" />
                         CIRCUITO
                       </div>
                     )}
@@ -807,21 +807,21 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                         <span className="text-sm text-white">{exercise.sets}</span>
                       </div>
 
-                      <div className="bg-cyan-500/10 border border-cyan-500/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                        <span className="text-cyan-400/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
+                      <div className="bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                        <span className="text-brand-orange/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
                           <Clock size={9} className="mr-1" />
                           Rest Giro
                         </span>
-                        <span className="text-sm text-cyan-300">{formatSecs(exercise.rest_seconds)}</span>
+                        <span className="text-sm text-brand-orange">{formatSecs(exercise.rest_seconds)}</span>
                       </div>
 
                       {exercise.total_circuit_duration_seconds != null && exercise.total_circuit_duration_seconds > 0 && (
-                        <div className="bg-cyan-500/10 border border-cyan-500/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center col-span-2 sm:col-span-1">
-                          <span className="text-cyan-400/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
+                        <div className="bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center col-span-2 sm:col-span-1">
+                          <span className="text-brand-orange/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
                             <Timer size={9} className="mr-1" />
                             Tempo Totale
                           </span>
-                          <span className="text-sm text-cyan-300 font-black">{formatSecs(exercise.total_circuit_duration_seconds)}</span>
+                          <span className="text-sm text-brand-orange font-black">{formatSecs(exercise.total_circuit_duration_seconds)}</span>
                         </div>
                       )}
                     </div>

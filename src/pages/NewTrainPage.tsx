@@ -69,7 +69,7 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move, Copy } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface ExerciseDraft {
@@ -567,52 +567,6 @@ const NewTrainPage: React.FC = () => {
     ]);
   };
 
-
-
-  const addSuperset = () => {
-    setExercises([
-      ...exercises,
-      {
-        id: crypto.randomUUID(),
-        type: 'superset',
-        name: 'Superset',
-        instruction_note: '',
-        sets: 3,
-        reps: 0,
-        duration_seconds: 0,
-        rest_seconds: 90,
-        transition_rest_seconds: 0,
-        weight_kg: null,
-        subExercises: [
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' },
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
-        ]
-      }
-    ]);
-  };
-
-  const addCircuit = () => {
-    setExercises([
-      ...exercises,
-      {
-        id: crypto.randomUUID(),
-        type: 'circuit',
-        name: 'Circuito',
-        instruction_note: '',
-        sets: 3,
-        reps: 0,
-        duration_seconds: 0,
-        rest_seconds: 120,
-        transition_rest_seconds: 0,
-        weight_kg: null,
-        subExercises: [
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' },
-          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
-        ]
-      }
-    ]);
-  };
-
   const convertToSuperset = (id: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === id) {
@@ -704,6 +658,26 @@ const NewTrainPage: React.FC = () => {
       }
       return ex;
     }));
+  };
+
+  const duplicateExercise = (index: number) => {
+    const source = exercises[index];
+    if (!source) return;
+
+    const cloned: ExerciseDraft = {
+      ...source,
+      id: crypto.randomUUID(),
+      subExercises: source.subExercises
+        ? source.subExercises.map((sub) => ({ ...sub }))
+        : undefined,
+      pyramid_steps: source.pyramid_steps
+        ? source.pyramid_steps.map((step) => ({ ...step }))
+        : undefined,
+    };
+
+    const newExercises = [...exercises];
+    newExercises.splice(index + 1, 0, cloned);
+    setExercises(newExercises);
   };
 
   const removeExercise = (id: string) => {
@@ -1580,31 +1554,47 @@ const NewTrainPage: React.FC = () => {
                     }`}
                 >
 
-                  {/* Header Esercizio: Frecce Ordine e Bottone Elimina */}
+                  {/* Header Esercizio: Frecce Ordine, Duplica ed Elimina */}
                   <div className="flex justify-between items-center bg-black/30 -mx-4 -mt-4 p-3 rounded-t-3xl border-b border-white/5">
                     <div className="flex space-x-1">
                       <button
+                        type="button"
                         onClick={() => moveExercise(index, 'up')}
                         disabled={index === 0}
                         className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                        title="Move up"
                       >
                         <ChevronUp size={20} />
                       </button>
                       <button
+                        type="button"
                         onClick={() => moveExercise(index, 'down')}
                         disabled={index === exercises.length - 1}
                         className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                        title="Move down"
                       >
                         <ChevronDown size={20} />
                       </button>
                     </div>
                     <span className="text-xs font-bold text-brand-grey/40">EXERCISE {index + 1}</span>
-                    <button
-                      onClick={() => removeExercise(ex.id)}
-                      className="p-1.5 text-brand-grey/60 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
-                    >
-                      <Trash2 size={20} />
-                    </button>
+                    <div className="flex items-center space-x-1">
+                      <button
+                        type="button"
+                        onClick={() => duplicateExercise(index)}
+                        className="p-1.5 text-brand-grey/60 hover:text-brand-orange hover:bg-brand-orange/10 rounded-md transition-colors"
+                        title="Duplicate exercise"
+                      >
+                        <Copy size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeExercise(ex.id)}
+                        className="p-1.5 text-brand-grey/60 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
+                        title="Delete exercise"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Specific UI for SUPERSET vs SINGLE */}
@@ -1727,8 +1717,8 @@ const NewTrainPage: React.FC = () => {
                       </button>
                     </div>
                   ) : (ex.type === 'superset' || ex.type === 'circuit') ? (
-                    <div className={`space-y-3 p-4 rounded-xl border ${ex.type === 'circuit' ? 'bg-cyan-950/20 border-cyan-500/30' : 'bg-brand-dark/30 border-brand-orange/20'}`}>
-                      <p className={`text-xs font-bold uppercase tracking-wider text-center mb-2 flex items-center justify-center ${ex.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange'}`}>
+                    <div className="space-y-3 p-4 rounded-xl border bg-brand-dark/30 border-brand-orange/20">
+                      <p className="text-xs font-bold uppercase tracking-wider text-center mb-2 flex items-center justify-center text-brand-orange">
                         {ex.type === 'circuit' ? '⚡ Circuito a Tempo (Stopwatch)' : '🔁 Superset Circuit'}
                       </p>
                       {ex.subExercises?.map((sub, sIdx) => (
@@ -1738,18 +1728,18 @@ const NewTrainPage: React.FC = () => {
                             placeholder={`${ex.type === 'circuit' ? 'Stazione' : 'Exercise Name'} ${sIdx + 1}`}
                             value={sub.name}
                             onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                            className={`w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm outline-none ${ex.type === 'circuit' ? 'focus:border-cyan-400' : 'focus:border-brand-orange'}`}
+                            className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-brand-orange"
                           />
                           <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                             <button
                               onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
-                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? (ex.type === 'circuit' ? 'bg-cyan-500 text-black' : 'bg-brand-orange text-black') : 'text-brand-grey hover:text-white'}`}
+                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                             >
                               REPS
                             </button>
                             <button
                               onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
-                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? (ex.type === 'circuit' ? 'bg-cyan-500 text-black' : 'bg-brand-orange text-black') : 'text-brand-grey hover:text-white'}`}
+                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                             >
                               ISOMETRIC
                             </button>
@@ -1764,7 +1754,7 @@ const NewTrainPage: React.FC = () => {
                               onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
                               onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
                               onFocus={onNumberFocus}
-                              className={`w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center outline-none placeholder:text-xs ${ex.type === 'circuit' ? 'focus:border-cyan-400 placeholder:text-cyan-400/60' : 'focus:border-brand-orange placeholder:text-brand-orange/60'}`}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center outline-none placeholder:text-xs focus:border-brand-orange placeholder:text-brand-orange/60"
                               placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
                             />
                           </div>
@@ -1780,7 +1770,7 @@ const NewTrainPage: React.FC = () => {
                               onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
                               onFocus={onNumberFocus}
                               placeholder="body Weight"
-                              className={`w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center outline-none ${ex.type === 'circuit' ? 'focus:border-cyan-400' : 'focus:border-brand-orange'}`}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center outline-none focus:border-brand-orange"
                             />
                           </div>
                           <div>
@@ -1792,7 +1782,7 @@ const NewTrainPage: React.FC = () => {
                               value={sub.instruction_note || ''}
                               onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
                               placeholder="E.g. fermo a braccia stese"
-                              className={`w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm outline-none resize-none ${ex.type === 'circuit' ? 'focus:border-cyan-400' : 'focus:border-brand-orange'}`}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm outline-none resize-none focus:border-brand-orange"
                             />
                           </div>
                           {ex.subExercises && ex.subExercises.length > 1 && (
@@ -1807,11 +1797,7 @@ const NewTrainPage: React.FC = () => {
                       ))}
                       <button
                         onClick={() => addSubExercise(ex.id)}
-                        className={`w-full mt-2 py-2 border border-dashed text-xs font-bold rounded-lg transition-colors flex justify-center items-center ${
-                          ex.type === 'circuit'
-                            ? 'border-cyan-500/30 text-cyan-400 hover:border-cyan-500/60 hover:text-cyan-300'
-                            : 'border-brand-orange/30 text-brand-orange/70 hover:border-brand-orange/50 hover:text-brand-orange'
-                        }`}
+                        className="w-full mt-2 py-2 border border-dashed text-xs font-bold rounded-lg transition-colors flex justify-center items-center border-brand-orange/30 text-brand-orange/70 hover:border-brand-orange/50 hover:text-brand-orange"
                       >
                         <Plus size={14} className="mr-1" /> {ex.type === 'circuit' ? 'ADD TO CIRCUIT' : 'ADD TO SUPERSET'}
                       </button>
@@ -2055,7 +2041,7 @@ const NewTrainPage: React.FC = () => {
                       </button>
                       <button
                         onClick={() => convertToCircuit(ex.id)}
-                        className="py-2 border border-dashed border-cyan-500/40 text-cyan-400/80 text-xs font-bold rounded-lg hover:border-cyan-500/70 hover:text-cyan-300 transition-colors flex justify-center items-center"
+                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                       >
                         <Plus size={14} className="mr-1" /> CIRCUITO
                       </button>
@@ -2152,29 +2138,13 @@ const NewTrainPage: React.FC = () => {
             ))
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            <button
-              onClick={addExercise}
-              className="text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
-            >
-              <Plus size={18} className="mr-1.5" />
-              + ESERCIZIO
-            </button>
-            <button
-              onClick={addSuperset}
-              className="text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/30 border-dashed"
-            >
-              <Plus size={18} className="mr-1.5" />
-              + SUPERSET
-            </button>
-            <button
-              onClick={addCircuit}
-              className="text-cyan-400 hover:text-cyan-300 flex items-center justify-center text-sm font-bold bg-cyan-500/10 hover:bg-cyan-500/20 px-4 py-3 rounded-xl transition-colors border border-cyan-500/30 border-dashed shadow-sm"
-            >
-              <Plus size={18} className="mr-1.5" />
-              + CIRCUITO
-            </button>
-          </div>
+          <button
+            onClick={addExercise}
+            className="w-full text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3.5 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
+          >
+            <Plus size={18} className="mr-1.5" />
+            EXERCISE
+          </button>
         </div>
 
         <button

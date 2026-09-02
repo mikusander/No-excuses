@@ -2837,7 +2837,7 @@ const ActiveWorkoutPage: React.FC = () => {
             : null;
   const specialExercisePillClass =
     currentExercise.type === 'circuit'
-      ? 'border-cyan-400/60 bg-cyan-500/10 text-cyan-300'
+      ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
       : currentExercise.type === 'emom'
         ? 'border-blue-400/60 bg-blue-500/10 text-blue-300'
         : currentExercise.type === 'superset'
@@ -3917,11 +3917,11 @@ const ActiveWorkoutPage: React.FC = () => {
               <div className="w-full max-w-sm grid grid-cols-2 gap-2 mb-3">
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Giro</span>
-                  <span className="text-cyan-400 font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
+                  <span className="text-brand-orange font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
                 </div>
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Stazione</span>
-                  <span className="text-cyan-400 font-black">{currentSubExerciseIdx + 1} / {currentExercise.subExercises?.length || 1}</span>
+                  <span className="text-brand-orange font-black">{currentSubExerciseIdx + 1} / {currentExercise.subExercises?.length || 1}</span>
                 </div>
               </div>
 
@@ -3929,10 +3929,10 @@ const ActiveWorkoutPage: React.FC = () => {
               <div
                 className={`relative w-full max-w-sm p-5 rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-300 shadow-xl cursor-pointer select-none group ${
                   isCircuitStopwatchRunning
-                    ? 'border-cyan-400 bg-cyan-950/20 shadow-[0_0_35px_rgba(34,211,238,0.25)]'
+                    ? 'border-brand-orange bg-brand-orange/10 shadow-[0_0_35px_rgba(179,72,0,0.25)]'
                     : circuitStopwatchElapsed > 0
-                      ? 'border-amber-400/80 bg-brand-darkGrey/50 shadow-[0_0_20px_rgba(251,191,36,0.15)]'
-                      : 'border-white/10 bg-brand-darkGrey/30 hover:border-cyan-400/50'
+                      ? 'border-brand-orange/80 bg-brand-darkGrey/50 shadow-[0_0_20px_rgba(179,72,0,0.15)]'
+                      : 'border-white/10 bg-brand-darkGrey/30 hover:border-brand-orange/50'
                 }`}
                 onPointerDown={(event) => handleTimerPointerDown(event, resetCircuitStopwatch)}
                 onPointerUp={(event) => handleTimerPointerUp(event, toggleCircuitStopwatch)}
@@ -3942,9 +3942,9 @@ const ActiveWorkoutPage: React.FC = () => {
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                     isCircuitStopwatchRunning
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 animate-pulse'
+                      ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/40 animate-pulse'
                       : circuitStopwatchElapsed > 0
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                        ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/40'
                         : 'bg-white/10 text-brand-grey border border-white/10'
                   }`}>
                     <Timer size={10} />
@@ -3963,15 +3963,15 @@ const ActiveWorkoutPage: React.FC = () => {
 
               {/* Current Sub-Exercise / Station Card */}
               {subExercise && (
-                <div className="mt-4 w-full max-w-sm p-3.5 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 text-left relative shadow-lg">
+                <div className="mt-4 w-full max-w-sm p-3.5 rounded-2xl bg-brand-darkGrey/30 border border-brand-orange/30 text-left relative shadow-lg">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] uppercase font-black tracking-wider text-cyan-400">
+                    <span className="text-[10px] uppercase font-black tracking-wider text-brand-orange">
                       Stazione {currentSubExerciseIdx + 1} di {currentExercise.subExercises?.length || 1}
                     </span>
                     <span className="text-xs text-white/70 font-semibold">{formatWeightLabel(subExercise.weight_kg)}</span>
                   </div>
                   <h4 className="text-base font-black text-white mt-0.5 truncate">{subExercise.name}</h4>
-                  <p className="text-sm font-black text-cyan-300 mt-1">
+                  <p className="text-sm font-black text-brand-orange mt-1">
                     {subExercise.type === 'reps'
                       ? (isMaxTarget(subExercise.reps) ? 'MAX REPS' : `${toSafeTargetInt(subExercise.reps)} Ripetizioni`)
                       : (isMaxTarget(subExercise.duration_seconds) ? 'MAX TEMPO' : `${toSafeTargetInt(subExercise.duration_seconds)}s Isometria`)}
@@ -3988,14 +3988,14 @@ const ActiveWorkoutPage: React.FC = () => {
                       key={`${currentExercise.id}:circuit-station:${idx}`}
                       className={`p-2 px-3 rounded-xl border flex justify-between items-center text-xs transition-colors ${
                         isCurrent
-                          ? 'border-cyan-400/60 bg-cyan-950/40 text-white font-bold'
+                          ? 'border-brand-orange/60 bg-brand-orange/10 text-white font-bold'
                           : idx < currentSubExerciseIdx
                             ? 'border-white/5 bg-black/20 text-white/40 line-through'
                             : 'border-white/5 bg-brand-darkGrey/20 text-brand-grey'
                       }`}
                     >
                       <span className="truncate">{idx + 1}. {sub.name}</span>
-                      <span className="shrink-0 ml-2 font-mono text-[11px] text-cyan-400">
+                      <span className="shrink-0 ml-2 font-mono text-[11px] text-brand-orange">
                         {sub.type === 'reps' ? `${sub.reps} reps` : `${sub.duration_seconds}s`}
                       </span>
                     </div>
@@ -4007,7 +4007,7 @@ const ActiveWorkoutPage: React.FC = () => {
               {circuitLapTimes.length > 0 && (
                 <div className="mt-2 w-full max-w-sm flex items-center justify-center gap-2 flex-wrap">
                   {circuitLapTimes.map((lap, lIdx) => (
-                    <span key={lIdx} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-cyan-300">
+                    <span key={lIdx} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-brand-orange">
                       Giro {lIdx + 1}: {formatTime(lap)}
                     </span>
                   ))}
@@ -4017,7 +4017,7 @@ const ActiveWorkoutPage: React.FC = () => {
               {hasCurrentInstructionNote && (
                 <button
                   onClick={openCurrentInstructionModal}
-                  className="mt-3 w-full max-w-sm bg-brand-darkGrey/40 border border-cyan-500/30 rounded-lg py-2 px-3 text-center text-cyan-400 hover:text-cyan-300 hover:border-cyan-400/60 hover:bg-cyan-500/10 transition-colors flex items-center justify-center gap-2"
+                  className="mt-3 w-full max-w-sm bg-brand-darkGrey/40 border border-brand-orange/35 rounded-lg py-2 px-3 text-center text-brand-orange hover:text-brand-lightOrange hover:border-brand-orange/70 hover:bg-brand-orange/10 transition-colors flex items-center justify-center gap-2"
                   title="Exercise Instructions"
                 >
                   <Info size={14} />
@@ -4444,7 +4444,7 @@ const ActiveWorkoutPage: React.FC = () => {
                           <div key={`${exercise.id}:sub:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                              <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${exercise.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange/90'}`}>
+                              <p className="text-[11px] font-black uppercase tracking-wide mt-1 text-brand-orange/90">
                                 {formatSupersetTaskMetricLabel(sub)}
                               </p>
                             </div>
@@ -4673,7 +4673,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             </p>
                             <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
                           </div>
-                          <span className={`text-[10px] uppercase tracking-[0.24em] font-black ${currentExercise.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange/90'}`}>
+                          <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">
                             {draft.type === 'isometry' ? 'Isometry' : 'Reps'}
                           </span>
                         </div>

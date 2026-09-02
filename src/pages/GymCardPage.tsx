@@ -50,19 +50,23 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Calendar, Trash2, Clock, Timer, Repeat, Pencil, Plus, X } from 'lucide-react';
+import { Dumbbell, Calendar, Trash2, Clock, Timer, Repeat, Pencil, Plus, X, Copy, Loader2 } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { useNavigate } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
 
 interface Exercise {
   id: string;
   type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
+  instruction_note?: string;
+  auto_count_type?: 'pushups' | 'pullups' | null;
   sets: number;
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  transition_rest_seconds?: number;
   weight_kg?: number | null;
   order_index: number;
   emom_rounds?: number;
@@ -74,6 +78,7 @@ interface Exercise {
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
+    instruction_note?: string;
   }[];
 }
 
@@ -119,6 +124,7 @@ const GymCardPage: React.FC = () => {
   const [exerciseQuickEditDraft, setExerciseQuickEditDraft] = useState<ExerciseQuickEditDraft | null>(null);
   const [isQuickEditSaving, setIsQuickEditSaving] = useState(false);
   const [quickEditError, setQuickEditError] = useState<string | null>(null);
+  const [duplicatingWorkoutId, setDuplicatingWorkoutId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchWorkouts();
@@ -169,6 +175,55 @@ const GymCardPage: React.FC = () => {
       console.error('Error fetching workouts:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const duplicateWorkout = async (workout: Workout) => {
+    if (!user || duplicatingWorkoutId) return;
+    try {
+      setDuplicatingWorkoutId(workout.id);
+      
+      const copyName = `${workout.name} (Copy)`;
+      const { data: newScheda, error: schedaError } = await supabase
+        .from('schede')
+        .insert([{
+          id_utente: user.id,
+          nome: copyName,
+        }])
+        .select('id_scheda, nome, data_creazione')
+        .single();
+
+      if (schedaError) throw schedaError;
+      if (!newScheda) throw new Error('Failed to duplicate workout.');
+
+      if (workout.exercises && workout.exercises.length > 0) {
+        const exercisesToSave: SaveExercise[] = workout.exercises.map((ex) => ({
+          id: crypto.randomUUID(),
+          type: ex.type,
+          name: ex.name,
+          instruction_note: ex.instruction_note,
+          auto_count_type: ex.auto_count_type,
+          sets: ex.sets || 1,
+          reps: ex.reps || 0,
+          duration_seconds: ex.duration_seconds || 0,
+          rest_seconds: ex.rest_seconds || 0,
+          transition_rest_seconds: ex.transition_rest_seconds,
+          weight_kg: ex.weight_kg,
+          emom_rounds: ex.emom_rounds,
+          emom_round_duration: ex.emom_round_duration,
+          pyramid_steps: ex.pyramid_steps ? ex.pyramid_steps.map((s) => ({ ...s })) : undefined,
+          subExercises: ex.subExercises ? ex.subExercises.map((s) => ({ ...s })) : undefined,
+        }));
+
+        await saveExercisesToDb(newScheda.id_scheda, exercisesToSave);
+      }
+
+      await fetchWorkouts();
+    } catch (error: any) {
+      console.error('Error duplicating workout:', error);
+      alert(error?.message || 'Error duplicating workout');
+    } finally {
+      setDuplicatingWorkoutId(null);
     }
   };
 
@@ -685,7 +740,22 @@ const GymCardPage: React.FC = () => {
                 }
               }}
             >
-              <div className="absolute top-4 right-4 flex items-center space-x-3 z-10">
+              <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
+                <button 
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void duplicateWorkout(workout);
+                  }}
+                  disabled={duplicatingWorkoutId === workout.id}
+                  className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg disabled:opacity-50"
+                  title="Duplicate Workout"
+                >
+                  {duplicatingWorkoutId === workout.id ? (
+                    <Loader2 size={20} className="animate-spin text-brand-orange" />
+                  ) : (
+                    <Copy size={20} />
+                  )}
+                </button>
                 <button 
                   onClick={(event) => {
                     event.stopPropagation();
@@ -708,7 +778,7 @@ const GymCardPage: React.FC = () => {
                 </button>
               </div>
 
-              <div className="flex items-center pr-20 py-1">
+              <div className="flex items-center pr-24 py-1">
                 <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4">
                   <Calendar className="text-brand-orange" size={28} />
                 </div>
@@ -745,13 +815,25 @@ const GymCardPage: React.FC = () => {
                 </p>
               </div>
 
-              <button
-                onClick={closeWorkoutModal}
-                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                title="Close details"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex items-center space-x-1.5">
+                <button
+                  onClick={() => {
+                    void duplicateWorkout(selectedWorkout);
+                    closeWorkoutModal();
+                  }}
+                  className="p-2 rounded-full text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
+                  title="Duplicate Workout"
+                >
+                  <Copy size={18} />
+                </button>
+                <button
+                  onClick={closeWorkoutModal}
+                  className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
+                  title="Close details"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(88vh-102px)]">
@@ -779,7 +861,7 @@ const GymCardPage: React.FC = () => {
                     <div className="mb-3">
                        <span className="font-bold text-lg text-white drop-shadow-md flex items-center mb-2">
                          <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i+1}.</span>
-                         <Repeat size={16} className={`mr-1 ${ex.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange'}`}/> {ex.name}
+                         <Repeat size={16} className="mr-1 text-brand-orange"/> {ex.name}
                        </span>
                        <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
                          {ex.type === 'pyramid' ? ex.pyramid_steps?.map((step, sIdx) => (

@@ -504,11 +504,11 @@ const SelectWorkoutPage: React.FC = () => {
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <span className="font-bold text-lg text-white drop-shadow-md flex items-center min-w-0">
                                   <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                                  <Repeat size={16} className={`mr-1 shrink-0 ${ex.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange'}`} />
+                                  <Repeat size={16} className="mr-1 shrink-0 text-brand-orange" />
                                   <span className="truncate">{ex.name}</span>
                                 </span>
                                 {ex.type === 'circuit' && (
-                                  <span className="shrink-0 inline-flex items-center rounded-full border border-cyan-400/60 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-400">
+                                  <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
                                     CIRCUITO
                                   </span>
                                 )}
