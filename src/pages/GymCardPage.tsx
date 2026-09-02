@@ -57,7 +57,7 @@ import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   sets: number;
   reps: number;
@@ -330,7 +330,7 @@ const GymCardPage: React.FC = () => {
           reps: nextReps,
           duration_seconds: nextDuration,
         };
-      } else if (draft.type === 'superset') {
+      } else if (draft.type === 'superset' || draft.type === 'circuit') {
         const nextRounds = parseStrictInt(draft.sets, 'Rounds');
         const nextRest = parseStrictInt(draft.rest_seconds, 'Rest', true);
 
@@ -631,7 +631,7 @@ const GymCardPage: React.FC = () => {
       return labels.length === 1 ? labels[0] : 'Varies';
     }
 
-    if ((exercise.type === 'superset' || exercise.type === 'emom') && exercise.subExercises?.length) {
+    if ((exercise.type === 'superset' || exercise.type === 'circuit' || exercise.type === 'emom') && exercise.subExercises?.length) {
       const labels = Array.from(new Set(exercise.subExercises.map((sub) => formatWeightLabel(sub.weight_kg))));
       if (labels.length === 0) return 'Body Weight';
       return labels.length === 1 ? labels[0] : 'Varies';
@@ -757,7 +757,7 @@ const GymCardPage: React.FC = () => {
             <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(88vh-102px)]">
               {selectedWorkout.exercises && selectedWorkout.exercises.map((ex, i) => {
                 const showInlineWeightNearName =
-                  (ex.type === 'superset' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
+                  (ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
 
                 return (
                 <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
@@ -775,11 +775,11 @@ const GymCardPage: React.FC = () => {
                     </button>
                   </div>
 
-                  {ex.type === 'superset' || ex.type === 'emom' || ex.type === 'pyramid' ? (
+                  {ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom' || ex.type === 'pyramid' ? (
                     <div className="mb-3">
                        <span className="font-bold text-lg text-white drop-shadow-md flex items-center mb-2">
                          <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i+1}.</span>
-                         <Repeat size={16} className="mr-1 text-brand-orange"/> {ex.name}
+                         <Repeat size={16} className={`mr-1 ${ex.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange'}`}/> {ex.name}
                        </span>
                        <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-1 mt-1">
                          {ex.type === 'pyramid' ? ex.pyramid_steps?.map((step, sIdx) => (
@@ -812,12 +812,12 @@ const GymCardPage: React.FC = () => {
                   <div className="grid grid-cols-2 min-[450px]:grid-cols-4 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
                     <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                       <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                        {ex.type === 'superset' ? 'Round' : (ex.type === 'emom' ? 'Rounds' : ex.type === 'pyramid' ? 'Steps' : 'Sets')}
+                        {ex.type === 'circuit' ? 'Giri' : ex.type === 'superset' ? 'Round' : (ex.type === 'emom' ? 'Rounds' : ex.type === 'pyramid' ? 'Steps' : 'Sets')}
                       </span>
                       <span className="text-sm text-white">{ex.type === 'pyramid' ? (ex.pyramid_steps?.length || 0) : ex.sets}</span>
                     </div>
 
-                    {ex.type !== 'superset' && ex.type !== 'pyramid' && (
+                    {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'pyramid' && (
                       <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
                           {ex.type === 'isometry' ? 'Duration' : (ex.type === 'emom' ? 'Time/Rnd' : 'Reps')}
@@ -967,7 +967,7 @@ const GymCardPage: React.FC = () => {
                 </>
               )}
 
-              {exerciseQuickEditDraft.type === 'superset' && (
+              {(exerciseQuickEditDraft.type === 'superset' || exerciseQuickEditDraft.type === 'circuit') && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Rounds

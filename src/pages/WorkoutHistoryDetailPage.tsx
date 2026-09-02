@@ -171,7 +171,7 @@ const toSnapshotExercises = (raw: unknown): UiExercise[] => {
       const item = entry as Record<string, unknown>;
       const typeRaw = String(item.type || 'reps').toLowerCase();
       const type: UiExercise['type'] =
-        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'emom' || typeRaw === 'pyramid'
+        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
           ? (typeRaw as UiExercise['type'])
           : 'reps';
 
@@ -629,15 +629,17 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                 ? 'REPS'
                 : exercise.type === 'isometry'
                   ? 'ISOMETRIC'
-                  : exercise.type === 'superset'
-                    ? 'SUPERSET'
-                    : exercise.type === 'emom'
-                      ? 'EMOM'
-                      : 'PYRAMID';
+                  : exercise.type === 'circuit'
+                    ? 'CIRCUITO'
+                    : exercise.type === 'superset'
+                      ? 'SUPERSET'
+                      : exercise.type === 'emom'
+                        ? 'EMOM'
+                        : 'PYRAMID';
 
             const isComplexType =
-              exercise.type === 'superset' || exercise.type === 'emom' || exercise.type === 'pyramid';
-            const shouldShowTypeBadge = exercise.type !== 'superset' && exercise.type !== 'emom';
+              exercise.type === 'superset' || exercise.type === 'circuit' || exercise.type === 'emom' || exercise.type === 'pyramid';
+            const shouldShowTypeBadge = exercise.type !== 'superset' && exercise.type !== 'circuit' && exercise.type !== 'emom';
 
             return (
               <section
@@ -648,9 +650,21 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                   <div className="flex justify-between items-start mb-2 gap-2">
                     <span className="font-bold text-lg text-white drop-shadow-md flex items-center">
                       <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{idx + 1}.</span>
-                      {isComplexType ? <Repeat size={16} className="mr-1 text-brand-orange" /> : null}
+                      {isComplexType ? <Repeat size={16} className={`mr-1 ${exercise.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange'}`} /> : null}
                       {exercise.name}
                     </span>
+                    {exercise.type === 'circuit' && (
+                      <div className="flex items-center text-xs font-black px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/40 text-cyan-400 shadow-inner whitespace-nowrap">
+                        <Timer size={12} className="mr-1 text-cyan-400" />
+                        CIRCUITO
+                      </div>
+                    )}
+                    {exercise.type === 'superset' && (
+                      <div className="flex items-center text-xs font-black px-2.5 py-1 rounded-full bg-brand-orange/10 border border-brand-orange/40 text-brand-orange shadow-inner whitespace-nowrap">
+                        <Repeat size={12} className="mr-1 text-brand-orange" />
+                        SUPERSET
+                      </div>
+                    )}
                     {shouldShowTypeBadge && (
                       <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner whitespace-nowrap">
                         {exercise.type === 'isometry' ? (
@@ -783,6 +797,33 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                         </span>
                         <span className="text-sm text-brand-lightOrange">{formatSecs(exercise.rest_seconds)}</span>
                       </div>
+                    </div>
+                  )}
+
+                  {exercise.type === 'circuit' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
+                      <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Giri (Rounds)</span>
+                        <span className="text-sm text-white">{exercise.sets}</span>
+                      </div>
+
+                      <div className="bg-cyan-500/10 border border-cyan-500/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                        <span className="text-cyan-400/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
+                          <Clock size={9} className="mr-1" />
+                          Rest Giro
+                        </span>
+                        <span className="text-sm text-cyan-300">{formatSecs(exercise.rest_seconds)}</span>
+                      </div>
+
+                      {exercise.total_circuit_duration_seconds != null && exercise.total_circuit_duration_seconds > 0 && (
+                        <div className="bg-cyan-500/10 border border-cyan-500/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center col-span-2 sm:col-span-1">
+                          <span className="text-cyan-400/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
+                            <Timer size={9} className="mr-1" />
+                            Tempo Totale
+                          </span>
+                          <span className="text-sm text-cyan-300 font-black">{formatSecs(exercise.total_circuit_duration_seconds)}</span>
+                        </div>
+                      )}
                     </div>
                   )}
 

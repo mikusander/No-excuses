@@ -65,7 +65,7 @@ import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
   auto_count_type?: 'pushups' | 'pullups' | null;
@@ -495,18 +495,28 @@ const SelectWorkoutPage: React.FC = () => {
                   <div className="space-y-4">
                     {editableExercises.map((ex, i) => {
                       const showInlineWeightNearName =
-                        (ex.type === 'superset' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
+                        (ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
 
                       return (
                         <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
-                          {ex.type === 'superset' || ex.type === 'emom' || ex.type === 'pyramid' ? (
+                          {ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom' || ex.type === 'pyramid' ? (
                             <div className="mb-3">
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <span className="font-bold text-lg text-white drop-shadow-md flex items-center min-w-0">
                                   <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                                  <Repeat size={16} className="mr-1 text-brand-orange shrink-0" />
+                                  <Repeat size={16} className={`mr-1 shrink-0 ${ex.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange'}`} />
                                   <span className="truncate">{ex.name}</span>
                                 </span>
+                                {ex.type === 'circuit' && (
+                                  <span className="shrink-0 inline-flex items-center rounded-full border border-cyan-400/60 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-400">
+                                    CIRCUITO
+                                  </span>
+                                )}
+                                {ex.type === 'superset' && (
+                                  <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                    SUPERSET
+                                  </span>
+                                )}
                                 {ex.type === 'pyramid' && (
                                   <span className="shrink-0 inline-flex items-center rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-300">
                                     PYRAMID
@@ -597,7 +607,7 @@ const SelectWorkoutPage: React.FC = () => {
 
                           <div className={`grid ${
                             ex.type === 'pyramid' ? 'grid-cols-1' :
-                            ex.type === 'superset' ? 'grid-cols-2' :
+                            ex.type === 'superset' || ex.type === 'circuit' ? 'grid-cols-2' :
                             ex.type === 'emom' ? 'grid-cols-2 sm:grid-cols-4' :
                             showInlineWeightNearName ? 'grid-cols-2 min-[450px]:grid-cols-3' :
                             'grid-cols-2 min-[450px]:grid-cols-4'
@@ -610,7 +620,7 @@ const SelectWorkoutPage: React.FC = () => {
                               </div>
                             ) : (
                               <InlineNumberInput
-                                label={ex.type === 'superset' ? 'Round' : ex.type === 'emom' ? 'Sets' : 'Sets'}
+                                label={ex.type === 'circuit' ? 'Giri' : ex.type === 'superset' ? 'Round' : ex.type === 'emom' ? 'Sets' : 'Sets'}
                                 value={ex.sets}
                                 onChange={(v) => updateExerciseField(i, 'sets', Math.max(1, v))}
                               />
@@ -634,7 +644,7 @@ const SelectWorkoutPage: React.FC = () => {
                               </>
                             )}
 
-                            {ex.type !== 'superset' && ex.type !== 'pyramid' && ex.type !== 'emom' && (
+                            {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'pyramid' && ex.type !== 'emom' && (
                               <InlineNumberInput
                                 label={ex.type === 'isometry' ? 'Duration (s)' : 'Reps'}
                                 value={ex.type === 'isometry' ? ex.duration_seconds : ex.reps}
@@ -659,7 +669,7 @@ const SelectWorkoutPage: React.FC = () => {
                               </div>
                             )}
 
-                            {!showInlineWeightNearName && ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
+                            {!showInlineWeightNearName && ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
                               <InlineNumberInput
                                 label="Kg"
                                 value={0}

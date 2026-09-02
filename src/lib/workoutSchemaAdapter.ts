@@ -26,9 +26,10 @@
  *
  * Funzione principale esportata: `parseDbExerciseRows(rows)`
  */
-export type UiExerciseType = 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
+export type UiExerciseType = 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
 export interface UiSubExercise {
+  id?: string;
   name: string;
   type: 'reps' | 'isometry';
   reps: number;
@@ -54,6 +55,10 @@ export interface UiExercise {
   transition_rest_seconds?: number;
   weight_kg?: number | null;
   order_index: number;
+  group_category?: 'superset' | 'circuit';
+  tracking_mode?: 'reps_load' | 'stopwatch';
+  lap_durations_seconds?: number[];
+  total_circuit_duration_seconds?: number;
   emom_rounds?: number;
   emom_round_duration?: number;
   pyramid_steps?: UiPyramidStep[];
@@ -121,12 +126,21 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
 
     if (row.id_superset) {
       const key = `superset:${row.id_superset}`;
+      const noteMeta = extractNoteMeta(row.note_esercizio);
+      const isCircuitFromMeta =
+        noteMeta.meta?.groupCategory === 'circuit' ||
+        String(row?.superset?.tipo_gruppo || row?.tipo_gruppo || '').toLowerCase() === 'circuit' ||
+        (jsonPayload && (jsonPayload.group_category === 'circuit' || jsonPayload.type === 'circuit'));
+
       if (!grouped.has(key)) {
+        const blockType: UiExerciseType = isCircuitFromMeta ? 'circuit' : 'superset';
         grouped.set(key, {
           ex: {
             id: String(row.id_superset),
-            type: 'superset',
-            name: 'Superset Circuit',
+            type: blockType,
+            group_category: isCircuitFromMeta ? 'circuit' : 'superset',
+            tracking_mode: isCircuitFromMeta ? 'stopwatch' : 'reps_load',
+            name: isCircuitFromMeta ? 'Circuito' : 'Superset',
             sets: Math.max(1, toSafeInt(row?.superset?.round_totali, sets)),
             reps: 0,
             duration_seconds: 0,
@@ -135,7 +149,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             subExercises: [],
-            instruction_note: toOptionalNote(row.note_esercizio),
+            instruction_note: noteMeta.note,
           },
           order: orderIndex,
           subs: [],
@@ -143,6 +157,12 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         });
       }
       const g = grouped.get(key)!;
+      if (isCircuitFromMeta) {
+        g.ex.type = 'circuit';
+        g.ex.group_category = 'circuit';
+        g.ex.tracking_mode = 'stopwatch';
+        if (g.ex.name === 'Superset') g.ex.name = 'Circuito';
+      }
       g.order = Math.min(g.order, orderIndex);
       g.ex.order_index = g.order;
       g.ex.transition_rest_seconds = Math.max(0, Math.max(g.ex.transition_rest_seconds || 0, transitionRestSeconds));
@@ -153,9 +173,18 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
           weight_kg: toSafeDecimal((item as { weight_kg?: unknown }).weight_kg, null),
           instruction_note: toOptionalNote((item as { instruction_note?: unknown }).instruction_note),
         }));
+      } else if (jsonPayload?.subExercises && Array.isArray(jsonPayload.subExercises)) {
+        g.ex.subExercises = (jsonPayload.subExercises as UiSubExercise[]).map((item) => ({
+          ...item,
+          weight_kg: toSafeDecimal((item as { weight_kg?: unknown }).weight_kg, null),
+          instruction_note: toOptionalNote((item as { instruction_note?: unknown }).instruction_note),
+        }));
+        if (jsonPayload.name) g.ex.name = jsonPayload.name;
+        if (jsonPayload.lap_durations_seconds) g.ex.lap_durations_seconds = jsonPayload.lap_durations_seconds;
+        if (jsonPayload.total_circuit_duration_seconds) g.ex.total_circuit_duration_seconds = jsonPayload.total_circuit_duration_seconds;
       } else {
         if (!g.ex.instruction_note) {
-          g.ex.instruction_note = toOptionalNote(row.note_esercizio);
+          g.ex.instruction_note = noteMeta.note;
         }
         g.subs.push({
           idx,
@@ -165,7 +194,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             reps: Math.max(0, toSafeInt(row.reps, 0)),
             duration_seconds: Math.max(0, toSafeInt(row.durata_secondi, 0)),
             weight_kg: toSafeDecimal(row.peso_kg, null),
-            instruction_note: toOptionalNote(row.note_esercizio),
+            instruction_note: noteMeta.note,
           },
         });
       }

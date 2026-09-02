@@ -74,7 +74,7 @@ import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 
 interface ExerciseDraft {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
   auto_count_type?: 'pushups' | 'pullups' | null;
@@ -161,7 +161,7 @@ const normalizeExerciseDraft = (raw: unknown): ExerciseDraft => {
   const ex = (raw || {}) as Record<string, unknown>;
   const typeRaw = String(ex.type || 'reps').toLowerCase();
   const type: ExerciseDraft['type'] =
-    typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'emom' || typeRaw === 'pyramid'
+    typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
       ? (typeRaw as ExerciseDraft['type'])
       : 'reps';
 
@@ -184,7 +184,7 @@ const normalizeExerciseDraft = (raw: unknown): ExerciseDraft => {
     normalized.emom_round_duration = toSafeInteger(ex.emom_round_duration, 60, 1);
   }
 
-  if (type === 'superset' || type === 'emom') {
+  if (type === 'superset' || type === 'circuit' || type === 'emom') {
     const subExercises = Array.isArray(ex.subExercises)
       ? ex.subExercises.map(normalizeSubExerciseDraft)
       : [];
@@ -569,12 +569,80 @@ const NewTrainPage: React.FC = () => {
 
 
 
+  const addSuperset = () => {
+    setExercises([
+      ...exercises,
+      {
+        id: crypto.randomUUID(),
+        type: 'superset',
+        name: 'Superset',
+        instruction_note: '',
+        sets: 3,
+        reps: 0,
+        duration_seconds: 0,
+        rest_seconds: 90,
+        transition_rest_seconds: 0,
+        weight_kg: null,
+        subExercises: [
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' },
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
+        ]
+      }
+    ]);
+  };
+
+  const addCircuit = () => {
+    setExercises([
+      ...exercises,
+      {
+        id: crypto.randomUUID(),
+        type: 'circuit',
+        name: 'Circuito',
+        instruction_note: '',
+        sets: 3,
+        reps: 0,
+        duration_seconds: 0,
+        rest_seconds: 120,
+        transition_rest_seconds: 0,
+        weight_kg: null,
+        subExercises: [
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' },
+          { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
+        ]
+      }
+    ]);
+  };
+
   const convertToSuperset = (id: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === id) {
         return {
           ...ex,
           type: 'superset',
+          subExercises: [
+            {
+              name: ex.name,
+              type: ex.type as 'reps' | 'isometry',
+              reps: ex.reps,
+              duration_seconds: ex.duration_seconds,
+              weight_kg: ex.weight_kg ?? null,
+              instruction_note: ex.instruction_note || '',
+            },
+            { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
+          ]
+        };
+      }
+      return ex;
+    }));
+  };
+
+  const convertToCircuit = (id: string) => {
+    setExercises(exercises.map(ex => {
+      if (ex.id === id) {
+        return {
+          ...ex,
+          type: 'circuit',
+          rest_seconds: Math.max(60, ex.rest_seconds || 120),
           subExercises: [
             {
               name: ex.name,
@@ -876,36 +944,6 @@ const NewTrainPage: React.FC = () => {
     clearDraftValue(key);
   };
 
-  const commitPyramidRestPart = (
-    pyramidId: string,
-    stepIndex: number,
-    part: 'min' | 'sec',
-    key: string,
-    currentRestSeconds: number
-  ) => {
-    if (!hasDraftValue(key)) return;
-
-    const raw = (numberDrafts[key] ?? '').trim();
-    const safeCurrent = Number.isFinite(currentRestSeconds) ? currentRestSeconds : 0;
-    const minutes = Math.floor(safeCurrent / 60);
-    const seconds = safeCurrent % 60;
-    const currentPartValue = part === 'min' ? minutes : seconds;
-
-    if (raw === '') {
-      clearDraftValue(key);
-      return;
-    }
-
-    let parsed = parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) parsed = currentPartValue;
-    if (parsed < 0) parsed = 0;
-    if (part === 'sec' && parsed > 59) parsed = 59;
-
-    const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
-    updatePyramidStep(pyramidId, stepIndex, 'rest_seconds', next);
-    clearDraftValue(key);
-  };
-
   const commitPyramidStepWeight = (
     pyramidId: string,
     stepIndex: number,
@@ -1086,7 +1124,7 @@ const NewTrainPage: React.FC = () => {
       if (ex.id === supersetId && ex.subExercises) {
         const remaining = ex.subExercises.filter((_, idx) => idx !== subIndex);
 
-        if (ex.type === 'superset' && remaining.length === 1) {
+        if ((ex.type === 'superset' || ex.type === 'circuit') && remaining.length === 1) {
           const only = remaining[0];
           return {
             ...ex,
@@ -1225,12 +1263,13 @@ const NewTrainPage: React.FC = () => {
       return;
     }
     for (const ex of exercises) {
-      if (ex.type === 'superset') {
+      if (ex.type === 'superset' || ex.type === 'circuit') {
+        const blockLabel = ex.type === 'circuit' ? 'Circuit' : 'Superset';
         if (!ex.subExercises || ex.subExercises.length < 2) {
-          setError('Supersets must contain at least 2 exercises'); return;
+          setError(`${blockLabel}s must contain at least 2 exercises`); return;
         }
         for (const sub of ex.subExercises) {
-          if (!sub.name.trim()) { setError('All exercises in a Superset must have a name'); return; }
+          if (!sub.name.trim()) { setError(`All exercises in a ${blockLabel} must have a name`); return; }
         }
       } else if (ex.type === 'emom') {
         if (!ex.subExercises || ex.subExercises.length === 0) {
@@ -1301,7 +1340,8 @@ const NewTrainPage: React.FC = () => {
             ? Math.max(0, Math.trunc(ex.transition_rest_seconds || 0))
             : null;
 
-        if (ex.type === 'superset') {
+        if (ex.type === 'superset' || ex.type === 'circuit') {
+          const isCircuit = ex.type === 'circuit';
           const { data, error: supersetError } = await supabase
             .from('superset')
             .insert([{ round_totali: Math.max(1, ex.sets) }])
@@ -1314,6 +1354,12 @@ const NewTrainPage: React.FC = () => {
             const idEsercizio = await ensureExerciseDictionaryId(sub.name);
             const isIso = sub.type === 'isometry';
 
+            let subNote = String(sub.instruction_note || '').trim();
+            if (subIdx === 0 && isCircuit) {
+              const metaPayload = { groupCategory: 'circuit', trackingMode: 'stopwatch' };
+              subNote = subNote ? `${subNote} @@@meta:${JSON.stringify(metaPayload)}` : `@@@meta:${JSON.stringify(metaPayload)}`;
+            }
+
             rowsToInsert.push({
               id_scheda: Number(workoutIdToUse),
               id_esercizio: idEsercizio,
@@ -1322,7 +1368,7 @@ const NewTrainPage: React.FC = () => {
               rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
               rest_tra_esercizi: transitionRestToPersist,
               peso_kg: toDbWeight(sub.weight_kg),
-              note_esercizio: String(sub.instruction_note || '').trim() || null,
+              note_esercizio: subNote || null,
               tipo: isIso ? 'ISOMETRIA' : 'REPS',
               reps: isIso ? null : Math.max(0, sub.reps ?? 0),
               durata_secondi: isIso ? Math.max(0, sub.duration_seconds ?? 0) : null,
@@ -1680,30 +1726,30 @@ const NewTrainPage: React.FC = () => {
                         <Plus size={14} className="mr-1" /> ADD TO EMOM
                       </button>
                     </div>
-                  ) : ex.type === 'superset' ? (
-                    <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
-                      <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex items-center justify-center">
-                        🔁 Superset Circuit
+                  ) : (ex.type === 'superset' || ex.type === 'circuit') ? (
+                    <div className={`space-y-3 p-4 rounded-xl border ${ex.type === 'circuit' ? 'bg-cyan-950/20 border-cyan-500/30' : 'bg-brand-dark/30 border-brand-orange/20'}`}>
+                      <p className={`text-xs font-bold uppercase tracking-wider text-center mb-2 flex items-center justify-center ${ex.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange'}`}>
+                        {ex.type === 'circuit' ? '⚡ Circuito a Tempo (Stopwatch)' : '🔁 Superset Circuit'}
                       </p>
                       {ex.subExercises?.map((sub, sIdx) => (
                         <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
                           <input
                             type="text"
-                            placeholder={`Exercise Name ${sIdx + 1}`}
+                            placeholder={`${ex.type === 'circuit' ? 'Stazione' : 'Exercise Name'} ${sIdx + 1}`}
                             value={sub.name}
                             onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                            className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
+                            className={`w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm outline-none ${ex.type === 'circuit' ? 'focus:border-cyan-400' : 'focus:border-brand-orange'}`}
                           />
                           <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                             <button
                               onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
-                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? (ex.type === 'circuit' ? 'bg-cyan-500 text-black' : 'bg-brand-orange text-black') : 'text-brand-grey hover:text-white'}`}
                             >
                               REPS
                             </button>
                             <button
                               onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
-                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? (ex.type === 'circuit' ? 'bg-cyan-500 text-black' : 'bg-brand-orange text-black') : 'text-brand-grey hover:text-white'}`}
                             >
                               ISOMETRIC
                             </button>
@@ -1718,7 +1764,7 @@ const NewTrainPage: React.FC = () => {
                               onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
                               onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
                               onFocus={onNumberFocus}
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                              className={`w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center outline-none placeholder:text-xs ${ex.type === 'circuit' ? 'focus:border-cyan-400 placeholder:text-cyan-400/60' : 'focus:border-brand-orange placeholder:text-brand-orange/60'}`}
                               placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
                             />
                           </div>
@@ -1734,7 +1780,7 @@ const NewTrainPage: React.FC = () => {
                               onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
                               onFocus={onNumberFocus}
                               placeholder="body Weight"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
+                              className={`w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center outline-none ${ex.type === 'circuit' ? 'focus:border-cyan-400' : 'focus:border-brand-orange'}`}
                             />
                           </div>
                           <div>
@@ -1746,7 +1792,7 @@ const NewTrainPage: React.FC = () => {
                               value={sub.instruction_note || ''}
                               onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
                               placeholder="E.g. fermo a braccia stese"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
+                              className={`w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm outline-none resize-none ${ex.type === 'circuit' ? 'focus:border-cyan-400' : 'focus:border-brand-orange'}`}
                             />
                           </div>
                           {ex.subExercises && ex.subExercises.length > 1 && (
@@ -1761,25 +1807,95 @@ const NewTrainPage: React.FC = () => {
                       ))}
                       <button
                         onClick={() => addSubExercise(ex.id)}
-                        className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                        className={`w-full mt-2 py-2 border border-dashed text-xs font-bold rounded-lg transition-colors flex justify-center items-center ${
+                          ex.type === 'circuit'
+                            ? 'border-cyan-500/30 text-cyan-400 hover:border-cyan-500/60 hover:text-cyan-300'
+                            : 'border-brand-orange/30 text-brand-orange/70 hover:border-brand-orange/50 hover:text-brand-orange'
+                        }`}
                       >
-                        <Plus size={14} className="mr-1" /> ADD TO SUPERSET
+                        <Plus size={14} className="mr-1" /> {ex.type === 'circuit' ? 'ADD TO CIRCUIT' : 'ADD TO SUPERSET'}
                       </button>
                     </div>
                   ) : ex.type === 'pyramid' ? (
                     <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
-                      <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2">
-                        Pyramid
+                      <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex items-center justify-center">
+                        📐 Pyramid
                       </p>
-
+                      {ex.pyramid_steps?.map((step, sIdx) => (
+                        <div key={sIdx} className="flex items-center space-x-2 relative pr-8">
+                          <span className="text-xs text-brand-grey font-bold w-6 text-center">#{sIdx + 1}</span>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
+                              Reps
+                            </label>
+                            <input
+                              type="number" inputMode="numeric"
+                              min="1"
+                              value={getDraftOrValue(`${ex.id}:step:${sIdx}:reps`, step.reps)}
+                              onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:reps`, e.target.value)}
+                              onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'reps', `${ex.id}:step:${sIdx}:reps`, 1, 1)}
+                              onFocus={onNumberFocus}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-1.5 text-center text-white text-sm focus:border-brand-orange outline-none"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
+                              Rest (s)
+                            </label>
+                            <input
+                              type="number" inputMode="numeric"
+                              min="0"
+                              value={getDraftOrValue(`${ex.id}:step:${sIdx}:rest`, step.rest_seconds)}
+                              onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:rest`, e.target.value)}
+                              onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'rest_seconds', `${ex.id}:step:${sIdx}:rest`, 0, 0)}
+                              onFocus={onNumberFocus}
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-1.5 text-center text-white text-sm focus:border-brand-orange outline-none"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
+                              Kg
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={getWeightDraftOrValue(`${ex.id}:step:${sIdx}:weight`, step.weight_kg)}
+                              onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:weight`, e.target.value)}
+                              onBlur={() => commitPyramidStepWeight(ex.id, sIdx, `${ex.id}:step:${sIdx}:weight`, step.weight_kg)}
+                              onFocus={onNumberFocus}
+                              placeholder="kg"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-1.5 text-center text-white text-sm focus:border-brand-orange outline-none"
+                            />
+                          </div>
+                          {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
+                            <button
+                              onClick={() => removePyramidStep(ex.id, sIdx)}
+                              className="absolute right-0 top-6 text-red-500/50 hover:text-red-500 p-1"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => addPyramidStep(ex.id)}
+                        className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                      >
+                        <Plus size={14} className="mr-1" /> ADD STEP
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Esercizio Singolo: Nome */}
                       <input
                         type="text"
-                        placeholder="Exercise Name (e.g. Push Ups)"
+                        placeholder="Exercise Name (e.g. Bench Press)"
                         value={ex.name}
                         onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
-                        className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
+                        className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors"
                       />
 
+                      {/* Note dell'esercizio (opzionale) */}
                       <div>
                         <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
                           Exercise Note (optional)
@@ -1788,142 +1904,39 @@ const NewTrainPage: React.FC = () => {
                           rows={2}
                           value={ex.instruction_note || ''}
                           onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
-                          placeholder="E.g. fermo in buca 1 secondo"
-                          className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
+                          placeholder="E.g. presa prona, fermo 1 secondo al petto"
+                          className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
                         />
                       </div>
 
-                      {ex.pyramid_steps?.map((step, stepIdx) => (
-                        <div key={stepIdx} className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2 relative pr-8">
-                          <p className="text-[10px] uppercase tracking-wider text-brand-grey/70 font-bold">Step {stepIdx + 1}</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Reps</label>
-                              <input
-                                type="text" inputMode="numeric"
-                                value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:reps`, step.reps, true)}
-                                onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:reps`, e.target.value)}
-                                onBlur={() => commitPyramidStepNumber(ex.id, stepIdx, 'reps', `${ex.id}:pyr:${stepIdx}:reps`, 0, 0)}
-                                onFocus={onNumberFocus}
-                                placeholder="MAX REPS"
-                                className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1 flex items-center">
-                                <Clock size={10} className="mr-1" />
-                                Rest
-                              </label>
-                              <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
-                                <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
-                                  <input
-                                    type="number" inputMode="numeric"
-                                    min="0"
-                                    value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:min`, Math.floor(step.rest_seconds / 60))}
-                                    onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:min`, e.target.value)}
-                                    onBlur={() => commitPyramidRestPart(ex.id, stepIdx, 'min', `${ex.id}:pyr:${stepIdx}:rest:min`, step.rest_seconds)}
-                                    onFocus={onNumberFocus}
-                                    className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
-                                  />
-                                  <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
-                                </div>
-                                <div className="flex flex-col items-center justify-center w-1/2 relative">
-                                  <input
-                                    type="number" inputMode="numeric"
-                                    min="0"
-                                    max="59"
-                                    value={getDraftOrValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds % 60)}
-                                    onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:rest:sec`, e.target.value)}
-                                    onBlur={() => commitPyramidRestPart(ex.id, stepIdx, 'sec', `${ex.id}:pyr:${stepIdx}:rest:sec`, step.rest_seconds)}
-                                    onFocus={onNumberFocus}
-                                    className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
-                                  />
-                                  <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">Weight (kg)</label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={getWeightDraftOrValue(`${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
-                              onChange={(e) => setDraftValue(`${ex.id}:pyr:${stepIdx}:weight`, e.target.value)}
-                              onBlur={() => commitPyramidStepWeight(ex.id, stepIdx, `${ex.id}:pyr:${stepIdx}:weight`, step.weight_kg)}
-                              onFocus={onNumberFocus}
-                              placeholder="body Weight"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
-                            />
-                          </div>
-                          {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
-                            <button
-                              onClick={() => removePyramidStep(ex.id, stepIdx)}
-                              className="absolute right-2 top-2 text-red-500/50 hover:text-red-500 p-1"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-
-                      <button
-                        onClick={() => addPyramidStep(ex.id)}
-                        className="w-full mt-1 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                      >
-                        <Plus size={14} className="mr-1" /> ADD PYRAMID STEP
-                      </button>
-                    </div>
-                  ) : (
-                    <>
+                      {/* Reps vs Isometric Selector */}
                       <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                         <button
                           onClick={() => updateExercise(ex.id, 'type', 'reps')}
-                          className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${ex.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                         >
                           REPS
                         </button>
                         <button
                           onClick={() => updateExercise(ex.id, 'type', 'isometry')}
-                          className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${ex.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${ex.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                         >
                           ISOMETRIC
                         </button>
                       </div>
-                      <div>
-                        <input
-                          type="text"
-                          placeholder="Exercise Name (e.g. Bench Press)"
-                          value={ex.name}
-                          onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
-                          className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white font-semibold focus:border-brand-orange focus:outline-none transition-colors"
-                        />
-                      </div>
 
-                      <div>
-                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                          Exercise Note (optional)
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={ex.instruction_note || ''}
-                          onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
-                          placeholder="E.g. fermo a braccia stese"
-                          className="w-full bg-black/30 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
-                        />
-                      </div>
-
+                      {/* Auto Count Toggle (Solo per Reps) */}
                       {ex.type === 'reps' && (
-                        <div className="mt-2">
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                            Auto-Count Feature
+                        <div className="flex flex-col space-y-1 bg-black/20 p-2 rounded-xl border border-brand-grey/10">
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1">
+                            Auto Rep Counter (MediaPipe / Accelerometer)
                           </label>
-                          <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                          <div className="flex space-x-2">
                             <button
                               onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
-                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${!ex.auto_count_type ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${!ex.auto_count_type ? 'bg-brand-grey/30 text-white' : 'text-brand-grey hover:text-white'}`}
                             >
-                              NONE
+                              DISABLED
                             </button>
                             <button
                               onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
@@ -1945,10 +1958,10 @@ const NewTrainPage: React.FC = () => {
 
                   {/* Dati Generici (Serie e Recupero) */}
                   {ex.type !== 'pyramid' && (
-                    <div className={`grid ${ex.type === 'superset' || ex.type === 'emom' ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'} gap-3`}>
+                    <div className={`grid ${ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom' ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'} gap-3`}>
                       <div className="flex flex-col">
                         <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                          Sets
+                          {ex.type === 'circuit' ? 'Giri (Rounds)' : 'Sets'}
                         </label>
                         <input
                           type="number" inputMode="numeric"
@@ -1961,7 +1974,7 @@ const NewTrainPage: React.FC = () => {
                         />
                       </div>
 
-                      {ex.type !== 'superset' && ex.type !== 'emom' && (
+                      {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'emom' && (
                         <div className="flex flex-col">
                           <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
                             {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
@@ -1978,7 +1991,7 @@ const NewTrainPage: React.FC = () => {
                         </div>
                       )}
 
-                      {ex.type !== 'superset' && ex.type !== 'emom' && (
+                      {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'emom' && (
                         <div className="flex flex-col">
                           <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
                             Weight (kg)
@@ -1999,7 +2012,7 @@ const NewTrainPage: React.FC = () => {
                       <div className="flex flex-col relative">
                         <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 flex items-center">
                           <Clock size={10} className="mr-1" />
-                          Rest
+                          {ex.type === 'circuit' ? 'Rest fine giro' : 'Rest'}
                         </label>
                         <div className="flex bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[46px]">
                           <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
@@ -2032,25 +2045,31 @@ const NewTrainPage: React.FC = () => {
                     </div>
                   )}
 
-                  {ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
-                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
+                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <button
                         onClick={() => convertToSuperset(ex.id)}
                         className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                       >
-                        <Plus size={14} className="mr-1" /> CREATE SUPERSET
+                        <Plus size={14} className="mr-1" /> SUPERSET
+                      </button>
+                      <button
+                        onClick={() => convertToCircuit(ex.id)}
+                        className="py-2 border border-dashed border-cyan-500/40 text-cyan-400/80 text-xs font-bold rounded-lg hover:border-cyan-500/70 hover:text-cyan-300 transition-colors flex justify-center items-center"
+                      >
+                        <Plus size={14} className="mr-1" /> CIRCUITO
                       </button>
                       <button
                         onClick={() => convertToEmom(ex.id)}
-                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                        className="py-2 border border-dashed border-blue-500/30 text-blue-400/70 text-xs font-bold rounded-lg hover:border-blue-500/50 hover:text-blue-400 transition-colors flex justify-center items-center"
                       >
-                        <Plus size={14} className="mr-1" /> CREATE EMOM
+                        <Plus size={14} className="mr-1" /> EMOM
                       </button>
                       <button
                         onClick={() => convertToPyramid(ex.id)}
-                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
+                        className="py-2 border border-dashed border-purple-500/30 text-purple-400/70 text-xs font-bold rounded-lg hover:border-purple-500/50 hover:text-purple-400 transition-colors flex justify-center items-center"
                       >
-                        <Plus size={14} className="mr-1" /> CREATE PYRAMID
+                        <Plus size={14} className="mr-1" /> PIRAMIDE
                       </button>
                     </div>
                   )}
@@ -2133,13 +2152,27 @@ const NewTrainPage: React.FC = () => {
             ))
           )}
 
-          <div className="flex flex-col space-y-3 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
             <button
               onClick={addExercise}
-              className="w-full text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
+              className="text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
             >
-              <Plus size={20} className="mr-1" />
-              EXERCISE
+              <Plus size={18} className="mr-1.5" />
+              + ESERCIZIO
+            </button>
+            <button
+              onClick={addSuperset}
+              className="text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3 rounded-xl transition-colors border border-brand-orange/30 border-dashed"
+            >
+              <Plus size={18} className="mr-1.5" />
+              + SUPERSET
+            </button>
+            <button
+              onClick={addCircuit}
+              className="text-cyan-400 hover:text-cyan-300 flex items-center justify-center text-sm font-bold bg-cyan-500/10 hover:bg-cyan-500/20 px-4 py-3 rounded-xl transition-colors border border-cyan-500/30 border-dashed shadow-sm"
+            >
+              <Plus size={18} className="mr-1.5" />
+              + CIRCUITO
             </button>
           </div>
         </div>

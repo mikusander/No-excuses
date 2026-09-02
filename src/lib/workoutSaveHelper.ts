@@ -30,7 +30,7 @@ import { supabase } from './supabase';
  */
 export interface SaveExercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
   /** Tipo di esercizio per il conteggio automatico (MediaPipe/accelerometro) */
@@ -159,9 +159,10 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
         ? Math.max(0, Math.trunc(ex.transition_rest_seconds || 0))
         : null;
 
-    // ── SUPERSET ────────────────────────────────────────────────────────────
-    if (ex.type === 'superset') {
-      // Crea il record superset con il numero di round
+    // ── SUPERSET & CIRCUITO (Gruppi Esercizi) ──────────────────────────────
+    if (ex.type === 'superset' || ex.type === 'circuit') {
+      const isCircuit = ex.type === 'circuit';
+      // Crea il record superset/gruppo con il numero di round
       const { data, error: supersetError } = await supabase
         .from('superset')
         .insert([{ round_totali: Math.max(1, ex.sets) }])
@@ -169,11 +170,18 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
         .single();
       if (supersetError) throw supersetError;
 
-      // Inserisce ogni sub-esercizio del superset come riga separata in esecuzioni
+      // Inserisce ogni sub-esercizio del gruppo come riga separata in esecuzioni
       for (let subIdx = 0; subIdx < (ex.subExercises || []).length; subIdx += 1) {
         const sub = ex.subExercises![subIdx];
         const idEsercizio = await ensureExerciseDictionaryId(sub.name);
         const isIso = sub.type === 'isometry';
+
+        let subNote = String(sub.instruction_note || '').trim();
+        // Sul primo sub-esercizio memorizziamo il metadata del gruppo se è un circuito
+        if (subIdx === 0 && isCircuit) {
+          const metaPayload = { groupCategory: 'circuit', trackingMode: 'stopwatch' };
+          subNote = subNote ? `${subNote} @@@meta:${JSON.stringify(metaPayload)}` : `@@@meta:${JSON.stringify(metaPayload)}`;
+        }
 
         rowsToInsert.push({
           id_scheda: schedaId,
@@ -183,7 +191,7 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
           rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
           rest_tra_esercizi: transitionRestToPersist,
           peso_kg: toDbWeight(sub.weight_kg),
-          note_esercizio: String(sub.instruction_note || '').trim() || null,
+          note_esercizio: subNote || null,
           tipo: isIso ? 'ISOMETRIA' : 'REPS',
           reps: isIso ? null : Math.max(0, sub.reps ?? 0),
           durata_secondi: isIso ? Math.max(0, sub.duration_seconds ?? 0) : null,

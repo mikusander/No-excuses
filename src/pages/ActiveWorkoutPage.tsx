@@ -100,7 +100,7 @@
  * (serie, reps, peso, riposo) dell'esercizio corrente senza interrompere il workout.
  * La modifica aggiorna sia lo state locale che il record Supabase (se la scheda esiste).
  */
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -118,7 +118,7 @@ import {
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string | null;
   auto_count_type?: 'pushups' | 'pullups' | null;
@@ -128,6 +128,8 @@ interface Exercise {
   rest_seconds: number;
   transition_rest_seconds?: number;
   weight_kg?: number | null;
+  lap_durations_seconds?: number[];
+  total_circuit_duration_seconds?: number;
   emom_rounds?: number;
   emom_round_duration?: number;
   pyramid_steps?: { reps: number; rest_seconds: number; weight_kg?: number | null }[];
@@ -212,6 +214,9 @@ interface PersistedWorkoutProgressState {
   isometryRemaining: number;
   emomWasRunning: boolean;
   emomRoundRemaining: number;
+  circuitStopwatchElapsed?: number;
+  circuitStopwatchRunning?: boolean;
+  circuitLapTimes?: number[];
   exerciseNotesByKey: Record<string, ExerciseNoteEntry>;
   workoutStartedAtMs: number | null;
 }
@@ -237,7 +242,7 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
       const item = entry as Record<string, unknown>;
       const typeRaw = String(item.type || 'reps').toLowerCase();
       const type: Exercise['type'] =
-        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'emom' || typeRaw === 'pyramid'
+        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
           ? (typeRaw as Exercise['type'])
           : 'reps';
 
@@ -276,6 +281,12 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
         rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.rest_seconds, 0))),
         transition_rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.transition_rest_seconds, 0))),
         weight_kg: Number.isFinite(Number(item.weight_kg)) ? Number(item.weight_kg) : null,
+        lap_durations_seconds: Array.isArray(item.lap_durations_seconds)
+          ? (item.lap_durations_seconds as unknown[]).map(v => Math.max(0, Math.trunc(toSafeSnapshotNumber(v, 0))))
+          : undefined,
+        total_circuit_duration_seconds: item.total_circuit_duration_seconds == null
+          ? undefined
+          : Math.max(0, Math.trunc(toSafeSnapshotNumber(item.total_circuit_duration_seconds, 0))),
         order_index: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.order_index, idx))),
         emom_rounds: item.emom_rounds == null ? undefined : Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_rounds, 1))),
         emom_round_duration:
@@ -323,6 +334,13 @@ const ActiveWorkoutPage: React.FC = () => {
   const [emomRoundRemaining, setEmomRoundRemaining] = useState(0);
   const [emomRoundEndsAtMs, setEmomRoundEndsAtMs] = useState<number | null>(null);
   const [currentEmomRoundIdx, setCurrentEmomRoundIdx] = useState(0);
+
+  // Timer State for Circuit Stopwatch
+  const [circuitStopwatchElapsed, setCircuitStopwatchElapsed] = useState(0);
+  const [isCircuitStopwatchRunning, setIsCircuitStopwatchRunning] = useState(false);
+  const [circuitLapTimes, setCircuitLapTimes] = useState<number[]>([]);
+  const circuitStopwatchStartedAtMsRef = useRef<number | null>(null);
+  const circuitAccumulatedMsRef = useRef(0);
 
   const wasRestingRef = useRef(false);
   const wasEmomActiveRef = useRef(false);
@@ -642,7 +660,7 @@ const ActiveWorkoutPage: React.FC = () => {
     let targetDuration = 0;
     if (currentExerciseForIso.type === 'isometry') {
       targetDuration = Math.max(1, normalizeDurationSeconds(currentExerciseForIso.duration_seconds));
-    } else if (currentExerciseForIso.type === 'superset') {
+    } else if (currentExerciseForIso.type === 'superset' || currentExerciseForIso.type === 'circuit') {
       const currentSub = currentExerciseForIso.subExercises?.[currentSubExerciseIdx];
       if (currentSub?.type === 'isometry') {
         targetDuration = Math.max(1, normalizeDurationSeconds(currentSub.duration_seconds));
@@ -653,6 +671,94 @@ const ActiveWorkoutPage: React.FC = () => {
     setIsometryRemainingWithSync(targetDuration);
   };
 
+  // ── Circuit Stopwatch handlers ──
+  useEffect(() => {
+    if (!isCircuitStopwatchRunning) return;
+
+    circuitStopwatchStartedAtMsRef.current = Date.now();
+    const interval = setInterval(() => {
+      if (circuitStopwatchStartedAtMsRef.current) {
+        const elapsedMs = circuitAccumulatedMsRef.current + (Date.now() - circuitStopwatchStartedAtMsRef.current);
+        setCircuitStopwatchElapsed(Math.floor(elapsedMs / 1000));
+      }
+    }, 200);
+
+    return () => {
+      clearInterval(interval);
+      if (circuitStopwatchStartedAtMsRef.current) {
+        circuitAccumulatedMsRef.current += Date.now() - circuitStopwatchStartedAtMsRef.current;
+        circuitStopwatchStartedAtMsRef.current = null;
+      }
+    };
+  }, [isCircuitStopwatchRunning]);
+
+  const startCircuitStopwatch = useCallback(() => {
+    if (!isCircuitStopwatchRunning) {
+      circuitStopwatchStartedAtMsRef.current = Date.now();
+      setIsCircuitStopwatchRunning(true);
+    }
+  }, [isCircuitStopwatchRunning]);
+
+  const pauseCircuitStopwatch = useCallback(() => {
+    if (isCircuitStopwatchRunning) {
+      if (circuitStopwatchStartedAtMsRef.current) {
+        circuitAccumulatedMsRef.current += Date.now() - circuitStopwatchStartedAtMsRef.current;
+        circuitStopwatchStartedAtMsRef.current = null;
+      }
+      setIsCircuitStopwatchRunning(false);
+    }
+  }, [isCircuitStopwatchRunning]);
+
+  const toggleCircuitStopwatch = useCallback(() => {
+    if (isCircuitStopwatchRunning) {
+      pauseCircuitStopwatch();
+    } else {
+      startCircuitStopwatch();
+    }
+  }, [isCircuitStopwatchRunning, pauseCircuitStopwatch, startCircuitStopwatch]);
+
+  const resetCircuitStopwatch = useCallback(() => {
+    circuitStopwatchStartedAtMsRef.current = null;
+    circuitAccumulatedMsRef.current = 0;
+    setCircuitStopwatchElapsed(0);
+    setIsCircuitStopwatchRunning(false);
+  }, []);
+
+  const recordCircuitLapAndReset = useCallback(() => {
+    const finalLapSeconds = Math.max(1, circuitStopwatchElapsed);
+    setCircuitLapTimes((prev) => [...prev, finalLapSeconds]);
+    resetCircuitStopwatch();
+    return finalLapSeconds;
+  }, [circuitStopwatchElapsed, resetCircuitStopwatch]);
+
+  const autoAppendCircuitTimeToNotes = useCallback((exercise: Exercise, _exIdx: number, allLapTimes: number[]) => {
+    if (!allLapTimes || allLapTimes.length === 0) return;
+    const totalSecs = allLapTimes.reduce((acc, v) => acc + v, 0);
+    const totalFormatted = formatTime(totalSecs);
+
+    let noteText = `⏱️ Tempo circuito: ${totalFormatted}`;
+    if (allLapTimes.length > 1) {
+      const lapsFormatted = allLapTimes.map((lap, i) => `R${i + 1}: ${formatTime(lap)}`).join(', ');
+      noteText = `⏱️ Tempo circuito: ${totalFormatted} (${lapsFormatted})`;
+    }
+
+    const noteKey = exercise.id;
+    setExerciseNotesByKey((prev) => {
+      const existing = prev[noteKey]?.note?.trim();
+      let mergedNote = noteText;
+      if (existing && !existing.includes('⏱️ Tempo circuito')) {
+        mergedNote = `${existing}\n${noteText}`;
+      }
+      return {
+        ...prev,
+        [noteKey]: {
+          exerciseName: exercise.name,
+          note: mergedNote,
+        },
+      };
+    });
+  }, []);
+
   const resetCurrentTimerFromContext = () => {
     if (isResting) {
       resetRestCountdown();
@@ -661,6 +767,11 @@ const ActiveWorkoutPage: React.FC = () => {
 
     const currentExerciseForReset = workout?.exercises[currentExerciseIdx];
     if (!currentExerciseForReset) return;
+
+    if (currentExerciseForReset.type === 'circuit') {
+      resetCircuitStopwatch();
+      return;
+    }
 
     if (currentExerciseForReset.type === 'emom') {
       resetEmomCountdown();
@@ -697,7 +808,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
     const currentExerciseForIso = workout?.exercises[currentExerciseIdx];
     if (!currentExerciseForIso) return;
-    const currentSub = currentExerciseForIso.type === 'superset'
+    const currentSub = (currentExerciseForIso.type === 'superset' || currentExerciseForIso.type === 'circuit')
       ? currentExerciseForIso.subExercises?.[currentSubExerciseIdx]
       : null;
     const fallbackTarget = getTargetIsometry(currentExerciseForIso, currentSub);
@@ -828,7 +939,7 @@ const ActiveWorkoutPage: React.FC = () => {
     const safeCurrentExerciseIdx = Math.max(0, Math.min(currentExerciseIdx, workout.exercises.length - 1));
     const safeExercise = workout.exercises[safeCurrentExerciseIdx];
     const safeCurrentSetIdx = Math.max(0, Math.min(currentSetIdx, Math.max(0, safeExercise.sets - 1)));
-    const safeCurrentSubExerciseIdx = safeExercise.type === 'superset'
+    const safeCurrentSubExerciseIdx = (safeExercise.type === 'superset' || safeExercise.type === 'circuit')
       ? Math.max(0, Math.min(currentSubExerciseIdx, Math.max(0, (safeExercise.subExercises?.length || 1) - 1)))
       : 0;
     const safeCurrentPyramidStepIdx = safeExercise.type === 'pyramid'
@@ -872,6 +983,9 @@ const ActiveWorkoutPage: React.FC = () => {
         emomRoundRemaining: emomRoundEndsAtMs != null
           ? computeRemainingFromEndsAt(emomRoundEndsAtMs)
           : Math.max(0, normalizeDurationSeconds(emomRoundRemaining)),
+        circuitStopwatchElapsed: Math.max(0, normalizeDurationSeconds(circuitStopwatchElapsed)),
+        circuitStopwatchRunning: isCircuitStopwatchRunning,
+        circuitLapTimes: circuitLapTimes || [],
         exerciseNotesByKey: safeExerciseNotesByKey,
         workoutStartedAtMs: workoutStartedAtMsRef.current,
       },
@@ -920,7 +1034,7 @@ const ActiveWorkoutPage: React.FC = () => {
     const safeSetIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentSetIdx), Math.max(0, safeExercise.sets - 1)));
 
     const rawSubIdx = normalizeDurationSeconds(state.currentSubExerciseIdx);
-    const safeSubIdx = safeExercise.type === 'superset'
+    const safeSubIdx = (safeExercise.type === 'superset' || safeExercise.type === 'circuit')
       ? Math.max(0, Math.min(rawSubIdx, Math.max(0, (safeExercise.subExercises?.length || 1) - 1)))
       : 0;
 
@@ -936,7 +1050,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
     const fallbackIsometryTarget = (() => {
       if (safeExercise.type === 'isometry') return Math.max(0, normalizeDurationSeconds(safeExercise.duration_seconds));
-      if (safeExercise.type === 'superset') {
+      if (safeExercise.type === 'superset' || safeExercise.type === 'circuit') {
         const safeSub = safeExercise.subExercises?.[safeSubIdx];
         if (safeSub?.type === 'isometry') {
           return Math.max(0, normalizeDurationSeconds(safeSub.duration_seconds));
@@ -1022,6 +1136,13 @@ const ActiveWorkoutPage: React.FC = () => {
     setEmomRoundRemaining(safeEmomRoundRemaining);
     setEmomActive(resumeEmomRunning);
     setEmomRoundEndsAtMs(resumeEmomRunning ? Date.now() + (safeEmomRoundRemaining * 1000) : null);
+
+    if (state.circuitStopwatchElapsed != null) {
+      setCircuitStopwatchElapsed(Math.max(0, normalizeDurationSeconds(state.circuitStopwatchElapsed)));
+    }
+    if (Array.isArray(state.circuitLapTimes)) {
+      setCircuitLapTimes(state.circuitLapTimes.map(n => Math.max(0, normalizeDurationSeconds(n))));
+    }
 
     setExerciseNotesByKey(safeNotes);
 
@@ -1151,7 +1272,7 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    if (currentEx.type === 'superset' && currentSubExerciseIdx > 0) {
+    if ((currentEx.type === 'superset' || currentEx.type === 'circuit') && currentSubExerciseIdx > 0) {
       const prevSubIdx = currentSubExerciseIdx - 1;
       setCurrentSubExerciseIdx(prevSubIdx);
       const prevSubEx = currentEx.subExercises![prevSubIdx];
@@ -1163,7 +1284,7 @@ const ActiveWorkoutPage: React.FC = () => {
       const prevSetIdx = currentSetIdx - 1;
       setCurrentSetIdx(prevSetIdx);
       const ex = workout?.exercises[currentExerciseIdx];
-      if (ex && ex.type === 'superset' && ex.subExercises) {
+      if (ex && (ex.type === 'superset' || ex.type === 'circuit') && ex.subExercises) {
         const lastSubIdx = ex.subExercises.length - 1;
         setCurrentSubExerciseIdx(lastSubIdx);
         const lastSubEx = ex.subExercises[lastSubIdx];
@@ -1213,6 +1334,11 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
+    if (currentVoiceExercise?.type === 'circuit') {
+      startCircuitStopwatch();
+      return;
+    }
+
     if (!currentVoiceExercise) return;
 
     const nextIsoDuration = isometryRemaining > 0
@@ -1225,6 +1351,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   handleVoiceStopTimerRef.current = () => {
     if (workout?.exercises[currentExerciseIdx]?.type === 'emom') pauseEmomCountdown();
+    else if (workout?.exercises[currentExerciseIdx]?.type === 'circuit') pauseCircuitStopwatch();
     else pauseIsometryCountdown();
   };
 
@@ -1380,6 +1507,9 @@ const ActiveWorkoutPage: React.FC = () => {
     isometryEndsAtMs,
     emomRoundRemaining,
     emomRoundEndsAtMs,
+    circuitStopwatchElapsed,
+    isCircuitStopwatchRunning,
+    circuitLapTimes,
     exerciseNotesByKey,
   ]);
 
@@ -1472,7 +1602,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
         if (firstEx.type === 'isometry') {
           setIsometryRemainingWithSync(firstEx.duration_seconds);
-        } else if (firstEx.type === 'superset' && firstEx.subExercises?.[0]?.type === 'isometry') {
+        } else if ((firstEx.type === 'superset' || firstEx.type === 'circuit') && firstEx.subExercises?.[0]?.type === 'isometry') {
           setIsometryRemainingWithSync(firstEx.subExercises[0].duration_seconds);
         } else if (firstEx.type === 'emom') {
           setEmomRoundRemainingWithSync(firstEx.emom_round_duration || 60);
@@ -1972,17 +2102,27 @@ const ActiveWorkoutPage: React.FC = () => {
   const isPyramid = currentExercise.type === 'pyramid';
   const isLastPyramidStep = currentPyramidStepIdx === ((currentExercise.pyramid_steps?.length || 1) - 1);
 
+  const isCircuit = currentExercise.type === 'circuit';
   const isSuperset = currentExercise.type === 'superset';
-  const subExercise = isSuperset && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
-  const isFinalCompletionAction = isLastExercise && (isEmom ? (isLastSet && isLastEmomRound) : isPyramid ? isLastPyramidStep : isLastSet);
+  const isGroup = isSuperset || isCircuit;
+  const subExercise = isGroup && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
+  const isFinalCompletionAction = isLastExercise && (
+    isEmom
+      ? (isLastSet && isLastEmomRound)
+      : isPyramid
+        ? isLastPyramidStep
+        : isGroup
+          ? (isLastSet && currentSubExerciseIdx >= (currentExercise.subExercises?.length || 1) - 1)
+          : isLastSet
+  );
 
   const getCurrentExerciseNoteContext = () => {
     const orderStr = `${currentExerciseIdx + 1}`;
-    if (isSuperset) {
-      const supersetName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
+    if (isGroup) {
+      const groupName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
       return {
         key: currentExercise.id,
-        name: `${orderStr}. ${supersetName}`,
+        name: `${orderStr}. ${groupName}`,
       };
     }
 
@@ -1997,10 +2137,10 @@ const ActiveWorkoutPage: React.FC = () => {
   const hasCurrentWorkoutNote = Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim());
 
   const getCurrentInstructionContext = (): InstructionModalContext | null => {
-    if (isSuperset) {
-      const supersetName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
-      const supersetNote = String(currentExercise.instruction_note || '').trim() || null;
-      const supersetItems = (currentExercise.subExercises || [])
+    if (isGroup) {
+      const groupName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
+      const groupNote = String(currentExercise.instruction_note || '').trim() || null;
+      const groupItems = (currentExercise.subExercises || [])
         .map((item, idx) => {
           const note = String(item.instruction_note || '').trim();
           if (!note) return null;
@@ -2011,11 +2151,11 @@ const ActiveWorkoutPage: React.FC = () => {
         })
         .filter((item): item is InstructionModalItem => item !== null);
 
-      if (!supersetNote && supersetItems.length === 0) return null;
+      if (!groupNote && groupItems.length === 0) return null;
       return {
-        exerciseName: supersetName,
-        note: supersetNote,
-        items: supersetItems,
+        exerciseName: groupName,
+        note: groupNote,
+        items: groupItems,
       };
     }
 
@@ -2156,7 +2296,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const openEditExerciseModal = () => {
-    const currentSub = currentExercise.type === 'superset' ? subExercise : null;
+    const currentSub = isGroup ? subExercise : null;
     const currentStep = currentExercise.type === 'pyramid'
       ? currentExercise.pyramid_steps?.[currentPyramidStepIdx]
       : null;
@@ -2359,7 +2499,7 @@ const ActiveWorkoutPage: React.FC = () => {
         });
 
         setEmomRoundRemainingWithSync(Math.min(emomRoundRemaining, nextRoundDuration));
-      } else if (currentExercise.type === 'superset') {
+      } else if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
         const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Rounds');
         const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
         if (nextSets < minAllowedSets) {
@@ -2555,7 +2695,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const getTargetIsometry = (ex: Exercise, subEx: any) => {
-    if (ex.type === 'superset' && subEx?.type === 'isometry') return subEx.duration_seconds;
+    if ((ex.type === 'superset' || ex.type === 'circuit') && subEx?.type === 'isometry') return subEx.duration_seconds;
     if (ex.type === 'isometry') return ex.duration_seconds;
     return 0;
   };
@@ -2603,7 +2743,7 @@ const ActiveWorkoutPage: React.FC = () => {
       const stepWeight = currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.weight_kg;
       return formatWeightLabel(stepWeight);
     }
-    if (currentExercise.type === 'superset') {
+    if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
       return getSupersetWeightLabel();
     }
     return formatWeightLabel(currentExercise.weight_kg);
@@ -2615,6 +2755,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const workoutRestOverviewExerciseLabel = `JUST FINISHED EXERCISE ${workoutOverviewExerciseNumber} OF ${workout.exercises.length}`;
 
   const getWorkoutOverviewTypeLabel = (exercise: Exercise) => {
+    if (exercise.type === 'circuit') return 'CIRCUIT MODE';
     if (exercise.type === 'emom') return 'EMOM MODE';
     if (exercise.type === 'superset') return 'SUPERSET MODE';
     if (exercise.type === 'pyramid') return 'PYRAMID MODE';
@@ -2627,7 +2768,7 @@ const ActiveWorkoutPage: React.FC = () => {
    * Per esercizi con più sub-esercizi o esercizi standard, mostra il tipo.
    */
   const getWorkoutOverviewDisplayLabel = (exercise: Exercise) => {
-    if ((exercise.type === 'superset' || exercise.type === 'emom') &&
+    if ((exercise.type === 'superset' || exercise.type === 'circuit' || exercise.type === 'emom') &&
       exercise.subExercises &&
       exercise.subExercises.length === 1) {
       return exercise.subExercises[0].name || getWorkoutOverviewTypeLabel(exercise);
@@ -2637,6 +2778,14 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const getWorkoutOverviewSummary = (exercise: Exercise) => {
+    if (exercise.type === 'circuit') {
+      return [
+        `${exercise.sets || 1} giri`,
+        `${exercise.subExercises?.length || 0} stazioni`,
+        `${formatTime(exercise.rest_seconds || 0)} rest`,
+      ];
+    }
+
     if (exercise.type === 'emom') {
       return [
         `${exercise.sets || 1} sets`,
@@ -2677,28 +2826,32 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const specialExerciseLabel =
-    currentExercise.type === 'emom'
-      ? 'EMOM MODE'
-      : currentExercise.type === 'superset'
-        ? 'SUPERSET MODE'
-        : currentExercise.type === 'pyramid'
-          ? 'PYRAMID MODE'
-          : null;
+    currentExercise.type === 'circuit'
+      ? 'CIRCUIT MODE'
+      : currentExercise.type === 'emom'
+        ? 'EMOM MODE'
+        : currentExercise.type === 'superset'
+          ? 'SUPERSET MODE'
+          : currentExercise.type === 'pyramid'
+            ? 'PYRAMID MODE'
+            : null;
   const specialExercisePillClass =
-    currentExercise.type === 'emom'
-      ? 'border-blue-400/60 bg-blue-500/10 text-blue-300'
-      : currentExercise.type === 'superset'
-        ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
-        : currentExercise.type === 'pyramid'
-          ? 'border-amber-300/60 bg-amber-300/10 text-amber-300'
-          : '';
+    currentExercise.type === 'circuit'
+      ? 'border-cyan-400/60 bg-cyan-500/10 text-cyan-300'
+      : currentExercise.type === 'emom'
+        ? 'border-blue-400/60 bg-blue-500/10 text-blue-300'
+        : currentExercise.type === 'superset'
+          ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
+          : currentExercise.type === 'pyramid'
+            ? 'border-amber-300/60 bg-amber-300/10 text-amber-300'
+            : '';
 
   const buildNextExerciseVoiceCue = (nextExercise: Exercise, _nextExerciseIndex: number) => {
     const name = String(nextExercise.name || '').trim();
     const parts: string[] = ['next exercise'];
     if (name) parts.push(name);
 
-    if ((nextExercise.type === 'superset' || nextExercise.type === 'emom') && nextExercise.subExercises && nextExercise.subExercises.length > 0) {
+    if ((nextExercise.type === 'superset' || nextExercise.type === 'circuit' || nextExercise.type === 'emom') && nextExercise.subExercises && nextExercise.subExercises.length > 0) {
       const subParts = nextExercise.subExercises.map((sub) => {
         const subName = String(sub.name || '').trim();
         const subInfo: string[] = [];
@@ -2849,8 +3002,43 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    if (isSuperset) {
+    if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
       stopIsometryCountdown();
+      const subs = currentExercise.subExercises || [];
+      const isLastSub = currentSubExerciseIdx >= subs.length - 1;
+
+      if (!isLastSub) {
+        // Passaggio al sotto-esercizio successivo all'interno del round
+        const transitionRest = currentExercise.transition_rest_seconds || 0;
+        if (transitionRest > 0) {
+          startRestCountdown(transitionRest);
+        } else {
+          const nextSubIdx = currentSubExerciseIdx + 1;
+          setCurrentSubExerciseIdx(nextSubIdx);
+          const nextSub = subs[nextSubIdx];
+          setIsometryRemainingWithSync(nextSub?.type === 'isometry' ? nextSub.duration_seconds : 0);
+        }
+        return;
+      }
+
+      // Ultimo sotto-esercizio del round
+      if (currentExercise.type === 'circuit') {
+        pauseCircuitStopwatch();
+        const lapSecs = recordCircuitLapAndReset();
+        const updatedLaps = [...circuitLapTimes, lapSecs];
+
+        if (isLastSet) {
+          autoAppendCircuitTimeToNotes(currentExercise, currentExerciseIdx, updatedLaps);
+          currentExercise.lap_durations_seconds = updatedLaps;
+          currentExercise.total_circuit_duration_seconds = updatedLaps.reduce((a, b) => a + b, 0);
+          queueNextExerciseFlow(currentExercise);
+        } else {
+          startRestCountdown(currentExercise.rest_seconds);
+        }
+        return;
+      }
+
+      // Superset
       if (isLastSet) {
         queueNextExerciseFlow(currentExercise);
       } else {
@@ -2875,12 +3063,16 @@ const ActiveWorkoutPage: React.FC = () => {
     stopEmomCountdown();
     stopIsometryCountdown();
 
+    if (currentExercise.type === 'circuit') {
+      resetCircuitStopwatch();
+    }
+
     if (currentExercise.type === 'isometry') {
       setIsometryRemainingWithSync(currentExercise.duration_seconds);
       return;
     }
 
-    if (currentExercise.type === 'superset') {
+    if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
       const firstSub = currentExercise.subExercises?.[0];
       setIsometryRemainingWithSync(firstSub?.type === 'isometry' ? firstSub.duration_seconds : 0);
       return;
@@ -2908,6 +3100,23 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
+    if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
+      const maxSubIdx = Math.max(0, (currentExercise.subExercises?.length || 1) - 1);
+      if (currentSubExerciseIdx < maxSubIdx) {
+        const nextSubIdx = currentSubExerciseIdx + 1;
+        setCurrentSubExerciseIdx(nextSubIdx);
+        const nextSub = currentExercise.subExercises?.[nextSubIdx];
+        setIsometryRemainingWithSync(nextSub?.type === 'isometry' ? nextSub.duration_seconds : 0);
+        return;
+      }
+      const maxSetIdx = Math.max(0, currentExercise.sets - 1);
+      if (currentSetIdx >= maxSetIdx) return;
+      setCurrentSetIdx((prev) => Math.min(maxSetIdx, prev + 1));
+      setCurrentSubExerciseIdx(0);
+      resetCurrentExerciseTimerState();
+      return;
+    }
+
     const maxSetIdx = Math.max(0, currentExercise.sets - 1);
     if (currentSetIdx >= maxSetIdx) return;
     setCurrentSetIdx((prev) => Math.min(maxSetIdx, prev + 1));
@@ -2928,6 +3137,23 @@ const ActiveWorkoutPage: React.FC = () => {
     if (currentExercise.type === 'pyramid') {
       if (currentPyramidStepIdx <= 0) return;
       setCurrentPyramidStepIdx((prev) => Math.max(0, prev - 1));
+      return;
+    }
+
+    if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
+      if (currentSubExerciseIdx > 0) {
+        const prevSubIdx = currentSubExerciseIdx - 1;
+        setCurrentSubExerciseIdx(prevSubIdx);
+        const prevSub = currentExercise.subExercises?.[prevSubIdx];
+        setIsometryRemainingWithSync(prevSub?.type === 'isometry' ? prevSub.duration_seconds : 0);
+        return;
+      }
+      if (currentSetIdx <= 0) return;
+      setCurrentSetIdx((prev) => Math.max(0, prev - 1));
+      const lastSubIdx = Math.max(0, (currentExercise.subExercises?.length || 1) - 1);
+      setCurrentSubExerciseIdx(lastSubIdx);
+      const lastSub = currentExercise.subExercises?.[lastSubIdx];
+      setIsometryRemainingWithSync(lastSub?.type === 'isometry' ? lastSub.duration_seconds : 0);
       return;
     }
 
@@ -3026,6 +3252,21 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
+    // Se eravamo all'interno di un superset/circuito con transizione tra sotto-esercizi
+    if ((currentExercise.type === 'superset' || currentExercise.type === 'circuit') && currentExercise.subExercises) {
+      const subs = currentExercise.subExercises;
+      if (currentSubExerciseIdx < subs.length - 1) {
+        const nextSubIdx = currentSubExerciseIdx + 1;
+        setCurrentSubExerciseIdx(nextSubIdx);
+        const nextSub = subs[nextSubIdx];
+        setIsometryRemainingWithSync(nextSub?.type === 'isometry' ? nextSub.duration_seconds : 0);
+        if (naturalExpiry) {
+          speakCue(nextSub.name);
+        }
+        return;
+      }
+    }
+
     // Increment set
     const nextSetIdx = currentSetIdx + 1;
     setCurrentSetIdx(nextSetIdx);
@@ -3033,6 +3274,9 @@ const ActiveWorkoutPage: React.FC = () => {
     if (currentExercise.type === 'emom') {
       setCurrentEmomRoundIdx(0);
       setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
+    }
+    if (currentExercise.type === 'circuit') {
+      resetCircuitStopwatch();
     }
 
     // Announce exercise details for the upcoming set (only on natural rest timer expiry)
@@ -3088,12 +3332,12 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const handlePrimaryAction = () => {
-    if (isEmom) {
-      if (isFinalCompletionAction) {
-        void completeWorkoutNow();
-        return;
-      }
+    if (isFinalCompletionAction) {
+      void completeWorkoutNow();
+      return;
+    }
 
+    if (isEmom) {
       // NEXT ROUND must advance even if timer is still running.
       if (!isLastEmomRound) {
         speakCue('next round');
@@ -3667,6 +3911,124 @@ const ActiveWorkoutPage: React.FC = () => {
                 Upcoming Recovery: {nextRecoveryLabel}
               </p>
             </div>
+          ) : isCircuit ? (
+            <div className="text-center w-full max-w-md flex flex-col items-center">
+              {/* Circuit Header Status & Round info */}
+              <div className="w-full max-w-sm grid grid-cols-2 gap-2 mb-3">
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Giro</span>
+                  <span className="text-cyan-400 font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
+                </div>
+                <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Stazione</span>
+                  <span className="text-cyan-400 font-black">{currentSubExerciseIdx + 1} / {currentExercise.subExercises?.length || 1}</span>
+                </div>
+              </div>
+
+              {/* Large Interactive Digital Stopwatch */}
+              <div
+                className={`relative w-full max-w-sm p-5 rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-300 shadow-xl cursor-pointer select-none group ${
+                  isCircuitStopwatchRunning
+                    ? 'border-cyan-400 bg-cyan-950/20 shadow-[0_0_35px_rgba(34,211,238,0.25)]'
+                    : circuitStopwatchElapsed > 0
+                      ? 'border-amber-400/80 bg-brand-darkGrey/50 shadow-[0_0_20px_rgba(251,191,36,0.15)]'
+                      : 'border-white/10 bg-brand-darkGrey/30 hover:border-cyan-400/50'
+                }`}
+                onPointerDown={(event) => handleTimerPointerDown(event, resetCircuitStopwatch)}
+                onPointerUp={(event) => handleTimerPointerUp(event, toggleCircuitStopwatch)}
+                onPointerCancel={handleTimerPointerAbort}
+                onPointerLeave={handleTimerPointerAbort}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    isCircuitStopwatchRunning
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 animate-pulse'
+                      : circuitStopwatchElapsed > 0
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                        : 'bg-white/10 text-brand-grey border border-white/10'
+                  }`}>
+                    <Timer size={10} />
+                    {isCircuitStopwatchRunning ? 'IN CORSO' : circuitStopwatchElapsed > 0 ? 'IN PAUSA' : 'PRONTO'}
+                  </span>
+                </div>
+
+                <div className="text-[64px] sm:text-[76px] font-black font-mono tracking-tight text-white leading-none my-1 drop-shadow-md">
+                  {formatTime(circuitStopwatchElapsed)}
+                </div>
+
+                <p className="text-[10px] text-brand-grey/80 uppercase tracking-widest font-bold mt-1">
+                  Tocca per {isCircuitStopwatchRunning ? 'fermare' : 'avviare'} • Tieni premuto per azzerare
+                </p>
+              </div>
+
+              {/* Current Sub-Exercise / Station Card */}
+              {subExercise && (
+                <div className="mt-4 w-full max-w-sm p-3.5 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 text-left relative shadow-lg">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase font-black tracking-wider text-cyan-400">
+                      Stazione {currentSubExerciseIdx + 1} di {currentExercise.subExercises?.length || 1}
+                    </span>
+                    <span className="text-xs text-white/70 font-semibold">{formatWeightLabel(subExercise.weight_kg)}</span>
+                  </div>
+                  <h4 className="text-base font-black text-white mt-0.5 truncate">{subExercise.name}</h4>
+                  <p className="text-sm font-black text-cyan-300 mt-1">
+                    {subExercise.type === 'reps'
+                      ? (isMaxTarget(subExercise.reps) ? 'MAX REPS' : `${toSafeTargetInt(subExercise.reps)} Ripetizioni`)
+                      : (isMaxTarget(subExercise.duration_seconds) ? 'MAX TEMPO' : `${toSafeTargetInt(subExercise.duration_seconds)}s Isometria`)}
+                  </p>
+                </div>
+              )}
+
+              {/* Sub-exercises list / All stations overview */}
+              <div className="w-full max-w-sm max-h-[16vh] overflow-y-auto space-y-1.5 px-1 mt-3">
+                {(currentExercise.subExercises || []).map((sub, idx) => {
+                  const isCurrent = idx === currentSubExerciseIdx;
+                  return (
+                    <div
+                      key={`${currentExercise.id}:circuit-station:${idx}`}
+                      className={`p-2 px-3 rounded-xl border flex justify-between items-center text-xs transition-colors ${
+                        isCurrent
+                          ? 'border-cyan-400/60 bg-cyan-950/40 text-white font-bold'
+                          : idx < currentSubExerciseIdx
+                            ? 'border-white/5 bg-black/20 text-white/40 line-through'
+                            : 'border-white/5 bg-brand-darkGrey/20 text-brand-grey'
+                      }`}
+                    >
+                      <span className="truncate">{idx + 1}. {sub.name}</span>
+                      <span className="shrink-0 ml-2 font-mono text-[11px] text-cyan-400">
+                        {sub.type === 'reps' ? `${sub.reps} reps` : `${sub.duration_seconds}s`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Lap Times Summary if any */}
+              {circuitLapTimes.length > 0 && (
+                <div className="mt-2 w-full max-w-sm flex items-center justify-center gap-2 flex-wrap">
+                  {circuitLapTimes.map((lap, lIdx) => (
+                    <span key={lIdx} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-cyan-300">
+                      Giro {lIdx + 1}: {formatTime(lap)}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {hasCurrentInstructionNote && (
+                <button
+                  onClick={openCurrentInstructionModal}
+                  className="mt-3 w-full max-w-sm bg-brand-darkGrey/40 border border-cyan-500/30 rounded-lg py-2 px-3 text-center text-cyan-400 hover:text-cyan-300 hover:border-cyan-400/60 hover:bg-cyan-500/10 transition-colors flex items-center justify-center gap-2"
+                  title="Exercise Instructions"
+                >
+                  <Info size={14} />
+                  <span className="text-[10px] uppercase tracking-widest font-bold">Exercise Instructions</span>
+                </button>
+              )}
+
+              <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mt-2">
+                Upcoming Recovery: {nextRecoveryLabel}
+              </p>
+            </div>
           ) : isSuperset ? (
             <div className="text-center w-full max-w-md flex flex-col items-center">
               <div className="w-full max-w-sm grid grid-cols-1 gap-2 mb-4">
@@ -3907,14 +4269,22 @@ const ActiveWorkoutPage: React.FC = () => {
               <>FINISH SET</>
             ) : isPyramid && !isLastPyramidStep ? (
               <>FINISH STEP <ArrowRight size={24} className="ml-2" /></>
+            ) : isCircuit ? (
+              currentSubExerciseIdx < (currentExercise.subExercises?.length || 1) - 1
+                ? <>PROSSIMA STAZIONE <ArrowRight size={24} className="ml-2" /></>
+                : isLastSet
+                  ? <>COMPLETA CIRCUITO <ArrowRight size={24} className="ml-2" /></>
+                  : <>FINE GIRO & RECUPERO <ArrowRight size={24} className="ml-2" /></>
+            ) : isSuperset ? (
+              currentSubExerciseIdx < (currentExercise.subExercises?.length || 1) - 1
+                ? <>PROSSIMO ESERCIZIO <ArrowRight size={24} className="ml-2" /></>
+                : isLastSet
+                  ? <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
+                  : <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
             ) : isLastSet ? (
-              isSuperset
-                ? <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
-                : <>FINISH EXERCISE <ArrowRight size={24} className="ml-2" /></>
+              <>FINISH EXERCISE <ArrowRight size={24} className="ml-2" /></>
             ) : (
-              isSuperset
-                ? <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
-                : <>FINISH SET</>
+              <>FINISH SET</>
             )}
           </button>
         </div>
@@ -4068,13 +4438,13 @@ const ActiveWorkoutPage: React.FC = () => {
                       ))}
                     </div>
 
-                    {exercise.type === 'superset' && exercise.subExercises && exercise.subExercises.length > 0 && (
+                    {(exercise.type === 'superset' || exercise.type === 'circuit') && exercise.subExercises && exercise.subExercises.length > 0 && (
                       <div className="mt-3 space-y-2">
                         {exercise.subExercises.map((sub, subIndex) => (
                           <div key={`${exercise.id}:sub:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                              <p className="text-[11px] text-brand-orange/90 font-black uppercase tracking-wide mt-1">
+                              <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${exercise.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange/90'}`}>
                                 {formatSupersetTaskMetricLabel(sub)}
                               </p>
                             </div>
@@ -4270,10 +4640,10 @@ const ActiveWorkoutPage: React.FC = () => {
                 </>
               )}
 
-              {currentExercise.type === 'superset' && (
+              {(currentExercise.type === 'superset' || currentExercise.type === 'circuit') && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-brand-grey">Rounds
+                    <label className="text-sm text-brand-grey">{currentExercise.type === 'circuit' ? 'Giri (Rounds)' : 'Rounds'}
                       <input
                         type="number" inputMode="numeric"
                         min={1}
@@ -4298,10 +4668,14 @@ const ActiveWorkoutPage: React.FC = () => {
                       <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">Superset exercise {index + 1}</p>
+                            <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">
+                              {currentExercise.type === 'circuit' ? 'Circuit station' : 'Superset exercise'} {index + 1}
+                            </p>
                             <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
                           </div>
-                          <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">{draft.type === 'isometry' ? 'Isometry' : 'Reps'}</span>
+                          <span className={`text-[10px] uppercase tracking-[0.24em] font-black ${currentExercise.type === 'circuit' ? 'text-cyan-400' : 'text-brand-orange/90'}`}>
+                            {draft.type === 'isometry' ? 'Isometry' : 'Reps'}
+                          </span>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
