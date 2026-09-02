@@ -107,6 +107,19 @@ import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis } from '../utils/voice';
+import { playGoalReachedSound } from '../utils/audio';
+import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock';
+import {
+  initServiceWorker,
+  requestNotificationPermission,
+  sendRestFinishedNotification,
+  getNotificationPermission,
+} from '../utils/workoutNotifications';
+import {
+  updateRestMediaSession,
+  stopRestMediaSession,
+  warmupMediaSessionAudio,
+} from '../utils/workoutMediaSession';
 import {
   buildWorkoutProgressStorageKey,
   clearAllWorkoutProgressCheckpoints,
@@ -375,6 +388,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isWorkoutOverviewAdvancePending, setIsWorkoutOverviewAdvancePending] = useState(false);
   const [isAutoCountModalOpen, setIsAutoCountModalOpen] = useState(false);
   const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
     sets: '',
     restSeconds: '',
@@ -522,6 +536,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const startRestCountdown = (durationSeconds: number) => {
+    warmupMediaSessionAudio();
     const safe = normalizeDurationSeconds(durationSeconds);
     lastHandledRestCompletionEndsAtMsRef.current = null;
     setRestInitialDuration(safe);
@@ -533,6 +548,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const stopRestCountdown = () => {
     setIsResting(false);
     setRestEndsAtMs(null);
+    stopRestMediaSession();
   };
 
   const pauseRestCountdown = () => {
@@ -1211,7 +1227,18 @@ const ActiveWorkoutPage: React.FC = () => {
   }, [isVoiceHelpVisible]);
 
   useEffect(() => {
+    void requestScreenWakeLock();
+    void initServiceWorker();
+
+    const perm = getNotificationPermission();
+    const hasDismissed = localStorage.getItem('notifications_prompt_dismissed') === 'true';
+    if (perm === 'default' && !hasDismissed) {
+      setShowNotificationPrompt(true);
+    }
+
     return () => {
+      void releaseScreenWakeLock();
+      stopRestMediaSession();
       if (voiceHelpTimeoutRef.current) {
         clearTimeout(voiceHelpTimeoutRef.current);
         voiceHelpTimeoutRef.current = null;
@@ -1874,6 +1901,49 @@ const ActiveWorkoutPage: React.FC = () => {
     workoutNotesSavedRef.current = true;
   };
 
+  const getUpcomingRestTargetInfo = useCallback(() => {
+    if (!workout) return { nextExerciseName: 'Next Exercise', nextSetInfo: '' };
+
+    if (pendingExerciseAdvance) {
+      const nextEx = workout.exercises[currentExerciseIdx + 1];
+      const name = nextEx ? String(nextEx.name || '').trim() || `Exercise ${currentExerciseIdx + 2}` : 'Next Exercise';
+      return { nextExerciseName: name, nextSetInfo: 'New Exercise' };
+    }
+
+    const currentEx = workout.exercises[currentExerciseIdx];
+    if (!currentEx) return { nextExerciseName: 'Next Exercise', nextSetInfo: '' };
+
+    if (currentEx.type === 'pyramid' && pendingPyramidAdvance) {
+      const nextStepIdx = currentPyramidStepIdx + 1;
+      const step = currentEx.pyramid_steps?.[nextStepIdx];
+      const reps = step ? (step.reps > 0 ? `${step.reps} reps` : 'MAX reps') : '';
+      return {
+        nextExerciseName: currentEx.name,
+        nextSetInfo: `Step ${nextStepIdx + 1}${reps ? ` • ${reps}` : ''}`,
+      };
+    }
+
+    if ((currentEx.type === 'superset' || currentEx.type === 'circuit') && currentEx.subExercises) {
+      const isAdvancingSub = currentSubExerciseIdx < currentEx.subExercises.length - 1;
+      if (isAdvancingSub) {
+        const nextSub = currentEx.subExercises[currentSubExerciseIdx + 1];
+        return {
+          nextExerciseName: nextSub?.name || 'Next Station',
+          nextSetInfo: `Station ${currentSubExerciseIdx + 2} of ${currentEx.subExercises.length}`,
+        };
+      }
+      return {
+        nextExerciseName: currentEx.name,
+        nextSetInfo: `Round ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
+      };
+    }
+
+    return {
+      nextExerciseName: currentEx.name,
+      nextSetInfo: `Set ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
+    };
+  }, [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSubExerciseIdx, currentSetIdx]);
+
   // Timer logic for REST
   useEffect(() => {
     if (!isResting || restEndsAtMs == null) return;
@@ -1894,6 +1964,15 @@ const ActiveWorkoutPage: React.FC = () => {
           intervalId = null;
         }
         setRestEndsAtMs(null);
+        stopRestMediaSession();
+
+        const upcoming = getUpcomingRestTargetInfo();
+        void sendRestFinishedNotification({
+          nextExerciseName: upcoming.nextExerciseName,
+          nextSetInfo: upcoming.nextSetInfo,
+        });
+        playGoalReachedSound();
+
         if (isWorkoutOverviewModalOpen) {
           setIsWorkoutOverviewAdvancePending(true);
           return;
@@ -1918,7 +1997,33 @@ const ActiveWorkoutPage: React.FC = () => {
       document.removeEventListener('visibilitychange', handleWakeSync);
       window.removeEventListener('focus', handleWakeSync);
     };
-  }, [isResting, restEndsAtMs, isWorkoutOverviewModalOpen]);
+  }, [isResting, restEndsAtMs, isWorkoutOverviewModalOpen, getUpcomingRestTargetInfo]);
+
+  // Sincronizzazione MediaSession e Lockscreen per il recupero
+  useEffect(() => {
+    if (!isResting) {
+      stopRestMediaSession();
+      return;
+    }
+
+    const isRunning = restEndsAtMs != null;
+    const upcoming = getUpcomingRestTargetInfo();
+    const currentEx = workout?.exercises[currentExerciseIdx];
+    const totalDuration = restInitialDuration > 0
+      ? restInitialDuration
+      : (currentEx?.rest_seconds || 60);
+
+    updateRestMediaSession({
+      totalSeconds: totalDuration,
+      remainingSeconds: restRemaining,
+      nextExerciseName: upcoming.nextExerciseName,
+      nextSetInfo: upcoming.nextSetInfo,
+      isRunning,
+      onPause: pauseRestCountdown,
+      onResume: resumeRestCountdown,
+      onSkip: skipRest,
+    });
+  }, [isResting, restEndsAtMs, restRemaining, restInitialDuration, getUpcomingRestTargetInfo, workout, currentExerciseIdx]);
 
   useEffect(() => {
     if (!isResting || restRemaining > 3 || restRemaining <= 0) {
@@ -3305,6 +3410,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const handleLeaveWorkout = () => {
     suppressProgressPersistenceRef.current = true;
     clearPersistedWorkoutProgress();
+    stopRestMediaSession();
+    void releaseScreenWakeLock();
     navigate('/');
   };
 
@@ -3319,6 +3426,8 @@ const ActiveWorkoutPage: React.FC = () => {
     stopEmomCountdown();
     stopIsometryCountdown();
     stopRestCountdown();
+    stopRestMediaSession();
+    void releaseScreenWakeLock();
 
     const workoutRunId = await saveWorkoutRun();
     if (workoutRunId) {
@@ -3377,6 +3486,44 @@ const ActiveWorkoutPage: React.FC = () => {
           <p><span className="font-bold text-brand-orange">end workout / termina workout</span> - finish workout now</p>
         </div>
         <p className="mt-2 text-[10px] uppercase tracking-wider text-brand-grey/80">Auto closes in 10s or on any tap</p>
+      </div>
+    </div>
+  ) : null;
+
+  const notificationPermissionBanner = showNotificationPrompt ? (
+    <div className="fixed top-16 left-4 right-4 z-50 max-w-md mx-auto bg-brand-darkGrey/95 border border-brand-orange/40 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3 animate-in fade-in duration-300">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className="p-2 rounded-xl bg-brand-orange/20 text-brand-orange shrink-0">
+          <Smartphone size={18} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-white leading-tight">Attiva notifiche di recupero</p>
+          <p className="text-[10px] text-brand-grey/70 truncate">Ti avviseremo a schermo spento</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          onClick={async () => {
+            warmupMediaSessionAudio();
+            await requestNotificationPermission();
+            setShowNotificationPrompt(false);
+          }}
+          className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-colors shadow"
+        >
+          Attiva
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.setItem('notifications_prompt_dismissed', 'true');
+            setShowNotificationPrompt(false);
+          }}
+          className="p-1.5 text-brand-grey/60 hover:text-white rounded-lg transition-colors"
+          title="Chiudi"
+        >
+          <X size={16} />
+        </button>
       </div>
     </div>
   ) : null;
@@ -3450,6 +3597,7 @@ const ActiveWorkoutPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center p-6 relative">
         {voiceCommandsHelpBubble}
+        {notificationPermissionBanner}
         {isWorkoutOverviewModalOpen && (
           <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
             <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
@@ -3725,6 +3873,7 @@ const ActiveWorkoutPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pt-4 pb-12 px-6 safe-top safe-bottom relative">
       {voiceCommandsHelpBubble}
+      {notificationPermissionBanner}
       <header className="flex items-center justify-between mb-8 z-10 relative">
         <button onClick={handleLeaveWorkout} className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors">
           <ArrowLeft size={28} />
