@@ -22,6 +22,13 @@ const getAudioCtx = (): AudioContext => {
     // Fallback per Safari che usa il prefisso webkit
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator && (navigator as any).audioSession) {
+      try {
+        (navigator as any).audioSession.type = 'ambient';
+      } catch {
+        // ignore
+      }
+    }
   }
   if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
