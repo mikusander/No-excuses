@@ -166,6 +166,12 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       g.order = Math.min(g.order, orderIndex);
       g.ex.order_index = g.order;
       g.ex.transition_rest_seconds = Math.max(0, Math.max(g.ex.transition_rest_seconds || 0, transitionRestSeconds));
+      if (restSeconds > 0) {
+        g.ex.rest_seconds = Math.max(g.ex.rest_seconds || 0, restSeconds);
+      }
+      if (isCircuitFromMeta && (!g.ex.rest_seconds || g.ex.rest_seconds <= 0)) {
+        g.ex.rest_seconds = 60;
+      }
 
       if (Array.isArray(jsonPayload)) {
         g.ex.subExercises = (jsonPayload as UiSubExercise[]).map((item) => ({

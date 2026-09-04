@@ -4,6 +4,22 @@
 
 let serviceWorkerRegistration: ServiceWorkerRegistration | null = null;
 
+export const isIosDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+};
+
+export const isStandalonePwa = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true
+  );
+};
+
 export const initServiceWorker = async (): Promise<ServiceWorkerRegistration | null> => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     return null;
@@ -18,10 +34,20 @@ export const initServiceWorker = async (): Promise<ServiceWorkerRegistration | n
   }
 };
 
-export const getNotificationPermission = (): NotificationPermission | 'unsupported' => {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
+export type NotificationPermissionStatus = NotificationPermission | 'unsupported' | 'ios_pwa_required';
+
+export const getNotificationPermission = (): NotificationPermissionStatus => {
+  if (typeof window === 'undefined') return 'unsupported';
+
+  if (isIosDevice() && !isStandalonePwa()) {
+    // Su iOS le notifiche push sono consentite da Apple solo se l'app è installata su Schermata Home (PWA)
+    return 'ios_pwa_required';
+  }
+
+  if (!('Notification' in window)) {
     return 'unsupported';
   }
+
   return Notification.permission;
 };
 

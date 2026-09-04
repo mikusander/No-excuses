@@ -517,8 +517,13 @@ const SelectWorkoutPage: React.FC = () => {
                                     SUPERSET
                                   </span>
                                 )}
+                                {ex.type === 'emom' && (
+                                  <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                    EMOM
+                                  </span>
+                                )}
                                 {ex.type === 'pyramid' && (
-                                  <span className="shrink-0 inline-flex items-center rounded-full border border-amber-300/60 bg-amber-300/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                                  <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
                                     PYRAMID
                                   </span>
                                 )}

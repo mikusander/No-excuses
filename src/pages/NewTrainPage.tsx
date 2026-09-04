@@ -1599,8 +1599,8 @@ const NewTrainPage: React.FC = () => {
 
                   {/* Specific UI for SUPERSET vs SINGLE */}
                   {ex.type === 'emom' ? (
-                    <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-blue-500/20">
-                      <p className="text-xs font-bold text-blue-400 uppercase tracking-wider text-center mb-2 flex flex-col items-center justify-center">
+                    <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
+                      <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex flex-col items-center justify-center">
                         ⏱️ EMOM Circuit
                       </p>
                       <div className="grid grid-cols-2 gap-2 mb-4 mt-2">
@@ -1613,12 +1613,12 @@ const NewTrainPage: React.FC = () => {
                             onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
                             onBlur={() => commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1)}
                             onFocus={onNumberFocus}
-                            className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-blue-400 outline-none"
+                            className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-brand-orange outline-none"
                           />
                         </div>
                         <div className="flex flex-col">
                           <label className="text-xs text-brand-grey mb-1">Round Time</label>
-                          <div className="flex bg-black/40 border border-brand-grey/20 rounded-lg overflow-hidden focus-within:border-blue-400 transition-colors h-[42px]">
+                          <div className="flex bg-black/40 border border-brand-grey/20 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                             <div className="relative flex-1 border-r border-brand-grey/10">
                               <input
                                 type="number" inputMode="numeric"
@@ -1655,7 +1655,7 @@ const NewTrainPage: React.FC = () => {
                             placeholder={`Exercise Name ${sIdx + 1}`}
                             value={sub.name}
                             onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                            className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-400 outline-none"
+                            className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
                           />
 
                           <div>
@@ -1668,7 +1668,7 @@ const NewTrainPage: React.FC = () => {
                               onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
                               onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
                               onFocus={onNumberFocus}
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
                               placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
                             />
                           </div>
@@ -1684,7 +1684,7 @@ const NewTrainPage: React.FC = () => {
                               onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
                               onFocus={onNumberFocus}
                               placeholder="body Weight"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-blue-400 outline-none"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
                             />
                           </div>
                           <div>
@@ -1696,7 +1696,7 @@ const NewTrainPage: React.FC = () => {
                               value={sub.instruction_note || ''}
                               onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
                               placeholder="E.g. fermo in buca 1 secondo"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-400 outline-none resize-none"
+                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
                             />
                           </div>
                           {ex.subExercises && ex.subExercises.length > 1 && (
@@ -2047,13 +2047,13 @@ const NewTrainPage: React.FC = () => {
                       </button>
                       <button
                         onClick={() => convertToEmom(ex.id)}
-                        className="py-2 border border-dashed border-blue-500/30 text-blue-400/70 text-xs font-bold rounded-lg hover:border-blue-500/50 hover:text-blue-400 transition-colors flex justify-center items-center"
+                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                       >
                         <Plus size={14} className="mr-1" /> EMOM
                       </button>
                       <button
                         onClick={() => convertToPyramid(ex.id)}
-                        className="py-2 border border-dashed border-purple-500/30 text-purple-400/70 text-xs font-bold rounded-lg hover:border-purple-500/50 hover:text-purple-400 transition-colors flex justify-center items-center"
+                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
                       >
                         <Plus size={14} className="mr-1" /> PIRAMIDE
                       </button>

@@ -116,9 +116,11 @@ import {
   getNotificationPermission,
 } from '../utils/workoutNotifications';
 import {
+  startRestMediaSessionAudio,
+  pauseRestMediaSessionAudio,
+  resumeRestMediaSessionAudio,
   updateRestMediaSession,
   stopRestMediaSession,
-  warmupMediaSessionAudio,
 } from '../utils/workoutMediaSession';
 import {
   buildWorkoutProgressStorageKey,
@@ -291,7 +293,7 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
         sets: Math.max(1, Math.trunc(toSafeSnapshotNumber(item.sets, 1))),
         reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.reps, 0))),
         duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.duration_seconds, 0))),
-        rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.rest_seconds, 0))),
+        rest_seconds: type === 'circuit' && toSafeSnapshotNumber(item.rest_seconds, 0) <= 0 ? 60 : Math.max(0, Math.trunc(toSafeSnapshotNumber(item.rest_seconds, 0))),
         transition_rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.transition_rest_seconds, 0))),
         weight_kg: Number.isFinite(Number(item.weight_kg)) ? Number(item.weight_kg) : null,
         lap_durations_seconds: Array.isArray(item.lap_durations_seconds)
@@ -309,6 +311,13 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
       } satisfies Exercise;
     })
     .sort((a, b) => a.order_index - b.order_index);
+};
+
+const formatTime = (secs: number) => {
+  const normalized = Math.max(0, Math.trunc(Number(secs) || 0));
+  const m = Math.floor(normalized / 60);
+  const s = normalized % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
 const ActiveWorkoutPage: React.FC = () => {
@@ -379,6 +388,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [voiceAssistanceEnabled, setVoiceAssistanceEnabled] = useState(true);
   const [exerciseNotesByKey, setExerciseNotesByKey] = useState<Record<string, ExerciseNoteEntry>>({});
+  const exerciseNotesByKeyRef = useRef<Record<string, ExerciseNoteEntry>>(exerciseNotesByKey);
+  exerciseNotesByKeyRef.current = exerciseNotesByKey;
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [noteModalDraft, setNoteModalDraft] = useState('');
   const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
@@ -389,6 +400,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isAutoCountModalOpen, setIsAutoCountModalOpen] = useState(false);
   const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
+  const [isIosPwaGuideOpen, setIsIosPwaGuideOpen] = useState(false);
   const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
     sets: '',
     restSeconds: '',
@@ -502,6 +514,10 @@ const ActiveWorkoutPage: React.FC = () => {
 
     parts.push(`set ${nextSetIdx + 1}`);
 
+    if (exercise.type === 'circuit') {
+      return parts.join(', ');
+    }
+
     if ((exercise.type === 'superset' || exercise.type === 'emom') && exercise.subExercises && exercise.subExercises.length > 0) {
       const subParts = exercise.subExercises.map((sub) => {
         const subName = String(sub.name || '').trim();
@@ -536,7 +552,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const startRestCountdown = (durationSeconds: number) => {
-    warmupMediaSessionAudio();
+    startRestMediaSessionAudio();
     const safe = normalizeDurationSeconds(durationSeconds);
     lastHandledRestCompletionEndsAtMsRef.current = null;
     setRestInitialDuration(safe);
@@ -552,11 +568,13 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const pauseRestCountdown = () => {
+    pauseRestMediaSessionAudio();
     setRestRemaining(computeRemainingFromEndsAt(restEndsAtMs));
     setRestEndsAtMs(null);
   };
 
   const resumeRestCountdown = () => {
+    resumeRestMediaSessionAudio();
     const currentExerciseForRest = workout?.exercises[currentExerciseIdx];
     const fallbackRestDuration =
       pendingExerciseAdvance
@@ -676,7 +694,7 @@ const ActiveWorkoutPage: React.FC = () => {
     let targetDuration = 0;
     if (currentExerciseForIso.type === 'isometry') {
       targetDuration = Math.max(1, normalizeDurationSeconds(currentExerciseForIso.duration_seconds));
-    } else if (currentExerciseForIso.type === 'superset' || currentExerciseForIso.type === 'circuit') {
+    } else if (currentExerciseForIso.type === 'superset') {
       const currentSub = currentExerciseForIso.subExercises?.[currentSubExerciseIdx];
       if (currentSub?.type === 'isometry') {
         targetDuration = Math.max(1, normalizeDurationSeconds(currentSub.duration_seconds));
@@ -740,38 +758,53 @@ const ActiveWorkoutPage: React.FC = () => {
     setIsCircuitStopwatchRunning(false);
   }, []);
 
+  const getAccurateCircuitElapsedSeconds = useCallback(() => {
+    const elapsedMs = circuitStopwatchStartedAtMsRef.current
+      ? circuitAccumulatedMsRef.current + (Date.now() - circuitStopwatchStartedAtMsRef.current)
+      : circuitAccumulatedMsRef.current;
+    return Math.max(circuitStopwatchElapsed, Math.floor(elapsedMs / 1000));
+  }, [circuitStopwatchElapsed]);
+
   const recordCircuitLapAndReset = useCallback(() => {
-    const finalLapSeconds = Math.max(1, circuitStopwatchElapsed);
+    const finalLapSeconds = getAccurateCircuitElapsedSeconds();
     setCircuitLapTimes((prev) => [...prev, finalLapSeconds]);
     resetCircuitStopwatch();
     return finalLapSeconds;
-  }, [circuitStopwatchElapsed, resetCircuitStopwatch]);
+  }, [getAccurateCircuitElapsedSeconds, resetCircuitStopwatch]);
 
   const autoAppendCircuitTimeToNotes = useCallback((exercise: Exercise, _exIdx: number, allLapTimes: number[]) => {
     if (!allLapTimes || allLapTimes.length === 0) return;
-    const totalSecs = allLapTimes.reduce((acc, v) => acc + v, 0);
-    const totalFormatted = formatTime(totalSecs);
 
-    let noteText = `⏱️ Tempo circuito: ${totalFormatted}`;
-    if (allLapTimes.length > 1) {
-      const lapsFormatted = allLapTimes.map((lap, i) => `R${i + 1}: ${formatTime(lap)}`).join(', ');
-      noteText = `⏱️ Tempo circuito: ${totalFormatted} (${lapsFormatted})`;
-    }
+    const lapsFormatted = allLapTimes.map((lap, i) => `set ${i + 1}: ${formatTime(lap)}`).join(', ');
 
-    const noteKey = exercise.id;
+    const noteKey = String(exercise.id);
     setExerciseNotesByKey((prev) => {
-      const existing = prev[noteKey]?.note?.trim();
-      let mergedNote = noteText;
-      if (existing && !existing.includes('⏱️ Tempo circuito')) {
-        mergedNote = `${existing}\n${noteText}`;
+      const existing = prev[noteKey]?.note?.trim() || '';
+      let mergedNote = lapsFormatted;
+      if (existing) {
+        const cleanExisting = existing
+          .split('\n')
+          .filter((line) => {
+            const trimmed = line.trim().toLowerCase();
+            return !trimmed.startsWith('set ') && !trimmed.includes('tempo circuito');
+          })
+          .join('\n')
+          .trim();
+        if (cleanExisting) {
+          mergedNote = `${cleanExisting}\n${lapsFormatted}`;
+        } else {
+          mergedNote = lapsFormatted;
+        }
       }
-      return {
+      const nextNotes = {
         ...prev,
         [noteKey]: {
-          exerciseName: exercise.name,
+          exerciseName: `${_exIdx + 1}. ${exercise.name || 'Circuito'}`,
           note: mergedNote,
         },
       };
+      exerciseNotesByKeyRef.current = nextNotes;
+      return nextNotes;
     });
   }, []);
 
@@ -824,7 +857,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
     const currentExerciseForIso = workout?.exercises[currentExerciseIdx];
     if (!currentExerciseForIso) return;
-    const currentSub = (currentExerciseForIso.type === 'superset' || currentExerciseForIso.type === 'circuit')
+    const currentSub = currentExerciseForIso.type === 'superset'
       ? currentExerciseForIso.subExercises?.[currentSubExerciseIdx]
       : null;
     const fallbackTarget = getTargetIsometry(currentExerciseForIso, currentSub);
@@ -955,7 +988,7 @@ const ActiveWorkoutPage: React.FC = () => {
     const safeCurrentExerciseIdx = Math.max(0, Math.min(currentExerciseIdx, workout.exercises.length - 1));
     const safeExercise = workout.exercises[safeCurrentExerciseIdx];
     const safeCurrentSetIdx = Math.max(0, Math.min(currentSetIdx, Math.max(0, safeExercise.sets - 1)));
-    const safeCurrentSubExerciseIdx = (safeExercise.type === 'superset' || safeExercise.type === 'circuit')
+    const safeCurrentSubExerciseIdx = safeExercise.type === 'superset'
       ? Math.max(0, Math.min(currentSubExerciseIdx, Math.max(0, (safeExercise.subExercises?.length || 1) - 1)))
       : 0;
     const safeCurrentPyramidStepIdx = safeExercise.type === 'pyramid'
@@ -1066,7 +1099,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
     const fallbackIsometryTarget = (() => {
       if (safeExercise.type === 'isometry') return Math.max(0, normalizeDurationSeconds(safeExercise.duration_seconds));
-      if (safeExercise.type === 'superset' || safeExercise.type === 'circuit') {
+      if (safeExercise.type === 'superset') {
         const safeSub = safeExercise.subExercises?.[safeSubIdx];
         if (safeSub?.type === 'isometry') {
           return Math.max(0, normalizeDurationSeconds(safeSub.duration_seconds));
@@ -1232,7 +1265,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
     const perm = getNotificationPermission();
     const hasDismissed = localStorage.getItem('notifications_prompt_dismissed') === 'true';
-    if (perm === 'default' && !hasDismissed) {
+    if ((perm === 'default' || perm === 'ios_pwa_required') && !hasDismissed) {
       setShowNotificationPrompt(true);
     }
 
@@ -1291,6 +1324,16 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
+    if (currentEx.type === 'circuit') {
+      if (currentSetIdx > 0) {
+        setCurrentSetIdx(prev => prev - 1);
+        resetCircuitStopwatch();
+      } else {
+        handlePrevExercise();
+      }
+      return;
+    }
+
     if (isResting) {
       stopRestCountdown();
       setPendingExerciseAdvance(false);
@@ -1299,7 +1342,7 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    if ((currentEx.type === 'superset' || currentEx.type === 'circuit') && currentSubExerciseIdx > 0) {
+    if (currentEx.type === 'superset' && currentSubExerciseIdx > 0) {
       const prevSubIdx = currentSubExerciseIdx - 1;
       setCurrentSubExerciseIdx(prevSubIdx);
       const prevSubEx = currentEx.subExercises![prevSubIdx];
@@ -1311,7 +1354,7 @@ const ActiveWorkoutPage: React.FC = () => {
       const prevSetIdx = currentSetIdx - 1;
       setCurrentSetIdx(prevSetIdx);
       const ex = workout?.exercises[currentExerciseIdx];
-      if (ex && (ex.type === 'superset' || ex.type === 'circuit') && ex.subExercises) {
+      if (ex && ex.type === 'superset' && ex.subExercises) {
         const lastSubIdx = ex.subExercises.length - 1;
         setCurrentSubExerciseIdx(lastSubIdx);
         const lastSubEx = ex.subExercises[lastSubIdx];
@@ -1879,7 +1922,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const saveWorkoutNotes = async (workoutRunId: number) => {
     if (workoutNotesSavedRef.current) return;
 
-    const rowsToInsert = Object.values(exerciseNotesByKey)
+    const currentNotes = exerciseNotesByKeyRef.current || exerciseNotesByKey;
+    const rowsToInsert = Object.values(currentNotes)
       .map((entry) => ({
         id_workout: workoutRunId,
         testo: `[${entry.exerciseName}] ${entry.note.trim()}`,
@@ -1923,7 +1967,14 @@ const ActiveWorkoutPage: React.FC = () => {
       };
     }
 
-    if ((currentEx.type === 'superset' || currentEx.type === 'circuit') && currentEx.subExercises) {
+    if (currentEx.type === 'circuit') {
+      return {
+        nextExerciseName: currentEx.name,
+        nextSetInfo: `Giro ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
+      };
+    }
+
+    if (currentEx.type === 'superset' && currentEx.subExercises) {
       const isAdvancingSub = currentSubExerciseIdx < currentEx.subExercises.length - 1;
       if (isAdvancingSub) {
         const nextSub = currentEx.subExercises[currentSubExerciseIdx + 1];
@@ -2210,30 +2261,33 @@ const ActiveWorkoutPage: React.FC = () => {
   const isCircuit = currentExercise.type === 'circuit';
   const isSuperset = currentExercise.type === 'superset';
   const isGroup = isSuperset || isCircuit;
-  const subExercise = isGroup && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
+  const subExercise = isSuperset && currentExercise.subExercises ? currentExercise.subExercises[currentSubExerciseIdx] : null;
   const isFinalCompletionAction = isLastExercise && (
     isEmom
       ? (isLastSet && isLastEmomRound)
       : isPyramid
         ? isLastPyramidStep
-        : isGroup
-          ? (isLastSet && currentSubExerciseIdx >= (currentExercise.subExercises?.length || 1) - 1)
-          : isLastSet
+        : isCircuit
+          ? isLastSet
+          : isSuperset
+            ? (isLastSet && currentSubExerciseIdx >= (currentExercise.subExercises?.length || 1) - 1)
+            : isLastSet
   );
 
   const getCurrentExerciseNoteContext = () => {
     const orderStr = `${currentExerciseIdx + 1}`;
+    const exerciseKey = String(currentExercise.id);
     if (isGroup) {
       const groupName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
       return {
-        key: currentExercise.id,
+        key: exerciseKey,
         name: `${orderStr}. ${groupName}`,
       };
     }
 
     const baseName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
     return {
-      key: currentExercise.id,
+      key: exerciseKey,
       name: `${orderStr}. ${baseName}`,
     };
   };
@@ -2941,15 +2995,12 @@ const ActiveWorkoutPage: React.FC = () => {
             ? 'PYRAMID MODE'
             : null;
   const specialExercisePillClass =
-    currentExercise.type === 'circuit'
+    currentExercise.type === 'circuit' ||
+    currentExercise.type === 'emom' ||
+    currentExercise.type === 'superset' ||
+    currentExercise.type === 'pyramid'
       ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
-      : currentExercise.type === 'emom'
-        ? 'border-blue-400/60 bg-blue-500/10 text-blue-300'
-        : currentExercise.type === 'superset'
-          ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
-          : currentExercise.type === 'pyramid'
-            ? 'border-amber-300/60 bg-amber-300/10 text-amber-300'
-            : '';
+      : '';
 
   const buildNextExerciseVoiceCue = (nextExercise: Exercise, _nextExerciseIndex: number) => {
     const name = String(nextExercise.name || '').trim();
@@ -3041,6 +3092,8 @@ const ActiveWorkoutPage: React.FC = () => {
       stopEmomCountdown();
       stopRestCountdown();
       stopIsometryCountdown();
+      setCircuitLapTimes([]);
+      resetCircuitStopwatch();
       setIsometryRemainingWithSync(getTargetIsometry(nextEx, nextEx.subExercises?.[0]));
       if (nextEx.type === 'emom') setEmomRoundRemainingWithSync(nextEx.emom_round_duration || 60);
       else setEmomRoundRemaining(0);
@@ -3067,6 +3120,8 @@ const ActiveWorkoutPage: React.FC = () => {
       stopEmomCountdown();
       stopRestCountdown();
       stopIsometryCountdown();
+      setCircuitLapTimes([]);
+      resetCircuitStopwatch();
       setIsometryRemainingWithSync(getTargetIsometry(prevEx, prevEx.subExercises?.[0]));
       if (prevEx.type === 'emom') setEmomRoundRemainingWithSync(prevEx.emom_round_duration || 60);
       else setEmomRoundRemaining(0);
@@ -3107,7 +3162,25 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
+    if (currentExercise.type === 'circuit') {
+      pauseCircuitStopwatch();
+      const lapSecs = recordCircuitLapAndReset();
+      const updatedLaps = [...circuitLapTimes, lapSecs];
+
+      autoAppendCircuitTimeToNotes(currentExercise, currentExerciseIdx, updatedLaps);
+      currentExercise.lap_durations_seconds = updatedLaps;
+      currentExercise.total_circuit_duration_seconds = updatedLaps.reduce((a, b) => a + b, 0);
+
+      if (isLastSet) {
+        queueNextExerciseFlow(currentExercise);
+      } else {
+        const effectiveRest = currentExercise.rest_seconds > 0 ? currentExercise.rest_seconds : 60;
+        startRestCountdown(effectiveRest);
+      }
+      return;
+    }
+
+    if (currentExercise.type === 'superset') {
       stopIsometryCountdown();
       const subs = currentExercise.subExercises || [];
       const isLastSub = currentSubExerciseIdx >= subs.length - 1;
@@ -3122,23 +3195,6 @@ const ActiveWorkoutPage: React.FC = () => {
           setCurrentSubExerciseIdx(nextSubIdx);
           const nextSub = subs[nextSubIdx];
           setIsometryRemainingWithSync(nextSub?.type === 'isometry' ? nextSub.duration_seconds : 0);
-        }
-        return;
-      }
-
-      // Ultimo sotto-esercizio del round
-      if (currentExercise.type === 'circuit') {
-        pauseCircuitStopwatch();
-        const lapSecs = recordCircuitLapAndReset();
-        const updatedLaps = [...circuitLapTimes, lapSecs];
-
-        if (isLastSet) {
-          autoAppendCircuitTimeToNotes(currentExercise, currentExerciseIdx, updatedLaps);
-          currentExercise.lap_durations_seconds = updatedLaps;
-          currentExercise.total_circuit_duration_seconds = updatedLaps.reduce((a, b) => a + b, 0);
-          queueNextExerciseFlow(currentExercise);
-        } else {
-          startRestCountdown(currentExercise.rest_seconds);
         }
         return;
       }
@@ -3205,7 +3261,15 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
+    if (currentExercise.type === 'circuit') {
+      const maxSetIdx = Math.max(0, currentExercise.sets - 1);
+      if (currentSetIdx >= maxSetIdx) return;
+      setCurrentSetIdx((prev) => Math.min(maxSetIdx, prev + 1));
+      resetCurrentExerciseTimerState();
+      return;
+    }
+
+    if (currentExercise.type === 'superset') {
       const maxSubIdx = Math.max(0, (currentExercise.subExercises?.length || 1) - 1);
       if (currentSubExerciseIdx < maxSubIdx) {
         const nextSubIdx = currentSubExerciseIdx + 1;
@@ -3245,7 +3309,14 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
+    if (currentExercise.type === 'circuit') {
+      if (currentSetIdx <= 0) return;
+      setCurrentSetIdx((prev) => Math.max(0, prev - 1));
+      resetCurrentExerciseTimerState();
+      return;
+    }
+
+    if (currentExercise.type === 'superset') {
       if (currentSubExerciseIdx > 0) {
         const prevSubIdx = currentSubExerciseIdx - 1;
         setCurrentSubExerciseIdx(prevSubIdx);
@@ -3357,8 +3428,8 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    // Se eravamo all'interno di un superset/circuito con transizione tra sotto-esercizi
-    if ((currentExercise.type === 'superset' || currentExercise.type === 'circuit') && currentExercise.subExercises) {
+    // Se eravamo all'interno di un superset con transizione tra sotto-esercizi
+    if (currentExercise.type === 'superset' && currentExercise.subExercises) {
       const subs = currentExercise.subExercises;
       if (currentSubExerciseIdx < subs.length - 1) {
         const nextSubIdx = currentSubExerciseIdx + 1;
@@ -3399,12 +3470,6 @@ const ActiveWorkoutPage: React.FC = () => {
     finishRestAndNextSet();
   };
 
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
   const nextRecoveryLabel = getNextRecoveryLabel();
 
   const handleLeaveWorkout = () => {
@@ -3442,6 +3507,14 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const handlePrimaryAction = () => {
     if (isFinalCompletionAction) {
+      if (isCircuit) {
+        pauseCircuitStopwatch();
+        const lapSecs = recordCircuitLapAndReset();
+        const updatedLaps = [...circuitLapTimes, lapSecs];
+        autoAppendCircuitTimeToNotes(currentExercise, currentExerciseIdx, updatedLaps);
+        currentExercise.lap_durations_seconds = updatedLaps;
+        currentExercise.total_circuit_duration_seconds = updatedLaps.reduce((a, b) => a + b, 0);
+      }
       void completeWorkoutNow();
       return;
     }
@@ -3490,6 +3563,9 @@ const ActiveWorkoutPage: React.FC = () => {
     </div>
   ) : null;
 
+  const currentPermStatus = getNotificationPermission();
+  const isIosNonPwa = currentPermStatus === 'ios_pwa_required';
+
   const notificationPermissionBanner = showNotificationPrompt ? (
     <div className="fixed top-16 left-4 right-4 z-50 max-w-md mx-auto bg-brand-darkGrey/95 border border-brand-orange/40 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3 animate-in fade-in duration-300">
       <div className="flex items-center gap-2.5 min-w-0">
@@ -3497,22 +3573,39 @@ const ActiveWorkoutPage: React.FC = () => {
           <Smartphone size={18} />
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-bold text-white leading-tight">Attiva notifiche di recupero</p>
-          <p className="text-[10px] text-brand-grey/70 truncate">Ti avviseremo a schermo spento</p>
+          <p className="text-xs font-bold text-white leading-tight">
+            {isIosNonPwa ? 'Notifiche su iPhone' : 'Attiva notifiche di recupero'}
+          </p>
+          <p className="text-[10px] text-brand-grey/70 truncate">
+            {isIosNonPwa ? "Aggiungi l'app alla Home per riceverle" : 'Ti avviseremo a schermo spento'}
+          </p>
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        <button
-          type="button"
-          onClick={async () => {
-            warmupMediaSessionAudio();
-            await requestNotificationPermission();
-            setShowNotificationPrompt(false);
-          }}
-          className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-colors shadow"
-        >
-          Attiva
-        </button>
+        {isIosNonPwa ? (
+          <button
+            type="button"
+            onClick={() => {
+              startRestMediaSessionAudio();
+              setIsIosPwaGuideOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-colors shadow"
+          >
+            Come fare
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={async () => {
+              startRestMediaSessionAudio();
+              await requestNotificationPermission();
+              setShowNotificationPrompt(false);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-colors shadow"
+          >
+            Attiva
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -3523,6 +3616,53 @@ const ActiveWorkoutPage: React.FC = () => {
           title="Chiudi"
         >
           <X size={16} />
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  const iosPwaGuideModal = isIosPwaGuideOpen ? (
+    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+      <div className="w-full max-w-sm bg-brand-darkGrey border border-brand-orange/40 rounded-3xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-black text-white flex items-center gap-2">
+            <Smartphone className="text-brand-orange" size={20} />
+            Notifiche su iPhone
+          </h3>
+          <button
+            onClick={() => setIsIosPwaGuideOpen(false)}
+            className="p-1.5 text-brand-grey hover:text-white rounded-lg transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-3 text-xs text-white/85 leading-relaxed">
+          <p>
+            Su iOS/Safari, Apple consente le notifiche a schermo spento solo se l'app è aggiunta alla schermata Home.
+          </p>
+          <div className="bg-black/40 border border-brand-orange/20 rounded-2xl p-3.5 space-y-2 text-left">
+            <p className="font-black text-brand-orange text-xs uppercase tracking-wider">Istruzioni:</p>
+            <ol className="list-decimal list-inside space-y-2 text-white/90">
+              <li>Tocca il tasto <strong className="text-brand-orange">Condividi</strong> in basso su Safari (quadrato con freccia in alto ⬆️).</li>
+              <li>Scorri e seleziona <strong className="text-brand-orange">"Aggiungi alla schermata Home"</strong>.</li>
+              <li>Apri <strong>No Excuses</strong> dall'icona Home per avere notifiche complete anche a schermo spento!</li>
+            </ol>
+          </div>
+          <p className="text-[11px] text-brand-grey/80">
+            Durante ogni recupero, il <strong>widget sulla schermata di blocco</strong> mostrerà comunque il tempo rimanente e i controlli multimediali.
+          </p>
+        </div>
+
+        <button
+          onClick={() => {
+            localStorage.setItem('notifications_prompt_dismissed', 'true');
+            setShowNotificationPrompt(false);
+            setIsIosPwaGuideOpen(false);
+          }}
+          className="w-full py-3 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-xs uppercase tracking-wider transition-colors shadow-lg"
+        >
+          Ho Capito
         </button>
       </div>
     </div>
@@ -3598,6 +3738,7 @@ const ActiveWorkoutPage: React.FC = () => {
       <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center p-6 relative">
         {voiceCommandsHelpBubble}
         {notificationPermissionBanner}
+        {iosPwaGuideModal}
         {isWorkoutOverviewModalOpen && (
           <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
             <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
@@ -3683,7 +3824,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             <div key={`${exercise.id}:emom:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                                <p className="text-[11px] text-blue-400 font-black uppercase tracking-wide mt-1">
+                                <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
                                   {formatEmomTaskMetricLabel(sub)}
                                 </p>
                               </div>
@@ -3701,7 +3842,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             <div key={`${exercise.id}:pyramid:${stepIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-center justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="text-white font-bold text-sm truncate">Step {stepIndex + 1}</p>
-                                <p className="text-[11px] text-amber-300 font-black uppercase tracking-wide mt-1">
+                                <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
                                   {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
                                 </p>
                               </div>
@@ -3874,6 +4015,7 @@ const ActiveWorkoutPage: React.FC = () => {
     <div className="min-h-screen bg-brand-dark flex flex-col pt-4 pb-12 px-6 safe-top safe-bottom relative">
       {voiceCommandsHelpBubble}
       {notificationPermissionBanner}
+      {iosPwaGuideModal}
       <header className="flex items-center justify-between mb-8 z-10 relative">
         <button onClick={handleLeaveWorkout} className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors">
           <ArrowLeft size={28} />
@@ -3967,7 +4109,7 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center">
           {currentExercise.type === 'emom' ? (
             <div className="text-center w-full max-w-sm flex flex-col items-center">
-              <div className={`relative group w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer select-none ${emomActive ? 'border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)]' : 'border-brand-darkGrey'}`}
+              <div className={`relative group w-48 h-48 mx-auto rounded-full border-[10px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer select-none ${emomActive ? 'border-brand-orange shadow-[0_0_40px_rgba(179,72,0,0.4)]' : 'border-brand-darkGrey'}`}
                 onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
                 onPointerUp={(event) => handleTimerPointerUp(event, handleEmomTimerTap)}
                 onPointerCancel={handleTimerPointerAbort}
@@ -4021,7 +4163,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   <div key={idx} className="bg-brand-darkGrey/30 p-3 rounded-xl border border-white/5 flex justify-between items-center">
                     <span className="text-white font-bold text-sm truncate max-w-[70%] text-left">{sub.name}</span>
                     <div className="text-right">
-                      <span className="text-blue-400 font-mono font-black text-sm block">
+                      <span className="text-brand-orange font-mono font-black text-sm block">
                         {formatEmomTaskMetricLabel(sub)}
                       </span>
                       <span className="text-[10px] text-brand-grey/80">{formatWeightLabel(sub.weight_kg)}</span>
@@ -4065,12 +4207,12 @@ const ActiveWorkoutPage: React.FC = () => {
               {/* Circuit Header Status & Round info */}
               <div className="w-full max-w-sm grid grid-cols-2 gap-2 mb-3">
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Giro</span>
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Giro / Set</span>
                   <span className="text-brand-orange font-black">{currentSetIdx + 1} / {currentExercise.sets || 1}</span>
                 </div>
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Stazione</span>
-                  <span className="text-brand-orange font-black">{currentSubExerciseIdx + 1} / {currentExercise.subExercises?.length || 1}</span>
+                  <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Circuito</span>
+                  <span className="text-brand-orange font-black">{currentExercise.subExercises?.length || 1} Stazioni</span>
                 </div>
               </div>
 
@@ -4110,58 +4252,32 @@ const ActiveWorkoutPage: React.FC = () => {
                 </p>
               </div>
 
-              {/* Current Sub-Exercise / Station Card */}
-              {subExercise && (
-                <div className="mt-4 w-full max-w-sm p-3.5 rounded-2xl bg-brand-darkGrey/30 border border-brand-orange/30 text-left relative shadow-lg">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] uppercase font-black tracking-wider text-brand-orange">
-                      Stazione {currentSubExerciseIdx + 1} di {currentExercise.subExercises?.length || 1}
-                    </span>
-                    <span className="text-xs text-white/70 font-semibold">{formatWeightLabel(subExercise.weight_kg)}</span>
-                  </div>
-                  <h4 className="text-base font-black text-white mt-0.5 truncate">{subExercise.name}</h4>
-                  <p className="text-sm font-black text-brand-orange mt-1">
-                    {subExercise.type === 'reps'
-                      ? (isMaxTarget(subExercise.reps) ? 'MAX REPS' : `${toSafeTargetInt(subExercise.reps)} Ripetizioni`)
-                      : (isMaxTarget(subExercise.duration_seconds) ? 'MAX TEMPO' : `${toSafeTargetInt(subExercise.duration_seconds)}s Isometria`)}
-                  </p>
-                </div>
-              )}
-
-              {/* Sub-exercises list / All stations overview */}
-              <div className="w-full max-w-sm max-h-[16vh] overflow-y-auto space-y-1.5 px-1 mt-3">
+              {/* Sub-exercises list / All stations in the circuit */}
+              <div className="w-full max-w-sm max-h-[20vh] overflow-y-auto space-y-1.5 px-1 mt-3">
                 {(currentExercise.subExercises || []).map((sub, idx) => {
-                  const isCurrent = idx === currentSubExerciseIdx;
                   return (
                     <div
                       key={`${currentExercise.id}:circuit-station:${idx}`}
-                      className={`p-2 px-3 rounded-xl border flex justify-between items-center text-xs transition-colors ${
-                        isCurrent
-                          ? 'border-brand-orange/60 bg-brand-orange/10 text-white font-bold'
-                          : idx < currentSubExerciseIdx
-                            ? 'border-white/5 bg-black/20 text-white/40 line-through'
-                            : 'border-white/5 bg-brand-darkGrey/20 text-brand-grey'
-                      }`}
+                      className="p-2.5 px-3 rounded-xl border border-white/10 bg-brand-darkGrey/30 flex justify-between items-center text-xs transition-colors hover:border-brand-orange/30"
                     >
-                      <span className="truncate">{idx + 1}. {sub.name}</span>
-                      <span className="shrink-0 ml-2 font-mono text-[11px] text-brand-orange">
-                        {sub.type === 'reps' ? `${sub.reps} reps` : `${sub.duration_seconds}s`}
-                      </span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-5 h-5 rounded-full bg-brand-orange/20 text-brand-orange flex items-center justify-center font-bold text-[10px] shrink-0">
+                          {idx + 1}
+                        </span>
+                        <span className="truncate font-bold text-white/90">{sub.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        {sub.weight_kg != null && sub.weight_kg > 0 && (
+                          <span className="text-[11px] text-white/60 font-semibold">{formatWeightLabel(sub.weight_kg)}</span>
+                        )}
+                        <span className="font-mono text-[11px] text-brand-orange font-black">
+                          {sub.type === 'reps' ? `${sub.reps} reps` : `${sub.duration_seconds}s`}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
               </div>
-
-              {/* Lap Times Summary if any */}
-              {circuitLapTimes.length > 0 && (
-                <div className="mt-2 w-full max-w-sm flex items-center justify-center gap-2 flex-wrap">
-                  {circuitLapTimes.map((lap, lIdx) => (
-                    <span key={lIdx} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-brand-orange">
-                      Giro {lIdx + 1}: {formatTime(lap)}
-                    </span>
-                  ))}
-                </div>
-              )}
 
               {hasCurrentInstructionNote && (
                 <button
@@ -4419,11 +4535,9 @@ const ActiveWorkoutPage: React.FC = () => {
             ) : isPyramid && !isLastPyramidStep ? (
               <>FINISH STEP <ArrowRight size={24} className="ml-2" /></>
             ) : isCircuit ? (
-              currentSubExerciseIdx < (currentExercise.subExercises?.length || 1) - 1
-                ? <>PROSSIMA STAZIONE <ArrowRight size={24} className="ml-2" /></>
-                : isLastSet
-                  ? <>COMPLETA CIRCUITO <ArrowRight size={24} className="ml-2" /></>
-                  : <>FINE GIRO & RECUPERO <ArrowRight size={24} className="ml-2" /></>
+              isLastSet
+                ? <>COMPLETA CIRCUITO <ArrowRight size={24} className="ml-2" /></>
+                : <>FINE SET & RECUPERO <ArrowRight size={24} className="ml-2" /></>
             ) : isSuperset ? (
               currentSubExerciseIdx < (currentExercise.subExercises?.length || 1) - 1
                 ? <>PROSSIMO ESERCIZIO <ArrowRight size={24} className="ml-2" /></>
@@ -4611,7 +4725,7 @@ const ActiveWorkoutPage: React.FC = () => {
                           <div key={`${exercise.id}:emom:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                              <p className="text-[11px] text-blue-400 font-black uppercase tracking-wide mt-1">
+                              <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
                                 {formatEmomTaskMetricLabel(sub)}
                               </p>
                             </div>
@@ -4629,7 +4743,7 @@ const ActiveWorkoutPage: React.FC = () => {
                           <div key={`${exercise.id}:pyramid:${stepIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-white font-bold text-sm truncate">Step {stepIndex + 1}</p>
-                              <p className="text-[11px] text-amber-300 font-black uppercase tracking-wide mt-1">
+                              <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
                                 {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
                               </p>
                             </div>
