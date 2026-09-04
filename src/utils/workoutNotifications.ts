@@ -134,3 +134,71 @@ export const sendRestFinishedNotification = async ({
     console.debug('Error dispatching notification:', err);
   }
 };
+
+export const scheduleBackgroundRestNotification = ({
+  endsAtMs,
+  nextExerciseName,
+  nextSetInfo,
+}: {
+  endsAtMs: number;
+  nextExerciseName: string;
+  nextSetInfo?: string;
+}) => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (!isNotificationPermissionGranted()) return;
+
+  const title = '⏱️ Recupero Terminato!';
+  const body = nextSetInfo
+    ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
+    : `È ora di iniziare: ${nextExerciseName}`;
+
+  try {
+    const swController = navigator.serviceWorker.controller;
+    if (swController) {
+      swController.postMessage({
+        type: 'SCHEDULE_REST_NOTIFICATION',
+        endsAtMs,
+        title,
+        body,
+      });
+      return;
+    }
+
+    navigator.serviceWorker.ready.then((reg) => {
+      if (reg.active) {
+        reg.active.postMessage({
+          type: 'SCHEDULE_REST_NOTIFICATION',
+          endsAtMs,
+          title,
+          body,
+        });
+      }
+    }).catch(() => {});
+  } catch (err) {
+    console.debug('Error scheduling background notification:', err);
+  }
+};
+
+export const cancelBackgroundRestNotification = () => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  try {
+    const swController = navigator.serviceWorker.controller;
+    if (swController) {
+      swController.postMessage({
+        type: 'CANCEL_REST_NOTIFICATION',
+      });
+      return;
+    }
+
+    navigator.serviceWorker.ready.then((reg) => {
+      if (reg.active) {
+        reg.active.postMessage({
+          type: 'CANCEL_REST_NOTIFICATION',
+        });
+      }
+    }).catch(() => {});
+  } catch (err) {
+    console.debug('Error canceling background notification:', err);
+  }
+};
+

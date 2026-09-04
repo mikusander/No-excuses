@@ -107,12 +107,19 @@ import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis } from '../utils/voice';
-import { playGoalReachedSound } from '../utils/audio';
+import {
+  playGoalReachedSound,
+  playCountdownBeep,
+  playRestFinishedSound,
+  unlockAudio,
+} from '../utils/audio';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock';
 import {
   initServiceWorker,
   requestNotificationPermission,
   sendRestFinishedNotification,
+  scheduleBackgroundRestNotification,
+  cancelBackgroundRestNotification,
   getNotificationPermission,
 } from '../utils/workoutNotifications';
 import {
@@ -552,6 +559,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const startRestCountdown = (durationSeconds: number) => {
+    unlockAudio();
     startRestMediaSessionAudio();
     const safe = normalizeDurationSeconds(durationSeconds);
     lastHandledRestCompletionEndsAtMsRef.current = null;
@@ -565,15 +573,18 @@ const ActiveWorkoutPage: React.FC = () => {
     setIsResting(false);
     setRestEndsAtMs(null);
     stopRestMediaSession();
+    cancelBackgroundRestNotification();
   };
 
   const pauseRestCountdown = () => {
     pauseRestMediaSessionAudio();
+    cancelBackgroundRestNotification();
     setRestRemaining(computeRemainingFromEndsAt(restEndsAtMs));
     setRestEndsAtMs(null);
   };
 
   const resumeRestCountdown = () => {
+    unlockAudio();
     resumeRestMediaSessionAudio();
     const currentExerciseForRest = workout?.exercises[currentExerciseIdx];
     const fallbackRestDuration =
@@ -2016,13 +2027,14 @@ const ActiveWorkoutPage: React.FC = () => {
         }
         setRestEndsAtMs(null);
         stopRestMediaSession();
+        cancelBackgroundRestNotification();
 
         const upcoming = getUpcomingRestTargetInfo();
         void sendRestFinishedNotification({
           nextExerciseName: upcoming.nextExerciseName,
           nextSetInfo: upcoming.nextSetInfo,
         });
-        playGoalReachedSound();
+        playRestFinishedSound();
 
         if (isWorkoutOverviewModalOpen) {
           setIsWorkoutOverviewAdvancePending(true);
@@ -2054,6 +2066,7 @@ const ActiveWorkoutPage: React.FC = () => {
   useEffect(() => {
     if (!isResting) {
       stopRestMediaSession();
+      cancelBackgroundRestNotification();
       return;
     }
 
@@ -2063,6 +2076,16 @@ const ActiveWorkoutPage: React.FC = () => {
     const totalDuration = restInitialDuration > 0
       ? restInitialDuration
       : (currentEx?.rest_seconds || 60);
+
+    if (isRunning && restEndsAtMs != null) {
+      scheduleBackgroundRestNotification({
+        endsAtMs: restEndsAtMs,
+        nextExerciseName: upcoming.nextExerciseName,
+        nextSetInfo: upcoming.nextSetInfo,
+      });
+    } else {
+      cancelBackgroundRestNotification();
+    }
 
     updateRestMediaSession({
       totalSeconds: totalDuration,
@@ -2083,6 +2106,14 @@ const ActiveWorkoutPage: React.FC = () => {
     }
     if (lastCountdownRestRef.current === restRemaining) return;
     lastCountdownRestRef.current = restRemaining;
+    playCountdownBeep(restRemaining);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(60);
+      } catch {
+        // ignore
+      }
+    }
     speakCue(String(restRemaining));
   }, [isResting, restRemaining]);
 
@@ -2117,10 +2148,12 @@ const ActiveWorkoutPage: React.FC = () => {
         const ex = workout?.exercises[currentExerciseIdx];
         if (ex && ex.type === 'emom') {
           if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
+            playRestFinishedSound();
             speakCue('next round');
             setCurrentEmomRoundIdx(prev => prev + 1);
             setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
           } else {
+            playRestFinishedSound();
             stopEmomCountdown();
             const isLastSetInEmomExercise = currentSetIdx === ex.sets - 1;
             if (isLastSetInEmomExercise) {
@@ -2159,6 +2192,7 @@ const ActiveWorkoutPage: React.FC = () => {
     }
     if (lastCountdownEmomRef.current === emomRoundRemaining) return;
     lastCountdownEmomRef.current = emomRoundRemaining;
+    playCountdownBeep(emomRoundRemaining);
     speakCue(String(emomRoundRemaining));
   }, [emomActive, emomRoundRemaining]);
 
@@ -2185,6 +2219,7 @@ const ActiveWorkoutPage: React.FC = () => {
         }
         setIsometryEndsAtMs(null);
         setIsometryActive(false);
+        playRestFinishedSound();
       }
     };
 
@@ -2212,6 +2247,7 @@ const ActiveWorkoutPage: React.FC = () => {
     }
     if (lastCountdownIsometryRef.current === isometryRemaining) return;
     lastCountdownIsometryRef.current = isometryRemaining;
+    playCountdownBeep(isometryRemaining);
     speakCue(String(isometryRemaining));
   }, [isometryActive, isometryRemaining]);
 
@@ -3487,6 +3523,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
     clearPersistedWorkoutProgress();
 
+    playGoalReachedSound();
     speakCue('workout complete');
     stopEmomCountdown();
     stopIsometryCountdown();
@@ -3886,7 +3923,11 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
 
         <div
-          className="w-64 h-64 rounded-full border-8 border-brand-darkGrey flex flex-col justify-center items-center shadow-[0_0_50px_rgba(255,107,0,0.1)] mb-12 relative overflow-hidden cursor-pointer select-none"
+          className={`w-64 h-64 rounded-full flex flex-col justify-center items-center mb-12 relative overflow-hidden cursor-pointer select-none transition-all duration-300 ${
+            restRemaining <= 3 && restRemaining > 0
+              ? 'border-8 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_90px_rgba(255,107,0,0.6)] animate-pulse'
+              : 'border-8 border-brand-darkGrey shadow-[0_0_50px_rgba(255,107,0,0.1)]'
+          }`}
           onPointerDown={(event) => handleTimerPointerDown(event, resetRestCountdown)}
           onPointerUp={(event) => handleTimerPointerUp(event, handleRestTimerTap)}
           onPointerCancel={handleTimerPointerAbort}
@@ -3898,8 +3939,17 @@ const ActiveWorkoutPage: React.FC = () => {
             style={{ height: `${(restRemaining / Math.max(1, restInitialDuration || currentExercise.rest_seconds || 1)) * 100}%` }}
           />
 
-          <Timer size={32} className="text-brand-orange mb-2" />
-          <span className="text-6xl font-black text-white z-10 font-mono tracking-tighter">
+          <Timer
+            size={32}
+            className={`mb-2 transition-transform duration-300 ${
+              restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-125' : 'text-brand-orange'
+            }`}
+          />
+          <span
+            className={`text-6xl font-black z-10 font-mono tracking-tighter transition-all duration-300 ${
+              restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-110' : 'text-white'
+            }`}
+          >
             {formatTime(restRemaining)}
           </span>
           <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2 z-10">REST</span>
