@@ -100,6 +100,7 @@ const formatSafeNumber = (val: unknown): string => {
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  isOpen: boolean;
   onClose: () => void;
 }
 
@@ -122,11 +123,36 @@ class ReportErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
     console.error('ReportErrorBoundary caught an error:', error, errorInfo);
   }
 
+  componentDidUpdate(prevProps: ErrorBoundaryProps) {
+    if (prevProps.isOpen && !this.props.isOpen && this.state.hasError) {
+      this.setState({ hasError: false, errorMessage: null });
+    }
+  }
+
+  handleClose = () => {
+    this.setState({ hasError: false, errorMessage: null });
+    this.props.onClose();
+  };
+
   render() {
+    if (!this.props.isOpen) {
+      return null;
+    }
+
     if (this.state.hasError) {
       return (
-        <div className="fixed inset-0 z-[100] h-[100dvh] w-screen flex flex-col items-center justify-center bg-black/85 backdrop-blur-md p-6">
-          <div className="bg-[#181818] border border-brand-orange/40 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-4">
+        <div
+          onClick={this.handleClose}
+          className="fixed inset-0 z-[100] h-[100dvh] w-screen flex flex-col items-center justify-center bg-black/85 backdrop-blur-md p-6"
+          style={{
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#181818] border border-brand-orange/40 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-4"
+          >
             <div className="p-3 bg-brand-orange/20 border border-brand-orange/40 rounded-2xl w-fit mx-auto text-brand-orange">
               <AlertTriangle size={32} />
             </div>
@@ -136,11 +162,16 @@ class ReportErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
             <p className="text-xs sm:text-sm text-brand-grey/80 leading-relaxed">
               Si è verificato un errore durante l'elaborazione dei dati delle sessioni. Nessun dato è andato perso.
             </p>
+            {this.state.errorMessage && (
+              <div className="p-2.5 rounded-xl bg-black/60 border border-white/10 text-[11px] text-red-300/90 font-mono text-left max-h-24 overflow-y-auto break-all select-all">
+                {this.state.errorMessage}
+              </div>
+            )}
             <div className="pt-2">
               <button
-                onClick={this.props.onClose}
+                onClick={this.handleClose}
                 type="button"
-                className="w-full py-3 px-5 rounded-2xl bg-brand-orange text-black font-extrabold text-sm uppercase tracking-wider hover:bg-brand-lightOrange transition-colors cursor-pointer"
+                className="w-full py-3 px-5 rounded-2xl bg-brand-orange text-black font-extrabold text-sm uppercase tracking-wider hover:bg-brand-lightOrange transition-colors cursor-pointer active:scale-95 shadow-lg shadow-brand-orange/20"
               >
                 Chiudi
               </button>
@@ -257,6 +288,7 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
 
   return (
     <div
+      onClick={onClose}
       className="fixed inset-0 z-[100] h-[100dvh] w-screen flex flex-col items-center justify-center bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
       style={{
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
@@ -265,7 +297,10 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
         paddingRight: 'calc(env(safe-area-inset-right, 0px) + 10px)',
       }}
     >
-      <div className="relative w-full max-w-4xl h-full max-h-full sm:max-h-[88vh] flex flex-col bg-[#141414] border border-white/15 rounded-3xl shadow-[0_0_60px_rgba(0,0,0,0.9)] overflow-hidden min-h-0">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-4xl h-full max-h-full sm:max-h-[88vh] flex flex-col bg-[#141414] border border-white/15 rounded-3xl shadow-[0_0_60px_rgba(0,0,0,0.9)] overflow-hidden min-h-0"
+      >
         
         {/* ─── HEADER ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between p-3.5 sm:p-6 border-b border-white/10 bg-black/60 sticky top-0 z-20 shrink-0">
@@ -548,19 +583,22 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                                 Principali movimenti:
                               </span>
                               <div className="space-y-1">
-                                {mg.topExercises.map((topEx, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-white/5"
-                                  >
-                                    <span className="text-white/90 font-medium truncate max-w-[55%]">
-                                      {topEx.displayName}
-                                    </span>
-                                    <span className="font-mono text-cyan-300 font-bold text-[11px]">
-                                      {formatSafeNumber(topEx.reps)} rip ({Number(topEx.sets) || 0} set{Number(topEx.volumeKg) > 0 ? ` • ${formatSafeNumber(topEx.volumeKg)} kg` : ''})
-                                    </span>
-                                  </div>
-                                ))}
+                                {(mg.topExercises || []).map((topEx, idx) => {
+                                  if (!topEx) return null;
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-white/5"
+                                    >
+                                      <span className="text-white/90 font-medium truncate max-w-[55%]">
+                                        {String(topEx.displayName || 'Esercizio')}
+                                      </span>
+                                      <span className="font-mono text-cyan-300 font-bold text-[11px]">
+                                        {formatSafeNumber(topEx.reps)} rip ({Number(topEx.sets) || 0} set{Number(topEx.volumeKg) > 0 ? ` • ${formatSafeNumber(topEx.volumeKg)} kg` : ''})
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -726,12 +764,12 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                               <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Trend</span>
                               {ex.trend === 'up' && (
                                 <span className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-400">
-                                  <TrendingUp size={14} /> +{ex.percentChange}%
+                                  <TrendingUp size={14} /> +{ex.percentChange ?? 0}%
                                 </span>
                               )}
                               {ex.trend === 'down' && (
                                 <span className="inline-flex items-center gap-0.5 text-xs font-bold text-rose-400">
-                                  <TrendingDown size={14} /> {ex.percentChange}%
+                                  <TrendingDown size={14} /> {ex.percentChange ?? 0}%
                                 </span>
                               )}
                               {ex.trend === 'stable' && (
@@ -851,18 +889,21 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                         {/* Lista cronologica note espandibile */}
                         {isExpanded && (
                           <div className="mt-3 space-y-2 pt-3 border-t border-white/5">
-                            {(dossier.chronologicalNotes || []).map((note, idx) => (
-                              <div
-                                key={idx}
-                                className="bg-white/5 rounded-xl p-3 border border-white/5 text-xs space-y-1"
-                              >
-                                <div className="flex items-center justify-between text-brand-grey/60 text-[10px]">
-                                  <span className="font-bold text-white/70">{note.formattedDate}</span>
-                                  <span>{note.workoutName}</span>
+                            {(dossier.chronologicalNotes || []).map((note, idx) => {
+                              if (!note) return null;
+                              return (
+                                <div
+                                  key={idx}
+                                  className="bg-white/5 rounded-xl p-3 border border-white/5 text-xs space-y-1"
+                                >
+                                  <div className="flex items-center justify-between text-brand-grey/60 text-[10px]">
+                                    <span className="font-bold text-white/70">{String(note.formattedDate || '')}</span>
+                                    <span>{String(note.workoutName || 'Workout')}</span>
+                                  </div>
+                                  <p className="text-white text-xs leading-relaxed">{String(note.text || '')}</p>
                                 </div>
-                                <p className="text-white text-xs leading-relaxed">{note.text}</p>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -894,8 +935,10 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
 };
 
 const PeriodicReportModal: React.FC<PeriodicReportModalProps> = (props) => {
+  if (!props.isOpen) return null;
+
   return (
-    <ReportErrorBoundary onClose={props.onClose}>
+    <ReportErrorBoundary onClose={props.onClose} isOpen={props.isOpen}>
       <PeriodicReportModalInner {...props} />
     </ReportErrorBoundary>
   );

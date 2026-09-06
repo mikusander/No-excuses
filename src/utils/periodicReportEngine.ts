@@ -169,6 +169,29 @@ export interface PeriodicReportResult {
 /**
  * Calcola l'intervallo temporale in base al periodo selezionato.
  */
+export const parseSafeDate = (dateVal: unknown): Date | null => {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date && !Number.isNaN(dateVal.getTime())) return dateVal;
+  const str = String(dateVal).trim();
+  if (!str) return null;
+  // Sostituisce lo spazio con 'T' per compatibilità con il parser Date di iOS WebKit/Safari
+  const isoStr = str.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/, '$1T$2');
+  const d = new Date(isoStr);
+  if (!Number.isNaN(d.getTime())) return d;
+  const fallback = new Date(str);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+};
+
+export const formatSafeDate = (dateVal: unknown): string => {
+  const d = parseSafeDate(dateVal);
+  if (!d) return typeof dateVal === 'string' ? dateVal : '';
+  try {
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch {
+    return d.toISOString().split('T')[0];
+  }
+};
+
 export const getPeriodInfo = (periodType: ReportPeriodType): ReportPeriodInfo => {
   const now = new Date();
   const endDate = new Date(now);
@@ -483,12 +506,16 @@ export const generatePeriodicReport = (
   // Filtra le sessioni comprese nell'intervallo temporale
   const inRangeWorkouts = (workouts || []).filter((w) => {
     if (!w || typeof w !== 'object' || !w.executedAt) return false;
-    const date = new Date(w.executedAt);
-    return !Number.isNaN(date.getTime()) && date >= period.startDate && date <= period.endDate;
+    const date = parseSafeDate(w.executedAt);
+    return date !== null && date >= period.startDate && date <= period.endDate;
   });
 
   // Ordina cronologicamente le sessioni (dalla più vecchia alla più recente)
-  inRangeWorkouts.sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime());
+  inRangeWorkouts.sort((a, b) => {
+    const timeA = parseSafeDate(a?.executedAt)?.getTime() || 0;
+    const timeB = parseSafeDate(b?.executedAt)?.getTime() || 0;
+    return timeA - timeB;
+  });
 
   // Punto mediano per calcolare il trend di progressione
   const midTimestamp = period.startDate.getTime() + (period.endDate.getTime() - period.startDate.getTime()) / 2;
@@ -550,9 +577,9 @@ export const generatePeriodicReport = (
 
   // Itera su ogni sessione di allenamento nel periodo
   inRangeWorkouts.forEach((session) => {
-    const sessionDate = new Date(session.executedAt);
+    const sessionDate = parseSafeDate(session.executedAt) || new Date();
     const isSecondHalf = sessionDate.getTime() >= midTimestamp;
-    const sessionDateStr = sessionDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const sessionDateStr = formatSafeDate(session.executedAt);
 
     // Traccia gli esercizi già incontrati in questa singola sessione per il conteggio sessioni
     const exercisesInThisSession = new Set<string>();
