@@ -564,10 +564,11 @@ const NewTrainPage: React.FC = () => {
    */
   const addExercise = () => {
     const lastEx = exercises[exercises.length - 1];
-    const inheritedSets = lastEx && Number.isFinite(lastEx.sets) && lastEx.sets > 0 ? lastEx.sets : 3;
-    const inheritedReps = lastEx && Number.isFinite(lastEx.reps) && lastEx.reps > 0 ? lastEx.reps : 10;
-    const inheritedRest = lastEx && Number.isFinite(lastEx.rest_seconds) && lastEx.rest_seconds >= 0 ? lastEx.rest_seconds : 90;
-    const inheritedDuration = lastEx && Number.isFinite(lastEx.duration_seconds) && lastEx.duration_seconds > 0 ? lastEx.duration_seconds : 30;
+    const isLastSpecial = lastEx && (lastEx.type === 'pyramid' || lastEx.type === 'circuit' || lastEx.type === 'emom' || lastEx.type === 'superset');
+    const inheritedSets = !isLastSpecial && lastEx && Number.isFinite(lastEx.sets) && lastEx.sets > 0 ? lastEx.sets : 3;
+    const inheritedReps = !isLastSpecial && lastEx && Number.isFinite(lastEx.reps) && lastEx.reps > 0 ? lastEx.reps : 10;
+    const inheritedRest = !isLastSpecial && lastEx && Number.isFinite(lastEx.rest_seconds) && lastEx.rest_seconds > 0 ? lastEx.rest_seconds : 60;
+    const inheritedDuration = !isLastSpecial && lastEx && Number.isFinite(lastEx.duration_seconds) && lastEx.duration_seconds > 0 ? lastEx.duration_seconds : 30;
 
     setExercises([
       ...exercises,
@@ -697,21 +698,6 @@ const NewTrainPage: React.FC = () => {
               duration_seconds: s.duration_seconds,
               weight_kg: s.weight_kg ?? null,
               instruction_note: '',
-            })),
-          };
-        }
-
-        if (parsed.type === 'pyramid') {
-          return {
-            ...ex,
-            type: 'pyramid',
-            name: parsed.name,
-            sets: 1,
-            rest_seconds: 0,
-            pyramid_steps: (parsed.pyramid_steps || []).map(s => ({
-              reps: s.reps,
-              rest_seconds: s.rest_seconds,
-              weight_kg: s.weight_kg ?? null,
             })),
           };
         }
@@ -854,7 +840,7 @@ const NewTrainPage: React.FC = () => {
     setExercises(exercises.map(ex => {
       if (ex.id === id) {
         const baseReps = Number.isFinite(ex.reps) && ex.reps > 0 ? ex.reps : PYRAMID_DEFAULT_REPS;
-        const baseRest = Number.isFinite(ex.rest_seconds) && ex.rest_seconds >= 0 ? ex.rest_seconds : PYRAMID_DEFAULT_REST_SECONDS;
+        const baseRest = Number.isFinite(ex.rest_seconds) && ex.rest_seconds > 0 ? ex.rest_seconds : PYRAMID_DEFAULT_REST_SECONDS;
 
         return {
           ...ex,
@@ -2167,8 +2153,8 @@ const NewTrainPage: React.FC = () => {
                                 setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
                               }, 200);
                               if (ex.name.trim()) {
-                                const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 90);
-                                if (parsed.matched) {
+                                const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
+                                if (parsed.matched && parsed.type !== 'pyramid') {
                                   handleApplyParsedToExercise(ex.id, parsed);
                                   setExerciseNotices(prev => ({
                                     ...prev,
@@ -2190,8 +2176,8 @@ const NewTrainPage: React.FC = () => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
                                 if (ex.name.trim()) {
-                                  const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 90);
-                                  if (parsed.matched) {
+                                  const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
+                                  if (parsed.matched && parsed.type !== 'pyramid') {
                                     handleApplyParsedToExercise(ex.id, parsed);
                                     setExerciseNotices(prev => ({
                                       ...prev,

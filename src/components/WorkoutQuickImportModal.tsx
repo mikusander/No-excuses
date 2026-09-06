@@ -5,7 +5,6 @@ import {
   Mic,
   MicOff,
   Sparkles,
-  Upload,
   Trash2,
   Plus,
   Check,
@@ -13,6 +12,7 @@ import {
   Clock,
   RefreshCw,
   FileText,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { ExerciseDraft } from '../hooks/useWorkoutBuilder';
 import { useLocalOcr } from '../hooks/useLocalOcr';
@@ -39,7 +39,8 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
   const [showRawText, setShowRawText] = useState(false);
   const [rawEditableText, setRawEditableText] = useState('');
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Hook OCR Locale
   const {
@@ -108,6 +109,8 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
       await recognizeImage(file);
     } catch (err) {
       console.warn('Errore scansione OCR:', err);
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -333,8 +336,18 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
           {/* TAB 1: OCR SCANSIONE */}
           {activeTab === 'ocr' && (
             <div className="space-y-4">
+              {/* Input per Galleria / File dal dispositivo (NO capture, apre foto, file, screenshot) */}
               <input
-                ref={fileInputRef}
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              {/* Input per Fotocamera diretta (capture=environment) */}
+              <input
+                ref={cameraInputRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
@@ -342,27 +355,87 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                 className="hidden"
               />
 
-              {/* Area di Caricamento / Dropzone */}
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-3 ${
-                  imagePreviewUrl
-                    ? 'border-brand-orange/40 bg-brand-orange/5'
-                    : 'border-white/15 hover:border-brand-orange/40 hover:bg-white/5 bg-black/20'
-                }`}
-              >
-                <div className="p-4 rounded-2xl bg-brand-orange/15 text-brand-orange">
-                  <Upload size={28} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-white">
-                    {selectedImageName ? `Immagine: ${selectedImageName}` : 'Scatta una foto o carica uno screenshot'}
-                  </p>
-                  <p className="text-xs text-brand-grey/60 mt-1">
-                    Supporta fogli cartacei, tabelle stampate o screenshot digitali
-                  </p>
-                </div>
+              {/* Due Opzioni Chiare: Galleria/File e Fotocamera */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="flex items-center space-x-3.5 p-4 rounded-2xl bg-black/40 hover:bg-white/5 border border-white/10 hover:border-brand-orange/50 text-left transition-all active:scale-98 group cursor-pointer shadow-sm"
+                >
+                  <div className="p-3 rounded-xl bg-brand-orange/15 text-brand-orange group-hover:scale-110 transition-transform shrink-0">
+                    <ImageIcon size={24} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white group-hover:text-brand-orange transition-colors">
+                      Scegli da Galleria / File
+                    </div>
+                    <div className="text-xs text-brand-grey/60 mt-0.5">
+                      Foto salvate, screenshot o download sul telefono
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="flex items-center space-x-3.5 p-4 rounded-2xl bg-black/40 hover:bg-white/5 border border-white/10 hover:border-cyan-500/50 text-left transition-all active:scale-98 group cursor-pointer shadow-sm"
+                >
+                  <div className="p-3 rounded-xl bg-cyan-500/15 text-cyan-400 group-hover:scale-110 transition-transform shrink-0">
+                    <Camera size={24} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">
+                      Scatta con Fotocamera
+                    </div>
+                    <div className="text-xs text-brand-grey/60 mt-0.5">
+                      Inquadra direttamente la scheda cartacea
+                    </div>
+                  </div>
+                </button>
               </div>
+
+              {/* Anteprima Immagine Selezionata */}
+              {imagePreviewUrl && (
+                <div className="p-3.5 bg-black/40 border border-brand-orange/30 rounded-2xl flex items-center justify-between space-x-3 animate-fade-in">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <img
+                      src={imagePreviewUrl}
+                      alt="Anteprima"
+                      className="w-12 h-12 object-cover rounded-xl border border-white/10 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">
+                        {selectedImageName || 'Immagine caricata'}
+                      </p>
+                      <p className="text-[11px] text-emerald-400 flex items-center mt-0.5 font-medium">
+                        <Check size={12} className="mr-1 shrink-0" /> Pronta per l'analisi OCR locale
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => galleryInputRef.current?.click()}
+                      className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                    >
+                      Cambia
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedImageName(null);
+                        setImagePreviewUrl(null);
+                        setParsedItems([]);
+                        resetOcr();
+                      }}
+                      className="p-2 text-brand-grey/60 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+                      title="Rimuovi immagine"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Barra di Progresso OCR */}
               {(ocrStatus === 'preprocessing' || ocrStatus === 'recognizing') && (
