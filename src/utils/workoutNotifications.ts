@@ -155,28 +155,24 @@ export const scheduleBackgroundRestNotification = ({
     ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
     : `È ora di iniziare: ${nextExerciseName}`;
 
-  try {
-    const swController = navigator.serviceWorker.controller;
-    if (swController) {
-      swController.postMessage({
-        type: 'SCHEDULE_REST_NOTIFICATION',
-        endsAtMs,
-        targetTime: endsAtMs,
-        title,
-        body,
-      });
-      return;
-    }
+  const payload = {
+    type: 'SCHEDULE_REST_NOTIFICATION',
+    endsAtMs,
+    targetTime: endsAtMs,
+    title,
+    body,
+  };
 
+  try {
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(payload);
+    }
+    if (serviceWorkerRegistration && serviceWorkerRegistration.active) {
+      serviceWorkerRegistration.active.postMessage(payload);
+    }
     navigator.serviceWorker.ready.then((reg) => {
       if (reg.active) {
-        reg.active.postMessage({
-          type: 'SCHEDULE_REST_NOTIFICATION',
-          endsAtMs,
-          targetTime: endsAtMs,
-          title,
-          body,
-        });
+        reg.active.postMessage(payload);
       }
     }).catch(() => {});
   } catch (err) {
@@ -186,20 +182,17 @@ export const scheduleBackgroundRestNotification = ({
 
 export const cancelBackgroundRestNotification = () => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  const payload = { type: 'CANCEL_REST_NOTIFICATION' };
   try {
-    const swController = navigator.serviceWorker.controller;
-    if (swController) {
-      swController.postMessage({
-        type: 'CANCEL_REST_NOTIFICATION',
-      });
-      return;
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(payload);
     }
-
+    if (serviceWorkerRegistration && serviceWorkerRegistration.active) {
+      serviceWorkerRegistration.active.postMessage(payload);
+    }
     navigator.serviceWorker.ready.then((reg) => {
       if (reg.active) {
-        reg.active.postMessage({
-          type: 'CANCEL_REST_NOTIFICATION',
-        });
+        reg.active.postMessage(payload);
       }
     }).catch(() => {});
   } catch (err) {

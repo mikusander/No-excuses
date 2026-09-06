@@ -9,6 +9,7 @@
  */
 
 let backgroundRestTimeout = null;
+let backgroundRestResolve = null;
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -27,48 +28,71 @@ self.addEventListener('message', (event) => {
       clearTimeout(backgroundRestTimeout);
       backgroundRestTimeout = null;
     }
+    if (backgroundRestResolve) {
+      backgroundRestResolve();
+      backgroundRestResolve = null;
+    }
 
     const targetTime = Number(data.targetTime || data.endsAtMs) || 0;
     const delay = Math.max(0, targetTime - Date.now());
 
-    backgroundRestTimeout = setTimeout(async () => {
-      backgroundRestTimeout = null;
-      try {
-        const title = data.title || '⏱️ Recupero Terminato!';
-        const options = {
-          body: data.body || 'È ora di iniziare la prossima serie!',
-          icon: '/favicon.svg',
-          badge: '/favicon.svg',
-          tag: 'rest-timer',
-          renotify: true,
-          requireInteraction: false,
-          silent: false,
-          vibrate: [250, 100, 250],
-          data: {
-            url: '/',
-          },
-        };
+    // CRUCIALE PER IOS: event.waitUntil() dichiara a WebKit che il Service Worker
+    // ha un'attività asincrona attiva e impedisce che venga terminato come idle quando si cambia app!
+    const restPromise = new Promise((resolve) => {
+      backgroundRestResolve = resolve;
 
-        await self.registration.showNotification(title, options);
-      } catch (err) {
-        console.debug('Service Worker showNotification error:', err);
-      }
-    }, delay);
+      backgroundRestTimeout = setTimeout(async () => {
+        backgroundRestTimeout = null;
+        backgroundRestResolve = null;
+        try {
+          const title = data.title || '⏱️ Recupero Terminato!';
+          const options = {
+            body: data.body || 'È ora di iniziare la prossima serie!',
+            icon: '/favicon.svg',
+            badge: '/favicon.svg',
+            tag: 'rest-timer',
+            renotify: false,
+            requireInteraction: false,
+            silent: false,
+            vibrate: [250, 100, 250],
+            data: {
+              url: '/',
+            },
+          };
+
+          await self.registration.showNotification(title, options);
+        } catch (err) {
+          console.debug('Service Worker showNotification error:', err);
+        } finally {
+          resolve();
+        }
+      }, delay);
+    });
+
+    if (event.waitUntil) {
+      event.waitUntil(restPromise);
+    }
   } else if (data.type === 'CANCEL_REST_NOTIFICATION') {
     if (backgroundRestTimeout) {
       clearTimeout(backgroundRestTimeout);
       backgroundRestTimeout = null;
     }
+    if (backgroundRestResolve) {
+      backgroundRestResolve();
+      backgroundRestResolve = null;
+    }
 
     // Auto-cancella eventuali notifiche rimaste con il tag rest-timer
-    event.waitUntil(
-      self.registration
-        .getNotifications({ tag: 'rest-timer' })
-        .then((notifications) => {
-          notifications.forEach((n) => n.close());
-        })
-        .catch(() => {})
-    );
+    const cancelPromise = self.registration
+      .getNotifications({ tag: 'rest-timer' })
+      .then((notifications) => {
+        notifications.forEach((n) => n.close());
+      })
+      .catch(() => {});
+
+    if (event.waitUntil) {
+      event.waitUntil(cancelPromise);
+    }
   }
 });
 

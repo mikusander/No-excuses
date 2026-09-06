@@ -119,7 +119,6 @@ import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock'
 import {
   initServiceWorker,
   requestNotificationPermission,
-  sendRestFinishedNotification,
   scheduleBackgroundRestNotification,
   closeActiveRestNotifications,
   getNotificationPermission,
@@ -606,6 +605,11 @@ const ActiveWorkoutPage: React.FC = () => {
     setIsResting(true);
 
     const upcoming = getUpcomingRestTargetInfo();
+    scheduleBackgroundRestNotification({
+      endsAtMs: targetTime,
+      nextExerciseName: upcoming.nextExerciseName,
+      nextSetInfo: upcoming.nextSetInfo,
+    });
     void pipManager.openRestPiP({
       totalSeconds: safe,
       remainingSeconds: safe,
@@ -652,6 +656,11 @@ const ActiveWorkoutPage: React.FC = () => {
     setIsResting(true);
 
     const upcoming = getUpcomingRestTargetInfo();
+    scheduleBackgroundRestNotification({
+      endsAtMs: targetTime,
+      nextExerciseName: upcoming.nextExerciseName,
+      nextSetInfo: upcoming.nextSetInfo,
+    });
     void pipManager.openRestPiP({
       totalSeconds: restInitialDuration > 0 ? restInitialDuration : nextDuration,
       remainingSeconds: nextDuration,
@@ -2052,13 +2061,6 @@ const ActiveWorkoutPage: React.FC = () => {
         setRestEndsAtMs(null);
         stopRestMediaSession();
         pipManager.closePiP();
-        closeActiveRestNotifications();
-
-        const upcoming = getUpcomingRestTargetInfo();
-        void sendRestFinishedNotification({
-          nextExerciseName: upcoming.nextExerciseName,
-          nextSetInfo: upcoming.nextSetInfo,
-        });
         playRestFinishedSound();
 
         if (isWorkoutOverviewModalOpen) {
