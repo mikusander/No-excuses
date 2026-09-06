@@ -102,6 +102,7 @@ export interface MuscleGroupSummary {
     displayName: string;
     volumeKg: number;
     sets: number;
+    reps: number;
   }>;
 }
 
@@ -295,39 +296,107 @@ const composeExerciseNotesNarrative = (
   return narrative;
 };
 
+export interface UnpackedExerciseItem {
+  name: string;
+  sets: number;
+  reps: number;
+  weightKg: number;
+  durationSeconds: number;
+  parentType?: string;
+}
+
 /**
- * Calcola il volume (kg) e le serie di un singolo esercizio registrato in una sessione.
+ * Spacchetta un esercizio complesso (EMOM, Circuito, Superset) nei suoi sotto-esercizi effettivi.
+ * Se l'esercizio è singolo o piramidale, restituisce un array con un solo elemento.
+ */
+export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
+  const isComplex =
+    rawEx.type === 'emom' ||
+    rawEx.type === 'circuit' ||
+    rawEx.type === 'superset' ||
+    rawEx.group_category === 'circuit' ||
+    rawEx.group_category === 'superset' ||
+    (Array.isArray(rawEx.subExercises) && rawEx.subExercises.length > 0);
+
+  // Se è un blocco composto con sub-esercizi definiti
+  if (isComplex && Array.isArray(rawEx.subExercises) && rawEx.subExercises.length > 0) {
+    const parentSets =
+      rawEx.type === 'emom'
+        ? Math.max(1, rawEx.emom_rounds || rawEx.sets || 1)
+        : Math.max(1, rawEx.sets || 1);
+
+    return rawEx.subExercises.map((sub) => {
+      const subReps = Math.max(0, sub.reps || 0);
+      const totalRepsForSub = subReps * parentSets;
+      const subWeight = Number.isFinite(Number(sub.weight_kg)) ? Math.max(0, Number(sub.weight_kg)) : 0;
+      const subDuration = Math.max(0, sub.duration_seconds || 0) * parentSets;
+
+      return {
+        name: sub.name || rawEx.name,
+        sets: parentSets,
+        reps: totalRepsForSub,
+        weightKg: subWeight,
+        durationSeconds: subDuration,
+        parentType: rawEx.type,
+      };
+    });
+  }
+
+  // Se è una piramide con step
+  if (rawEx.type === 'pyramid' && Array.isArray(rawEx.pyramid_steps) && rawEx.pyramid_steps.length > 0) {
+    let totalReps = 0;
+    let maxWeight = 0;
+    rawEx.pyramid_steps.forEach((step) => {
+      totalReps += Math.max(0, step.reps || 0);
+      const w = Number.isFinite(Number(step.weight_kg)) ? Math.max(0, Number(step.weight_kg)) : 0;
+      maxWeight = Math.max(maxWeight, w);
+    });
+
+    return [
+      {
+        name: rawEx.name,
+        sets: rawEx.pyramid_steps.length,
+        reps: totalReps,
+        weightKg: maxWeight,
+        durationSeconds: 0,
+      },
+    ];
+  }
+
+  // Esercizio standard (reps o isometria)
+  const sets = Math.max(1, rawEx.sets || 1);
+  const repsPerSet = Math.max(0, rawEx.reps || 0);
+  const totalReps = sets * repsPerSet;
+  const weight = Number.isFinite(Number(rawEx.weight_kg)) ? Math.max(0, Number(rawEx.weight_kg)) : 0;
+  const duration = Math.max(0, rawEx.duration_seconds || 0) * sets;
+
+  return [
+    {
+      name: rawEx.name,
+      sets,
+      reps: totalReps,
+      weightKg: weight,
+      durationSeconds: duration,
+    },
+  ];
+};
+
+/**
+ * Calcola il volume (kg) e le serie complessive di un esercizio o blocco (backward compatibility).
  */
 export const computeExerciseMetrics = (ex: UiExercise): { volumeKg: number; sets: number; reps: number; maxWeightKg: number } => {
+  const items = unpackExercise(ex);
   let volumeKg = 0;
-  let sets = Math.max(1, ex.sets || 1);
+  let sets = 0;
   let reps = 0;
   let maxWeightKg = 0;
 
-  if (ex.type === 'pyramid' && ex.pyramid_steps && ex.pyramid_steps.length > 0) {
-    sets = ex.pyramid_steps.length;
-    ex.pyramid_steps.forEach((step) => {
-      const stepReps = Math.max(0, step.reps || 0);
-      const stepWeight = Number.isFinite(Number(step.weight_kg)) ? Math.max(0, Number(step.weight_kg)) : 0;
-      reps += stepReps;
-      maxWeightKg = Math.max(maxWeightKg, stepWeight);
-      volumeKg += stepReps * stepWeight;
-    });
-  } else if (ex.type === 'superset' && ex.subExercises && ex.subExercises.length > 0) {
-    ex.subExercises.forEach((sub) => {
-      const subReps = Math.max(0, sub.reps || 0);
-      const subWeight = Number.isFinite(Number(sub.weight_kg)) ? Math.max(0, Number(sub.weight_kg)) : 0;
-      reps += sets * subReps;
-      maxWeightKg = Math.max(maxWeightKg, subWeight);
-      volumeKg += sets * subReps * subWeight;
-    });
-  } else {
-    const exReps = Math.max(0, ex.reps || 0);
-    const exWeight = Number.isFinite(Number(ex.weight_kg)) ? Math.max(0, Number(ex.weight_kg)) : 0;
-    reps = sets * exReps;
-    maxWeightKg = exWeight;
-    volumeKg = sets * exReps * exWeight;
-  }
+  items.forEach((item) => {
+    volumeKg += item.reps * item.weightKg;
+    sets += item.sets;
+    reps += item.reps;
+    maxWeightKg = Math.max(maxWeightKg, item.weightKg);
+  });
 
   return {
     volumeKg: Math.round(volumeKg * 100) / 100,
@@ -368,7 +437,7 @@ export const generatePeriodicReport = (
     setsCount: number;
     repsCount: number;
     exerciseSet: Set<string>;
-    exerciseVolumes: Map<string, { displayName: string; volumeKg: number; sets: number }>;
+    exerciseVolumes: Map<string, { displayName: string; volumeKg: number; sets: number; reps: number }>;
   }>();
 
   const ALL_GROUPS: MuscleGroup[] = ['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome', 'Altro'];
@@ -394,6 +463,8 @@ export const generatePeriodicReport = (
     sessionsCount: number;
     firstHalfVolume: number;
     secondHalfVolume: number;
+    firstHalfReps: number;
+    secondHalfReps: number;
     firstHalfSessions: number;
     secondHalfSessions: number;
     dates: Set<string>;
@@ -421,72 +492,86 @@ export const generatePeriodicReport = (
     const exercisesInThisSession = new Set<string>();
 
     (session.exercises || []).forEach((rawEx) => {
-      const classified = matchExercise(rawEx.name);
-      const metrics = computeExerciseMetrics(rawEx);
+      // Spacchetta gli esercizi complessi (EMOM, circuiti, superset) nei sotto-esercizi effettivi
+      const items = unpackExercise(rawEx);
 
-      totalVolumeKg += metrics.volumeKg;
-      totalSets += metrics.sets;
-      totalReps += metrics.reps;
+      items.forEach((item) => {
+        const classified = matchExercise(item.name);
+        const itemVolumeKg = Math.round(item.reps * item.weightKg * 100) / 100;
+        const itemSets = item.sets;
+        const itemReps = item.reps;
+        const itemMaxWeight = item.weightKg;
 
-      // Aggregazione Gruppo Muscolare
-      const mGroup = muscleMap.get(classified.muscleGroup)!;
-      mGroup.volumeKg += metrics.volumeKg;
-      mGroup.setsCount += metrics.sets;
-      mGroup.repsCount += metrics.reps;
-      mGroup.exerciseSet.add(classified.id);
+        totalVolumeKg += itemVolumeKg;
+        totalSets += itemSets;
+        totalReps += itemReps;
 
-      const existingExVol = mGroup.exerciseVolumes.get(classified.id) || {
-        displayName: classified.displayName,
-        volumeKg: 0,
-        sets: 0,
-      };
-      existingExVol.volumeKg += metrics.volumeKg;
-      existingExVol.sets += metrics.sets;
-      mGroup.exerciseVolumes.set(classified.id, existingExVol);
+        // Aggregazione Gruppo Muscolare
+        const mGroup = muscleMap.get(classified.muscleGroup)!;
+        mGroup.volumeKg += itemVolumeKg;
+        mGroup.setsCount += itemSets;
+        mGroup.repsCount += itemReps;
+        mGroup.exerciseSet.add(classified.id);
 
-      // Aggregazione Esercizio Canonico
-      let exAgg = exerciseMap.get(classified.id);
-      if (!exAgg) {
-        exAgg = {
-          canonicalId: classified.id,
+        const existingExVol = mGroup.exerciseVolumes.get(classified.id) || {
           displayName: classified.displayName,
-          muscleGroup: classified.muscleGroup,
-          isCanonical: classified.isCanonical,
-          totalVolumeKg: 0,
-          totalSets: 0,
-          totalReps: 0,
-          maxWeightKg: 0,
-          sessionsCount: 0,
-          firstHalfVolume: 0,
-          secondHalfVolume: 0,
-          firstHalfSessions: 0,
-          secondHalfSessions: 0,
-          dates: new Set(),
+          volumeKg: 0,
+          sets: 0,
+          reps: 0,
         };
-        exerciseMap.set(classified.id, exAgg);
-      }
+        existingExVol.volumeKg += itemVolumeKg;
+        existingExVol.sets += itemSets;
+        existingExVol.reps += itemReps;
+        mGroup.exerciseVolumes.set(classified.id, existingExVol);
 
-      exAgg.totalVolumeKg += metrics.volumeKg;
-      exAgg.totalSets += metrics.sets;
-      exAgg.totalReps += metrics.reps;
-      exAgg.maxWeightKg = Math.max(exAgg.maxWeightKg, metrics.maxWeightKg);
-      exAgg.dates.add(sessionDateStr);
-
-      if (!exercisesInThisSession.has(classified.id)) {
-        exercisesInThisSession.add(classified.id);
-        exAgg.sessionsCount += 1;
-        if (isSecondHalf) {
-          exAgg.secondHalfSessions += 1;
-        } else {
-          exAgg.firstHalfSessions += 1;
+        // Aggregazione Esercizio Canonico
+        let exAgg = exerciseMap.get(classified.id);
+        if (!exAgg) {
+          exAgg = {
+            canonicalId: classified.id,
+            displayName: classified.displayName,
+            muscleGroup: classified.muscleGroup,
+            isCanonical: classified.isCanonical,
+            totalVolumeKg: 0,
+            totalSets: 0,
+            totalReps: 0,
+            maxWeightKg: 0,
+            sessionsCount: 0,
+            firstHalfVolume: 0,
+            secondHalfVolume: 0,
+            firstHalfReps: 0,
+            secondHalfReps: 0,
+            firstHalfSessions: 0,
+            secondHalfSessions: 0,
+            dates: new Set(),
+          };
+          exerciseMap.set(classified.id, exAgg);
         }
-      }
 
-      if (isSecondHalf) {
-        exAgg.secondHalfVolume += metrics.volumeKg;
-      } else {
-        exAgg.firstHalfVolume += metrics.volumeKg;
-      }
+        exAgg.totalVolumeKg += itemVolumeKg;
+        exAgg.totalSets += itemSets;
+        exAgg.totalReps += itemReps;
+        exAgg.maxWeightKg = Math.max(exAgg.maxWeightKg, itemMaxWeight);
+        exAgg.dates.add(sessionDateStr);
+
+        if (!exercisesInThisSession.has(classified.id)) {
+          exercisesInThisSession.add(classified.id);
+          exAgg.sessionsCount += 1;
+          if (isSecondHalf) {
+            exAgg.secondHalfSessions += 1;
+          } else {
+            exAgg.firstHalfSessions += 1;
+          }
+        }
+
+        if (isSecondHalf) {
+          exAgg.secondHalfVolume += itemVolumeKg;
+          exAgg.secondHalfReps += itemReps;
+        } else {
+          exAgg.firstHalfVolume += itemVolumeKg;
+          exAgg.firstHalfReps += itemReps;
+        }
+      });
     });
 
     // Elaborazione delle note qualitative lasciate nella sessione
@@ -498,16 +583,25 @@ export const generatePeriodicReport = (
       const { exerciseName: taggedExName, body } = parseNoteContext(rawText);
       const categories = categorizeNoteText(body);
 
-      // Se la nota ha un tag esercizio, classificalo con matchExercise
-      // Altrimenti cerca se il testo menziona uno degli esercizi della sessione
+      // Raccoglie tutti i sotto-esercizi svolti nella sessione per eventuale abbinamento
+      const allSessionItems: UnpackedExerciseItem[] = [];
+      (session.exercises || []).forEach((ex) => {
+        allSessionItems.push(...unpackExercise(ex));
+      });
+
       let targetClassified = taggedExName ? matchExercise(taggedExName) : null;
 
-      if (!targetClassified && session.exercises.length > 0) {
-        // Euristica: controlla se una parola della nota corrisponde a uno degli esercizi svolti
-        for (const ex of session.exercises) {
-          const match = matchExercise(ex.name);
-          const cleanEx = ex.name.toLowerCase();
-          if (rawText.toLowerCase().includes(cleanEx) || rawText.toLowerCase().includes(match.displayName.toLowerCase())) {
+      const isGenericTag =
+        !targetClassified ||
+        targetClassified.id === 'altro_non_classificato' ||
+        /emom|circuit|superset/i.test(taggedExName || '');
+
+      if (isGenericTag && allSessionItems.length > 0) {
+        const lowerText = rawText.toLowerCase();
+        for (const item of allSessionItems) {
+          const match = matchExercise(item.name);
+          const cleanItem = item.name.toLowerCase();
+          if (lowerText.includes(cleanItem) || lowerText.includes(match.displayName.toLowerCase())) {
             targetClassified = match;
             break;
           }
@@ -545,12 +639,18 @@ export const generatePeriodicReport = (
   ALL_GROUPS.forEach((groupName) => {
     const data = muscleMap.get(groupName)!;
     const topExercises = Array.from(data.exerciseVolumes.values())
-      .sort((a, b) => b.volumeKg - a.volumeKg)
+      .sort((a, b) => {
+        if (b.volumeKg !== a.volumeKg) {
+          return b.volumeKg - a.volumeKg;
+        }
+        return b.reps - a.reps;
+      })
       .slice(0, 3)
       .map((e) => ({
         displayName: e.displayName,
         volumeKg: Math.round(e.volumeKg),
         sets: e.sets,
+        reps: e.reps,
       }));
 
     muscleGroups.push({
@@ -565,14 +665,23 @@ export const generatePeriodicReport = (
     });
   });
 
-  // Ordina i gruppi muscolari per volume decrescente
-  muscleGroups.sort((a, b) => b.volumeKg - a.volumeKg);
+  // Ordina i gruppi muscolari per volume decrescente (o per ripetizioni se volume 0)
+  muscleGroups.sort((a, b) => {
+    if (b.volumeKg !== a.volumeKg) return b.volumeKg - a.volumeKg;
+    return b.repsCount - a.repsCount;
+  });
 
   // Costruisce i risultati per Esercizio Canonico
   const exercises: ExerciseReportItem[] = Array.from(exerciseMap.values()).map((ex) => {
     // Calcola il trend tra prima e seconda metà del periodo
-    const firstAvg = ex.firstHalfSessions > 0 ? ex.firstHalfVolume / ex.firstHalfSessions : 0;
-    const secondAvg = ex.secondHalfSessions > 0 ? ex.secondHalfVolume / ex.secondHalfSessions : 0;
+    // Se l'esercizio ha volume carico (>0), usa il volume. Se è a corpo libero (0kg), usa le ripetizioni!
+    const usesVolume = ex.totalVolumeKg > 0;
+    const firstAvg = ex.firstHalfSessions > 0
+      ? (usesVolume ? ex.firstHalfVolume : ex.firstHalfReps) / ex.firstHalfSessions
+      : 0;
+    const secondAvg = ex.secondHalfSessions > 0
+      ? (usesVolume ? ex.secondHalfVolume : ex.secondHalfReps) / ex.secondHalfSessions
+      : 0;
 
     let trend: 'up' | 'down' | 'stable' | 'new' = 'stable';
     let percentChange: number | null = null;
@@ -604,8 +713,16 @@ export const generatePeriodicReport = (
     };
   });
 
-  // Ordina gli esercizi per volume decrescente
-  exercises.sort((a, b) => b.totalVolumeKg - a.totalVolumeKg);
+  // Ordina gli esercizi: prioritariamente per ripetizioni totali o volume carico
+  exercises.sort((a, b) => {
+    if (b.totalVolumeKg > 0 && a.totalVolumeKg > 0 && b.totalVolumeKg !== a.totalVolumeKg) {
+      return b.totalVolumeKg - a.totalVolumeKg;
+    }
+    if (b.totalReps !== a.totalReps) {
+      return b.totalReps - a.totalReps;
+    }
+    return b.totalSets - a.totalSets;
+  });
 
   // Costruisce i Dossier delle Note per Esercizio
   const notesDossiers: ExerciseNotesDossier[] = Array.from(notesByCanonicalExercise.values()).map((entry) => {
@@ -666,26 +783,29 @@ export const exportReportSummaryText = (report: PeriodicReportResult): string =>
   lines.push(`Periodo: ${report.period.label}`);
   lines.push(`----------------------------------------`);
   lines.push(`🏋️ METRICHE GENERALI:`);
-  lines.push(`• Volume totale sollevato: ${report.totalVolumeKg.toLocaleString('it-IT')} kg (${(report.totalVolumeKg / 1000).toFixed(2)} t)`);
+  lines.push(`• Volume totale carico: ${report.totalVolumeKg.toLocaleString('it-IT')} kg (${(report.totalVolumeKg / 1000).toFixed(2)} t)`);
+  lines.push(`• Volume totale ripetizioni: ${report.totalReps.toLocaleString('it-IT')} rip.`);
   lines.push(`• Serie totali completate: ${report.totalSets}`);
-  lines.push(`• Ripetizioni totali: ${report.totalReps.toLocaleString('it-IT')}`);
   lines.push(`• Sessioni di allenamento: ${report.totalWorkouts}`);
-  lines.push(`• Media volume a seduta: ${report.averageVolumePerWorkout.toLocaleString('it-IT')} kg`);
+  lines.push(`• Media ripetizioni a seduta: ${report.totalWorkouts > 0 ? Math.round(report.totalReps / report.totalWorkouts).toLocaleString('it-IT') : 0} rip.`);
   lines.push(`• Media serie a seduta: ${report.averageSetsPerWorkout}`);
   lines.push(``);
 
   lines.push(`💪 DISTRIBUZIONE PER GRUPPI MUSCOLARI:`);
   report.muscleGroups
-    .filter((mg) => mg.volumeKg > 0 || mg.setsCount > 0)
+    .filter((mg) => mg.volumeKg > 0 || mg.setsCount > 0 || mg.repsCount > 0)
     .forEach((mg) => {
-      lines.push(`• ${mg.group}: ${mg.volumeKg.toLocaleString('it-IT')} kg (${mg.volumePercent}%) | ${mg.setsCount} serie (${mg.setsPercent}%)`);
+      const kgStr = mg.volumeKg > 0 ? `${mg.volumeKg.toLocaleString('it-IT')} kg (${mg.volumePercent}%) | ` : '';
+      lines.push(`• ${mg.group}: ${kgStr}${mg.repsCount.toLocaleString('it-IT')} rip. in ${mg.setsCount} serie (${mg.setsPercent}%)`);
     });
   lines.push(``);
 
-  lines.push(`🏆 TOP ESERCIZI PER VOLUME:`);
-  report.exercises.slice(0, 5).forEach((ex, idx) => {
+  lines.push(`🏆 DETTAGLIO ESERCIZI (VOLUME & PROGRESSI):`);
+  report.exercises.slice(0, 10).forEach((ex, idx) => {
     const trendIcon = ex.trend === 'up' ? `(+${ex.percentChange}% ↗️)` : ex.trend === 'down' ? `(${ex.percentChange}% ↘️)` : '';
-    lines.push(`${idx + 1}. ${ex.displayName} [${ex.muscleGroup}]: ${ex.totalVolumeKg.toLocaleString('it-IT')} kg (${ex.totalSets} serie, Max ${ex.maxWeightKg} kg) ${trendIcon}`);
+    const loadStr = ex.totalVolumeKg > 0 ? `, ${ex.totalVolumeKg.toLocaleString('it-IT')} kg` : ' (a corpo libero)';
+    const maxStr = ex.maxWeightKg > 0 ? `Max ${ex.maxWeightKg} kg` : 'Bodyweight';
+    lines.push(`${idx + 1}. ${ex.displayName} [${ex.muscleGroup}]: ${ex.totalReps.toLocaleString('it-IT')} rip. (${ex.totalSets} serie${loadStr}, ${maxStr}) ${trendIcon}`);
   });
   lines.push(``);
 

@@ -90,6 +90,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
   const [activeTab, setActiveTab] = useState<'muscles' | 'exercises' | 'notes'>('muscles');
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState('');
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState<string>('all');
+  const [exerciseSortMode, setExerciseSortMode] = useState<'reps' | 'volume' | 'sets'>('reps');
   const [copiedNotification, setCopiedNotification] = useState(false);
   const [expandedDossiers, setExpandedDossiers] = useState<Record<string, boolean>>({});
 
@@ -127,15 +128,30 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
     }));
   };
 
-  // Filtro esercizi
-  const filteredExercises = report.exercises.filter((ex) => {
-    const matchesSearch =
-      exerciseSearchQuery === '' ||
-      ex.displayName.toLowerCase().includes(exerciseSearchQuery.toLowerCase());
-    const matchesGroup =
-      selectedMuscleFilter === 'all' || ex.muscleGroup === selectedMuscleFilter;
-    return matchesSearch && matchesGroup;
-  });
+  // Filtro e ordinamento esercizi
+  const sortedFilteredExercises = useMemo(() => {
+    const list = report.exercises.filter((ex) => {
+      const matchesSearch =
+        exerciseSearchQuery === '' ||
+        ex.displayName.toLowerCase().includes(exerciseSearchQuery.toLowerCase());
+      const matchesGroup =
+        selectedMuscleFilter === 'all' || ex.muscleGroup === selectedMuscleFilter;
+      return matchesSearch && matchesGroup;
+    });
+
+    return list.sort((a, b) => {
+      if (exerciseSortMode === 'reps') {
+        if (b.totalReps !== a.totalReps) return b.totalReps - a.totalReps;
+        return b.totalVolumeKg - a.totalVolumeKg;
+      }
+      if (exerciseSortMode === 'volume') {
+        if (b.totalVolumeKg !== a.totalVolumeKg) return b.totalVolumeKg - a.totalVolumeKg;
+        return b.totalReps - a.totalReps;
+      }
+      if (b.totalSets !== a.totalSets) return b.totalSets - a.totalSets;
+      return b.totalReps - a.totalReps;
+    });
+  }, [report.exercises, exerciseSearchQuery, selectedMuscleFilter, exerciseSortMode]);
 
   // Filtro dossier note
   const filteredDossiers = report.notesDossiers.filter((dossier) => {
@@ -243,7 +259,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
               <div className="absolute top-0 right-0 w-24 h-24 bg-brand-orange/5 rounded-full blur-2xl pointer-events-none" />
               <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
                 <Dumbbell size={16} className="text-brand-orange" />
-                <span>Volume Totale</span>
+                <span>Volume Carico</span>
               </div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
@@ -258,14 +274,30 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
 
             <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
               <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
-                <Layers size={16} className="text-cyan-400" />
+                <Activity size={16} className="text-cyan-400" />
+                <span>Volume Ripetizioni</span>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                  {report.totalReps.toLocaleString('it-IT')}
+                </span>
+                <span className="text-xs font-bold text-cyan-400 uppercase">rip.</span>
+              </div>
+              <p className="text-[11px] text-brand-grey/60 mt-1">
+                Media {report.totalWorkouts > 0 ? Math.round(report.totalReps / report.totalWorkouts).toLocaleString('it-IT') : 0} rip a sessione
+              </p>
+            </div>
+
+            <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
+              <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
+                <Layers size={16} className="text-emerald-400" />
                 <span>Serie Totali</span>
               </div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
                   {report.totalSets}
                 </span>
-                <span className="text-xs font-bold text-cyan-400 uppercase">serie</span>
+                <span className="text-xs font-bold text-emerald-400 uppercase">serie</span>
               </div>
               <p className="text-[11px] text-brand-grey/60 mt-1">
                 Media {report.averageSetsPerWorkout} serie a sessione
@@ -274,30 +306,14 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
 
             <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
               <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
-                <Calendar size={16} className="text-emerald-400" />
+                <Calendar size={16} className="text-purple-400" />
                 <span>Sessioni Svolte</span>
               </div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
                   {report.totalWorkouts}
                 </span>
-                <span className="text-xs font-bold text-emerald-400 uppercase">workout</span>
-              </div>
-              <p className="text-[11px] text-brand-grey/60 mt-1">
-                {report.totalReps.toLocaleString('it-IT')} ripetizioni totali
-              </p>
-            </div>
-
-            <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
-              <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
-                <Activity size={16} className="text-rose-400" />
-                <span>Media Seduta</span>
-              </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {report.averageVolumePerWorkout.toLocaleString('it-IT')}
-                </span>
-                <span className="text-xs font-bold text-rose-400 uppercase">kg/seduta</span>
+                <span className="text-xs font-bold text-purple-400 uppercase">workout</span>
               </div>
               <p className="text-[11px] text-brand-grey/60 mt-1">
                 {report.notesDossiers.length} esercizi con note registrate
@@ -415,7 +431,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
 
                           <div className="grid grid-cols-2 gap-2 mb-4">
                             <div className="bg-black/30 rounded-xl p-2.5 border border-white/5">
-                              <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Volume</span>
+                              <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Volume Carico</span>
                               <span className="text-lg font-black text-white">
                                 {mg.volumeKg.toLocaleString('it-IT')} <span className="text-xs text-brand-orange">kg</span>
                               </span>
@@ -425,12 +441,12 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                             </div>
 
                             <div className="bg-black/30 rounded-xl p-2.5 border border-white/5">
-                              <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Serie</span>
+                              <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Volume Ripetizioni</span>
                               <span className="text-lg font-black text-white">
-                                {mg.setsCount} <span className="text-xs text-cyan-400">set</span>
+                                {mg.repsCount.toLocaleString('it-IT')} <span className="text-xs text-cyan-400">rip</span>
                               </span>
                               <span className="text-[10px] text-brand-grey/60 block mt-0.5">
-                                {mg.setsPercent}% del totale
+                                in {mg.setsCount} serie ({mg.setsPercent}%)
                               </span>
                             </div>
                           </div>
@@ -444,13 +460,13 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                                 {mg.topExercises.map((topEx, idx) => (
                                   <div
                                     key={idx}
-                                    className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-white/5"
+                                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-white/5"
                                   >
-                                    <span className="text-white/90 font-medium truncate max-w-[65%]">
+                                    <span className="text-white/90 font-medium truncate max-w-[55%]">
                                       {topEx.displayName}
                                     </span>
-                                    <span className="font-mono text-brand-grey/80 text-[11px]">
-                                      {topEx.volumeKg.toLocaleString('it-IT')} kg ({topEx.sets}s)
+                                    <span className="font-mono text-cyan-300 font-bold text-[11px]">
+                                      {topEx.reps.toLocaleString('it-IT')} rip ({topEx.sets} set{topEx.volumeKg > 0 ? ` • ${topEx.volumeKg.toLocaleString('it-IT')} kg` : ''})
                                     </span>
                                   </div>
                                 ))}
@@ -469,65 +485,105 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
           {activeTab === 'exercises' && (
             <div className="space-y-4">
               {/* Barra di ricerca e filtro gruppo muscolare */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative flex-1">
-                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-grey/50" />
-                  <input
-                    type="text"
-                    placeholder="Cerca esercizio..."
-                    value={exerciseSearchQuery}
-                    onChange={(e) => setExerciseSearchQuery(e.target.value)}
-                    className="w-full bg-brand-darkGrey/30 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-brand-grey/40 focus:outline-none focus:border-brand-orange"
-                  />
-                </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-grey/50" />
+                    <input
+                      type="text"
+                      placeholder="Cerca esercizio..."
+                      value={exerciseSearchQuery}
+                      onChange={(e) => setExerciseSearchQuery(e.target.value)}
+                      className="w-full bg-brand-darkGrey/30 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-brand-grey/40 focus:outline-none focus:border-brand-orange"
+                    />
+                  </div>
 
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                  <button
-                    onClick={() => setSelectedMuscleFilter('all')}
-                    type="button"
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
-                      selectedMuscleFilter === 'all'
-                        ? 'bg-brand-orange text-black'
-                        : 'bg-white/5 hover:bg-white/10 text-brand-grey'
-                    }`}
-                  >
-                    Tutti
-                  </button>
-                  {['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome'].map((group) => (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                     <button
-                      key={group}
-                      onClick={() => setSelectedMuscleFilter(group)}
+                      onClick={() => setSelectedMuscleFilter('all')}
                       type="button"
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
-                        selectedMuscleFilter === group
+                        selectedMuscleFilter === 'all'
                           ? 'bg-brand-orange text-black'
                           : 'bg-white/5 hover:bg-white/10 text-brand-grey'
                       }`}
                     >
-                      {group}
+                      Tutti
                     </button>
-                  ))}
+                    {['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome'].map((group) => (
+                      <button
+                        key={group}
+                        onClick={() => setSelectedMuscleFilter(group)}
+                        type="button"
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
+                          selectedMuscleFilter === group
+                            ? 'bg-brand-orange text-black'
+                            : 'bg-white/5 hover:bg-white/10 text-brand-grey'
+                        }`}
+                      >
+                        {group}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Selettore ordinamento: Ripetizioni, Carico, Serie */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[11px] font-bold text-brand-grey/60 mr-1">Ordina per:</span>
+                  <button
+                    onClick={() => setExerciseSortMode('reps')}
+                    type="button"
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      exerciseSortMode === 'reps'
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
+                    }`}
+                  >
+                    🔢 Ripetizioni (Volume)
+                  </button>
+                  <button
+                    onClick={() => setExerciseSortMode('volume')}
+                    type="button"
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      exerciseSortMode === 'volume'
+                        ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/40'
+                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
+                    }`}
+                  >
+                    🏋️ Carico (kg)
+                  </button>
+                  <button
+                    onClick={() => setExerciseSortMode('sets')}
+                    type="button"
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      exerciseSortMode === 'sets'
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
+                    }`}
+                  >
+                    📋 Serie (Set)
+                  </button>
                 </div>
               </div>
 
-              {filteredExercises.length === 0 ? (
+              {sortedFilteredExercises.length === 0 ? (
                 <div className="text-center py-12 bg-brand-darkGrey/15 border border-dashed border-white/10 rounded-2xl">
                   <Dumbbell size={36} className="mx-auto text-brand-grey/30 mb-2" />
                   <p className="text-sm text-brand-grey font-bold">Nessun esercizio trovato per i filtri selezionati</p>
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {filteredExercises.map((ex) => {
+                  {sortedFilteredExercises.map((ex) => {
                     const theme = MUSCLE_COLORS[ex.muscleGroup];
                     return (
                       <div
                         key={ex.canonicalId}
                         className="bg-brand-darkGrey/20 border border-white/10 hover:border-white/20 rounded-2xl p-3.5 sm:p-4 transition-all"
                       >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div className="flex items-start gap-2.5">
                             <span
-                              className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${theme.bg} ${theme.text} ${theme.border} mt-0.5`}
+                              className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${theme.bg} ${theme.text} ${theme.border} mt-0.5 shrink-0`}
                             >
                               {ex.muscleGroup}
                             </span>
@@ -536,14 +592,37 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                                 {ex.displayName}
                               </h3>
                               <p className="text-[11px] text-brand-grey/60 mt-0.5">
-                                Eseguito in {ex.sessionsCount} {ex.sessionsCount === 1 ? 'sessione' : 'sessioni'} • {ex.totalSets} serie • {ex.totalReps} ripetizioni
+                                Eseguito in {ex.sessionsCount} {ex.sessionsCount === 1 ? 'sessione' : 'sessioni'} • {ex.totalSets} serie totali
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-4 sm:gap-6 self-end sm:self-auto">
+                          <div className="flex items-center gap-3 sm:gap-5 self-end sm:self-auto flex-wrap">
+                            {/* Volume Ripetizioni */}
+                            <div className="text-right min-w-[75px]">
+                              <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Vol. Ripetizioni</span>
+                              <span className="text-sm font-black text-cyan-400 font-mono">
+                                {ex.totalReps.toLocaleString('it-IT')} <span className="text-[10px]">rip</span>
+                              </span>
+                            </div>
+
+                            {/* Volume Carico (se > 0 o corpo libero) */}
+                            <div className="text-right min-w-[75px]">
+                              <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Vol. Carico</span>
+                              {ex.totalVolumeKg > 0 ? (
+                                <span className="text-sm font-black text-brand-orange font-mono">
+                                  {ex.totalVolumeKg.toLocaleString('it-IT')} <span className="text-[10px]">kg</span>
+                                </span>
+                              ) : (
+                                <span className="text-xs font-semibold text-brand-grey/60">
+                                  Corpo Libero
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Carico Max / PR */}
                             {ex.maxWeightKg > 0 && (
-                              <div className="text-right">
+                              <div className="text-right min-w-[55px]">
                                 <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Carico Max</span>
                                 <span className="text-xs font-black text-white font-mono">
                                   {ex.maxWeightKg} <span className="text-brand-orange text-[10px]">kg</span>
@@ -551,15 +630,8 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                               </div>
                             )}
 
-                            <div className="text-right min-w-[80px]">
-                              <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Volume</span>
-                              <span className="text-sm font-black text-brand-orange font-mono">
-                                {ex.totalVolumeKg.toLocaleString('it-IT')} <span className="text-[10px]">kg</span>
-                              </span>
-                            </div>
-
                             {/* Indicatore di Trend */}
-                            <div className="text-right min-w-[65px]">
+                            <div className="text-right min-w-[60px]">
                               <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Trend</span>
                               {ex.trend === 'up' && (
                                 <span className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-400">
@@ -577,7 +649,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                                 </span>
                               )}
                               {ex.trend === 'new' && (
-                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-cyan-400 px-1.5 py-0.2 bg-cyan-400/10 rounded">
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-brand-orange uppercase">
                                   Nuovo
                                 </span>
                               )}
