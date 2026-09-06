@@ -350,6 +350,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [restRemaining, setRestRemaining] = useState(0);
   const [restInitialDuration, setRestInitialDuration] = useState(0);
   const [restEndsAtMs, setRestEndsAtMs] = useState<number | null>(null);
+  const [audioTestFeedback, setAudioTestFeedback] = useState<string | null>(null);
 
   // Timer State for Isometry
   const [isometryActive, setIsometryActive] = useState(false);
@@ -3973,28 +3974,38 @@ const ActiveWorkoutPage: React.FC = () => {
           Tap to {restEndsAtMs != null ? 'pause' : 'start'} / hold to reset
         </p>
 
-        <div className="flex items-center justify-center gap-2 -mt-2 mb-8">
-          <button
-            type="button"
-            onClick={() => {
-              testAudio();
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-brand-orange/30 bg-brand-orange/10 hover:bg-brand-orange/20 text-brand-orange text-xs font-semibold transition-all active:scale-95 shadow-sm shadow-black/40 cursor-pointer"
-            title="Verifica il suono del timer (funziona anche con Spotify in riproduzione)"
-          >
-            <span>🔊 Prova Suono</span>
-          </button>
-
-          {pipManager.isSupported() && (
+        <div className="flex flex-col items-center justify-center gap-2 -mt-2 mb-8">
+          <div className="flex items-center justify-center gap-2">
             <button
               type="button"
-              onClick={handleTogglePiP}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-brand-orange/40 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all shadow-lg shadow-black/40 cursor-pointer"
-              title="Mostra timer flottante sopra altre app (PiP)"
+              onClick={async () => {
+                await testAudio();
+                setAudioTestFeedback('🔊 Segnale inviato! Se non lo senti, disattiva la modalità Silenzioso (tasto suoneria iPhone) oppure usa le cuffie/AirPods.');
+                setTimeout(() => setAudioTestFeedback(null), 5500);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-brand-orange/40 bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
+              title="Verifica il suono del timer (funziona anche con Spotify in riproduzione)"
             >
-              <Layers size={14} />
-              <span>{pipManager.isActive() ? 'Chiudi Overlay Flottante' : 'Mini-Timer Flottante (PiP)'}</span>
+              <span>🔊 Prova Suono Timer</span>
             </button>
+
+            {pipManager.isSupported() && (
+              <button
+                type="button"
+                onClick={handleTogglePiP}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-brand-orange/40 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all shadow-lg shadow-black/40 cursor-pointer"
+                title="Mostra timer flottante sopra altre app (PiP)"
+              >
+                <Layers size={14} />
+                <span>{pipManager.isActive() ? 'Chiudi Overlay Flottante' : 'Mini-Timer Flottante (PiP)'}</span>
+              </button>
+            )}
+          </div>
+
+          {audioTestFeedback && (
+            <div className="max-w-xs text-center text-[11px] leading-snug text-brand-orange bg-brand-darkGrey/95 border border-brand-orange/40 rounded-xl px-3.5 py-2 shadow-xl animate-in fade-in duration-200">
+              {audioTestFeedback}
+            </div>
           )}
         </div>
 

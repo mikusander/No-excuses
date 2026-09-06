@@ -44,6 +44,14 @@ class PiPManager {
    */
   public isSupported(): boolean {
     if (typeof window === 'undefined') return false;
+
+    // Su iOS (iPhone / iPad), Apple WebKit non supporta Document PiP e blocca
+    // il Picture-in-Picture per canvas stream simulati, impedendo qualsiasi overlay sopra la Home o altre app.
+    const isIOS =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIOS) return false;
+
     const hasDocPiP = 'documentPictureInPicture' in window;
     const hasVideoPiP =
       typeof document !== 'undefined' &&

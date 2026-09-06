@@ -121,15 +121,15 @@ class SoundManager {
    * Sblocca l'AudioContext su iOS Safari e attiva il keep-alive permanente.
    * Viene richiamato al primo tocco o tap dell'utente.
    */
-  public unlock() {
+  public async unlock(): Promise<boolean> {
     try {
       const ctx = this.getContext();
-      if (!ctx) return;
+      if (!ctx) return false;
 
       this.configureSession();
 
-      if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
-        ctx.resume().catch(() => {});
+      if (ctx.state !== 'running') {
+        await ctx.resume();
       }
 
       this.startKeepAlive(ctx);
@@ -143,28 +143,30 @@ class SoundManager {
         source.start(0);
         this.isUnlocked = true;
       }
+      return true;
     } catch (err) {
       console.debug('SoundManager unlock error:', err);
+      return false;
     }
   }
 
   /**
    * Riproduce un beep a una frequenza specifica con inviluppo esponenziale per evitare click.
    */
-  private playBeep(freq: number, durationSeconds: number, volume: number = 0.8) {
+  public async playBeep(freq: number, durationSeconds: number, volume: number = 0.85) {
     try {
       const ctx = this.getContext();
       if (!ctx) return;
 
       this.configureSession();
 
-      if (ctx.state === 'suspended' || (ctx.state as any) === 'interrupted') {
-        ctx.resume().catch(() => {});
+      if (ctx.state !== 'running') {
+        await ctx.resume();
       }
 
       this.startKeepAlive(ctx);
 
-      const now = Math.max(ctx.currentTime, 0.01);
+      const now = ctx.currentTime + 0.02;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -172,16 +174,16 @@ class SoundManager {
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, now);
 
-      // Inviluppo anti-click: attacco netto di 5ms e rilascio esponenziale
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.linearRampToValueAtTime(volume, now + 0.005);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + durationSeconds);
+      // Inviluppo anti-click: attacco netto di 8ms e rilascio esponenziale
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(volume, now + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + durationSeconds);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now);
-      osc.stop(now + durationSeconds + 0.02);
+      osc.stop(now + durationSeconds + 0.04);
     } catch (err) {
       console.debug('SoundManager playBeep error:', err);
     }
@@ -192,46 +194,46 @@ class SoundManager {
    */
   public playCountdownBeep(secondsRemaining?: number) {
     const freq = secondsRemaining === 1 ? 440 : 440;
-    this.playBeep(freq, 0.11, 0.8);
+    void this.playBeep(freq, 0.12, 0.85);
   }
 
   /**
    * Segnale di fine recupero (0s): Frequenza ~880 Hz, durata 400ms.
    */
   public playRestFinishedSound() {
-    this.playBeep(880, 0.45, 0.9);
+    void this.playBeep(880, 0.45, 0.9);
   }
 
   /**
    * Suono per il completamento complessivo dell'allenamento.
    */
-  public playGoalReachedSound() {
+  public async playGoalReachedSound() {
     try {
       const ctx = this.getContext();
       if (!ctx) return;
       this.configureSession();
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      if (ctx.state !== 'running') await ctx.resume();
       this.startKeepAlive(ctx);
 
       const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
       const noteDur = 0.16;
       notes.forEach((freq, idx) => {
-        const now = ctx.currentTime + idx * 0.07;
+        const now = ctx.currentTime + 0.02 + idx * 0.07;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
 
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, now);
 
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.linearRampToValueAtTime(0.7, now + 0.008);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + noteDur);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.8, now + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + noteDur);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
 
         osc.start(now);
-        osc.stop(now + noteDur);
+        osc.stop(now + noteDur + 0.04);
       });
     } catch (err) {
       console.debug('playGoalReachedSound error:', err);
@@ -241,12 +243,12 @@ class SoundManager {
   /**
    * Esegue un test acustico immediato per consentire all'utente di verificare il suono su iPhone.
    */
-  public testAudio() {
-    this.unlock();
-    this.playBeep(440, 0.1, 0.85);
-    setTimeout(() => {
-      this.playBeep(880, 0.35, 0.9);
-    }, 200);
+  public async testAudio() {
+    await this.unlock();
+    await this.playBeep(440, 0.12, 0.9);
+    setTimeout(async () => {
+      await this.playBeep(880, 0.35, 0.95);
+    }, 180);
   }
 }
 
