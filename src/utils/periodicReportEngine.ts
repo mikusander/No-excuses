@@ -6,7 +6,12 @@
 import { matchExercise, calculateStringSimilarity, type MuscleGroup } from './exerciseClassifier';
 import type { UiExercise, UiSubExercise } from '../lib/workoutSchemaAdapter';
 
-export type ReportPeriodType = 'week' | 'month' | 'quarter' | 'semester' | 'year';
+export type ReportPeriodType = 'week' | 'month' | 'quarter' | 'semester' | 'year' | 'custom';
+
+export interface CustomDateRange {
+  startDate: string | Date;
+  endDate: string | Date;
+}
 
 export interface ReportPeriodInfo {
   type: ReportPeriodType;
@@ -192,11 +197,48 @@ export const formatSafeDate = (dateVal: unknown): string => {
   }
 };
 
-export const getPeriodInfo = (periodType: ReportPeriodType): ReportPeriodInfo => {
+export const getPeriodInfo = (
+  periodType: ReportPeriodType,
+  customRange?: CustomDateRange
+): ReportPeriodInfo => {
   const now = new Date();
   const endDate = new Date(now);
   let days = 30;
   let label = 'Ultimi 30 Giorni (Mensile)';
+
+  if (periodType === 'custom') {
+    const rawStart = customRange?.startDate ? parseSafeDate(customRange.startDate) : null;
+    const rawEnd = customRange?.endDate ? parseSafeDate(customRange.endDate) : null;
+
+    const defaultStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const parsedStart = rawStart || defaultStart;
+    const parsedEnd = rawEnd || now;
+
+    // Assicura che startDate <= endDate
+    const validStart = parsedStart <= parsedEnd ? parsedStart : parsedEnd;
+    const validEnd = parsedStart <= parsedEnd ? parsedEnd : parsedStart;
+
+    const startDate = new Date(validStart);
+    startDate.setHours(0, 0, 0, 0);
+
+    const adjustedEndDate = new Date(validEnd);
+    adjustedEndDate.setHours(23, 59, 59, 999);
+
+    const diffMs = Math.max(0, adjustedEndDate.getTime() - startDate.getTime());
+    days = Math.max(1, Math.round(diffMs / (24 * 60 * 60 * 1000)));
+
+    const startStr = formatSafeDate(startDate);
+    const endStr = formatSafeDate(adjustedEndDate);
+    label = `Dal ${startStr} al ${endStr} (${days} ${days === 1 ? 'giorno' : 'giorni'})`;
+
+    return {
+      type: 'custom',
+      label,
+      days,
+      startDate,
+      endDate: adjustedEndDate,
+    };
+  }
 
   switch (periodType) {
     case 'week':
@@ -467,8 +509,11 @@ export const computeExerciseMetrics = (ex: UiExercise): { volumeKg: number; sets
 /**
  * Fornisce un report vuoto ma coerente per stati iniziali o fallback da errore.
  */
-export const getEmptyReport = (periodType: ReportPeriodType): PeriodicReportResult => {
-  const period = getPeriodInfo(periodType);
+export const getEmptyReport = (
+  periodType: ReportPeriodType,
+  customRange?: CustomDateRange
+): PeriodicReportResult => {
+  const period = getPeriodInfo(periodType, customRange);
   const ALL_GROUPS: MuscleGroup[] = ['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome', 'Altro'];
   return {
     period,
@@ -499,9 +544,10 @@ export const getEmptyReport = (periodType: ReportPeriodType): PeriodicReportResu
  */
 export const generatePeriodicReport = (
   workouts: RawWorkoutSession[],
-  periodType: ReportPeriodType
+  periodType: ReportPeriodType,
+  customRange?: CustomDateRange
 ): PeriodicReportResult => {
-  const period = getPeriodInfo(periodType);
+  const period = getPeriodInfo(periodType, customRange);
 
   // Filtra le sessioni comprese nell'intervallo temporale
   const inRangeWorkouts = (workouts || []).filter((w) => {

@@ -69,8 +69,12 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move, Copy } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move, Copy, Minus, Sparkles, History, Check, Camera, Mic } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import WorkoutBulkToolbar from '../components/WorkoutBulkToolbar';
+import WorkoutQuickImportModal from '../components/WorkoutQuickImportModal';
+import { useUserExerciseHistory, type UserExerciseHistoryItem } from '../hooks/useUserExerciseHistory';
+import { parseExerciseInput, type ParsedWorkoutItem } from '../utils/parseExerciseInput';
 
 interface ExerciseDraft {
   id: string;
@@ -232,6 +236,11 @@ const NewTrainPage: React.FC = () => {
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [didAutoFocusExercise, setDidAutoFocusExercise] = useState(false);
   const exerciseRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+
+  const { searchHistory } = useUserExerciseHistory(user?.id);
+  const [exerciseSuggestions, setExerciseSuggestions] = useState<Record<string, UserExerciseHistoryItem[]>>({});
+  const [exerciseNotices, setExerciseNotices] = useState<Record<string, string>>({});
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const { id } = useParams<{ id: string }>();
   const requestedExerciseIndex = React.useMemo(() => {
@@ -549,7 +558,17 @@ const NewTrainPage: React.FC = () => {
     }
   };
 
+  /**
+   * TECNICA 2: Carry-Over Pattern (Default Inheritance)
+   * Aggiunge un nuovo esercizio ereditando sets, reps, rest e duration dall'ultimo esercizio presente.
+   */
   const addExercise = () => {
+    const lastEx = exercises[exercises.length - 1];
+    const inheritedSets = lastEx && Number.isFinite(lastEx.sets) && lastEx.sets > 0 ? lastEx.sets : 3;
+    const inheritedReps = lastEx && Number.isFinite(lastEx.reps) && lastEx.reps > 0 ? lastEx.reps : 10;
+    const inheritedRest = lastEx && Number.isFinite(lastEx.rest_seconds) && lastEx.rest_seconds >= 0 ? lastEx.rest_seconds : 90;
+    const inheritedDuration = lastEx && Number.isFinite(lastEx.duration_seconds) && lastEx.duration_seconds > 0 ? lastEx.duration_seconds : 30;
+
     setExercises([
       ...exercises,
       {
@@ -557,14 +576,231 @@ const NewTrainPage: React.FC = () => {
         type: 'reps',
         name: '',
         instruction_note: '',
-        sets: 3,
-        reps: 10,
-        duration_seconds: 30,
-        rest_seconds: 60,
+        sets: inheritedSets,
+        reps: inheritedReps,
+        duration_seconds: inheritedDuration,
+        rest_seconds: inheritedRest,
         transition_rest_seconds: 0,
         weight_kg: null,
       }
     ]);
+  };
+
+  /**
+   * TECNICA 3: Azioni Cumulative / Bulk Edit su Tutta la Scheda
+   */
+  const handleApplyGlobalRest = (seconds: number) => {
+    setExercises(prev =>
+      prev.map(ex => {
+        const updated = { ...ex, rest_seconds: seconds };
+        if (ex.pyramid_steps && ex.pyramid_steps.length > 0) {
+          updated.pyramid_steps = ex.pyramid_steps.map(s => ({ ...s, rest_seconds: seconds }));
+        }
+        return updated;
+      })
+    );
+    // Cancella eventuali bozze attive di recupero nei numberDrafts
+    setNumberDrafts(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(k => {
+        if (k.includes(':rest:') || k.includes(':step:') && k.includes(':rest')) {
+          delete next[k];
+        }
+      });
+      return next;
+    });
+  };
+
+  const handleApplyGlobalSets = (sets: number) => {
+    setExercises(prev =>
+      prev.map(ex => {
+        if (ex.type === 'emom') {
+          return { ...ex, sets, emom_rounds: sets };
+        }
+        if (ex.type === 'pyramid') {
+          return ex;
+        }
+        return { ...ex, sets };
+      })
+    );
+    setNumberDrafts(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(k => {
+        if (k.endsWith(':sets') || k.endsWith(':emom_rounds')) {
+          delete next[k];
+        }
+      });
+      return next;
+    });
+  };
+
+  /**
+   * TECNICA 4: Smart String Parser Inline
+   * Popola e converte l'esercizio se la stringa digitata corrisponde a sintassi nota.
+   */
+  const handleApplyParsedToExercise = (id: string, parsed: ParsedWorkoutItem) => {
+    if (!parsed.matched) return;
+
+    setExercises(prev =>
+      prev.map(ex => {
+        if (ex.id !== id) return ex;
+
+        if (parsed.type === 'emom') {
+          return {
+            ...ex,
+            type: 'emom',
+            name: parsed.name,
+            sets: parsed.sets,
+            emom_rounds: parsed.emom_rounds || parsed.sets,
+            emom_round_duration: parsed.emom_round_duration || 60,
+            rest_seconds: parsed.rest_seconds,
+            subExercises: (parsed.subExercises || []).map(s => ({
+              name: s.name,
+              type: s.type,
+              reps: s.reps,
+              duration_seconds: s.duration_seconds,
+              weight_kg: s.weight_kg ?? null,
+              instruction_note: '',
+            })),
+          };
+        }
+
+        if (parsed.type === 'circuit') {
+          return {
+            ...ex,
+            type: 'circuit',
+            name: parsed.name,
+            sets: parsed.sets,
+            rest_seconds: parsed.rest_seconds,
+            subExercises: (parsed.subExercises || []).map(s => ({
+              name: s.name,
+              type: s.type,
+              reps: s.reps,
+              duration_seconds: s.duration_seconds,
+              weight_kg: s.weight_kg ?? null,
+              instruction_note: '',
+            })),
+          };
+        }
+
+        if (parsed.type === 'superset') {
+          return {
+            ...ex,
+            type: 'superset',
+            name: parsed.name,
+            sets: parsed.sets,
+            rest_seconds: parsed.rest_seconds,
+            subExercises: (parsed.subExercises || []).map(s => ({
+              name: s.name,
+              type: s.type,
+              reps: s.reps,
+              duration_seconds: s.duration_seconds,
+              weight_kg: s.weight_kg ?? null,
+              instruction_note: '',
+            })),
+          };
+        }
+
+        if (parsed.type === 'pyramid') {
+          return {
+            ...ex,
+            type: 'pyramid',
+            name: parsed.name,
+            sets: 1,
+            rest_seconds: 0,
+            pyramid_steps: (parsed.pyramid_steps || []).map(s => ({
+              reps: s.reps,
+              rest_seconds: s.rest_seconds,
+              weight_kg: s.weight_kg ?? null,
+            })),
+          };
+        }
+
+        if (parsed.type === 'isometry') {
+          return {
+            ...ex,
+            type: 'isometry',
+            name: parsed.name,
+            sets: parsed.sets,
+            reps: 0,
+            duration_seconds: parsed.duration_seconds,
+            rest_seconds: parsed.rest_seconds,
+          };
+        }
+
+        return {
+          ...ex,
+          type: 'reps',
+          name: parsed.name,
+          sets: parsed.sets,
+          reps: parsed.reps,
+          rest_seconds: parsed.rest_seconds,
+        };
+      })
+    );
+
+    // Resetta numberDrafts per questo esercizio in modo che i nuovi valori numerici appaiano subito
+    setNumberDrafts(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(k => {
+        if (k.startsWith(id)) {
+          delete next[k];
+        }
+      });
+      return next;
+    });
+  };
+
+  /**
+   * TECNICA 1: Autofill da Storico Utente
+   */
+  const handleApplyHistoryItemToExercise = (id: string, item: UserExerciseHistoryItem) => {
+    setExercises(prev =>
+      prev.map(ex => {
+        if (ex.id !== id) return ex;
+        return {
+          ...ex,
+          name: item.name,
+          type: item.type || ex.type || 'reps',
+          sets: item.sets || ex.sets || 3,
+          reps: item.reps || ex.reps || 10,
+          duration_seconds: item.duration_seconds || ex.duration_seconds || 30,
+          rest_seconds: item.rest_seconds ?? ex.rest_seconds ?? 90,
+          weight_kg: item.weight_kg ?? null,
+        };
+      })
+    );
+
+    setNumberDrafts(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(k => {
+        if (k.startsWith(id)) {
+          delete next[k];
+        }
+      });
+      return next;
+    });
+  };
+
+  /** Regolazione incrementale (+/-) per serie, reps, recupero */
+  const adjustExerciseNumber = (exId: string, field: 'sets' | 'reps' | 'duration_seconds' | 'rest_seconds', delta: number) => {
+    setExercises(prev =>
+      prev.map(ex => {
+        if (ex.id !== exId) return ex;
+        const current = Number(ex[field]) || 0;
+        const minVal = field === 'sets' ? 1 : 0;
+        const next = Math.max(minVal, current + delta);
+        return { ...ex, [field]: next };
+      })
+    );
+
+    setNumberDrafts(prev => {
+      const next = { ...prev };
+      delete next[`${exId}:${field}`];
+      delete next[`${exId}:rest:min`];
+      delete next[`${exId}:rest:sec`];
+      return next;
+    });
   };
 
   const convertToSuperset = (id: string) => {
@@ -685,6 +921,15 @@ const NewTrainPage: React.FC = () => {
       setEditingTransitionForExerciseId(null);
     }
     setExercises(exercises.filter(ex => ex.id !== id));
+  };
+
+  const handleImportExercises = (imported: ExerciseDraft[], mode: 'append' | 'replace') => {
+    if (mode === 'replace') {
+      setExercises(imported);
+    } else {
+      setExercises(prev => [...prev, ...imported]);
+    }
+    setNumberDrafts({});
   };
 
   const moveExercise = (index: number, direction: 'up' | 'down') => {
@@ -1532,12 +1777,29 @@ const NewTrainPage: React.FC = () => {
         </div>
 
         <div className="space-y-4 mb-8">
-          <div className="flex items-center mb-2">
+          <div className="flex items-center justify-between mb-2">
             <h2 className="text-brand-grey font-semibold ml-1 flex items-center">
               <Move size={16} className="mr-2 opacity-50" />
               Exercises
             </h2>
+            <button
+              type="button"
+              onClick={() => setIsImportModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all border border-brand-orange/30 shadow-sm active:scale-95 cursor-pointer"
+              title="Importa da foto OCR o dettatura vocale"
+            >
+              <Camera size={14} />
+              <span className="opacity-40">/</span>
+              <Mic size={14} />
+              <span>Importa Foto / Voce</span>
+            </button>
           </div>
+
+          <WorkoutBulkToolbar
+            exercises={exercises}
+            onApplyGlobalRest={handleApplyGlobalRest}
+            onApplyGlobalSets={handleApplyGlobalSets}
+          />
 
           {exercises.length === 0 ? (
             <div className="text-center p-8 bg-brand-darkGrey/20 rounded-3xl border border-dashed border-brand-grey/30">
@@ -1872,14 +2134,139 @@ const NewTrainPage: React.FC = () => {
                     </div>
                   ) : (
                     <>
-                      {/* Esercizio Singolo: Nome */}
-                      <input
-                        type="text"
-                        placeholder="Exercise Name (e.g. Bench Press)"
-                        value={ex.name}
-                        onChange={(e) => updateExercise(ex.id, 'name', e.target.value)}
-                        className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors"
-                      />
+                      {/* Banner notifica autofill o parse */}
+                      {exerciseNotices[ex.id] && (
+                        <div className="bg-brand-orange/15 border border-brand-orange/30 text-brand-orange text-xs px-3 py-1.5 rounded-xl flex items-center justify-between animate-fade-in">
+                          <div className="flex items-center space-x-1.5">
+                            <Sparkles size={14} />
+                            <span className="font-semibold">{exerciseNotices[ex.id]}</span>
+                          </div>
+                          <Check size={14} />
+                        </div>
+                      )}
+
+                      {/* Esercizio Singolo: Nome con Autocomplete e Smart String Parser */}
+                      <div className="relative">
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            placeholder="Nome esercizio (es. spinte brutte 4x8 90s, panca 5x5, squat 12-10-8...)"
+                            value={ex.name}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateExercise(ex.id, 'name', val);
+                              if (val.trim().length >= 2) {
+                                const found = searchHistory(val.trim());
+                                setExerciseSuggestions(prev => ({ ...prev, [ex.id]: found }));
+                              } else {
+                                setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
+                              }
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
+                              }, 200);
+                              if (ex.name.trim()) {
+                                const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 90);
+                                if (parsed.matched) {
+                                  handleApplyParsedToExercise(ex.id, parsed);
+                                  setExerciseNotices(prev => ({
+                                    ...prev,
+                                    [ex.id]: parsed.type === 'reps'
+                                      ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
+                                      : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+                                  }));
+                                  setTimeout(() => {
+                                    setExerciseNotices(prev => {
+                                      const n = { ...prev };
+                                      delete n[ex.id];
+                                      return n;
+                                    });
+                                  }, 3500);
+                                }
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (ex.name.trim()) {
+                                  const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 90);
+                                  if (parsed.matched) {
+                                    handleApplyParsedToExercise(ex.id, parsed);
+                                    setExerciseNotices(prev => ({
+                                      ...prev,
+                                      [ex.id]: parsed.type === 'reps'
+                                        ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
+                                        : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+                                    }));
+                                    setTimeout(() => {
+                                      setExerciseNotices(prev => {
+                                        const n = { ...prev };
+                                        delete n[ex.id];
+                                        return n;
+                                      });
+                                    }, 3500);
+                                  }
+                                }
+                                setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
+                                (e.target as HTMLElement).blur();
+                              }
+                            }}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors pr-10"
+                          />
+                          {(exerciseSuggestions[ex.id] || []).length > 0 && (
+                            <span className="absolute right-3 text-brand-orange/60 pointer-events-none" title="Suggerimenti disponibili">
+                              <History size={16} />
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Dropdown Suggerimenti Autocomplete dallo Storico Utente */}
+                        {(exerciseSuggestions[ex.id] || []).length > 0 && (
+                          <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#181818] border border-brand-orange/30 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-white/5 backdrop-blur-md">
+                            <div className="p-2 bg-black/40 text-[10px] uppercase font-bold text-brand-grey/60 tracking-wider flex items-center">
+                              <History size={11} className="mr-1.5 text-brand-orange" />
+                              Usato nelle tue sessioni precedenti (clicca per autofill)
+                            </div>
+                            {(exerciseSuggestions[ex.id] || []).map((item, sIdx) => (
+                              <button
+                                key={sIdx}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleApplyHistoryItemToExercise(ex.id, item);
+                                  setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
+                                  setExerciseNotices(prev => ({
+                                    ...prev,
+                                    [ex.id]: `Memoria utente: ${item.sets}x${item.reps} • ${item.rest_seconds}s`
+                                  }));
+                                  setTimeout(() => {
+                                    setExerciseNotices(prev => {
+                                      const n = { ...prev };
+                                      delete n[ex.id];
+                                      return n;
+                                    });
+                                  }, 3500);
+                                }}
+                                className="w-full text-left p-3 hover:bg-brand-orange/15 transition-colors flex items-center justify-between group"
+                              >
+                                <div>
+                                  <div className="text-sm font-semibold text-white group-hover:text-brand-orange transition-colors">
+                                    {item.name}
+                                  </div>
+                                  <div className="text-xs text-brand-grey/70 mt-0.5">
+                                    {item.sets} serie × {item.reps} reps • {item.rest_seconds}s recupero
+                                    {item.weight_kg != null ? ` • ${item.weight_kg} kg` : ''}
+                                  </div>
+                                </div>
+                                <span className="text-[11px] font-bold text-brand-orange opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                                  Applica <Check size={12} className="ml-1" />
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
                       {/* Note dell'esercizio (opzionale) */}
                       <div>
@@ -1949,15 +2336,33 @@ const NewTrainPage: React.FC = () => {
                         <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
                           {ex.type === 'circuit' ? 'Giri (Rounds)' : 'Sets'}
                         </label>
-                        <input
-                          type="number" inputMode="numeric"
-                          min="1"
-                          value={getDraftOrValue(`${ex.id}:sets`, ex.sets)}
-                          onChange={(e) => setDraftValue(`${ex.id}:sets`, e.target.value)}
-                          onBlur={() => commitExerciseNumber(ex.id, 'sets', `${ex.id}:sets`, 1, 1)}
-                          onFocus={onNumberFocus}
-                          className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
-                        />
+                        <div className="flex items-center bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors">
+                          <button
+                            type="button"
+                            onClick={() => adjustExerciseNumber(ex.id, 'sets', -1)}
+                            className="px-2.5 py-3 text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
+                            title="Diminuisci serie"
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <input
+                            type="number" inputMode="numeric"
+                            min="1"
+                            value={getDraftOrValue(`${ex.id}:sets`, ex.sets)}
+                            onChange={(e) => setDraftValue(`${ex.id}:sets`, e.target.value)}
+                            onBlur={() => commitExerciseNumber(ex.id, 'sets', `${ex.id}:sets`, 1, 1)}
+                            onFocus={onNumberFocus}
+                            className="w-full bg-transparent py-3 text-center text-white focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => adjustExerciseNumber(ex.id, 'sets', 1)}
+                            className="px-2.5 py-3 text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
+                            title="Aumenta serie"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
                       </div>
 
                       {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'emom' && (
@@ -1965,15 +2370,33 @@ const NewTrainPage: React.FC = () => {
                           <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
                             {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
                           </label>
-                          <input
-                            type="text" inputMode="numeric"
-                            value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds, true)}
-                            onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
-                            onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, 0, 0)}
-                            onFocus={onNumberFocus}
-                            placeholder={ex.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                            className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors placeholder:text-brand-orange/60 placeholder:text-xs"
-                          />
+                          <div className="flex items-center bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors">
+                            <button
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', ex.type === 'reps' ? -1 : -5)}
+                              className="px-2.5 py-3 text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
+                              title={ex.type === 'reps' ? 'Diminuisci reps' : '-5s'}
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <input
+                              type="text" inputMode="numeric"
+                              value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds, true)}
+                              onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
+                              onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, 0, 0)}
+                              onFocus={onNumberFocus}
+                              placeholder={ex.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
+                              className="w-full bg-transparent py-3 text-center text-white focus:outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', ex.type === 'reps' ? 1 : 5)}
+                              className="px-2.5 py-3 text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
+                              title={ex.type === 'reps' ? 'Aumenta reps' : '+5s'}
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
                         </div>
                       )}
 
@@ -1996,10 +2419,30 @@ const NewTrainPage: React.FC = () => {
                       )}
 
                       <div className="flex flex-col relative">
-                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1 flex items-center">
-                          <Clock size={10} className="mr-1" />
-                          {ex.type === 'circuit' ? 'Rest fine giro' : 'Rest'}
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 flex items-center">
+                            <Clock size={10} className="mr-1" />
+                            {ex.type === 'circuit' ? 'Rest fine giro' : 'Rest'}
+                          </label>
+                          <div className="flex items-center space-x-1">
+                            <button
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', -15)}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-brand-grey hover:text-brand-orange transition-colors"
+                              title="-15s"
+                            >
+                              -15s
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', 15)}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-brand-grey hover:text-brand-orange transition-colors"
+                              title="+15s"
+                            >
+                              +15s
+                            </button>
+                          </div>
+                        </div>
                         <div className="flex bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[46px]">
                           <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
                             <input
@@ -2159,6 +2602,12 @@ const NewTrainPage: React.FC = () => {
             </>
           )}
         </button>
+
+        <WorkoutQuickImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          onImportExercises={handleImportExercises}
+        />
       </main>
     </div>
   );

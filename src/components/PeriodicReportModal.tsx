@@ -29,10 +29,12 @@ import {
 import type { MuscleGroup } from '../utils/exerciseClassifier';
 import {
   type ReportPeriodType,
+  type CustomDateRange,
   type RawWorkoutSession,
   generatePeriodicReport,
   getEmptyReport,
   exportReportSummaryText,
+  parseSafeDate,
 } from '../utils/periodicReportEngine';
 
 interface PeriodicReportModalProps {
@@ -96,6 +98,13 @@ const getMuscleColorTheme = (group?: string | null) => {
 const formatSafeNumber = (val: unknown): string => {
   const n = Number(val);
   return Number.isFinite(n) ? n.toLocaleString('it-IT') : '0';
+};
+
+const formatIsoDate = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 interface ErrorBoundaryProps {
@@ -190,6 +199,14 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
   workouts,
 }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriodType>('month');
+  const [customStartDate, setCustomStartDate] = useState<string>(() => {
+    const d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    return formatIsoDate(d);
+  });
+  const [customEndDate, setCustomEndDate] = useState<string>(() => {
+    return formatIsoDate(new Date());
+  });
+
   const [activeTab, setActiveTab] = useState<'muscles' | 'exercises' | 'notes'>('muscles');
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState('');
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState<string>('all');
@@ -197,15 +214,54 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
   const [copiedNotification, setCopiedNotification] = useState(false);
   const [expandedDossiers, setExpandedDossiers] = useState<Record<string, boolean>>({});
 
+  const customRange = useMemo<CustomDateRange>(() => {
+    return {
+      startDate: customStartDate,
+      endDate: customEndDate,
+    };
+  }, [customStartDate, customEndDate]);
+
   // Calcolo del report analitico con fallback sicuro
   const report = useMemo(() => {
     try {
-      return generatePeriodicReport(workouts || [], selectedPeriod);
+      return generatePeriodicReport(
+        workouts || [],
+        selectedPeriod,
+        selectedPeriod === 'custom' ? customRange : undefined
+      );
     } catch (err) {
       console.error('Error generating periodic report:', err);
-      return getEmptyReport(selectedPeriod);
+      return getEmptyReport(selectedPeriod, selectedPeriod === 'custom' ? customRange : undefined);
     }
-  }, [workouts, selectedPeriod]);
+  }, [workouts, selectedPeriod, customRange]);
+
+  const handleApplyCustomPreset = (preset: 'this_month' | 'last_month' | 'last_14' | 'all_time') => {
+    const now = new Date();
+    if (preset === 'this_month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      setCustomStartDate(formatIsoDate(start));
+      setCustomEndDate(formatIsoDate(now));
+    } else if (preset === 'last_month') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0);
+      setCustomStartDate(formatIsoDate(start));
+      setCustomEndDate(formatIsoDate(end));
+    } else if (preset === 'last_14') {
+      const start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+      setCustomStartDate(formatIsoDate(start));
+      setCustomEndDate(formatIsoDate(now));
+    } else if (preset === 'all_time' && workouts && workouts.length > 0) {
+      const timestamps = workouts
+        .map((w) => parseSafeDate(w.executedAt)?.getTime() || 0)
+        .filter((t) => t > 0);
+      if (timestamps.length > 0) {
+        const minDate = new Date(Math.min(...timestamps));
+        const maxDate = new Date(Math.max(...timestamps));
+        setCustomStartDate(formatIsoDate(minDate));
+        setCustomEndDate(formatIsoDate(maxDate));
+      }
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -351,32 +407,122 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
         <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6 space-y-6">
           
           {/* SELETTORE PERIODO TEMPORALE */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-2 rounded-2xl bg-black/40 border border-white/5">
-            <span className="text-xs font-black uppercase tracking-wider text-brand-grey/70 ml-2">
-              Periodo di Analisi:
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              {[
-                { id: 'week', label: '7 Giorni' },
-                { id: 'month', label: '30 Giorni' },
-                { id: 'quarter', label: '3 Mesi' },
-                { id: 'semester', label: '6 Mesi' },
-                { id: 'year', label: '1 Anno' },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setSelectedPeriod(p.id as ReportPeriodType)}
-                  type="button"
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    selectedPeriod === p.id
-                      ? 'bg-brand-orange text-black font-black shadow-lg shadow-brand-orange/20 scale-105'
-                      : 'bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/5'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+          <div className="flex flex-col gap-3 p-2.5 sm:p-3.5 rounded-2xl bg-black/40 border border-white/5">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <span className="text-xs font-black uppercase tracking-wider text-brand-grey/70 ml-1">
+                Periodo di Analisi:
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                {[
+                  { id: 'week', label: '7 Giorni' },
+                  { id: 'month', label: '30 Giorni' },
+                  { id: 'quarter', label: '3 Mesi' },
+                  { id: 'semester', label: '6 Mesi' },
+                  { id: 'year', label: '1 Anno' },
+                  { id: 'custom', label: 'Personalizzato' },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedPeriod(p.id as ReportPeriodType)}
+                    type="button"
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      selectedPeriod === p.id
+                        ? 'bg-brand-orange text-black font-black shadow-lg shadow-brand-orange/20 scale-105'
+                        : 'bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/5'
+                    }`}
+                  >
+                    {p.id === 'custom' && (
+                      <Calendar size={13} className={selectedPeriod === 'custom' ? 'text-black' : 'text-brand-orange'} />
+                    )}
+                    <span>{p.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* SELEZIONE DATA PERSONALIZZATA (QUANDO selectedPeriod === 'custom') */}
+            {selectedPeriod === 'custom' && (
+              <div className="mt-1 pt-3 border-t border-white/10 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white">
+                    <span className="text-brand-orange flex items-center gap-1">
+                      <Calendar size={14} /> Intervallo Date:
+                    </span>
+                    <span className="text-brand-grey text-[11px] font-medium">
+                      {report.period.label}
+                    </span>
+                  </div>
+
+                  {/* Scorciatoie rapide preimpostate */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCustomPreset('this_month')}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors cursor-pointer active:scale-95"
+                    >
+                      Questo mese
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCustomPreset('last_month')}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors cursor-pointer active:scale-95"
+                    >
+                      Mese scorso
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCustomPreset('last_14')}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors cursor-pointer active:scale-95"
+                    >
+                      Ultimi 14 gg
+                    </button>
+                    {workouts && workouts.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleApplyCustomPreset('all_time')}
+                        className="text-[11px] px-2.5 py-1 rounded-lg bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange border border-brand-orange/30 transition-colors font-semibold cursor-pointer active:scale-95"
+                      >
+                        Tutto lo storico
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Date Inputs con formato dark mode nativo e look premium */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2 bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 focus-within:border-brand-orange transition-colors">
+                    <span className="text-xs font-black text-brand-orange uppercase tracking-wider w-8 shrink-0">
+                      Dal:
+                    </span>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className="bg-transparent text-white text-xs sm:text-sm font-bold focus:outline-none w-full [color-scheme:dark] cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 focus-within:border-brand-orange transition-colors">
+                    <span className="text-xs font-black text-brand-orange uppercase tracking-wider w-8 shrink-0">
+                      Al:
+                    </span>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className="bg-transparent text-white text-xs sm:text-sm font-bold focus:outline-none w-full [color-scheme:dark] cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {customStartDate && customEndDate && customStartDate > customEndDate && (
+                  <p className="text-[11px] text-amber-400 font-medium flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/20 px-3 py-1.5 rounded-lg">
+                    <AlertTriangle size={13} className="shrink-0" />
+                    <span>La data di inizio è successiva alla data di fine: le date verranno invertite automaticamente nel calcolo.</span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* KPI CARDS GENERALI */}
