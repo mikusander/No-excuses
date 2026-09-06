@@ -123,7 +123,6 @@ import {
   scheduleBackgroundRestNotification,
   closeActiveRestNotifications,
   getNotificationPermission,
-  sendRestFinishedNotification,
 } from '../utils/workoutNotifications';
 import {
   updateRestMediaSession,
@@ -2064,11 +2063,6 @@ const ActiveWorkoutPage: React.FC = () => {
         stopRestMediaSession();
         pipManager.closePiP();
         playRestFinishedSound();
-        const upcoming = getUpcomingRestTargetInfo();
-        void sendRestFinishedNotification({
-          nextExerciseName: upcoming.nextExerciseName,
-          nextSetInfo: upcoming.nextSetInfo,
-        });
 
         if (isWorkoutOverviewModalOpen) {
           setIsWorkoutOverviewAdvancePending(true);
@@ -2082,18 +2076,6 @@ const ActiveWorkoutPage: React.FC = () => {
     const handleWakeSync = () => {
       if (document.visibilityState === 'visible') {
         syncRestCountdown();
-      } else if (document.visibilityState === 'hidden') {
-        if (isResting && restEndsAtMs != null) {
-          const remaining = computeRemainingFromEndsAt(restEndsAtMs);
-          if (remaining > 0) {
-            const upcoming = getUpcomingRestTargetInfo();
-            void scheduleBackgroundRestNotification({
-              endsAtMs: restEndsAtMs,
-              nextExerciseName: upcoming.nextExerciseName,
-              nextSetInfo: upcoming.nextSetInfo,
-            });
-          }
-        }
       }
     };
 

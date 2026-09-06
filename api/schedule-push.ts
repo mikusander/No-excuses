@@ -66,7 +66,12 @@ export default async function handler(req: any, res: any) {
       url: '/',
     });
 
-    await webpush.sendNotification(subscription, payload);
+    await webpush.sendNotification(subscription, payload, {
+      headers: {
+        'apns-collapse-id': 'rest-timer',
+      },
+      TTL: 60,
+    });
     return res.status(200).json({ success: true });
   } catch (error: any) {
     console.error('[WebPush] Error sending push to Apple APNs:', error);

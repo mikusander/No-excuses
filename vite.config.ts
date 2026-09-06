@@ -66,7 +66,12 @@ function pushDevServerPlugin(): Plugin {
                 url: '/',
               })
 
-              await webpush.sendNotification(subscription, payload)
+              await webpush.sendNotification(subscription, payload, {
+                headers: {
+                  'apns-collapse-id': 'rest-timer',
+                },
+                TTL: 60,
+              })
               res.setHeader('Content-Type', 'application/json')
               res.end(JSON.stringify({ success: true }))
             } catch (err: any) {

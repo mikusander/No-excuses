@@ -155,7 +155,7 @@ export const sendRestFinishedNotification = async ({
     icon: '/pwa-192x192.png',
     badge: '/pwa-192x192.png',
     tag: 'rest-timer',
-    renotify: true,
+    renotify: false,
     requireInteraction: false,
     silent: false,
     vibrate: [250, 100, 250],
@@ -205,8 +205,9 @@ const postMessageToSW = (payload: Record<string, unknown>) => {
 
 /**
  * Pianifica la notifica di fine recupero.
- * 1. Tenta la Web Push via APNs (Serverless) per risveglio affidabile a schermo spento su iOS.
- * 2. Invia anche un messaggio al SW locale come fallback immediato.
+ * 1. Annulla qualsiasi notifica pendente per evitare duplicati.
+ * 2. Invia la richiesta Web Push via APNs (Serverless) per risveglio a schermo spento su iOS.
+ * 3. Usa il Service Worker locale SOLO come fallback se il push non è disponibile.
  */
 export const scheduleBackgroundRestNotification = async ({
   endsAtMs,
@@ -219,6 +220,11 @@ export const scheduleBackgroundRestNotification = async ({
 }) => {
   if (!isNotificationPermissionGranted()) return;
 
+  // Annulla tassativamente qualsiasi notifica pendente prima di schedularne una nuova
+  if (currentActiveTimerId) {
+    cancelBackgroundRestNotification();
+  }
+
   const title = '⏱️ Recupero Terminato!';
   const body = nextSetInfo
     ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
@@ -227,15 +233,6 @@ export const scheduleBackgroundRestNotification = async ({
   const delaySeconds = Math.max(1, Math.round((endsAtMs - Date.now()) / 1000));
   const timerId = `rest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   currentActiveTimerId = timerId;
-
-  // Fallback Service Worker locale (per browser desktop o sessione aperta)
-  postMessageToSW({
-    type: 'SCHEDULE_REST_NOTIFICATION',
-    endsAtMs,
-    targetTime: endsAtMs,
-    title,
-    body,
-  });
 
   // Web Push API (APNs) per risveglio dell'iPhone a schermo spento
   try {
@@ -254,10 +251,21 @@ export const scheduleBackgroundRestNotification = async ({
       }).catch((err) => {
         console.debug('[Push] Impossibile contattare /api/schedule-push:', err);
       });
+      // Notifica delegata al push del server: non inviamo al SW locale per non raddoppiare!
+      return;
     }
   } catch (err) {
     console.debug('[Push] Errore durante la pianificazione Web Push:', err);
   }
+
+  // Fallback Service Worker locale SOLO se pushManager non è disponibile
+  postMessageToSW({
+    type: 'SCHEDULE_REST_NOTIFICATION',
+    endsAtMs,
+    targetTime: endsAtMs,
+    title,
+    body,
+  });
 };
 
 export const cancelBackgroundRestNotification = () => {
