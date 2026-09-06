@@ -3,11 +3,15 @@
  *
  * SINCRONIZZAZIONE TIMESTAMP ASSOLUTO & SCHEDULING PUNTUALE:
  * - Richiesta permessi PWA.
- * - Invio messaggio al Service Worker per pianificare la notifica solo quando la pagina è in background.
+ * - Invio messaggio al Service Worker per pianificare la notifica quando la pagina è in background.
  * - Auto-cancellazione delle notifiche con tag 'rest-timer' al ritorno in primo piano.
+ *
+ * FIX CRITICI:
+ * - Messaggio inviato UNA SOLA VOLTA al SW (prima via controller, poi ready come fallback)
+ *   per evitare notifiche doppie.
+ * - Registrazione SW delegata a vite-plugin-pwa (registerSW in main.tsx),
+ *   nessuna registrazione manuale duplicata.
  */
-
-let serviceWorkerRegistration: ServiceWorkerRegistration | null = null;
 
 export const isIosDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -25,16 +29,20 @@ export const isStandalonePwa = (): boolean => {
   );
 };
 
+/**
+ * Inizializza il riferimento al Service Worker.
+ * Non registra più manualmente (lo fa vite-plugin-pwa in main.tsx),
+ * ma aspetta che il SW sia pronto.
+ */
 export const initServiceWorker = async (): Promise<ServiceWorkerRegistration | null> => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     return null;
   }
   try {
-    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-    serviceWorkerRegistration = reg;
+    const reg = await navigator.serviceWorker.ready;
     return reg;
   } catch (error) {
-    console.debug('Service Worker registration skipped or failed:', error);
+    console.debug('Service Worker ready failed:', error);
     return null;
   }
 };
@@ -65,11 +73,7 @@ export const requestNotificationPermission = async (): Promise<boolean> => {
   }
   try {
     const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      await initServiceWorker();
-      return true;
-    }
-    return false;
+    return permission === 'granted';
   } catch (error) {
     console.debug('Error requesting notification permission:', error);
     return false;
@@ -103,8 +107,8 @@ export const sendRestFinishedNotification = async ({
 
   const options: NotificationOptions & Record<string, any> = {
     body,
-    icon: '/favicon.svg',
-    badge: '/favicon.svg',
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
     tag: 'rest-timer',
     renotify: true,
     requireInteraction: false,
@@ -113,11 +117,7 @@ export const sendRestFinishedNotification = async ({
   };
 
   try {
-    if (serviceWorkerRegistration && 'showNotification' in serviceWorkerRegistration) {
-      await serviceWorkerRegistration.showNotification(title, options);
-      return;
-    }
-
+    // Preferisce showNotification tramite il SW (necessario per notifiche su iOS PWA)
     if ('serviceWorker' in navigator) {
       const readyReg = await navigator.serviceWorker.ready;
       if (readyReg && 'showNotification' in readyReg) {
@@ -126,6 +126,7 @@ export const sendRestFinishedNotification = async ({
       }
     }
 
+    // Fallback: notifica dal contesto della pagina
     if ('Notification' in window) {
       const n = new Notification(title, options);
       n.onclick = () => {
@@ -138,6 +139,32 @@ export const sendRestFinishedNotification = async ({
   }
 };
 
+/**
+ * Invia un messaggio al Service Worker per schedulare la notifica.
+ * CRITICO: Invia il messaggio UNA SOLA VOLTA per evitare notifiche doppie.
+ * Priorità: controller → ready.active come fallback.
+ */
+const postMessageToSW = (payload: Record<string, unknown>) => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+
+  try {
+    // Tentativo 1: via controller (il SW che controlla la pagina)
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(payload);
+      return; // STOP: messaggio inviato con successo
+    }
+
+    // Tentativo 2: via registration.active come fallback
+    navigator.serviceWorker.ready.then((reg) => {
+      if (reg.active) {
+        reg.active.postMessage(payload);
+      }
+    }).catch(() => {});
+  } catch (err) {
+    console.debug('Error posting message to SW:', err);
+  }
+};
+
 export const scheduleBackgroundRestNotification = ({
   endsAtMs,
   nextExerciseName,
@@ -147,7 +174,6 @@ export const scheduleBackgroundRestNotification = ({
   nextExerciseName: string;
   nextSetInfo?: string;
 }) => {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
   if (!isNotificationPermissionGranted()) return;
 
   const title = '⏱️ Recupero Terminato!';
@@ -155,56 +181,24 @@ export const scheduleBackgroundRestNotification = ({
     ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
     : `È ora di iniziare: ${nextExerciseName}`;
 
-  const payload = {
+  postMessageToSW({
     type: 'SCHEDULE_REST_NOTIFICATION',
     endsAtMs,
     targetTime: endsAtMs,
     title,
     body,
-  };
-
-  try {
-    if (navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage(payload);
-    }
-    if (serviceWorkerRegistration && serviceWorkerRegistration.active) {
-      serviceWorkerRegistration.active.postMessage(payload);
-    }
-    navigator.serviceWorker.ready.then((reg) => {
-      if (reg.active) {
-        reg.active.postMessage(payload);
-      }
-    }).catch(() => {});
-  } catch (err) {
-    console.debug('Error scheduling background notification:', err);
-  }
+  });
 };
 
 export const cancelBackgroundRestNotification = () => {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
-  const payload = { type: 'CANCEL_REST_NOTIFICATION' };
-  try {
-    if (navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage(payload);
-    }
-    if (serviceWorkerRegistration && serviceWorkerRegistration.active) {
-      serviceWorkerRegistration.active.postMessage(payload);
-    }
-    navigator.serviceWorker.ready.then((reg) => {
-      if (reg.active) {
-        reg.active.postMessage(payload);
-      }
-    }).catch(() => {});
-  } catch (err) {
-    console.debug('Error canceling background notification:', err);
-  }
+  postMessageToSW({ type: 'CANCEL_REST_NOTIFICATION' });
 };
 
 export const closeActiveRestNotifications = async () => {
   cancelBackgroundRestNotification();
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
   try {
-    const reg = serviceWorkerRegistration || (await navigator.serviceWorker.ready);
+    const reg = await navigator.serviceWorker.ready;
     if (reg && 'getNotifications' in reg) {
       const notifications = await reg.getNotifications({ tag: 'rest-timer' });
       notifications.forEach((n) => n.close());
