@@ -119,9 +119,11 @@ import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock'
 import {
   initServiceWorker,
   requestNotificationPermission,
+  testPushNotification,
   scheduleBackgroundRestNotification,
   closeActiveRestNotifications,
   getNotificationPermission,
+  sendRestFinishedNotification,
 } from '../utils/workoutNotifications';
 import {
   updateRestMediaSession,
@@ -350,6 +352,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [restInitialDuration, setRestInitialDuration] = useState(0);
   const [restEndsAtMs, setRestEndsAtMs] = useState<number | null>(null);
   const [audioTestFeedback, setAudioTestFeedback] = useState<string | null>(null);
+  const [notificationTestFeedback, setNotificationTestFeedback] = useState<string | null>(null);
 
   // Timer State for Isometry
   const [isometryActive, setIsometryActive] = useState(false);
@@ -1357,8 +1360,7 @@ const ActiveWorkoutPage: React.FC = () => {
     void initServiceWorker();
 
     const perm = getNotificationPermission();
-    const hasDismissed = localStorage.getItem('notifications_prompt_dismissed') === 'true';
-    if ((perm === 'default' || perm === 'ios_pwa_required') && !hasDismissed) {
+    if (perm === 'default' || perm === 'ios_pwa_required') {
       setShowNotificationPrompt(true);
     }
 
@@ -2062,6 +2064,11 @@ const ActiveWorkoutPage: React.FC = () => {
         stopRestMediaSession();
         pipManager.closePiP();
         playRestFinishedSound();
+        const upcoming = getUpcomingRestTargetInfo();
+        void sendRestFinishedNotification({
+          nextExerciseName: upcoming.nextExerciseName,
+          nextSetInfo: upcoming.nextSetInfo,
+        });
 
         if (isWorkoutOverviewModalOpen) {
           setIsWorkoutOverviewAdvancePending(true);
@@ -2074,14 +2081,13 @@ const ActiveWorkoutPage: React.FC = () => {
 
     const handleWakeSync = () => {
       if (document.visibilityState === 'visible') {
-        closeActiveRestNotifications();
         syncRestCountdown();
       } else if (document.visibilityState === 'hidden') {
         if (isResting && restEndsAtMs != null) {
           const remaining = computeRemainingFromEndsAt(restEndsAtMs);
           if (remaining > 0) {
             const upcoming = getUpcomingRestTargetInfo();
-            scheduleBackgroundRestNotification({
+            void scheduleBackgroundRestNotification({
               endsAtMs: restEndsAtMs,
               nextExerciseName: upcoming.nextExerciseName,
               nextSetInfo: upcoming.nextSetInfo,
@@ -3977,7 +3983,7 @@ const ActiveWorkoutPage: React.FC = () => {
         </p>
 
         <div className="flex flex-col items-center justify-center gap-2 -mt-2 mb-8">
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
               onClick={async () => {
@@ -3985,10 +3991,28 @@ const ActiveWorkoutPage: React.FC = () => {
                 setAudioTestFeedback('🔊 Segnale inviato! Se non lo senti, disattiva la modalità Silenzioso (tasto suoneria iPhone) oppure usa le cuffie/AirPods.');
                 setTimeout(() => setAudioTestFeedback(null), 5500);
               }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-brand-orange/40 bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-brand-orange/40 bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
               title="Verifica il suono del timer (funziona anche con Spotify in riproduzione)"
             >
-              <span>🔊 Prova Suono Timer</span>
+              <span>🔊 Prova Suono</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setNotificationTestFeedback('⏳ Programmazione notifica in corso...');
+                const success = await testPushNotification(5);
+                if (success) {
+                  setNotificationTestFeedback('🔒 Premi SUBITO il tasto di blocco schermo dell\'iPhone! Tra 5 secondi si illuminerà con la notifica.');
+                } else {
+                  setNotificationTestFeedback('⚠️ Permesso notifiche non concesso. Assicurati di aver premuto "Consenti" quando richiesto.');
+                }
+                setTimeout(() => setNotificationTestFeedback(null), 9000);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
+              title="Testa la notifica push a schermo bloccato (arriva tra 5 secondi)"
+            >
+              <span>🔔 Prova Notifica (5s)</span>
             </button>
 
             {pipManager.isSupported() && (
@@ -4007,6 +4031,12 @@ const ActiveWorkoutPage: React.FC = () => {
           {audioTestFeedback && (
             <div className="max-w-xs text-center text-[11px] leading-snug text-brand-orange bg-brand-darkGrey/95 border border-brand-orange/40 rounded-xl px-3.5 py-2 shadow-xl animate-in fade-in duration-200">
               {audioTestFeedback}
+            </div>
+          )}
+
+          {notificationTestFeedback && (
+            <div className="max-w-xs text-center text-[11px] leading-snug text-blue-400 bg-brand-darkGrey/95 border border-blue-500/40 rounded-xl px-3.5 py-2 shadow-xl animate-in fade-in duration-200 font-semibold">
+              {notificationTestFeedback}
             </div>
           )}
         </div>

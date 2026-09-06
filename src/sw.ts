@@ -10,90 +10,57 @@ declare const self: ServiceWorkerGlobalScope;
 precacheAndRoute(self.__WB_MANIFEST);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GESTIONE NOTIFICHE REST TIMER IN BACKGROUND
+// GESTIONE PUSH NOTIFICATIONS (Apple APNs per iOS 16.4+ a schermo spento)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Stato interno per la gestione del timer di notifica.
- * Usiamo un approccio a "heartbeat" per timer lunghi:
- * iOS WebKit termina aggressivamente i SW dopo ~30s di inattività,
- * quindi ri-scheduliamo con setTimeout brevi (max 20s) fino alla scadenza.
- */
-let restTargetTime: number | null = null;
-let restTimeout: ReturnType<typeof setTimeout> | null = null;
-let restWaitUntilResolve: (() => void) | null = null;
-let restNotificationTitle = '⏱️ Recupero Terminato!';
-let restNotificationBody = 'È ora di iniziare la prossima serie!';
+self.addEventListener('push', (event) => {
+  let payload: { title?: string; body?: string } = {
+    title: '⏱️ Recupero Terminato!',
+    body: 'È ora di iniziare la prossima serie!',
+  };
 
-const MAX_TIMEOUT_MS = 20_000; // Max 20s per singolo setTimeout (sicuro per iOS)
-
-/**
- * Cancella qualsiasi timer attivo e risolve la promise di waitUntil.
- */
-function clearRestTimer() {
-  if (restTimeout !== null) {
-    clearTimeout(restTimeout);
-    restTimeout = null;
-  }
-  restTargetTime = null;
-  if (restWaitUntilResolve) {
-    restWaitUntilResolve();
-    restWaitUntilResolve = null;
-  }
-}
-
-/**
- * Mostra la notifica di fine recupero.
- */
-async function showRestNotification() {
-  try {
-    await self.registration.showNotification(restNotificationTitle, {
-      body: restNotificationBody,
-      icon: '/pwa-192x192.png',
-      badge: '/pwa-192x192.png',
-      tag: 'rest-timer',
-      renotify: false, // CRUCIALE: false per evitare notifiche doppie
-      requireInteraction: false,
-      silent: false,
-      vibrate: [250, 100, 250],
-      data: { url: '/' },
-    } as NotificationOptions & Record<string, unknown>);
-  } catch (err) {
-    console.debug('[SW] showNotification error:', err);
-  }
-}
-
-/**
- * Tick del heartbeat: controlla se è ora di mostrare la notifica.
- * Se manca più di MAX_TIMEOUT_MS, ri-schedula un altro tick.
- * Se manca meno, schedula il tick finale.
- */
-function heartbeatTick() {
-  if (restTargetTime === null) return;
-
-  const remaining = restTargetTime - Date.now();
-
-  if (remaining <= 0) {
-    // Tempo scaduto: mostra notifica
-    showRestNotification().finally(() => {
-      restTargetTime = null;
-      restTimeout = null;
-      if (restWaitUntilResolve) {
-        restWaitUntilResolve();
-        restWaitUntilResolve = null;
-      }
-    });
-    return;
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload.body = event.data.text();
+    }
   }
 
-  // Schedula il prossimo tick (max MAX_TIMEOUT_MS per evitare che iOS uccida il SW)
-  const nextDelay = Math.min(remaining, MAX_TIMEOUT_MS);
-  restTimeout = setTimeout(heartbeatTick, nextDelay);
-}
+  const title = payload.title || '⏱️ Recupero Terminato!';
+  const options: NotificationOptions & Record<string, unknown> = {
+    body: payload.body || 'È ora di iniziare la prossima serie!',
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
+    tag: 'rest-timer',
+    renotify: true,
+    requireInteraction: false,
+    silent: false,
+    vibrate: [250, 100, 250],
+    data: { url: '/' },
+  };
+
+  // Su iOS WebKit, event.waitUntil(showNotification) è OBBLIGATORIO per i push event
+  event.waitUntil(self.registration.showNotification(title, options as any));
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EVENT LISTENERS
+// GESTIONE TIMER LOCALE (Fallback per browser desktop o sessione attiva)
 // ─────────────────────────────────────────────────────────────────────────────
+
+let localRestTimeout: ReturnType<typeof setTimeout> | null = null;
+let localRestResolve: (() => void) | null = null;
+
+function clearLocalRestTimer() {
+  if (localRestTimeout !== null) {
+    clearTimeout(localRestTimeout);
+    localRestTimeout = null;
+  }
+  if (localRestResolve) {
+    localRestResolve();
+    localRestResolve = null;
+  }
+}
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -108,30 +75,46 @@ self.addEventListener('message', (event) => {
   if (!data || typeof data !== 'object') return;
 
   if (data.type === 'SCHEDULE_REST_NOTIFICATION') {
-    // Cancella qualsiasi timer precedente
-    clearRestTimer();
+    clearLocalRestTimer();
 
     const targetTime = Number(data.targetTime || data.endsAtMs) || 0;
-    if (targetTime <= Date.now()) return; // Già scaduto
+    const delay = Math.max(0, targetTime - Date.now());
+    if (delay <= 0) return;
 
-    restTargetTime = targetTime;
-    restNotificationTitle = data.title || '⏱️ Recupero Terminato!';
-    restNotificationBody = data.body || 'È ora di iniziare la prossima serie!';
+    const title = data.title || '⏱️ Recupero Terminato!';
+    const body = data.body || 'È ora di iniziare la prossima serie!';
 
-    // CRUCIALE PER iOS: event.waitUntil() dichiara a WebKit che il SW
-    // ha un'attività asincrona attiva e impedisce che venga terminato
     const restPromise = new Promise<void>((resolve) => {
-      restWaitUntilResolve = resolve;
-      heartbeatTick();
+      localRestResolve = resolve;
+
+      localRestTimeout = setTimeout(async () => {
+        localRestTimeout = null;
+        localRestResolve = null;
+        try {
+          await self.registration.showNotification(title, {
+            body,
+            icon: '/pwa-192x192.png',
+            badge: '/pwa-192x192.png',
+            tag: 'rest-timer',
+            renotify: true,
+            silent: false,
+            vibrate: [250, 100, 250],
+            data: { url: '/' },
+          } as any);
+        } catch (err) {
+          console.debug('[SW] showNotification error:', err);
+        } finally {
+          resolve();
+        }
+      }, delay);
     });
 
     if (event.waitUntil) {
       event.waitUntil(restPromise);
     }
   } else if (data.type === 'CANCEL_REST_NOTIFICATION') {
-    clearRestTimer();
+    clearLocalRestTimer();
 
-    // Auto-cancella eventuali notifiche rimaste con il tag rest-timer
     const cancelPromise = self.registration
       .getNotifications({ tag: 'rest-timer' })
       .then((notifications) => {
