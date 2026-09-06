@@ -67,8 +67,12 @@ export default async function handler(req: any, res: any) {
     });
 
     await webpush.sendNotification(subscription, payload, {
+      topic: 'rest-timer',
       headers: {
+        'Topic': 'rest-timer',
         'apns-collapse-id': 'rest-timer',
+        'apns-priority': '10',
+        'apns-push-type': 'alert',
       },
       TTL: 60,
     });

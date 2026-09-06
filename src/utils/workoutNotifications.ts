@@ -203,11 +203,15 @@ const postMessageToSW = (payload: Record<string, unknown>) => {
   }
 };
 
+let lastScheduledEndsAtMs = 0;
+let lastScheduledAtMs = 0;
+let isSchedulingPushInProgress = false;
+
 /**
  * Pianifica la notifica di fine recupero.
  * 1. Annulla qualsiasi notifica pendente per evitare duplicati.
- * 2. Invia la richiesta Web Push via APNs (Serverless) per risveglio a schermo spento su iOS.
- * 3. Usa il Service Worker locale SOLO come fallback se il push non è disponibile.
+ * 2. Previene chiamate multiple ravvicinate (debouncing e singleton lock).
+ * 3. Invia la richiesta Web Push via APNs (Serverless) per risveglio a schermo spento su iOS.
  */
 export const scheduleBackgroundRestNotification = async ({
   endsAtMs,
@@ -220,22 +224,35 @@ export const scheduleBackgroundRestNotification = async ({
 }) => {
   if (!isNotificationPermissionGranted()) return;
 
-  // Annulla tassativamente qualsiasi notifica pendente prima di schedularne una nuova
-  if (currentActiveTimerId) {
-    cancelBackgroundRestNotification();
+  const now = Date.now();
+  // Se una notifica per lo stesso target (entro 2s) è già stata programmata negli ultimi 3s, o se una schedulazione è in corso, ignora
+  if (
+    isSchedulingPushInProgress ||
+    (Math.abs(endsAtMs - lastScheduledEndsAtMs) < 2000 && now - lastScheduledAtMs < 3000)
+  ) {
+    return;
   }
 
-  const title = '⏱️ Recupero Terminato!';
-  const body = nextSetInfo
-    ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
-    : `È ora di iniziare: ${nextExerciseName}`;
+  isSchedulingPushInProgress = true;
+  lastScheduledEndsAtMs = endsAtMs;
+  lastScheduledAtMs = now;
 
-  const delaySeconds = Math.max(1, Math.round((endsAtMs - Date.now()) / 1000));
-  const timerId = `rest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  currentActiveTimerId = timerId;
-
-  // Web Push API (APNs) per risveglio dell'iPhone a schermo spento
   try {
+    // Annulla tassativamente qualsiasi notifica pendente prima di schedularne una nuova
+    if (currentActiveTimerId) {
+      cancelBackgroundRestNotification();
+    }
+
+    const title = '⏱️ Recupero Terminato!';
+    const body = nextSetInfo
+      ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
+      : `È ora di iniziare: ${nextExerciseName}`;
+
+    const delaySeconds = Math.max(1, Math.round((endsAtMs - Date.now()) / 1000));
+    const timerId = `rest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    currentActiveTimerId = timerId;
+
+    // Web Push API (APNs) per risveglio dell'iPhone a schermo spento
     const sub = await getOrCreatePushSubscription();
     if (sub) {
       void fetch('/api/schedule-push', {
@@ -251,21 +268,12 @@ export const scheduleBackgroundRestNotification = async ({
       }).catch((err) => {
         console.debug('[Push] Impossibile contattare /api/schedule-push:', err);
       });
-      // Notifica delegata al push del server: non inviamo al SW locale per non raddoppiare!
-      return;
     }
   } catch (err) {
     console.debug('[Push] Errore durante la pianificazione Web Push:', err);
+  } finally {
+    isSchedulingPushInProgress = false;
   }
-
-  // Fallback Service Worker locale SOLO se pushManager non è disponibile
-  postMessageToSW({
-    type: 'SCHEDULE_REST_NOTIFICATION',
-    endsAtMs,
-    targetTime: endsAtMs,
-    title,
-    body,
-  });
 };
 
 export const cancelBackgroundRestNotification = () => {
