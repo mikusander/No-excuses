@@ -37,6 +37,10 @@ export const playGoalReachedSound = () => {
   soundManager.playGoalReachedSound();
 };
 
+export const testAudio = () => {
+  soundManager.testAudio();
+};
+
 export const playErrorSound = () => {
   try {
     const ctx = soundManager.getContext();

@@ -112,6 +112,7 @@ import {
   playCountdownBeep,
   playRestFinishedSound,
   unlockAudio,
+  testAudio,
 } from '../utils/audio';
 import { pipManager } from '../utils/pipManager';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock';
@@ -498,20 +499,6 @@ const ActiveWorkoutPage: React.FC = () => {
     return Math.max(0, Math.ceil((endsAtMs - Date.now()) / 1000));
   };
 
-  const buildRecoveryCue = (totalSeconds: number) => {
-    const safe = Math.max(0, normalizeDurationSeconds(totalSeconds));
-    const minutes = Math.floor(safe / 60);
-    const seconds = safe % 60;
-
-    if (minutes > 0 && seconds > 0) {
-      return `recovery ${minutes} minute${minutes === 1 ? '' : 's'} ${seconds} second${seconds === 1 ? '' : 's'}`;
-    }
-    if (minutes > 0) {
-      return `recovery ${minutes} minute${minutes === 1 ? '' : 's'}`;
-    }
-    return `recovery ${seconds} second${seconds === 1 ? '' : 's'}`;
-  };
-
   const buildSetAnnouncementCue = (exercise: Exercise, nextSetIdx: number, pyramidStepIdx?: number) => {
     const name = String(exercise.name || '').trim();
     const parts: string[] = [];
@@ -608,6 +595,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const startRestCountdown = (durationSeconds: number) => {
     unlockAudio();
+    void requestScreenWakeLock();
     const safe = normalizeDurationSeconds(durationSeconds);
     lastHandledRestCompletionEndsAtMsRef.current = null;
     setRestInitialDuration(safe);
@@ -642,6 +630,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const resumeRestCountdown = () => {
     unlockAudio();
+    void requestScreenWakeLock();
     const currentExerciseForRest = workout?.exercises[currentExerciseIdx];
     const fallbackRestDuration =
       pendingExerciseAdvance
@@ -2148,16 +2137,7 @@ const ActiveWorkoutPage: React.FC = () => {
         // ignore
       }
     }
-    speakCue(String(restRemaining));
   }, [isResting, restRemaining]);
-
-  useEffect(() => {
-    const isRestTimerRunning = isResting && restEndsAtMs != null && restRemaining > 0;
-    if (!wasRestingRef.current && isRestTimerRunning) {
-      speakCue(buildRecoveryCue(restRemaining));
-    }
-    wasRestingRef.current = isRestTimerRunning;
-  }, [isResting, restEndsAtMs, restRemaining]);
 
   // Timer logic for EMOM
   useEffect(() => {
@@ -3993,17 +3973,30 @@ const ActiveWorkoutPage: React.FC = () => {
           Tap to {restEndsAtMs != null ? 'pause' : 'start'} / hold to reset
         </p>
 
-        {pipManager.isSupported() && (
+        <div className="flex items-center justify-center gap-2 -mt-2 mb-8">
           <button
             type="button"
-            onClick={handleTogglePiP}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-brand-orange/40 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all mb-8 shadow-lg shadow-black/40 cursor-pointer"
-            title="Mostra timer flottante sopra altre app (PiP)"
+            onClick={() => {
+              testAudio();
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-brand-orange/30 bg-brand-orange/10 hover:bg-brand-orange/20 text-brand-orange text-xs font-semibold transition-all active:scale-95 shadow-sm shadow-black/40 cursor-pointer"
+            title="Verifica il suono del timer (funziona anche con Spotify in riproduzione)"
           >
-            <Layers size={14} />
-            <span>{pipManager.isActive() ? 'Chiudi Overlay Flottante' : 'Mini-Timer Flottante (PiP)'}</span>
+            <span>🔊 Prova Suono</span>
           </button>
-        )}
+
+          {pipManager.isSupported() && (
+            <button
+              type="button"
+              onClick={handleTogglePiP}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-brand-orange/40 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all shadow-lg shadow-black/40 cursor-pointer"
+              title="Mostra timer flottante sopra altre app (PiP)"
+            >
+              <Layers size={14} />
+              <span>{pipManager.isActive() ? 'Chiudi Overlay Flottante' : 'Mini-Timer Flottante (PiP)'}</span>
+            </button>
+          )}
+        </div>
 
         <div className="text-center space-y-2 mb-12">
           <button
