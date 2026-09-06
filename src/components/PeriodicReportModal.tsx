@@ -149,39 +149,47 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-[#0d0d0d] border border-brand-darkGrey/60 rounded-3xl shadow-[0_0_60px_rgba(0,0,0,0.85)] overflow-hidden">
+    <div
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+        paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 10px)',
+        paddingRight: 'calc(env(safe-area-inset-right, 0px) + 10px)',
+      }}
+    >
+      <div className="relative w-full max-w-4xl h-full max-h-full sm:max-h-[88vh] flex flex-col bg-[#0d0d0d] border border-brand-darkGrey/60 rounded-3xl shadow-[0_0_60px_rgba(0,0,0,0.85)] overflow-hidden">
         
         {/* ─── HEADER ──────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-white/10 bg-black/60 sticky top-0 z-20">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-brand-orange/20 border border-brand-orange/40 text-brand-orange">
-              <BarChart3 size={24} />
+        <div className="flex items-center justify-between p-3.5 sm:p-6 border-b border-white/10 bg-black/60 sticky top-0 z-20 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2 sm:p-2.5 rounded-2xl bg-brand-orange/20 border border-brand-orange/40 text-brand-orange shrink-0">
+              <BarChart3 size={22} className="sm:w-6 sm:h-6" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-                  Report Periodico Allenamenti
+                <h2 className="text-base sm:text-2xl font-black tracking-tight text-white truncate">
+                  Report Periodico
                 </h2>
-                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange border border-brand-orange/40">
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange border border-brand-orange/40 shrink-0">
                   <Sparkles size={11} /> Analytics
                 </span>
               </div>
-              <p className="text-xs text-brand-grey/80 mt-0.5">
-                {report.period.label} • {report.totalWorkouts} {report.totalWorkouts === 1 ? 'sessione' : 'sessioni'} completate
+              <p className="text-[11px] sm:text-xs text-brand-grey/80 mt-0.5 truncate">
+                {report.period.label} • {report.totalWorkouts} {report.totalWorkouts === 1 ? 'sessione' : 'sessioni'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-2">
             <button
               onClick={handleCopySummary}
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border border-brand-orange/40 bg-brand-orange/15 hover:bg-brand-orange/30 text-brand-orange active:scale-95 cursor-pointer shadow-sm"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-bold transition-all border border-brand-orange/40 bg-brand-orange/15 hover:bg-brand-orange/30 text-brand-orange active:scale-95 cursor-pointer shadow-sm"
               title="Copia riepilogo testuale per appunti o WhatsApp"
             >
               {copiedNotification ? <Check size={15} className="text-green-400" /> : <Copy size={15} />}
-              <span className="hidden sm:inline">
+              <span className="hidden md:inline">
                 {copiedNotification ? 'Copiato!' : 'Copia Riepilogo'}
               </span>
             </button>
@@ -704,14 +712,14 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
         </div>
 
         {/* ─── FOOTER ──────────────────────────────────────────────────────── */}
-        <div className="p-4 border-t border-white/10 bg-black/70 flex items-center justify-between">
-          <span className="text-xs text-brand-grey/60">
-            Dati aggregati da {report.totalWorkouts} sessioni concluse
+        <div className="p-3.5 sm:p-4 border-t border-white/10 bg-black/80 flex items-center justify-between shrink-0">
+          <span className="text-xs text-brand-grey/60 truncate mr-2">
+            {report.totalWorkouts} {report.totalWorkouts === 1 ? 'sessione' : 'sessioni'} • {report.totalVolumeKg.toLocaleString('it-IT')} kg totali
           </span>
           <button
             onClick={onClose}
             type="button"
-            className="px-5 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-brand-orange/20"
+            className="px-5 py-2.5 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-brand-orange/20 shrink-0 active:scale-95"
           >
             Chiudi
           </button>

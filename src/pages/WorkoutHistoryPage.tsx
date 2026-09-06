@@ -316,7 +316,7 @@ const WorkoutHistoryPage: React.FC = () => {
         workouts={reportWorkouts}
       />
 
-      <BottomNavigation />
+      <BottomNavigation hidden={isReportModalOpen} />
     </div>
   );
 };
