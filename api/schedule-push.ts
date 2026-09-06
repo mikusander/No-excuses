@@ -64,6 +64,8 @@ export default async function handler(req: any, res: any) {
       body: notificationBody || 'È ora di iniziare la prossima serie!',
       tag: 'rest-timer',
       url: '/',
+      timerId: timerId || null,
+      endsAtMs: body.endsAtMs || null,
     });
 
     await webpush.sendNotification(subscription, payload, {

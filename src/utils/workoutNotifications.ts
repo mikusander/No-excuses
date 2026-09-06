@@ -208,10 +208,46 @@ let lastScheduledAtMs = 0;
 let isSchedulingPushInProgress = false;
 
 /**
+ * Scrive lo stato del timer attivo in IndexedDB (condiviso con il Service Worker).
+ * Permette al Service Worker di verificare all'arrivo del push se il timer è ancora in corso,
+ * oppure se è stato stoppato, sostituito o anticipato.
+ */
+export const setSharedActiveTimerState = (state: {
+  timerId: string | null;
+  endsAtMs: number | null;
+  status: 'running' | 'paused' | 'stopped';
+}) => {
+  if (typeof indexedDB === 'undefined') return;
+  try {
+    const request = indexedDB.open('no_excuses_pwa_push', 1);
+    request.onupgradeneeded = () => {
+      try {
+        request.result.createObjectStore('meta');
+      } catch {
+        // ignore
+      }
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      try {
+        const tx = db.transaction('meta', 'readwrite');
+        const store = tx.objectStore('meta');
+        store.put({ ...state, updatedAt: Date.now() }, 'active_timer');
+      } catch {
+        // ignore
+      }
+    };
+  } catch {
+    // ignore
+  }
+};
+
+/**
  * Pianifica la notifica di fine recupero.
  * 1. Annulla qualsiasi notifica pendente per evitare duplicati.
  * 2. Previene chiamate multiple ravvicinate (debouncing e singleton lock).
- * 3. Invia la richiesta Web Push via APNs (Serverless) per risveglio a schermo spento su iOS.
+ * 3. Scrive lo stato attivo in IndexedDB per la sincronizzazione con il SW.
+ * 4. Invia la richiesta Web Push via APNs (Serverless) per risveglio a schermo spento su iOS.
  */
 export const scheduleBackgroundRestNotification = async ({
   endsAtMs,
@@ -252,6 +288,13 @@ export const scheduleBackgroundRestNotification = async ({
     const timerId = `rest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     currentActiveTimerId = timerId;
 
+    // Sincronizza lo stato in IndexedDB come 'running'
+    setSharedActiveTimerState({
+      timerId,
+      endsAtMs,
+      status: 'running',
+    });
+
     // Web Push API (APNs) per risveglio dell'iPhone a schermo spento
     const sub = await getOrCreatePushSubscription();
     if (sub) {
@@ -264,6 +307,7 @@ export const scheduleBackgroundRestNotification = async ({
           title,
           body,
           timerId,
+          endsAtMs,
         }),
       }).catch((err) => {
         console.debug('[Push] Impossibile contattare /api/schedule-push:', err);
@@ -277,6 +321,14 @@ export const scheduleBackgroundRestNotification = async ({
 };
 
 export const cancelBackgroundRestNotification = () => {
+  // Sincronizza immediatamente lo stato in IndexedDB come 'stopped'
+  // così il Service Worker scarterà qualsiasi push in arrivo da questo timer
+  setSharedActiveTimerState({
+    timerId: null,
+    endsAtMs: null,
+    status: 'stopped',
+  });
+
   if (currentActiveTimerId) {
     const timerIdToCancel = currentActiveTimerId;
     currentActiveTimerId = null;

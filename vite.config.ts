@@ -64,6 +64,8 @@ function pushDevServerPlugin(): Plugin {
                 body: notificationBody || 'È ora di iniziare la prossima serie!',
                 tag: 'rest-timer',
                 url: '/',
+                timerId: timerId || null,
+                endsAtMs: data.endsAtMs || null,
               })
 
               await webpush.sendNotification(subscription, payload, {

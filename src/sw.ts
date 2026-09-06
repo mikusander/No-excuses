@@ -66,12 +66,64 @@ async function acquireNotificationSlot(minIntervalMs = 5000): Promise<boolean> {
   });
 }
 
+interface SharedActiveTimer {
+  timerId: string | null;
+  endsAtMs: number | null;
+  status: 'running' | 'paused' | 'stopped';
+  updatedAt: number;
+}
+
+async function getSharedActiveTimer(): Promise<SharedActiveTimer | null> {
+  return new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === 'undefined') {
+        resolve(null);
+        return;
+      }
+
+      const request = indexedDB.open('no_excuses_pwa_push', 1);
+      request.onupgradeneeded = () => {
+        try {
+          request.result.createObjectStore('meta');
+        } catch {
+          // ignore
+        }
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        try {
+          const tx = db.transaction('meta', 'readonly');
+          const store = tx.objectStore('meta');
+          const getReq = store.get('active_timer');
+
+          getReq.onsuccess = () => {
+            if (getReq.result && typeof getReq.result === 'object') {
+              resolve(getReq.result as SharedActiveTimer);
+            } else {
+              resolve(null);
+            }
+          };
+
+          getReq.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        }
+      };
+
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GESTIONE PUSH NOTIFICATIONS (Apple APNs per iOS 16.4+ a schermo spento)
 // ─────────────────────────────────────────────────────────────────────────────
 
 self.addEventListener('push', (event) => {
-  let payload: { title?: string; body?: string } = {
+  let payload: { title?: string; body?: string; timerId?: string; endsAtMs?: number } = {
     title: '⏱️ Recupero Terminato!',
     body: 'È ora di iniziare la prossima serie!',
   };
@@ -84,28 +136,56 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const title = payload.title || '⏱️ Recupero Terminato!';
-  const options: NotificationOptions & Record<string, unknown> = {
-    body: payload.body || 'È ora di iniziare la prossima serie!',
-    icon: '/pwa-192x192.png',
-    badge: '/pwa-192x192.png',
-    tag: 'rest-timer',
-    renotify: false,
-    requireInteraction: false,
-    silent: false,
-    vibrate: [250, 100, 250],
-    data: { url: '/' },
-  };
-
   const pushProcessPromise = (async () => {
-    // 1. Controllo deduplicazione atomica: blocca raffiche di notifiche push identiche
+    // 1. VERIFICA PRESENZA UTENTE NELL'APP:
+    // Se l'utente ha l'app aperta e visibile, NON mostrare alcuna notifica push
+    // poiché può già vedere e sentire il timer direttamente nell'interfaccia.
+    try {
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const isAppInForeground = clientList.some((client) => client.visibilityState === 'visible');
+      if (isAppInForeground) {
+        console.debug('[SW] Utente attivo nell\'app: notifica push soppressa.');
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. VERIFICA STATO E SINCRONIZZAZIONE TIMER TRAMITE INDEXEDDB:
+    // Se l'utente ha stoppato, resettato o cambiato timer, scarta la notifica obsoleta.
+    try {
+      const activeTimer = await getSharedActiveTimer();
+      if (activeTimer) {
+        // Se il timer è stato stoppato o pausato, non notificare
+        if (activeTimer.status !== 'running') {
+          console.debug('[SW] Timer non attivo (stato: ' + activeTimer.status + '): notifica scartata.');
+          return;
+        }
+
+        // Se il timerId della notifica non corrisponde a quello attivo (il timer è stato riavviato/resettato)
+        if (payload.timerId && activeTimer.timerId && payload.timerId !== activeTimer.timerId) {
+          console.debug('[SW] Timer riavviato con nuovo ID: notifica vecchia scartata.');
+          return;
+        }
+
+        // Se la notifica è arrivata troppo in anticipo rispetto al tempo di fine effettivo
+        if (activeTimer.endsAtMs && Date.now() < activeTimer.endsAtMs - 2000) {
+          console.debug('[SW] Notifica push anticipata rispetto al timer attuale: scartata.');
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 3. DEDUPLICAZIONE ATOMICA: massimo 1 notifica ogni 5 secondi
     const canShow = await acquireNotificationSlot(5000);
     if (!canShow) {
-      console.debug('[SW] Notifica push duplicata soppressa con successo.');
+      console.debug('[SW] Notifica push duplicata soppressa dal mutex.');
       return;
     }
 
-    // 2. Chiudi preventivamente qualsiasi notifica precedente con lo stesso tag
+    // 4. Chiudi preventivamente qualsiasi notifica precedente con lo stesso tag
     try {
       const existing = await self.registration.getNotifications({ tag: 'rest-timer' });
       for (const notif of existing) {
@@ -115,7 +195,20 @@ self.addEventListener('push', (event) => {
       // ignore
     }
 
-    // 3. Mostra l'unica notifica garantita
+    // 5. Mostra l'unica notifica garantita
+    const title = payload.title || '⏱️ Recupero Terminato!';
+    const options: NotificationOptions & Record<string, unknown> = {
+      body: payload.body || 'È ora di iniziare la prossima serie!',
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
+      tag: 'rest-timer',
+      renotify: false,
+      requireInteraction: false,
+      silent: false,
+      vibrate: [250, 100, 250],
+      data: { url: '/' },
+    };
+
     await self.registration.showNotification(title, options as any);
   })();
 
