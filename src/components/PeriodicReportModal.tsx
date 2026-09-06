@@ -1,9 +1,12 @@
 /**
  * PeriodicReportModal.tsx — Modale interattivo per la visualizzazione del Report Periodico
  * degli Allenamenti, analisi dei gruppi muscolari, dettaglio esercizi e resoconto delle note.
+ *
+ * Include gestione difensiva dei dati storici/snapshot e Error Boundary per evitare
+ * schermate nere o crash su dati imprevisti.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, Component, type ErrorInfo, type ReactNode } from 'react';
 import {
   X,
   BarChart3,
@@ -21,12 +24,14 @@ import {
   ChevronUp,
   Sparkles,
   Activity,
+  AlertTriangle,
 } from 'lucide-react';
 import type { MuscleGroup } from '../utils/exerciseClassifier';
 import {
   type ReportPeriodType,
   type RawWorkoutSession,
   generatePeriodicReport,
+  getEmptyReport,
   exportReportSummaryText,
 } from '../utils/periodicReportEngine';
 
@@ -81,7 +86,74 @@ const MUSCLE_COLORS: Record<MuscleGroup, { bar: string; text: string; bg: string
   },
 };
 
-const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
+const getMuscleColorTheme = (group?: string | null) => {
+  if (group && group in MUSCLE_COLORS) {
+    return MUSCLE_COLORS[group as MuscleGroup];
+  }
+  return MUSCLE_COLORS.Altro;
+};
+
+const formatSafeNumber = (val: unknown): string => {
+  const n = Number(val);
+  return Number.isFinite(n) ? n.toLocaleString('it-IT') : '0';
+};
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  onClose: () => void;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  errorMessage: string | null;
+}
+
+class ReportErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, errorMessage: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, errorMessage: error?.message || 'Errore imprevisto' };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('ReportErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 z-[100] h-[100dvh] w-screen flex flex-col items-center justify-center bg-black/85 backdrop-blur-md p-6">
+          <div className="bg-[#181818] border border-brand-orange/40 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-4">
+            <div className="p-3 bg-brand-orange/20 border border-brand-orange/40 rounded-2xl w-fit mx-auto text-brand-orange">
+              <AlertTriangle size={32} />
+            </div>
+            <h3 className="text-lg sm:text-xl font-black text-white">
+              Impossibile aprire il Report
+            </h3>
+            <p className="text-xs sm:text-sm text-brand-grey/80 leading-relaxed">
+              Si è verificato un errore durante l'elaborazione dei dati delle sessioni. Nessun dato è andato perso.
+            </p>
+            <div className="pt-2">
+              <button
+                onClick={this.props.onClose}
+                type="button"
+                className="w-full py-3 px-5 rounded-2xl bg-brand-orange text-black font-extrabold text-sm uppercase tracking-wider hover:bg-brand-lightOrange transition-colors cursor-pointer"
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
   isOpen,
   onClose,
   workouts,
@@ -94,16 +166,21 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
   const [copiedNotification, setCopiedNotification] = useState(false);
   const [expandedDossiers, setExpandedDossiers] = useState<Record<string, boolean>>({});
 
-  // Calcolo del report analitico
+  // Calcolo del report analitico con fallback sicuro
   const report = useMemo(() => {
-    return generatePeriodicReport(workouts, selectedPeriod);
+    try {
+      return generatePeriodicReport(workouts || [], selectedPeriod);
+    } catch (err) {
+      console.error('Error generating periodic report:', err);
+      return getEmptyReport(selectedPeriod);
+    }
   }, [workouts, selectedPeriod]);
 
   if (!isOpen) return null;
 
   const handleCopySummary = async () => {
-    const text = exportReportSummaryText(report);
     try {
+      const text = exportReportSummaryText(report);
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(text);
       } else {
@@ -130,35 +207,49 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
 
   // Filtro e ordinamento esercizi
   const sortedFilteredExercises = useMemo(() => {
-    const list = report.exercises.filter((ex) => {
+    const list = (report?.exercises || []).filter((ex) => {
+      if (!ex) return false;
+      const displayName = String(ex.displayName || '');
       const matchesSearch =
         exerciseSearchQuery === '' ||
-        ex.displayName.toLowerCase().includes(exerciseSearchQuery.toLowerCase());
+        displayName.toLowerCase().includes(exerciseSearchQuery.toLowerCase());
       const matchesGroup =
         selectedMuscleFilter === 'all' || ex.muscleGroup === selectedMuscleFilter;
       return matchesSearch && matchesGroup;
     });
 
     return list.sort((a, b) => {
+      const aReps = Number(a?.totalReps) || 0;
+      const bReps = Number(b?.totalReps) || 0;
+      const aVol = Number(a?.totalVolumeKg) || 0;
+      const bVol = Number(b?.totalVolumeKg) || 0;
+      const aSets = Number(a?.totalSets) || 0;
+      const bSets = Number(b?.totalSets) || 0;
+
       if (exerciseSortMode === 'reps') {
-        if (b.totalReps !== a.totalReps) return b.totalReps - a.totalReps;
-        return b.totalVolumeKg - a.totalVolumeKg;
+        if (bReps !== aReps) return bReps - aReps;
+        return bVol - aVol;
       }
       if (exerciseSortMode === 'volume') {
-        if (b.totalVolumeKg !== a.totalVolumeKg) return b.totalVolumeKg - a.totalVolumeKg;
-        return b.totalReps - a.totalReps;
+        if (bVol !== aVol) return bVol - aVol;
+        return bReps - aReps;
       }
-      if (b.totalSets !== a.totalSets) return b.totalSets - a.totalSets;
-      return b.totalReps - a.totalReps;
+      if (bSets !== aSets) return bSets - aSets;
+      return bReps - aReps;
     });
-  }, [report.exercises, exerciseSearchQuery, selectedMuscleFilter, exerciseSortMode]);
+  }, [report?.exercises, exerciseSearchQuery, selectedMuscleFilter, exerciseSortMode]);
 
   // Filtro dossier note
-  const filteredDossiers = report.notesDossiers.filter((dossier) => {
+  const filteredDossiers = (report?.notesDossiers || []).filter((dossier) => {
+    if (!dossier) return false;
+    const exName = String(dossier.exerciseName || '');
+    const searchLower = exerciseSearchQuery.toLowerCase();
     const matchesSearch =
       exerciseSearchQuery === '' ||
-      dossier.exerciseName.toLowerCase().includes(exerciseSearchQuery.toLowerCase()) ||
-      dossier.chronologicalNotes.some((n) => n.text.toLowerCase().includes(exerciseSearchQuery.toLowerCase()));
+      exName.toLowerCase().includes(searchLower) ||
+      (dossier.chronologicalNotes || []).some((n) =>
+        String(n?.text || '').toLowerCase().includes(searchLower)
+      );
     const matchesGroup =
       selectedMuscleFilter === 'all' || dossier.muscleGroup === selectedMuscleFilter;
     return matchesSearch && matchesGroup;
@@ -166,7 +257,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] h-[100dvh] w-screen flex flex-col items-center justify-center bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
       style={{
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
@@ -174,7 +265,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
         paddingRight: 'calc(env(safe-area-inset-right, 0px) + 10px)',
       }}
     >
-      <div className="relative w-full max-w-4xl h-full max-h-full sm:max-h-[88vh] flex flex-col bg-[#0d0d0d] border border-brand-darkGrey/60 rounded-3xl shadow-[0_0_60px_rgba(0,0,0,0.85)] overflow-hidden">
+      <div className="relative w-full max-w-4xl h-full max-h-full sm:max-h-[88vh] flex flex-col bg-[#141414] border border-white/15 rounded-3xl shadow-[0_0_60px_rgba(0,0,0,0.9)] overflow-hidden min-h-0">
         
         {/* ─── HEADER ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between p-3.5 sm:p-6 border-b border-white/10 bg-black/60 sticky top-0 z-20 shrink-0">
@@ -192,7 +283,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-brand-grey/80 mt-0.5 truncate">
-                {report.period.label} • {report.totalWorkouts} {report.totalWorkouts === 1 ? 'sessione' : 'sessioni'}
+                {report.period?.label || 'Periodo'} • {report.totalWorkouts} {report.totalWorkouts === 1 ? 'sessione' : 'sessioni'}
               </p>
             </div>
           </div>
@@ -222,7 +313,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
         </div>
 
         {/* ─── CORPO SCORREVOLE ────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6 space-y-6">
           
           {/* SELETTORE PERIODO TEMPORALE */}
           <div className="flex flex-wrap items-center justify-between gap-3 p-2 rounded-2xl bg-black/40 border border-white/5">
@@ -263,12 +354,12 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
               </div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {report.totalVolumeKg.toLocaleString('it-IT')}
+                  {formatSafeNumber(report.totalVolumeKg)}
                 </span>
                 <span className="text-xs font-bold text-brand-orange uppercase">kg</span>
               </div>
               <p className="text-[11px] text-brand-grey/60 mt-1">
-                ≈ {(report.totalVolumeKg / 1000).toFixed(2)} tonnellate sollevate
+                ≈ {((Number(report.totalVolumeKg) || 0) / 1000).toFixed(2)} tonnellate sollevate
               </p>
             </div>
 
@@ -279,12 +370,12 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
               </div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {report.totalReps.toLocaleString('it-IT')}
+                  {formatSafeNumber(report.totalReps)}
                 </span>
                 <span className="text-xs font-bold text-cyan-400 uppercase">rip.</span>
               </div>
               <p className="text-[11px] text-brand-grey/60 mt-1">
-                Media {report.totalWorkouts > 0 ? Math.round(report.totalReps / report.totalWorkouts).toLocaleString('it-IT') : 0} rip a sessione
+                Media {report.totalWorkouts > 0 ? Math.round((Number(report.totalReps) || 0) / report.totalWorkouts).toLocaleString('it-IT') : 0} rip a sessione
               </p>
             </div>
 
@@ -295,12 +386,12 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
               </div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {report.totalSets}
+                  {Number(report.totalSets) || 0}
                 </span>
                 <span className="text-xs font-bold text-emerald-400 uppercase">serie</span>
               </div>
               <p className="text-[11px] text-brand-grey/60 mt-1">
-                Media {report.averageSetsPerWorkout} serie a sessione
+                Media {Number(report.averageSetsPerWorkout) || 0} serie a sessione
               </p>
             </div>
 
@@ -311,12 +402,12 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
               </div>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {report.totalWorkouts}
+                  {Number(report.totalWorkouts) || 0}
                 </span>
                 <span className="text-xs font-bold text-purple-400 uppercase">workout</span>
               </div>
               <p className="text-[11px] text-brand-grey/60 mt-1">
-                {report.notesDossiers.length} esercizi con note registrate
+                {(report.notesDossiers || []).length} esercizi con note registrate
               </p>
             </div>
           </div>
@@ -345,7 +436,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
             >
               <span>🏋️ Dettaglio Esercizi</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 text-white/80">
-                {report.exercises.length}
+                {(report.exercises || []).length}
               </span>
             </button>
             <button
@@ -358,7 +449,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
               }`}
             >
               <span>📋 Resoconto Note & Dossier</span>
-              {report.notesDossiers.length > 0 && (
+              {(report.notesDossiers || []).length > 0 && (
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-brand-orange/20 text-brand-orange font-bold">
                   {report.notesDossiers.length}
                 </span>
@@ -376,31 +467,31 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                     Distribuzione Proporzionale del Volume (kg)
                   </span>
                   <span className="text-xs text-brand-grey/70">
-                    Totale: {report.totalVolumeKg.toLocaleString('it-IT')} kg
+                    Totale: {formatSafeNumber(report.totalVolumeKg)} kg
                   </span>
                 </div>
 
                 {/* Progress bar multicolore */}
                 <div className="w-full h-4 sm:h-5 bg-black/60 rounded-full overflow-hidden flex border border-white/5">
-                  {report.muscleGroups
-                    .filter((mg) => mg.volumePercent > 0)
+                  {(report.muscleGroups || [])
+                    .filter((mg) => Number(mg.volumePercent) > 0)
                     .map((mg) => (
                       <div
                         key={mg.group}
                         style={{ width: `${mg.volumePercent}%` }}
-                        className={`${MUSCLE_COLORS[mg.group].bar} transition-all duration-500 relative group`}
-                        title={`${mg.group}: ${mg.volumePercent}% (${mg.volumeKg.toLocaleString('it-IT')} kg)`}
+                        className={`${getMuscleColorTheme(mg.group).bar} transition-all duration-500 relative group`}
+                        title={`${mg.group}: ${mg.volumePercent}% (${formatSafeNumber(mg.volumeKg)} kg)`}
                       />
                     ))}
                 </div>
 
                 {/* Legenda rapida */}
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-4 text-xs">
-                  {report.muscleGroups
-                    .filter((mg) => mg.volumePercent > 0)
+                  {(report.muscleGroups || [])
+                    .filter((mg) => Number(mg.volumePercent) > 0)
                     .map((mg) => (
                       <div key={mg.group} className="flex items-center gap-1.5">
-                        <span className={`w-3 h-3 rounded-full ${MUSCLE_COLORS[mg.group].bar}`} />
+                        <span className={`w-3 h-3 rounded-full ${getMuscleColorTheme(mg.group).bar}`} />
                         <span className="text-white/80 font-semibold">{mg.group}:</span>
                         <span className="font-bold text-white">{mg.volumePercent}%</span>
                       </div>
@@ -410,10 +501,10 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
 
               {/* Schede Dettagliate per ciascun Gruppo Muscolare */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {report.muscleGroups
-                  .filter((mg) => mg.volumeKg > 0 || mg.setsCount > 0)
+                {(report.muscleGroups || [])
+                  .filter((mg) => Number(mg.volumeKg) > 0 || Number(mg.setsCount) > 0 || Number(mg.repsCount) > 0)
                   .map((mg) => {
-                    const theme = MUSCLE_COLORS[mg.group];
+                    const theme = getMuscleColorTheme(mg.group);
                     return (
                       <div
                         key={mg.group}
@@ -425,7 +516,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                               {mg.group}
                             </span>
                             <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 font-bold text-white/90">
-                              {mg.exerciseCount} {mg.exerciseCount === 1 ? 'esercizio' : 'esercizi'}
+                              {Number(mg.exerciseCount) || 0} {Number(mg.exerciseCount) === 1 ? 'esercizio' : 'esercizi'}
                             </span>
                           </div>
 
@@ -433,25 +524,25 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                             <div className="bg-black/30 rounded-xl p-2.5 border border-white/5">
                               <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Volume Carico</span>
                               <span className="text-lg font-black text-white">
-                                {mg.volumeKg.toLocaleString('it-IT')} <span className="text-xs text-brand-orange">kg</span>
+                                {formatSafeNumber(mg.volumeKg)} <span className="text-xs text-brand-orange">kg</span>
                               </span>
                               <span className="text-[10px] text-brand-grey/60 block mt-0.5">
-                                {mg.volumePercent}% del totale
+                                {Number(mg.volumePercent) || 0}% del totale
                               </span>
                             </div>
 
                             <div className="bg-black/30 rounded-xl p-2.5 border border-white/5">
                               <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Volume Ripetizioni</span>
                               <span className="text-lg font-black text-white">
-                                {mg.repsCount.toLocaleString('it-IT')} <span className="text-xs text-cyan-400">rip</span>
+                                {formatSafeNumber(mg.repsCount)} <span className="text-xs text-cyan-400">rip</span>
                               </span>
                               <span className="text-[10px] text-brand-grey/60 block mt-0.5">
-                                in {mg.setsCount} serie ({mg.setsPercent}%)
+                                in {Number(mg.setsCount) || 0} serie ({Number(mg.setsPercent) || 0}%)
                               </span>
                             </div>
                           </div>
 
-                          {mg.topExercises.length > 0 && (
+                          {(mg.topExercises || []).length > 0 && (
                             <div>
                               <span className="text-[10px] uppercase font-bold text-brand-grey/50 block mb-1.5">
                                 Principali movimenti:
@@ -466,7 +557,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                                       {topEx.displayName}
                                     </span>
                                     <span className="font-mono text-cyan-300 font-bold text-[11px]">
-                                      {topEx.reps.toLocaleString('it-IT')} rip ({topEx.sets} set{topEx.volumeKg > 0 ? ` • ${topEx.volumeKg.toLocaleString('it-IT')} kg` : ''})
+                                      {formatSafeNumber(topEx.reps)} rip ({Number(topEx.sets) || 0} set{Number(topEx.volumeKg) > 0 ? ` • ${formatSafeNumber(topEx.volumeKg)} kg` : ''})
                                     </span>
                                   </div>
                                 ))}
@@ -574,7 +665,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
               ) : (
                 <div className="space-y-2.5">
                   {sortedFilteredExercises.map((ex) => {
-                    const theme = MUSCLE_COLORS[ex.muscleGroup];
+                    const theme = getMuscleColorTheme(ex.muscleGroup);
                     return (
                       <div
                         key={ex.canonicalId}
@@ -592,7 +683,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                                 {ex.displayName}
                               </h3>
                               <p className="text-[11px] text-brand-grey/60 mt-0.5">
-                                Eseguito in {ex.sessionsCount} {ex.sessionsCount === 1 ? 'sessione' : 'sessioni'} • {ex.totalSets} serie totali
+                                Eseguito in {Number(ex.sessionsCount) || 0} {Number(ex.sessionsCount) === 1 ? 'sessione' : 'sessioni'} • {Number(ex.totalSets) || 0} serie totali
                               </p>
                             </div>
                           </div>
@@ -602,16 +693,16 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                             <div className="text-right min-w-[75px]">
                               <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Vol. Ripetizioni</span>
                               <span className="text-sm font-black text-cyan-400 font-mono">
-                                {ex.totalReps.toLocaleString('it-IT')} <span className="text-[10px]">rip</span>
+                                {formatSafeNumber(ex.totalReps)} <span className="text-[10px]">rip</span>
                               </span>
                             </div>
 
                             {/* Volume Carico (se > 0 o corpo libero) */}
                             <div className="text-right min-w-[75px]">
                               <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Vol. Carico</span>
-                              {ex.totalVolumeKg > 0 ? (
+                              {Number(ex.totalVolumeKg) > 0 ? (
                                 <span className="text-sm font-black text-brand-orange font-mono">
-                                  {ex.totalVolumeKg.toLocaleString('it-IT')} <span className="text-[10px]">kg</span>
+                                  {formatSafeNumber(ex.totalVolumeKg)} <span className="text-[10px]">kg</span>
                                 </span>
                               ) : (
                                 <span className="text-xs font-semibold text-brand-grey/60">
@@ -621,7 +712,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                             </div>
 
                             {/* Carico Max / PR */}
-                            {ex.maxWeightKg > 0 && (
+                            {Number(ex.maxWeightKg) > 0 && (
                               <div className="text-right min-w-[55px]">
                                 <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Carico Max</span>
                                 <span className="text-xs font-black text-white font-mono">
@@ -691,7 +782,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
               ) : (
                 <div className="space-y-4">
                   {filteredDossiers.map((dossier) => {
-                    const theme = MUSCLE_COLORS[dossier.muscleGroup];
+                    const theme = getMuscleColorTheme(dossier.muscleGroup);
                     const isExpanded = Boolean(expandedDossiers[dossier.canonicalId]);
 
                     return (
@@ -712,10 +803,10 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
 
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-brand-grey/70">
-                              {dossier.totalNotes} {dossier.totalNotes === 1 ? 'osservazione' : 'osservazioni'}
+                              {Number(dossier.totalNotes) || 0} {Number(dossier.totalNotes) === 1 ? 'osservazione' : 'osservazioni'}
                             </span>
                             {/* Temi dominanti badge */}
-                            {dossier.dominantThemes.map((themeTag) => (
+                            {(dossier.dominantThemes || []).map((themeTag) => (
                               <span
                                 key={themeTag}
                                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
@@ -753,14 +844,14 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
                           type="button"
                           className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-orange hover:text-brand-lightOrange transition-colors cursor-pointer"
                         >
-                          <span>{isExpanded ? 'Nascondi cronologia note' : `Mostra cronologia note (${dossier.chronologicalNotes.length})`}</span>
+                          <span>{isExpanded ? 'Nascondi cronologia note' : `Mostra cronologia note (${(dossier.chronologicalNotes || []).length})`}</span>
                           {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                         </button>
 
                         {/* Lista cronologica note espandibile */}
                         {isExpanded && (
                           <div className="mt-3 space-y-2 pt-3 border-t border-white/5">
-                            {dossier.chronologicalNotes.map((note, idx) => (
+                            {(dossier.chronologicalNotes || []).map((note, idx) => (
                               <div
                                 key={idx}
                                 className="bg-white/5 rounded-xl p-3 border border-white/5 text-xs space-y-1"
@@ -786,7 +877,7 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
         {/* ─── FOOTER ──────────────────────────────────────────────────────── */}
         <div className="p-3.5 sm:p-4 border-t border-white/10 bg-black/80 flex items-center justify-between shrink-0">
           <span className="text-xs text-brand-grey/60 truncate mr-2">
-            {report.totalWorkouts} {report.totalWorkouts === 1 ? 'sessione' : 'sessioni'} • {report.totalVolumeKg.toLocaleString('it-IT')} kg totali
+            {Number(report.totalWorkouts) || 0} {Number(report.totalWorkouts) === 1 ? 'sessione' : 'sessioni'} • {formatSafeNumber(report.totalVolumeKg)} kg totali
           </span>
           <button
             onClick={onClose}
@@ -799,6 +890,14 @@ const PeriodicReportModal: React.FC<PeriodicReportModalProps> = ({
 
       </div>
     </div>
+  );
+};
+
+const PeriodicReportModal: React.FC<PeriodicReportModalProps> = (props) => {
+  return (
+    <ReportErrorBoundary onClose={props.onClose}>
+      <PeriodicReportModalInner {...props} />
+    </ReportErrorBoundary>
   );
 };
 

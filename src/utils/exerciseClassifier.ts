@@ -28,9 +28,11 @@ export interface ClassifiedExercise {
  * - Eliminazione punteggiatura e caratteri speciali.
  * - Collasso sequenze di spazi multipli in spazio singolo.
  */
-export const cleanExerciseName = (rawName: string): string => {
-  if (!rawName) return '';
-  return rawName
+export const cleanExerciseName = (rawName: unknown): string => {
+  if (rawName == null) return '';
+  const str = typeof rawName === 'string' ? rawName : String(rawName);
+  if (!str.trim()) return '';
+  return str
     .toLowerCase()
     .trim()
     .normalize('NFD')
@@ -816,9 +818,11 @@ const MUSCLE_HEURISTICS: Array<{ group: MuscleGroup; keywords: string[] }> = [
   },
 ];
 
-const capitalize = (str: string): string => {
-  if (!str) return '';
-  return str
+const capitalize = (str: unknown): string => {
+  if (str == null) return '';
+  const s = typeof str === 'string' ? str : String(str);
+  if (!s.trim()) return '';
+  return s
     .split(' ')
     .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1) : ''))
     .join(' ');
@@ -841,7 +845,7 @@ export const inferMuscleGroupFromKeywords = (cleanedName: string): MuscleGroup =
  * Accetta qualsiasi stringa inserita liberamente dall'utente e restituisce
  * l'entità canonica o una classificazione euristica coerente.
  */
-export const matchExercise = (rawName: string): ClassifiedExercise => {
+export const matchExercise = (rawName: unknown): ClassifiedExercise => {
   const cleaned = cleanExerciseName(rawName);
   if (!cleaned) {
     return {

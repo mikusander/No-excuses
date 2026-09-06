@@ -37,11 +37,20 @@ const toSafeNumber = (value: unknown, fallback: number): number => {
  * Deserializza l'array raw di exercises_snapshot memorizzato nel database in UiExercise[]
  */
 export const toSnapshotExercises = (raw: unknown): UiExercise[] => {
-  if (!Array.isArray(raw)) return [];
+  if (!raw) return [];
+  let parsedRaw = raw;
+  if (typeof parsedRaw === 'string') {
+    try {
+      parsedRaw = JSON.parse(parsedRaw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsedRaw)) return [];
 
-  return raw
-    .map((entry, idx) => {
-      const item = entry as Record<string, unknown>;
+  return parsedRaw
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'))
+    .map((item, idx) => {
       const typeRaw = String(item.type || 'reps').toLowerCase();
       const type: UiExercise['type'] =
         typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
@@ -49,25 +58,29 @@ export const toSnapshotExercises = (raw: unknown): UiExercise[] => {
           : 'reps';
 
       const subExercises = Array.isArray(item.subExercises)
-        ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
-          const subType: UiSubExercise['type'] =
-            String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
-          return {
-            name: String(sub.name || ''),
-            type: subType,
-            reps: Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0))),
-            duration_seconds: Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0))),
-            weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
-          } satisfies UiSubExercise;
-        })
+        ? (item.subExercises as Array<unknown>)
+          .filter((sub): sub is Record<string, unknown> => Boolean(sub && typeof sub === 'object'))
+          .map((sub) => {
+            const subType: UiSubExercise['type'] =
+              String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
+            return {
+              name: String(sub.name || ''),
+              type: subType,
+              reps: Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0))),
+              duration_seconds: Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0))),
+              weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
+            } satisfies UiSubExercise;
+          })
         : undefined;
 
       const pyramidSteps = Array.isArray(item.pyramid_steps)
-        ? (item.pyramid_steps as Array<Record<string, unknown>>).map((step) => ({
-          reps: Math.max(0, Math.trunc(toSafeNumber(step.reps, 0))),
-          rest_seconds: Math.max(0, Math.trunc(toSafeNumber(step.rest_seconds, 0))),
-          weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
-        }))
+        ? (item.pyramid_steps as Array<unknown>)
+          .filter((step): step is Record<string, unknown> => Boolean(step && typeof step === 'object'))
+          .map((step) => ({
+            reps: Math.max(0, Math.trunc(toSafeNumber(step.reps, 0))),
+            rest_seconds: Math.max(0, Math.trunc(toSafeNumber(step.rest_seconds, 0))),
+            weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
+          }))
         : undefined;
 
       return {
@@ -201,8 +214,10 @@ export const getPeriodInfo = (periodType: ReportPeriodType): ReportPeriodInfo =>
  * Estrae il nome dell'esercizio e il testo pulito da una nota memorizzata nel DB.
  * Supporta formati come `[1. Panca Piana] Ottimo feeling...` o testo semplice.
  */
-export const parseNoteContext = (rawText: string): { exerciseName: string | null; body: string } => {
-  const trimmed = rawText.trim();
+export const parseNoteContext = (rawText: unknown): { exerciseName: string | null; body: string } => {
+  if (rawText == null) return { exerciseName: null, body: '' };
+  const str = typeof rawText === 'string' ? rawText : String(rawText);
+  const trimmed = str.trim();
   if (!trimmed) return { exerciseName: null, body: '' };
 
   const match = trimmed.match(/^\[([^\]]+)\]\s*(.+)$/);
@@ -224,8 +239,9 @@ export const parseNoteContext = (rawText: string): { exerciseName: string | null
 /**
  * Categorizza tematicamente il testo di una nota usando parole chiave.
  */
-export const categorizeNoteText = (text: string): Array<'Progresso' | 'Fatica' | 'Fastidio' | 'Tecnica' | 'Generale'> => {
-  const lower = text.toLowerCase();
+export const categorizeNoteText = (text: unknown): Array<'Progresso' | 'Fatica' | 'Fastidio' | 'Tecnica' | 'Generale'> => {
+  if (text == null) return ['Generale'];
+  const lower = (typeof text === 'string' ? text : String(text)).toLowerCase();
   const categories: Array<'Progresso' | 'Fatica' | 'Fastidio' | 'Tecnica' | 'Generale'> = [];
 
   if (/aument|caric|peso|pr|facile|legger|kg|chius|miglior|record|progred/.test(lower)) {
@@ -310,6 +326,10 @@ export interface UnpackedExerciseItem {
  * Se l'esercizio è singolo o piramidale, restituisce un array con un solo elemento.
  */
 export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
+  if (!rawEx || typeof rawEx !== 'object') {
+    return [];
+  }
+
   const isComplex =
     rawEx.type === 'emom' ||
     rawEx.type === 'circuit' ||
@@ -322,57 +342,72 @@ export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
   if (isComplex && Array.isArray(rawEx.subExercises) && rawEx.subExercises.length > 0) {
     const parentSets =
       rawEx.type === 'emom'
-        ? Math.max(1, rawEx.emom_rounds || rawEx.sets || 1)
-        : Math.max(1, rawEx.sets || 1);
+        ? Math.max(1, Math.trunc(toSafeNumber(rawEx.emom_rounds || rawEx.sets, 1)))
+        : Math.max(1, Math.trunc(toSafeNumber(rawEx.sets, 1)));
 
-    return rawEx.subExercises.map((sub) => {
-      const subReps = Math.max(0, sub.reps || 0);
-      const totalRepsForSub = subReps * parentSets;
-      const subWeight = Number.isFinite(Number(sub.weight_kg)) ? Math.max(0, Number(sub.weight_kg)) : 0;
-      const subDuration = Math.max(0, sub.duration_seconds || 0) * parentSets;
+    const validSubs = (rawEx.subExercises as Array<unknown>).filter(
+      (sub): sub is Record<string, unknown> => Boolean(sub && typeof sub === 'object')
+    );
 
-      return {
-        name: sub.name || rawEx.name,
-        sets: parentSets,
-        reps: totalRepsForSub,
-        weightKg: subWeight,
-        durationSeconds: subDuration,
-        parentType: rawEx.type,
-      };
-    });
+    if (validSubs.length > 0) {
+      return validSubs.map((sub) => {
+        const subReps = Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0)));
+        const totalRepsForSub = subReps * parentSets;
+        const rawWeight = Number(sub.weight_kg);
+        const subWeight = Number.isFinite(rawWeight) ? Math.max(0, rawWeight) : 0;
+        const subDuration = Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0))) * parentSets;
+
+        return {
+          name: String(sub.name || rawEx.name || 'Esercizio'),
+          sets: parentSets,
+          reps: totalRepsForSub,
+          weightKg: subWeight,
+          durationSeconds: subDuration,
+          parentType: rawEx.type,
+        };
+      });
+    }
   }
 
   // Se è una piramide con step
   if (rawEx.type === 'pyramid' && Array.isArray(rawEx.pyramid_steps) && rawEx.pyramid_steps.length > 0) {
-    let totalReps = 0;
-    let maxWeight = 0;
-    rawEx.pyramid_steps.forEach((step) => {
-      totalReps += Math.max(0, step.reps || 0);
-      const w = Number.isFinite(Number(step.weight_kg)) ? Math.max(0, Number(step.weight_kg)) : 0;
-      maxWeight = Math.max(maxWeight, w);
-    });
+    const validSteps = (rawEx.pyramid_steps as Array<unknown>).filter(
+      (step): step is Record<string, unknown> => Boolean(step && typeof step === 'object')
+    );
 
-    return [
-      {
-        name: rawEx.name,
-        sets: rawEx.pyramid_steps.length,
-        reps: totalReps,
-        weightKg: maxWeight,
-        durationSeconds: 0,
-      },
-    ];
+    if (validSteps.length > 0) {
+      let totalReps = 0;
+      let maxWeight = 0;
+      validSteps.forEach((step) => {
+        totalReps += Math.max(0, Math.trunc(toSafeNumber(step.reps, 0)));
+        const rawW = Number(step.weight_kg);
+        const w = Number.isFinite(rawW) ? Math.max(0, rawW) : 0;
+        maxWeight = Math.max(maxWeight, w);
+      });
+
+      return [
+        {
+          name: String(rawEx.name || 'Esercizio Piramidale'),
+          sets: validSteps.length,
+          reps: totalReps,
+          weightKg: maxWeight,
+          durationSeconds: 0,
+        },
+      ];
+    }
   }
 
   // Esercizio standard (reps o isometria)
-  const sets = Math.max(1, rawEx.sets || 1);
-  const repsPerSet = Math.max(0, rawEx.reps || 0);
+  const sets = Math.max(1, Math.trunc(toSafeNumber(rawEx.sets, 1)));
+  const repsPerSet = Math.max(0, Math.trunc(toSafeNumber(rawEx.reps, 0)));
   const totalReps = sets * repsPerSet;
-  const weight = Number.isFinite(Number(rawEx.weight_kg)) ? Math.max(0, Number(rawEx.weight_kg)) : 0;
-  const duration = Math.max(0, rawEx.duration_seconds || 0) * sets;
+  const rawWeight = Number(rawEx.weight_kg);
+  const weight = Number.isFinite(rawWeight) ? Math.max(0, rawWeight) : 0;
+  const duration = Math.max(0, Math.trunc(toSafeNumber(rawEx.duration_seconds, 0))) * sets;
 
   return [
     {
-      name: rawEx.name,
+      name: String(rawEx.name || 'Esercizio'),
       sets,
       reps: totalReps,
       weightKg: weight,
@@ -407,6 +442,36 @@ export const computeExerciseMetrics = (ex: UiExercise): { volumeKg: number; sets
 };
 
 /**
+ * Fornisce un report vuoto ma coerente per stati iniziali o fallback da errore.
+ */
+export const getEmptyReport = (periodType: ReportPeriodType): PeriodicReportResult => {
+  const period = getPeriodInfo(periodType);
+  const ALL_GROUPS: MuscleGroup[] = ['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome', 'Altro'];
+  return {
+    period,
+    totalVolumeKg: 0,
+    totalSets: 0,
+    totalReps: 0,
+    totalWorkouts: 0,
+    averageVolumePerWorkout: 0,
+    averageSetsPerWorkout: 0,
+    muscleGroups: ALL_GROUPS.map((g) => ({
+      group: g,
+      volumeKg: 0,
+      volumePercent: 0,
+      setsCount: 0,
+      setsPercent: 0,
+      repsCount: 0,
+      exerciseCount: 0,
+      topExercises: [],
+    })),
+    exercises: [],
+    notesDossiers: [],
+    allNotesCount: 0,
+  };
+};
+
+/**
  * Motore Principale: Genera il Report Periodico Completo.
  */
 export const generatePeriodicReport = (
@@ -416,7 +481,8 @@ export const generatePeriodicReport = (
   const period = getPeriodInfo(periodType);
 
   // Filtra le sessioni comprese nell'intervallo temporale
-  const inRangeWorkouts = workouts.filter((w) => {
+  const inRangeWorkouts = (workouts || []).filter((w) => {
+    if (!w || typeof w !== 'object' || !w.executedAt) return false;
     const date = new Date(w.executedAt);
     return !Number.isNaN(date.getTime()) && date >= period.startDate && date <= period.endDate;
   });
@@ -496,18 +562,20 @@ export const generatePeriodicReport = (
       const items = unpackExercise(rawEx);
 
       items.forEach((item) => {
+        if (!item) return;
         const classified = matchExercise(item.name);
-        const itemVolumeKg = Math.round(item.reps * item.weightKg * 100) / 100;
-        const itemSets = item.sets;
-        const itemReps = item.reps;
-        const itemMaxWeight = item.weightKg;
+        const itemReps = Math.max(0, Number(item.reps) || 0);
+        const itemWeight = Math.max(0, Number(item.weightKg) || 0);
+        const itemVolumeKg = Math.round(itemReps * itemWeight * 100) / 100;
+        const itemSets = Math.max(1, Number(item.sets) || 1);
+        const itemMaxWeight = itemWeight;
 
         totalVolumeKg += itemVolumeKg;
         totalSets += itemSets;
         totalReps += itemReps;
 
-        // Aggregazione Gruppo Muscolare
-        const mGroup = muscleMap.get(classified.muscleGroup)!;
+        // Aggregazione Gruppo Muscolare (con fallback sicuro su Altro)
+        const mGroup = muscleMap.get(classified.muscleGroup) || muscleMap.get('Altro')!;
         mGroup.volumeKg += itemVolumeKg;
         mGroup.setsCount += itemSets;
         mGroup.repsCount += itemReps;
@@ -576,11 +644,14 @@ export const generatePeriodicReport = (
 
     // Elaborazione delle note qualitative lasciate nella sessione
     (session.notes || []).forEach((noteObj) => {
+      if (!noteObj || typeof noteObj !== 'object') return;
       const rawText = noteObj.text;
-      if (!rawText || !rawText.trim()) return;
+      if (rawText == null) return;
+      const str = typeof rawText === 'string' ? rawText : String(rawText);
+      if (!str.trim()) return;
 
       allNotesCount += 1;
-      const { exerciseName: taggedExName, body } = parseNoteContext(rawText);
+      const { exerciseName: taggedExName, body } = parseNoteContext(str);
       const categories = categorizeNoteText(body);
 
       // Raccoglie tutti i sotto-esercizi svolti nella sessione per eventuale abbinamento
@@ -597,10 +668,11 @@ export const generatePeriodicReport = (
         /emom|circuit|superset/i.test(taggedExName || '');
 
       if (isGenericTag && allSessionItems.length > 0) {
-        const lowerText = rawText.toLowerCase();
+        const lowerText = str.toLowerCase();
         for (const item of allSessionItems) {
+          if (!item || !item.name) continue;
           const match = matchExercise(item.name);
-          const cleanItem = item.name.toLowerCase();
+          const cleanItem = String(item.name).toLowerCase();
           if (lowerText.includes(cleanItem) || lowerText.includes(match.displayName.toLowerCase())) {
             targetClassified = match;
             break;
@@ -637,7 +709,13 @@ export const generatePeriodicReport = (
   // Costruisce i risultati dei Gruppi Muscolari
   const muscleGroups: MuscleGroupSummary[] = [];
   ALL_GROUPS.forEach((groupName) => {
-    const data = muscleMap.get(groupName)!;
+    const data = muscleMap.get(groupName) || {
+      volumeKg: 0,
+      setsCount: 0,
+      repsCount: 0,
+      exerciseSet: new Set<string>(),
+      exerciseVolumes: new Map(),
+    };
     const topExercises = Array.from(data.exerciseVolumes.values())
       .sort((a, b) => {
         if (b.volumeKg !== a.volumeKg) {
@@ -647,10 +725,10 @@ export const generatePeriodicReport = (
       })
       .slice(0, 3)
       .map((e) => ({
-        displayName: e.displayName,
-        volumeKg: Math.round(e.volumeKg),
-        sets: e.sets,
-        reps: e.reps,
+        displayName: String(e.displayName || 'Esercizio'),
+        volumeKg: Math.round(Number(e.volumeKg) || 0),
+        sets: Number(e.sets) || 0,
+        reps: Number(e.reps) || 0,
       }));
 
     muscleGroups.push({
@@ -698,15 +776,15 @@ export const generatePeriodicReport = (
     }
 
     return {
-      canonicalId: ex.canonicalId,
-      displayName: ex.displayName,
-      muscleGroup: ex.muscleGroup,
-      isCanonical: ex.isCanonical,
-      totalVolumeKg: Math.round(ex.totalVolumeKg),
-      totalSets: ex.totalSets,
-      totalReps: ex.totalReps,
-      maxWeightKg: ex.maxWeightKg,
-      sessionsCount: ex.sessionsCount,
+      canonicalId: String(ex.canonicalId || 'ex'),
+      displayName: String(ex.displayName || 'Esercizio'),
+      muscleGroup: ex.muscleGroup || 'Altro',
+      isCanonical: Boolean(ex.isCanonical),
+      totalVolumeKg: Math.round(Number(ex.totalVolumeKg) || 0),
+      totalSets: Number(ex.totalSets) || 0,
+      totalReps: Number(ex.totalReps) || 0,
+      maxWeightKg: Number(ex.maxWeightKg) || 0,
+      sessionsCount: Number(ex.sessionsCount) || 0,
       trend,
       percentChange,
       dates: Array.from(ex.dates),

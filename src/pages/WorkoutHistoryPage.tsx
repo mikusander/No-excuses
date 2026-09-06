@@ -130,30 +130,35 @@ const WorkoutHistoryPage: React.FC = () => {
         } as WorkoutHistoryItem;
       });
 
-      const parsedRawSessions: RawWorkoutSession[] = rows.map((row: any) => {
-        const snapshotName = String((row as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
-        const linkedScheda = Array.isArray(row.schede) ? row.schede[0] : row.schede;
-        const workoutName =
-          snapshotName ||
-          linkedScheda?.nome ||
-          (row.id_scheda != null ? `Workout #${row.id_scheda}` : `Workout #${row.id_workout}`);
+      const parsedRawSessions: RawWorkoutSession[] = rows
+        .map((row: any) => {
+          if (!row) return null;
+          const snapshotName = String((row as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
+          const linkedScheda = Array.isArray(row.schede) ? row.schede[0] : row.schede;
+          const workoutName =
+            snapshotName ||
+            linkedScheda?.nome ||
+            (row.id_scheda != null ? `Workout #${row.id_scheda}` : `Workout #${row.id_workout}`);
 
-        const exercises = toSnapshotExercises(row.exercises_snapshot);
-        const linkedNotes = Array.isArray(row.note_workout) ? row.note_workout : [];
-        const notes = linkedNotes.map((n: any) => ({
-          text: String(n.testo || ''),
-          createdAt: n.created_at ? String(n.created_at) : undefined,
-        }));
+          const exercises = toSnapshotExercises(row.exercises_snapshot);
+          const linkedNotes = Array.isArray(row.note_workout) ? row.note_workout : [];
+          const notes = linkedNotes
+            .filter((n: any) => Boolean(n && typeof n === 'object'))
+            .map((n: any) => ({
+              text: String(n.testo || ''),
+              createdAt: n.created_at ? String(n.created_at) : undefined,
+            }));
 
-        return {
-          id: String(row.id_workout),
-          workoutName,
-          executedAt: row.data_esecuzione,
-          totalDurationSeconds: row.durata_totale_secondi != null ? Number(row.durata_totale_secondi) : null,
-          exercises,
-          notes,
-        };
-      });
+          return {
+            id: String(row.id_workout),
+            workoutName,
+            executedAt: String(row.data_esecuzione || ''),
+            totalDurationSeconds: row.durata_totale_secondi != null ? Number(row.durata_totale_secondi) : null,
+            exercises,
+            notes,
+          };
+        })
+        .filter((s: RawWorkoutSession | null): s is RawWorkoutSession => Boolean(s && s.executedAt));
 
       setHistoryItems(parsed);
       setReportWorkouts(parsedRawSessions);
