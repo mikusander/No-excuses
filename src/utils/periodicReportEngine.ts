@@ -3,7 +3,7 @@
  * ripartizione per gruppi muscolari e dossier sintetico delle note per esercizio.
  */
 
-import { matchExercise, type MuscleGroup } from './exerciseClassifier';
+import { matchExercise, calculateStringSimilarity, type MuscleGroup } from './exerciseClassifier';
 import type { UiExercise, UiSubExercise } from '../lib/workoutSchemaAdapter';
 
 export type ReportPeriodType = 'week' | 'month' | 'quarter' | 'semester' | 'year';
@@ -584,13 +584,38 @@ export const generatePeriodicReport = (
     // Traccia gli esercizi già incontrati in questa singola sessione per il conteggio sessioni
     const exercisesInThisSession = new Set<string>();
 
+    // ─── EURISTICA CONTESTUALE DELLA SESSIONE ─────────────────────────────────
+    // Calcola la frequenza dei gruppi muscolari noti presenti nella seduta.
+    // Il gruppo dominante "presta" la sua classificazione agli esercizi non riconosciuti.
+    const sessionGroupCounts = new Map<MuscleGroup, number>();
+    (session.exercises || []).forEach((rawEx) => {
+      const items = unpackExercise(rawEx);
+      items.forEach((item) => {
+        if (!item || !item.name) return;
+        const prelim = matchExercise(item.name);
+        if (prelim.muscleGroup !== 'Altro') {
+          sessionGroupCounts.set(prelim.muscleGroup, (sessionGroupCounts.get(prelim.muscleGroup) || 0) + 1);
+        }
+      });
+    });
+
+    let sessionDominantGroup: MuscleGroup | undefined = undefined;
+    let maxGroupCount = 0;
+    for (const [grp, count] of sessionGroupCounts.entries()) {
+      if (count > maxGroupCount) {
+        maxGroupCount = count;
+        sessionDominantGroup = grp;
+      }
+    }
+
     (session.exercises || []).forEach((rawEx) => {
       // Spacchetta gli esercizi complessi (EMOM, circuiti, superset) nei sotto-esercizi effettivi
       const items = unpackExercise(rawEx);
 
       items.forEach((item) => {
         if (!item) return;
-        const classified = matchExercise(item.name);
+        // Classificazione con euristica contestuale della sessione
+        const classified = matchExercise(item.name, sessionDominantGroup);
         const itemReps = Math.max(0, Number(item.reps) || 0);
         const itemWeight = Math.max(0, Number(item.weightKg) || 0);
         const itemVolumeKg = Math.round(itemReps * itemWeight * 100) / 100;
@@ -601,15 +626,41 @@ export const generatePeriodicReport = (
         totalSets += itemSets;
         totalReps += itemReps;
 
+        // ─── AUTO-DEDUPLICAZIONE & CLUSTERING DINAMICO PER ESERCIZI CUSTOM ─────
+        // Se l'esercizio è personalizzato/sconosciuto, controlla se esiste già
+        // un altro esercizio custom con grafia molto simile (refuso di battitura)
+        let targetId = classified.id;
+        let targetDisplayName = classified.displayName;
+        let targetGroup = classified.muscleGroup;
+
+        if (!classified.isCanonical) {
+          for (const existing of exerciseMap.values()) {
+            if (!existing.isCanonical) {
+              const sim = calculateStringSimilarity(existing.displayName, classified.displayName);
+              if (sim >= 0.82) {
+                targetId = existing.canonicalId;
+                targetDisplayName = existing.displayName;
+                // Se l'esistente era 'Altro' e il nuovo ha un gruppo dedotto, aggiorna l'esistente
+                if (existing.muscleGroup === 'Altro' && targetGroup !== 'Altro') {
+                  existing.muscleGroup = targetGroup;
+                } else {
+                  targetGroup = existing.muscleGroup;
+                }
+                break;
+              }
+            }
+          }
+        }
+
         // Aggregazione Gruppo Muscolare (con fallback sicuro su Altro)
-        const mGroup = muscleMap.get(classified.muscleGroup) || muscleMap.get('Altro')!;
+        const mGroup = muscleMap.get(targetGroup) || muscleMap.get('Altro')!;
         mGroup.volumeKg += itemVolumeKg;
         mGroup.setsCount += itemSets;
         mGroup.repsCount += itemReps;
-        mGroup.exerciseSet.add(classified.id);
+        mGroup.exerciseSet.add(targetId);
 
-        const existingExVol = mGroup.exerciseVolumes.get(classified.id) || {
-          displayName: classified.displayName,
+        const existingExVol = mGroup.exerciseVolumes.get(targetId) || {
+          displayName: targetDisplayName,
           volumeKg: 0,
           sets: 0,
           reps: 0,
@@ -617,15 +668,15 @@ export const generatePeriodicReport = (
         existingExVol.volumeKg += itemVolumeKg;
         existingExVol.sets += itemSets;
         existingExVol.reps += itemReps;
-        mGroup.exerciseVolumes.set(classified.id, existingExVol);
+        mGroup.exerciseVolumes.set(targetId, existingExVol);
 
-        // Aggregazione Esercizio Canonico
-        let exAgg = exerciseMap.get(classified.id);
+        // Aggregazione Esercizio Canonico o Clusterizzato
+        let exAgg = exerciseMap.get(targetId);
         if (!exAgg) {
           exAgg = {
-            canonicalId: classified.id,
-            displayName: classified.displayName,
-            muscleGroup: classified.muscleGroup,
+            canonicalId: targetId,
+            displayName: targetDisplayName,
+            muscleGroup: targetGroup,
             isCanonical: classified.isCanonical,
             totalVolumeKg: 0,
             totalSets: 0,
@@ -640,7 +691,7 @@ export const generatePeriodicReport = (
             secondHalfSessions: 0,
             dates: new Set(),
           };
-          exerciseMap.set(classified.id, exAgg);
+          exerciseMap.set(targetId, exAgg);
         }
 
         exAgg.totalVolumeKg += itemVolumeKg;
@@ -649,8 +700,8 @@ export const generatePeriodicReport = (
         exAgg.maxWeightKg = Math.max(exAgg.maxWeightKg, itemMaxWeight);
         exAgg.dates.add(sessionDateStr);
 
-        if (!exercisesInThisSession.has(classified.id)) {
-          exercisesInThisSession.add(classified.id);
+        if (!exercisesInThisSession.has(targetId)) {
+          exercisesInThisSession.add(targetId);
           exAgg.sessionsCount += 1;
           if (isSecondHalf) {
             exAgg.secondHalfSessions += 1;
@@ -687,7 +738,7 @@ export const generatePeriodicReport = (
         allSessionItems.push(...unpackExercise(ex));
       });
 
-      let targetClassified = taggedExName ? matchExercise(taggedExName) : null;
+      let targetClassified = taggedExName ? matchExercise(taggedExName, sessionDominantGroup) : null;
 
       const isGenericTag =
         !targetClassified ||
@@ -698,7 +749,7 @@ export const generatePeriodicReport = (
         const lowerText = str.toLowerCase();
         for (const item of allSessionItems) {
           if (!item || !item.name) continue;
-          const match = matchExercise(item.name);
+          const match = matchExercise(item.name, sessionDominantGroup);
           const cleanItem = String(item.name).toLowerCase();
           if (lowerText.includes(cleanItem) || lowerText.includes(match.displayName.toLowerCase())) {
             targetClassified = match;
@@ -708,9 +759,24 @@ export const generatePeriodicReport = (
       }
 
       // Se non è collegabile a un esercizio specifico, finisce sotto le note generali di sessione
-      const canonicalKey = targetClassified ? targetClassified.id : 'generale_sessione';
-      const displayName = targetClassified ? targetClassified.displayName : 'Note Generali Sessione';
-      const group = targetClassified ? targetClassified.muscleGroup : 'Altro';
+      let canonicalKey = targetClassified ? targetClassified.id : 'generale_sessione';
+      let displayName = targetClassified ? targetClassified.displayName : 'Note Generali Sessione';
+      let group = targetClassified ? targetClassified.muscleGroup : 'Altro';
+
+      // Se l'esercizio è custom, controlla se è stato unificato a un cluster esistente
+      if (targetClassified && !targetClassified.isCanonical) {
+        for (const existing of exerciseMap.values()) {
+          if (!existing.isCanonical) {
+            const sim = calculateStringSimilarity(existing.displayName, targetClassified.displayName);
+            if (sim >= 0.82) {
+              canonicalKey = existing.canonicalId;
+              displayName = existing.displayName;
+              group = existing.muscleGroup;
+              break;
+            }
+          }
+        }
+      }
 
       let dossierEntry = notesByCanonicalExercise.get(canonicalKey);
       if (!dossierEntry) {

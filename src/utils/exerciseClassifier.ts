@@ -44,6 +44,45 @@ export const cleanExerciseName = (rawName: unknown): string => {
 };
 
 /**
+ * Calcola la distanza di Levenshtein tra due stringhe (numero minimo di modifiche: inserimenti, cancellazioni, sostituzioni).
+ */
+export const levenshteinDistance = (a: string, b: string): number => {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i;
+    for (let j = 1; j <= b.length; j++) {
+      const val = a[i - 1] === b[j - 1] ? row[j - 1] : Math.min(row[j - 1], prev, row[j]) + 1;
+      row[j - 1] = prev;
+      prev = val;
+    }
+    row[b.length] = prev;
+  }
+
+  return row[b.length];
+};
+
+/**
+ * Calcola il coefficiente di similarità normalizzato tra due stringhe (valore da 0.0 a 1.0).
+ */
+export const calculateStringSimilarity = (strA: string, strB: string): number => {
+  const a = cleanExerciseName(strA);
+  const b = cleanExerciseName(strB);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+
+  const dist = levenshteinDistance(a, b);
+  return Math.max(0, (maxLen - dist) / maxLen);
+};
+
+/**
  * Catalogo Canonico degli Esercizi e Dizionario degli Alias (Requisito 2).
  * Include oltre 50 movimenti fondamentali con centinaia di varianti e abbreviazioni
  * in lingua italiana e inglese.
@@ -195,6 +234,77 @@ export const CANONICAL_EXERCISES: CanonicalExercise[] = [
   },
 
   // ─── DORSO ────────────────────────────────────────────────────────────────
+  {
+    id: 'muscle_up',
+    displayName: 'Muscle Up',
+    muscleGroup: 'Dorso',
+    aliases: [
+      'muscle up',
+      'muscleup',
+      'muscleups',
+      'muscle ups',
+      'muscle-up',
+      'muscle-ups',
+      'musckle up',
+      'musckleup',
+      'musle up',
+      'musleup',
+      'mascol ap',
+      'mascolap',
+      'bar muscle up',
+      'bar muscleup',
+      'ring muscle up',
+      'ring muscleup',
+      'muscle up sbarra',
+      'muscle up anelli',
+      'barmuscleup',
+      'ringmuscleup',
+    ],
+  },
+  {
+    id: 'front_lever',
+    displayName: 'Front Lever',
+    muscleGroup: 'Dorso',
+    aliases: [
+      'front lever',
+      'frontlever',
+      'fl',
+      'front lever hold',
+      'front lever pull',
+      'front lever raises',
+      'tuck front lever',
+      'adv tuck front lever',
+      'straddle front lever',
+    ],
+  },
+  {
+    id: 'back_lever',
+    displayName: 'Back Lever',
+    muscleGroup: 'Dorso',
+    aliases: [
+      'back lever',
+      'backlever',
+      'bl',
+      'tuck back lever',
+      'straddle back lever',
+    ],
+  },
+  {
+    id: 'australian_pull_up',
+    displayName: 'Australian Pull-up / Bodyweight Row',
+    muscleGroup: 'Dorso',
+    aliases: [
+      'australian pull up',
+      'australian pull-up',
+      'australian pullup',
+      'australian',
+      'trazioni australiane',
+      'trazioni orizzontali',
+      'bodyweight row',
+      'incline row',
+      'trazioni orizzontali sbarra',
+    ],
+  },
   {
     id: 'pull_up',
     displayName: 'Trazioni / Pull-up',
@@ -489,8 +599,58 @@ export const CANONICAL_EXERCISES: CanonicalExercise[] = [
       'esterno coscia',
     ],
   },
+  {
+    id: 'pistol_squat',
+    displayName: 'Pistol Squat (Una Gamba)',
+    muscleGroup: 'Gambe',
+    aliases: [
+      'pistol squat',
+      'pistol',
+      'pistols',
+      'squat a una gamba',
+      'squat monopodalico',
+      'single leg squat',
+      'one leg squat',
+      'pistol squats',
+    ],
+  },
 
   // ─── SPALLE ───────────────────────────────────────────────────────────────
+  {
+    id: 'planche',
+    displayName: 'Planche',
+    muscleGroup: 'Spalle',
+    aliases: [
+      'planche',
+      'tuck planche',
+      'adv tuck planche',
+      'straddle planche',
+      'full planche',
+      'planche lean',
+      'planche push up',
+      'planche push-up',
+    ],
+  },
+  {
+    id: 'handstand_push_up',
+    displayName: 'Handstand Push-up (HSPU) / Verticale',
+    muscleGroup: 'Spalle',
+    aliases: [
+      'hspu',
+      'handstand push up',
+      'handstand pushup',
+      'handstand push-up',
+      'handstand',
+      'verticale',
+      'piegamenti in verticale',
+      'piegamenti verticale',
+      'verticale push up',
+      'pike push up',
+      'pike pushup',
+      'pike push-up',
+      'wall hspu',
+    ],
+  },
   {
     id: 'military_press',
     displayName: 'Military Press / Lento Avanti',
@@ -788,6 +948,42 @@ export const CANONICAL_EXERCISES: CanonicalExercise[] = [
       'sit-up',
     ],
   },
+  {
+    id: 'dragon_flag',
+    displayName: 'Dragon Flag',
+    muscleGroup: 'Addome',
+    aliases: [
+      'dragon flag',
+      'dragonflag',
+      'dragon flags',
+      'dragon-flag',
+    ],
+  },
+  {
+    id: 'l_sit',
+    displayName: 'L-Sit / V-Sit',
+    muscleGroup: 'Addome',
+    aliases: [
+      'l-sit',
+      'l sit',
+      'lsit',
+      'v-sit',
+      'v sit',
+      'vsit',
+      'manna',
+    ],
+  },
+  {
+    id: 'human_flag',
+    displayName: 'Human Flag (Bandiera)',
+    muscleGroup: 'Addome',
+    aliases: [
+      'human flag',
+      'bandiera',
+      'humanflag',
+      'human-flag',
+    ],
+  },
 ];
 
 // Matrice euristica di parole chiave per dedurre il gruppo muscolare per movimenti non catalogati
@@ -798,15 +994,15 @@ const MUSCLE_HEURISTICS: Array<{ group: MuscleGroup; keywords: string[] }> = [
   },
   {
     group: 'Dorso',
-    keywords: ['dorso', 'back', 'lat', 'pulley', 'remator', 'row', 'trazion', 'pull up', 'chin up', 'deadlift', 'stacc', 'lombari', 'hyperext'],
+    keywords: ['dorso', 'back', 'lat', 'pulley', 'remator', 'row', 'trazion', 'pull up', 'chin up', 'deadlift', 'stacc', 'lombari', 'hyperext', 'muscle', 'musckle', 'musle', 'front lever', 'back lever', 'australian'],
   },
   {
     group: 'Gambe',
-    keywords: ['gamb', 'leg', 'squat', 'pressa', 'affond', 'polpacc', 'calf', 'femoral', 'quadricep', 'glute', 'thrust', 'cosci', 'adductor', 'abductor', 'accosciat'],
+    keywords: ['gamb', 'leg', 'squat', 'pressa', 'affond', 'polpacc', 'calf', 'femoral', 'quadricep', 'glute', 'thrust', 'cosci', 'adductor', 'abductor', 'accosciat', 'pistol'],
   },
   {
     group: 'Spalle',
-    keywords: ['spall', 'shoulder', 'deltoid', 'militar', 'lento', 'alzat', 'face pull', 'shrug', 'trapez'],
+    keywords: ['spall', 'shoulder', 'deltoid', 'militar', 'lento', 'alzat', 'face pull', 'shrug', 'trapez', 'planche', 'hspu', 'handstand', 'vertical'],
   },
   {
     group: 'Braccia',
@@ -814,7 +1010,7 @@ const MUSCLE_HEURISTICS: Array<{ group: MuscleGroup; keywords: string[] }> = [
   },
   {
     group: 'Addome',
-    keywords: ['addom', 'core', 'abs', 'crunch', 'plank', 'leg raise', 'situp', 'sit up', 'twist', 'roller', 'wheel'],
+    keywords: ['addom', 'core', 'abs', 'crunch', 'plank', 'leg raise', 'situp', 'sit up', 'twist', 'roller', 'wheel', 'dragon', 'l sit', 'lsit', 'v sit', 'vsit', 'bandiera', 'flag'],
   },
 ];
 
@@ -844,14 +1040,24 @@ export const inferMuscleGroupFromKeywords = (cleanedName: string): MuscleGroup =
  * Algoritmo di Classificazione e Matching Intelligente.
  * Accetta qualsiasi stringa inserita liberamente dall'utente e restituisce
  * l'entità canonica o una classificazione euristica coerente.
+ * Supporta:
+ * 1. Matching esatto alias
+ * 2. Contenimento di frase
+ * 3. Sovrapposizione di token
+ * 4. Fuzzy Matching con Distanza di Levenshtein (tolleranza refusi ortografici)
+ * 5. Euristica delle parole chiave
+ * 6. Euristica Contestuale della Sessione (se passato contextualMuscleGroup)
  */
-export const matchExercise = (rawName: unknown): ClassifiedExercise => {
+export const matchExercise = (
+  rawName: unknown,
+  contextualMuscleGroup?: MuscleGroup
+): ClassifiedExercise => {
   const cleaned = cleanExerciseName(rawName);
   if (!cleaned) {
     return {
       id: 'custom_exercise',
       displayName: 'Esercizio',
-      muscleGroup: 'Altro',
+      muscleGroup: contextualMuscleGroup && contextualMuscleGroup !== 'Altro' ? contextualMuscleGroup : 'Altro',
       isCanonical: false,
     };
   }
@@ -917,8 +1123,81 @@ export const matchExercise = (rawName: unknown): ClassifiedExercise => {
     }
   }
 
-  // 4. Fallback Euristico per esercizi personalizzati non presenti nel catalogo
-  const inferredGroup = inferMuscleGroupFromKeywords(cleaned);
+  // 4. Fuzzy Matching con Distanza di Levenshtein (Tolleranza Refusi ed Errori di Battitura)
+  // Gestisce casi come "musckle up" -> "muscle up", "trazini" -> "trazioni", "puch up" -> "push up"
+  let bestFuzzyMatch: CanonicalExercise | null = null;
+  let bestFuzzyMatchedAlias = '';
+  let highestSimilarity = 0;
+
+  for (const canonical of CANONICAL_EXERCISES) {
+    for (const alias of canonical.aliases) {
+      const cleanAlias = cleanExerciseName(alias);
+      if (cleanAlias.length < 4) continue;
+
+      const sim = calculateStringSimilarity(cleaned, cleanAlias);
+      const dist = levenshteinDistance(cleaned, cleanAlias);
+
+      // Criterio di tolleranza refusi per frase intera:
+      // - somiglianza >= 0.82 E distanza <= 2 (o <= 1 per parole sotto 7 caratteri)
+      const isFuzzyClose =
+        (sim >= 0.82 && dist <= 2) ||
+        (cleaned.length >= 8 && cleanAlias.length >= 8 && dist <= 2) ||
+        (cleaned.length >= 5 && cleanAlias.length >= 5 && dist === 1);
+
+      if (isFuzzyClose && sim > highestSimilarity) {
+        highestSimilarity = sim;
+        bestFuzzyMatch = canonical;
+        bestFuzzyMatchedAlias = alias;
+      }
+    }
+  }
+
+  // Controlla anche n-grammi / sottofrasi se l'input contiene parole aggiuntive (es. "musckle up zavorrato")
+  const inputWords = cleaned.split(' ');
+  if (inputWords.length > 1) {
+    for (let len = 1; len <= inputWords.length; len++) {
+      for (let start = 0; start <= inputWords.length - len; start++) {
+        const subPhrase = inputWords.slice(start, start + len).join(' ');
+        if (subPhrase.length < 4) continue;
+
+        for (const canonical of CANONICAL_EXERCISES) {
+          for (const alias of canonical.aliases) {
+            const cleanAlias = cleanExerciseName(alias);
+            if (cleanAlias.length < 4) continue;
+
+            const sim = calculateStringSimilarity(subPhrase, cleanAlias);
+            const dist = levenshteinDistance(subPhrase, cleanAlias);
+
+            if (dist <= 1 && sim >= 0.82 && sim > highestSimilarity) {
+              highestSimilarity = sim;
+              bestFuzzyMatch = canonical;
+              bestFuzzyMatchedAlias = alias;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (bestFuzzyMatch && highestSimilarity >= 0.80) {
+    return {
+      id: bestFuzzyMatch.id,
+      displayName: bestFuzzyMatch.displayName,
+      muscleGroup: bestFuzzyMatch.muscleGroup,
+      isCanonical: true,
+      matchedAlias: bestFuzzyMatchedAlias,
+    };
+  }
+
+  // 5. Fallback Euristico per parole chiave nel nome pulito
+  let inferredGroup = inferMuscleGroupFromKeywords(cleaned);
+
+  // 6. Euristica Contestuale della Sessione:
+  // Se non troviamo parole chiave nel nome (inferredGroup è 'Altro'), ereditiamo il gruppo dominante della sessione
+  if (inferredGroup === 'Altro' && contextualMuscleGroup && contextualMuscleGroup !== 'Altro') {
+    inferredGroup = contextualMuscleGroup;
+  }
+
   const safeId = `custom_${cleaned.replace(/\s+/g, '_')}`;
 
   return {
