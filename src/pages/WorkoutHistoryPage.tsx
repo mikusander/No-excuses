@@ -36,10 +36,15 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, ChevronRight, Dumbbell, Loader2, Trash2 } from 'lucide-react';
+import { Calendar, ChevronRight, Dumbbell, Loader2, Trash2, BarChart3, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
+import PeriodicReportModal from '../components/PeriodicReportModal';
+import {
+  type RawWorkoutSession,
+  toSnapshotExercises,
+} from '../utils/periodicReportEngine';
 
 interface WorkoutHistoryItem {
   id: string;
@@ -53,6 +58,8 @@ const WorkoutHistoryPage: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [historyItems, setHistoryItems] = useState<WorkoutHistoryItem[]>([]);
+  const [reportWorkouts, setReportWorkouts] = useState<RawWorkoutSession[]>([]);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,20 +71,52 @@ const WorkoutHistoryPage: React.FC = () => {
     try {
       setLoading(true);
 
-      const { data, error } = await supabase
+      const runSelectWithDuration = `
+        id_workout,
+        id_scheda,
+        workout_name_snapshot,
+        exercises_snapshot,
+        data_esecuzione,
+        durata_totale_secondi,
+        schede ( id_scheda, nome ),
+        note_workout ( testo, created_at )
+      `;
+
+      const runSelectBase = `
+        id_workout,
+        id_scheda,
+        workout_name_snapshot,
+        exercises_snapshot,
+        data_esecuzione,
+        schede ( id_scheda, nome ),
+        note_workout ( testo, created_at )
+      `;
+
+      let runData: any = null;
+      let runError: any = null;
+
+      const firstAttempt = await supabase
         .from('workout_run')
-        .select(`
-          id_workout,
-          id_scheda,
-          workout_name_snapshot,
-          data_esecuzione,
-          schede ( id_scheda, nome )
-        `)
+        .select(runSelectWithDuration)
         .order('data_esecuzione', { ascending: false });
 
-      if (error) throw error;
+      runData = firstAttempt.data;
+      runError = firstAttempt.error;
 
-      const parsed = (data || []).map((row) => {
+      if (runError && /durata_totale_secondi/i.test(String(runError.message || ''))) {
+        const fallbackAttempt = await supabase
+          .from('workout_run')
+          .select(runSelectBase)
+          .order('data_esecuzione', { ascending: false });
+        runData = fallbackAttempt.data;
+        runError = fallbackAttempt.error;
+      }
+
+      if (runError) throw runError;
+
+      const rows = runData || [];
+
+      const parsed = rows.map((row: any) => {
         const snapshotName = String((row as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
         const linkedScheda = Array.isArray(row.schede) ? row.schede[0] : row.schede;
         return {
@@ -91,7 +130,33 @@ const WorkoutHistoryPage: React.FC = () => {
         } as WorkoutHistoryItem;
       });
 
+      const parsedRawSessions: RawWorkoutSession[] = rows.map((row: any) => {
+        const snapshotName = String((row as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
+        const linkedScheda = Array.isArray(row.schede) ? row.schede[0] : row.schede;
+        const workoutName =
+          snapshotName ||
+          linkedScheda?.nome ||
+          (row.id_scheda != null ? `Workout #${row.id_scheda}` : `Workout #${row.id_workout}`);
+
+        const exercises = toSnapshotExercises(row.exercises_snapshot);
+        const linkedNotes = Array.isArray(row.note_workout) ? row.note_workout : [];
+        const notes = linkedNotes.map((n: any) => ({
+          text: String(n.testo || ''),
+          createdAt: n.created_at ? String(n.created_at) : undefined,
+        }));
+
+        return {
+          id: String(row.id_workout),
+          workoutName,
+          executedAt: row.data_esecuzione,
+          totalDurationSeconds: row.durata_totale_secondi != null ? Number(row.durata_totale_secondi) : null,
+          exercises,
+          notes,
+        };
+      });
+
       setHistoryItems(parsed);
+      setReportWorkouts(parsedRawSessions);
     } catch (error) {
       console.error('Error fetching workout history:', error);
     } finally {
@@ -135,6 +200,7 @@ const WorkoutHistoryPage: React.FC = () => {
       if (workoutDeleteError) throw workoutDeleteError;
 
       setHistoryItems((prev) => prev.filter((item) => item.id !== workoutRunId));
+      setReportWorkouts((prev) => prev.filter((item) => item.id !== workoutRunId));
     } catch (deleteError) {
       console.error('Error deleting workout from history:', deleteError);
       alert('Unable to delete workout history entry.');
@@ -150,6 +216,36 @@ const WorkoutHistoryPage: React.FC = () => {
       </header>
 
       <main className="flex-1 p-6 w-full max-w-2xl mx-auto space-y-4">
+        {/* Banner Genera Report Periodico in primo piano */}
+        {!loading && historyItems.length > 0 && (
+          <div className="bg-gradient-to-br from-[#1a1410] via-brand-darkGrey/80 to-black border border-brand-orange/40 rounded-3xl p-5 shadow-2xl backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 w-full sm:w-auto">
+              <div className="p-3 bg-brand-orange/20 border border-brand-orange/40 rounded-2xl text-brand-orange shrink-0 shadow-lg shadow-brand-orange/10">
+                <BarChart3 size={28} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-white font-black text-base sm:text-lg tracking-wide">Analitiche & Progressi</h2>
+                  <span className="bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Sparkles size={10} /> Report Periodico
+                  </span>
+                </div>
+                <p className="text-xs text-brand-grey mt-0.5 leading-relaxed">
+                  Volume totale, serie per gruppo muscolare e dossier narrativo delle note.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsReportModalOpen(true)}
+              className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-brand-orange to-[#ff6b22] text-black font-extrabold text-sm shadow-xl shadow-brand-orange/20 hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+            >
+              <BarChart3 size={18} />
+              <span>📊 Genera Report Periodico</span>
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center items-center h-48">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey"></div>
@@ -213,6 +309,12 @@ const WorkoutHistoryPage: React.FC = () => {
           ))
         )}
       </main>
+
+      <PeriodicReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        workouts={reportWorkouts}
+      />
 
       <BottomNavigation />
     </div>
