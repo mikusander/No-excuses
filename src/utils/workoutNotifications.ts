@@ -1,5 +1,10 @@
 /**
- * workoutNotifications.ts — Gestione delle Notifiche Web e Service Worker.
+ * workoutNotifications.ts — Pilastro 2: Gestione delle Notifiche Web e Service Worker.
+ *
+ * SINCRONIZZAZIONE TIMESTAMP ASSOLUTO & SCHEDULING PUNTUALE:
+ * - Richiesta permessi PWA.
+ * - Invio messaggio al Service Worker per pianificare la notifica solo quando la pagina è in background.
+ * - Auto-cancellazione delle notifiche con tag 'rest-timer' al ritorno in primo piano.
  */
 
 let serviceWorkerRegistration: ServiceWorkerRegistration | null = null;
@@ -40,7 +45,6 @@ export const getNotificationPermission = (): NotificationPermissionStatus => {
   if (typeof window === 'undefined') return 'unsupported';
 
   if (isIosDevice() && !isStandalonePwa()) {
-    // Su iOS le notifiche push sono consentite da Apple solo se l'app è installata su Schermata Home (PWA)
     return 'ios_pwa_required';
   }
 
@@ -81,10 +85,10 @@ export const sendRestFinishedNotification = async ({
   nextExerciseName,
   nextSetInfo,
 }: RestNotificationPayload) => {
-  // Vibrazione aptica se supportata dal dispositivo
+  // Vibrazione aptica immediata se supportata
   if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
     try {
-      navigator.vibrate([200, 100, 200, 100, 350]);
+      navigator.vibrate([250, 100, 250]);
     } catch {
       // ignore
     }
@@ -101,11 +105,11 @@ export const sendRestFinishedNotification = async ({
     body,
     icon: '/favicon.svg',
     badge: '/favicon.svg',
-    tag: 'rest-timer-finished',
+    tag: 'rest-timer',
     renotify: true,
     requireInteraction: false,
     silent: false,
-    vibrate: [200, 100, 200, 100, 350],
+    vibrate: [250, 100, 250],
   };
 
   try {
@@ -122,7 +126,6 @@ export const sendRestFinishedNotification = async ({
       }
     }
 
-    // Fallback standard Notification
     if ('Notification' in window) {
       const n = new Notification(title, options);
       n.onclick = () => {
@@ -158,6 +161,7 @@ export const scheduleBackgroundRestNotification = ({
       swController.postMessage({
         type: 'SCHEDULE_REST_NOTIFICATION',
         endsAtMs,
+        targetTime: endsAtMs,
         title,
         body,
       });
@@ -169,6 +173,7 @@ export const scheduleBackgroundRestNotification = ({
         reg.active.postMessage({
           type: 'SCHEDULE_REST_NOTIFICATION',
           endsAtMs,
+          targetTime: endsAtMs,
           title,
           body,
         });
@@ -202,3 +207,16 @@ export const cancelBackgroundRestNotification = () => {
   }
 };
 
+export const closeActiveRestNotifications = async () => {
+  cancelBackgroundRestNotification();
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  try {
+    const reg = serviceWorkerRegistration || (await navigator.serviceWorker.ready);
+    if (reg && 'getNotifications' in reg) {
+      const notifications = await reg.getNotifications({ tag: 'rest-timer' });
+      notifications.forEach((n) => n.close());
+    }
+  } catch {
+    // ignore
+  }
+};

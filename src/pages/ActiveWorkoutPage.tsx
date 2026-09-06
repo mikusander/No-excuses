@@ -104,7 +104,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis } from '../utils/voice';
 import {
@@ -113,19 +113,17 @@ import {
   playRestFinishedSound,
   unlockAudio,
 } from '../utils/audio';
+import { pipManager } from '../utils/pipManager';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock';
 import {
   initServiceWorker,
   requestNotificationPermission,
   sendRestFinishedNotification,
   scheduleBackgroundRestNotification,
-  cancelBackgroundRestNotification,
+  closeActiveRestNotifications,
   getNotificationPermission,
 } from '../utils/workoutNotifications';
 import {
-  startRestMediaSessionAudio,
-  pauseRestMediaSessionAudio,
-  resumeRestMediaSessionAudio,
   updateRestMediaSession,
   stopRestMediaSession,
 } from '../utils/workoutMediaSession';
@@ -558,34 +556,92 @@ const ActiveWorkoutPage: React.FC = () => {
     return parts.join(', ');
   };
 
+  const getUpcomingRestTargetInfo = useCallback(() => {
+    if (!workout) return { nextExerciseName: 'Next Exercise', nextSetInfo: '' };
+
+    if (pendingExerciseAdvance) {
+      const nextEx = workout.exercises[currentExerciseIdx + 1];
+      const name = nextEx ? String(nextEx.name || '').trim() || `Exercise ${currentExerciseIdx + 2}` : 'Next Exercise';
+      return { nextExerciseName: name, nextSetInfo: 'New Exercise' };
+    }
+
+    const currentEx = workout.exercises[currentExerciseIdx];
+    if (!currentEx) return { nextExerciseName: 'Next Exercise', nextSetInfo: '' };
+
+    if (currentEx.type === 'pyramid' && pendingPyramidAdvance) {
+      const nextStepIdx = currentPyramidStepIdx + 1;
+      const step = currentEx.pyramid_steps?.[nextStepIdx];
+      const reps = step ? (step.reps > 0 ? `${step.reps} reps` : 'MAX reps') : '';
+      return {
+        nextExerciseName: currentEx.name,
+        nextSetInfo: `Step ${nextStepIdx + 1}${reps ? ` • ${reps}` : ''}`,
+      };
+    }
+
+    if (currentEx.type === 'circuit') {
+      return {
+        nextExerciseName: currentEx.name,
+        nextSetInfo: `Giro ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
+      };
+    }
+
+    if (currentEx.type === 'superset' && currentEx.subExercises) {
+      const isAdvancingSub = currentSubExerciseIdx < currentEx.subExercises.length - 1;
+      if (isAdvancingSub) {
+        const nextSub = currentEx.subExercises[currentSubExerciseIdx + 1];
+        return {
+          nextExerciseName: nextSub?.name || 'Next Station',
+          nextSetInfo: `Station ${currentSubExerciseIdx + 2} of ${currentEx.subExercises.length}`,
+        };
+      }
+      return {
+        nextExerciseName: currentEx.name,
+        nextSetInfo: `Round ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
+      };
+    }
+
+    return {
+      nextExerciseName: currentEx.name,
+      nextSetInfo: `Set ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
+    };
+  }, [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSubExerciseIdx, currentSetIdx]);
+
   const startRestCountdown = (durationSeconds: number) => {
     unlockAudio();
-    startRestMediaSessionAudio();
     const safe = normalizeDurationSeconds(durationSeconds);
     lastHandledRestCompletionEndsAtMsRef.current = null;
     setRestInitialDuration(safe);
     setRestRemaining(safe);
-    setRestEndsAtMs(Date.now() + (safe * 1000));
+    const targetTime = Date.now() + (safe * 1000);
+    setRestEndsAtMs(targetTime);
     setIsResting(true);
+
+    const upcoming = getUpcomingRestTargetInfo();
+    void pipManager.openRestPiP({
+      totalSeconds: safe,
+      remainingSeconds: safe,
+      nextExerciseName: upcoming.nextExerciseName,
+      nextSetInfo: upcoming.nextSetInfo,
+      onSkip: skipRest,
+    }).catch(() => {});
   };
 
   const stopRestCountdown = () => {
     setIsResting(false);
     setRestEndsAtMs(null);
     stopRestMediaSession();
-    cancelBackgroundRestNotification();
+    pipManager.closePiP();
+    closeActiveRestNotifications();
   };
 
   const pauseRestCountdown = () => {
-    pauseRestMediaSessionAudio();
-    cancelBackgroundRestNotification();
+    closeActiveRestNotifications();
     setRestRemaining(computeRemainingFromEndsAt(restEndsAtMs));
     setRestEndsAtMs(null);
   };
 
   const resumeRestCountdown = () => {
     unlockAudio();
-    resumeRestMediaSessionAudio();
     const currentExerciseForRest = workout?.exercises[currentExerciseIdx];
     const fallbackRestDuration =
       pendingExerciseAdvance
@@ -601,8 +657,35 @@ const ActiveWorkoutPage: React.FC = () => {
     if (nextDuration <= 0) return;
     lastHandledRestCompletionEndsAtMsRef.current = null;
     setRestRemaining(nextDuration);
-    setRestEndsAtMs(Date.now() + (nextDuration * 1000));
+    const targetTime = Date.now() + (nextDuration * 1000);
+    setRestEndsAtMs(targetTime);
     setIsResting(true);
+
+    const upcoming = getUpcomingRestTargetInfo();
+    void pipManager.openRestPiP({
+      totalSeconds: restInitialDuration > 0 ? restInitialDuration : nextDuration,
+      remainingSeconds: nextDuration,
+      nextExerciseName: upcoming.nextExerciseName,
+      nextSetInfo: upcoming.nextSetInfo,
+      onSkip: skipRest,
+    }).catch(() => {});
+  };
+
+  const handleTogglePiP = async () => {
+    if (pipManager.isActive()) {
+      pipManager.closePiP();
+    } else {
+      const upcoming = getUpcomingRestTargetInfo();
+      const currentEx = workout?.exercises[currentExerciseIdx];
+      const total = restInitialDuration > 0 ? restInitialDuration : (currentEx?.rest_seconds || 60);
+      await pipManager.openRestPiP({
+        totalSeconds: total,
+        remainingSeconds: restRemaining,
+        nextExerciseName: upcoming.nextExerciseName,
+        nextSetInfo: upcoming.nextSetInfo,
+        onSkip: skipRest,
+      });
+    }
   };
 
   const resetRestCountdown = () => {
@@ -1956,56 +2039,6 @@ const ActiveWorkoutPage: React.FC = () => {
     workoutNotesSavedRef.current = true;
   };
 
-  const getUpcomingRestTargetInfo = useCallback(() => {
-    if (!workout) return { nextExerciseName: 'Next Exercise', nextSetInfo: '' };
-
-    if (pendingExerciseAdvance) {
-      const nextEx = workout.exercises[currentExerciseIdx + 1];
-      const name = nextEx ? String(nextEx.name || '').trim() || `Exercise ${currentExerciseIdx + 2}` : 'Next Exercise';
-      return { nextExerciseName: name, nextSetInfo: 'New Exercise' };
-    }
-
-    const currentEx = workout.exercises[currentExerciseIdx];
-    if (!currentEx) return { nextExerciseName: 'Next Exercise', nextSetInfo: '' };
-
-    if (currentEx.type === 'pyramid' && pendingPyramidAdvance) {
-      const nextStepIdx = currentPyramidStepIdx + 1;
-      const step = currentEx.pyramid_steps?.[nextStepIdx];
-      const reps = step ? (step.reps > 0 ? `${step.reps} reps` : 'MAX reps') : '';
-      return {
-        nextExerciseName: currentEx.name,
-        nextSetInfo: `Step ${nextStepIdx + 1}${reps ? ` • ${reps}` : ''}`,
-      };
-    }
-
-    if (currentEx.type === 'circuit') {
-      return {
-        nextExerciseName: currentEx.name,
-        nextSetInfo: `Giro ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
-      };
-    }
-
-    if (currentEx.type === 'superset' && currentEx.subExercises) {
-      const isAdvancingSub = currentSubExerciseIdx < currentEx.subExercises.length - 1;
-      if (isAdvancingSub) {
-        const nextSub = currentEx.subExercises[currentSubExerciseIdx + 1];
-        return {
-          nextExerciseName: nextSub?.name || 'Next Station',
-          nextSetInfo: `Station ${currentSubExerciseIdx + 2} of ${currentEx.subExercises.length}`,
-        };
-      }
-      return {
-        nextExerciseName: currentEx.name,
-        nextSetInfo: `Round ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
-      };
-    }
-
-    return {
-      nextExerciseName: currentEx.name,
-      nextSetInfo: `Set ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
-    };
-  }, [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSubExerciseIdx, currentSetIdx]);
-
   // Timer logic for REST
   useEffect(() => {
     if (!isResting || restEndsAtMs == null) return;
@@ -2014,6 +2047,7 @@ const ActiveWorkoutPage: React.FC = () => {
     const syncRestCountdown = () => {
       const nextRemaining = computeRemainingFromEndsAt(restEndsAtMs);
       setRestRemaining((prev) => (prev === nextRemaining ? prev : nextRemaining));
+      pipManager.updateRemaining(nextRemaining);
 
       if (nextRemaining <= 0) {
         if (lastHandledRestCompletionEndsAtMsRef.current === restEndsAtMs) {
@@ -2027,7 +2061,8 @@ const ActiveWorkoutPage: React.FC = () => {
         }
         setRestEndsAtMs(null);
         stopRestMediaSession();
-        cancelBackgroundRestNotification();
+        pipManager.closePiP();
+        closeActiveRestNotifications();
 
         const upcoming = getUpcomingRestTargetInfo();
         void sendRestFinishedNotification({
@@ -2046,8 +2081,22 @@ const ActiveWorkoutPage: React.FC = () => {
     };
 
     const handleWakeSync = () => {
-      if (document.visibilityState === 'hidden') return;
-      syncRestCountdown();
+      if (document.visibilityState === 'visible') {
+        closeActiveRestNotifications();
+        syncRestCountdown();
+      } else if (document.visibilityState === 'hidden') {
+        if (isResting && restEndsAtMs != null) {
+          const remaining = computeRemainingFromEndsAt(restEndsAtMs);
+          if (remaining > 0) {
+            const upcoming = getUpcomingRestTargetInfo();
+            scheduleBackgroundRestNotification({
+              endsAtMs: restEndsAtMs,
+              nextExerciseName: upcoming.nextExerciseName,
+              nextSetInfo: upcoming.nextSetInfo,
+            });
+          }
+        }
+      }
     };
 
     intervalId = setInterval(syncRestCountdown, 250);
@@ -2062,42 +2111,27 @@ const ActiveWorkoutPage: React.FC = () => {
     };
   }, [isResting, restEndsAtMs, isWorkoutOverviewModalOpen, getUpcomingRestTargetInfo]);
 
-  // Sincronizzazione MediaSession e Lockscreen per il recupero
+  // Sincronizzazione Titolo Scheda per il recupero (zero audio)
   useEffect(() => {
     if (!isResting) {
       stopRestMediaSession();
-      cancelBackgroundRestNotification();
+      pipManager.closePiP();
+      closeActiveRestNotifications();
       return;
     }
 
     const isRunning = restEndsAtMs != null;
-    const upcoming = getUpcomingRestTargetInfo();
     const currentEx = workout?.exercises[currentExerciseIdx];
     const totalDuration = restInitialDuration > 0
       ? restInitialDuration
       : (currentEx?.rest_seconds || 60);
 
-    if (isRunning && restEndsAtMs != null) {
-      scheduleBackgroundRestNotification({
-        endsAtMs: restEndsAtMs,
-        nextExerciseName: upcoming.nextExerciseName,
-        nextSetInfo: upcoming.nextSetInfo,
-      });
-    } else {
-      cancelBackgroundRestNotification();
-    }
-
     updateRestMediaSession({
       totalSeconds: totalDuration,
       remainingSeconds: restRemaining,
-      nextExerciseName: upcoming.nextExerciseName,
-      nextSetInfo: upcoming.nextSetInfo,
       isRunning,
-      onPause: pauseRestCountdown,
-      onResume: resumeRestCountdown,
-      onSkip: skipRest,
     });
-  }, [isResting, restEndsAtMs, restRemaining, restInitialDuration, getUpcomingRestTargetInfo, workout, currentExerciseIdx]);
+  }, [isResting, restEndsAtMs, restRemaining, restInitialDuration, workout, currentExerciseIdx]);
 
   useEffect(() => {
     if (!isResting || restRemaining > 3 || restRemaining <= 0) {
@@ -3623,7 +3657,7 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              startRestMediaSessionAudio();
+              unlockAudio();
               setIsIosPwaGuideOpen(true);
             }}
             className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-colors shadow"
@@ -3634,7 +3668,7 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             type="button"
             onClick={async () => {
-              startRestMediaSessionAudio();
+              unlockAudio();
               await requestNotificationPermission();
               setShowNotificationPrompt(false);
             }}
@@ -3955,9 +3989,21 @@ const ActiveWorkoutPage: React.FC = () => {
           <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2 z-10">REST</span>
         </div>
 
-        <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold -mt-8 mb-8 text-center">
+        <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold -mt-8 mb-4 text-center">
           Tap to {restEndsAtMs != null ? 'pause' : 'start'} / hold to reset
         </p>
+
+        {pipManager.isSupported() && (
+          <button
+            type="button"
+            onClick={handleTogglePiP}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-brand-orange/40 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all mb-8 shadow-lg shadow-black/40 cursor-pointer"
+            title="Mostra timer flottante sopra altre app (PiP)"
+          >
+            <Layers size={14} />
+            <span>{pipManager.isActive() ? 'Chiudi Overlay Flottante' : 'Mini-Timer Flottante (PiP)'}</span>
+          </button>
+        )}
 
         <div className="text-center space-y-2 mb-12">
           <button

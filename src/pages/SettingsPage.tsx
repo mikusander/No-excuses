@@ -40,14 +40,10 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Edit2, X, Check, Music } from 'lucide-react';
+import { LogOut, User, Edit2, X, Check } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import HeaderLogo from '../components/HeaderLogo';
 import { supabase } from '../lib/supabase';
-import {
-  isLockscreenMediaWidgetEnabled,
-  setLockscreenMediaWidgetEnabled,
-} from '../utils/workoutMediaSession';
 
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
@@ -64,17 +60,7 @@ const SettingsPage: React.FC = () => {
   const [voiceAssistanceEnabled, setVoiceAssistanceEnabled] = useState(true);
   const [voiceSyncError, setVoiceSyncError] = useState<string | null>(null);
   const [voiceSaving, setVoiceSaving] = useState(false);
-  const [musicFriendlyEnabled, setMusicFriendlyEnabled] = useState(true);
 
-  useEffect(() => {
-    setMusicFriendlyEnabled(!isLockscreenMediaWidgetEnabled());
-  }, []);
-
-  const handleToggleMusicFriendly = () => {
-    const nextVal = !musicFriendlyEnabled;
-    setMusicFriendlyEnabled(nextVal);
-    setLockscreenMediaWidgetEnabled(!nextVal);
-  };
 
   const getProfileMailValue = () => {
     const normalizedEmail = String(user?.email || '').trim().toLowerCase();
@@ -335,34 +321,6 @@ const SettingsPage: React.FC = () => {
             )}
           </div>
 
-          {/* Riproduzione Musica Esterna (Spotify, Apple Music) */}
-          <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4">
-            <div className="flex items-center justify-between">
-              <div className="pr-2">
-                <p className="text-white font-bold text-sm flex items-center gap-1.5">
-                  <Music size={16} className="text-brand-orange" />
-                  Non fermare la musica
-                </p>
-                <p className="text-brand-grey/60 text-xs mt-1 leading-relaxed">
-                  Spotify o Apple Music continueranno a suonare senza interruzioni durante il recupero.
-                </p>
-              </div>
-              <button
-                onClick={handleToggleMusicFriendly}
-                className={`relative w-12 h-7 shrink-0 rounded-full overflow-hidden transition-colors ${musicFriendlyEnabled ? 'bg-brand-orange' : 'bg-brand-grey/30'}`}
-                aria-label="Toggle non fermare la musica"
-              >
-                <span
-                  className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${musicFriendlyEnabled ? 'translate-x-5' : 'translate-x-0'}`}
-                />
-              </button>
-            </div>
-            {!musicFriendlyEnabled && (
-              <p className="text-amber-400/80 text-[11px] mt-2.5 bg-amber-400/10 p-2 rounded-lg border border-amber-400/20 leading-relaxed">
-                ⚠️ Con questa opzione disattivata, il timer tenterà di apparire sulla schermata di blocco ma il sistema operativo sospenderà la musica esterna.
-              </p>
-            )}
-          </div>
         </div>
 
         {/* Logout Button pushed to the end */}

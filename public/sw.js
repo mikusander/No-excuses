@@ -1,10 +1,16 @@
 /**
- * sw.js — Service Worker per la gestione delle notifiche in background e lockscreen.
+ * sw.js — Service Worker per la gestione delle notifiche in background (Pilastro 2).
+ *
+ * SINCRONIZZAZIONE TIMESTAMP ASSOLUTO & SCHEDULING PUNTUALE:
+ * Quando l'app va in background, riceve `SCHEDULE_REST_NOTIFICATION` con il timestamp
+ * assoluto di fine recupero.
+ * Se la pagina torna visibile prima della scadenza, riceve `CANCEL_REST_NOTIFICATION`
+ * e auto-cancella il timer e la notifica.
  */
 
 let backgroundRestTimeout = null;
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -22,8 +28,8 @@ self.addEventListener('message', (event) => {
       backgroundRestTimeout = null;
     }
 
-    const endsAtMs = Number(data.endsAtMs) || 0;
-    const delay = Math.max(0, endsAtMs - Date.now());
+    const targetTime = Number(data.targetTime || data.endsAtMs) || 0;
+    const delay = Math.max(0, targetTime - Date.now());
 
     backgroundRestTimeout = setTimeout(async () => {
       backgroundRestTimeout = null;
@@ -33,11 +39,11 @@ self.addEventListener('message', (event) => {
           body: data.body || 'È ora di iniziare la prossima serie!',
           icon: '/favicon.svg',
           badge: '/favicon.svg',
-          tag: 'rest-timer-finished',
+          tag: 'rest-timer',
           renotify: true,
           requireInteraction: false,
           silent: false,
-          vibrate: [200, 100, 200, 100, 350],
+          vibrate: [250, 100, 250],
           data: {
             url: '/',
           },
@@ -53,6 +59,16 @@ self.addEventListener('message', (event) => {
       clearTimeout(backgroundRestTimeout);
       backgroundRestTimeout = null;
     }
+
+    // Auto-cancella eventuali notifiche rimaste con il tag rest-timer
+    event.waitUntil(
+      self.registration
+        .getNotifications({ tag: 'rest-timer' })
+        .then((notifications) => {
+          notifications.forEach((n) => n.close());
+        })
+        .catch(() => {})
+    );
   }
 });
 
