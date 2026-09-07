@@ -16,6 +16,8 @@
  *  4. Default standard a 'reps' con serie, reps, chili e recupero quando non è specificata una modalità speciale.
  */
 
+import { findMatchingCorrection, incrementCorrectionHit } from './userCorrectionsManager.ts';
+
 export type WorkoutModality = 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
 export interface ParsedExerciseConfig {
@@ -30,6 +32,7 @@ export interface ParsedExerciseConfig {
   pyramidSteps?: { reps: number; restSeconds: number; weightKg?: number | null }[];
   subExercises?: { name: string; type: 'reps' | 'isometry'; reps: number; duration_seconds: number; weight_kg?: number | null }[];
   rawInput: string;
+  learnedRule?: boolean;         // Flag true se ricavato da Short-Circuit Cache (Active Feedback Loop)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,7 +218,7 @@ function cleanExerciseTitle(raw: string): string {
 // FUNZIONE PRINCIPALE: parseWorkoutInput
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function parseWorkoutInput(input: string, fallbackRest = 60): ParsedExerciseConfig {
+export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: string): ParsedExerciseConfig {
   const rawInput = (input || '').trim();
 
   if (!rawInput) {
@@ -227,6 +230,25 @@ export function parseWorkoutInput(input: string, fallbackRest = 60): ParsedExerc
       weightKg: null,
       restSeconds: fallbackRest,
       rawInput: '',
+    };
+  }
+
+  // ─── FASE 0: SHORT-CIRCUIT CACHE (ACTIVE FEEDBACK LOOP) ───────────────────
+  const learnedRule = findMatchingCorrection(rawInput, userId);
+  if (learnedRule) {
+    incrementCorrectionHit(learnedRule.id, userId);
+    return {
+      modality: learnedRule.correctedResult.modality,
+      name: learnedRule.correctedResult.name,
+      setsOrRounds: learnedRule.correctedResult.setsOrRounds,
+      repsTarget: learnedRule.correctedResult.repsTarget,
+      weightKg: learnedRule.correctedResult.weightKg ?? null,
+      durationSeconds: learnedRule.correctedResult.durationSeconds,
+      restSeconds: learnedRule.correctedResult.restSeconds ?? fallbackRest,
+      subExercises: learnedRule.correctedResult.subExercises,
+      pyramidSteps: learnedRule.correctedResult.pyramidSteps,
+      rawInput,
+      learnedRule: true,
     };
   }
 

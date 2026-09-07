@@ -47,6 +47,7 @@ export interface ParsedWorkoutItem {
   pyramid_steps?: ParsedPyramidStep[];
   rawInput: string;
   confidence?: 'high' | 'medium';
+  learnedRule?: boolean;
 }
 
 /**
@@ -558,7 +559,7 @@ export function tryParseStandardReps(input: string, fallbackRest: number): Parse
  * Se nessun pattern viene riconosciuto, restituisce un oggetto con `matched: false`,
  * preservando il testo inserito come `name` pulito e i default neutri.
  */
-export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedWorkoutItem {
+export function parseExerciseInput(rawInput: string, fallbackRest = 90, userId?: string): ParsedWorkoutItem {
   const trimmed = (rawInput || '').trim();
 
   if (!trimmed) {
@@ -575,15 +576,15 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedW
     };
   }
 
-  // Esegui il nuovo motore di parsing Modality-First con tolleranza ai refusi e supporto bilingue
-  const config = parseWorkoutInput(trimmed, fallbackRest);
+  // Esegui il motore di parsing Modality-First con Short-Circuit Cache, tolleranza ai refusi e supporto bilingue
+  const config = parseWorkoutInput(trimmed, fallbackRest, userId);
 
-  // Determina se l'input contiene sintassi o parametri di allenamento riconoscibili
+  // Determina se l'input contiene sintassi o parametri di allenamento riconoscibili o se è una regola appresa
   const hasNumbers = /\d/.test(trimmed);
   const hasControlSyntax = /(?:x|\*|\/|\+|min|sec|round|serie|set|kg|chili|kili|pausa|rest|recup|rec|emom|piramid|pyramid|isometr|circuit|superset)/i.test(trimmed);
   const isSpecialModality = config.modality !== 'reps';
 
-  if (!hasNumbers && !hasControlSyntax && !isSpecialModality) {
+  if (!hasNumbers && !hasControlSyntax && !isSpecialModality && !config.learnedRule) {
     return {
       matched: false,
       type: 'reps',
@@ -612,6 +613,7 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedW
       subExercises: config.subExercises,
       rawInput: trimmed,
       confidence: 'high',
+      learnedRule: config.learnedRule,
     };
   }
 
@@ -632,6 +634,7 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedW
       })),
       rawInput: trimmed,
       confidence: 'high',
+      learnedRule: config.learnedRule,
     };
   }
 
@@ -647,6 +650,7 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedW
       subExercises: config.subExercises,
       rawInput: trimmed,
       confidence: 'high',
+      learnedRule: config.learnedRule,
     };
   }
 
@@ -662,6 +666,7 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedW
       subExercises: config.subExercises,
       rawInput: trimmed,
       confidence: 'high',
+      learnedRule: config.learnedRule,
     };
   }
 
@@ -676,6 +681,7 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedW
       rest_seconds: config.restSeconds,
       rawInput: trimmed,
       confidence: 'high',
+      learnedRule: config.learnedRule,
     };
   }
 
@@ -695,5 +701,6 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedW
     isMaxReps,
     rawInput: trimmed,
     confidence: 'high',
+    learnedRule: config.learnedRule,
   };
 }

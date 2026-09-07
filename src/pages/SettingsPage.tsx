@@ -40,10 +40,16 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Edit2, X, Check } from 'lucide-react';
+import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import HeaderLogo from '../components/HeaderLogo';
 import { supabase } from '../lib/supabase';
+import {
+  loadCorrectionRules,
+  deleteCorrectionRule,
+  clearAllCorrectionRules,
+  type UserCorrectionRule,
+} from '../utils/userCorrectionsManager';
 
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
@@ -61,6 +67,25 @@ const SettingsPage: React.FC = () => {
   const [voiceSyncError, setVoiceSyncError] = useState<string | null>(null);
   const [voiceSaving, setVoiceSaving] = useState(false);
 
+  // Regole di correzione apprese dall'Active Feedback Loop
+  const [correctionRules, setCorrectionRules] = useState<UserCorrectionRule[]>([]);
+  const [showRulesList, setShowRulesList] = useState(false);
+
+  useEffect(() => {
+    setCorrectionRules(loadCorrectionRules(user?.id));
+  }, [user?.id]);
+
+  const handleDeleteRule = (ruleId: string) => {
+    deleteCorrectionRule(ruleId, user?.id);
+    setCorrectionRules(loadCorrectionRules(user?.id));
+  };
+
+  const handleClearAllRules = () => {
+    if (window.confirm('Sei sicuro di voler eliminare tutte le regole di correzione apprese?')) {
+      clearAllCorrectionRules(user?.id);
+      setCorrectionRules([]);
+    }
+  };
 
   const getProfileMailValue = () => {
     const normalizedEmail = String(user?.email || '').trim().toLowerCase();
@@ -321,6 +346,97 @@ const SettingsPage: React.FC = () => {
             )}
           </div>
 
+          {/* Memoria Correzioni OCR & Parser */}
+          <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-400">
+                  <Brain size={18} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-white font-bold text-sm">Memoria Parser & OCR</p>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      {correctionRules.length}
+                    </span>
+                  </div>
+                  <p className="text-brand-grey/60 text-xs mt-0.5">
+                    Regole apprese dalle tue correzioni
+                  </p>
+                </div>
+              </div>
+              {correctionRules.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowRulesList(!showRulesList)}
+                  className="text-brand-grey hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                  aria-label="Mostra o nascondi elenco regole"
+                >
+                  {showRulesList ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
+              )}
+            </div>
+
+            {correctionRules.length === 0 ? (
+              <p className="text-[11px] text-brand-grey/50 mt-3 pt-3 border-t border-white/5 italic">
+                Nessuna regola personalizzata memorizzata. Correggendo gli esercizi scansionati o dettati, il sistema memorizzerà qui le tue preferenze.
+              </p>
+            ) : showRulesList ? (
+              <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-brand-grey/60 uppercase font-bold tracking-wider">
+                    Regole Attive ({correctionRules.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleClearAllRules}
+                    className="text-[10px] text-red-400/80 hover:text-red-400 font-semibold transition-colors"
+                  >
+                    Cancella tutte
+                  </button>
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {correctionRules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      className="p-2.5 bg-black/40 border border-white/5 rounded-xl flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono text-[11px] text-brand-grey/70 bg-white/5 px-1.5 py-0.5 rounded truncate max-w-[130px]">
+                            &quot;{rule.rawInputSignature}&quot;
+                          </span>
+                          <span className="text-brand-grey/40 text-[10px]">→</span>
+                          <span className="font-bold text-white text-[11px] truncate">
+                            {rule.correctedResult.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[10px] text-brand-grey/60">
+                          <span>
+                            {rule.correctedResult.modality === 'isometry'
+                              ? `${rule.correctedResult.setsOrRounds}x${rule.correctedResult.durationSeconds || 30}s`
+                              : `${rule.correctedResult.setsOrRounds}x${rule.correctedResult.repsTarget || '10'}`}
+                            {' • '}{rule.correctedResult.restSeconds}s
+                          </span>
+                          <span className="text-amber-400/90 font-medium">
+                            🎯 {rule.hitCount} {rule.hitCount === 1 ? 'uso' : 'usi'}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRule(rule.id)}
+                        className="text-brand-grey/40 hover:text-red-400 p-1.5 rounded-lg transition-colors shrink-0"
+                        title="Elimina regola"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Logout Button pushed to the end */}

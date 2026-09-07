@@ -177,14 +177,14 @@ export function splitSpokenWorkoutSegments(normalizedText: string): string[] {
 /**
  * Converte una stringa di parlato continuo in un array di ParsedWorkoutItem
  */
-export function parseSpokenWorkout(spokenText: string, fallbackRest = 90): ParsedWorkoutItem[] {
+export function parseSpokenWorkout(spokenText: string, fallbackRest = 90, userId?: string): ParsedWorkoutItem[] {
   const normalized = normalizeItalianVoiceText(spokenText);
   const segments = splitSpokenWorkoutSegments(normalized);
 
   const results: ParsedWorkoutItem[] = [];
 
   for (const segment of segments) {
-    const parsed = parseExerciseInput(segment, fallbackRest);
+    const parsed = parseExerciseInput(segment, fallbackRest, userId);
     // Accetta sia elementi parsati con successo sia elementi con solo nome
     if (parsed.name.trim().length > 0) {
       results.push(parsed);
@@ -208,7 +208,7 @@ const OCR_STANDALONE_REST_REGEX = /^(?:recupero|riposo|rest|pausa)\s*[:\-]?\s*(\
  * Pulisce e filtra il testo grezzo estratto da Tesseract OCR,
  * raggruppa eventuali notazioni superset (es. A1 / A2, o elenchi puntati sotto circuito) e analizza riga per riga.
  */
-export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90): ParsedWorkoutItem[] {
+export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90, userId?: string): ParsedWorkoutItem[] {
   if (!rawOcrText) return [];
 
   const rawLines = rawOcrText
@@ -344,7 +344,7 @@ export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90): Par
   const results: ParsedWorkoutItem[] = [];
 
   for (const line of cleanLines) {
-    const parsed = parseExerciseInput(line, fallbackRest);
+    const parsed = parseExerciseInput(line, fallbackRest, userId);
     if (parsed.name.trim().length > 0) {
       results.push(parsed);
     }

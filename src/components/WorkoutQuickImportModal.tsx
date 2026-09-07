@@ -14,11 +14,13 @@ import {
   FileText,
   Image as ImageIcon,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import type { ExerciseDraft } from '../hooks/useWorkoutBuilder';
 import { useLocalOcr } from '../hooks/useLocalOcr';
 import { useWorkoutDictation } from '../hooks/useWorkoutDictation';
 import { parseOcrWorkoutLines, parseSpokenWorkout } from '../utils/workoutTextTokenizer';
 import type { ParsedWorkoutItem } from '../utils/parseExerciseInput';
+import { recordCorrection } from '../utils/userCorrectionsManager';
 
 interface WorkoutQuickImportModalProps {
   isOpen: boolean;
@@ -31,6 +33,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
   onClose,
   onImportExercises,
 }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'ocr' | 'voice'>('ocr');
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
   const [parsedItems, setParsedItems] = useState<ParsedWorkoutItem[]>([]);
@@ -39,6 +42,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
   const [showRawText, setShowRawText] = useState(false);
   const [rawEditableText, setRawEditableText] = useState('');
 
+  const originalParsedMapRef = useRef<Map<number, ParsedWorkoutItem>>(new Map());
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,19 +85,21 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
   useEffect(() => {
     if (recognizedText) {
       setRawEditableText(recognizedText);
-      const items = parseOcrWorkoutLines(recognizedText);
+      const items = parseOcrWorkoutLines(recognizedText, 90, user?.id);
       setParsedItems(items);
+      originalParsedMapRef.current = new Map(items.map((it, idx) => [idx, { ...it }]));
     }
-  }, [recognizedText]);
+  }, [recognizedText, user?.id]);
 
   // Quando la dettatura vocale accumula testo, aggiorna il parser
   useEffect(() => {
     if (fullTranscript && activeTab === 'voice') {
-      const items = parseSpokenWorkout(fullTranscript);
+      const items = parseSpokenWorkout(fullTranscript, 90, user?.id);
       setParsedItems(items);
+      originalParsedMapRef.current = new Map(items.map((it, idx) => [idx, { ...it }]));
       setRawEditableText(fullTranscript);
     }
-  }, [fullTranscript, activeTab]);
+  }, [fullTranscript, activeTab, user?.id]);
 
   if (!isOpen) return null;
 
@@ -117,11 +123,13 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
   const handleReParseRawText = (text: string) => {
     setRawEditableText(text);
     if (activeTab === 'ocr') {
-      const items = parseOcrWorkoutLines(text);
+      const items = parseOcrWorkoutLines(text, 90, user?.id);
       setParsedItems(items);
+      originalParsedMapRef.current = new Map(items.map((it, idx) => [idx, { ...it }]));
     } else {
-      const items = parseSpokenWorkout(text);
+      const items = parseSpokenWorkout(text, 90, user?.id);
       setParsedItems(items);
+      originalParsedMapRef.current = new Map(items.map((it, idx) => [idx, { ...it }]));
     }
   };
 
@@ -154,6 +162,47 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
 
   // Conversione definitiva in ExerciseDraft[] per l'inserimento
   const handleConfirmImport = () => {
+    // Apprendimento continuo: memorizza eventuali modifiche e correzioni manuali dell'utente
+    parsedItems.forEach((item, index) => {
+      const raw = item.rawInput ? item.rawInput.trim() : '';
+      if (raw.length < 2) return;
+
+      const original = originalParsedMapRef.current.get(index);
+      recordCorrection(
+        raw,
+        {
+          name: item.name,
+          modality: item.type,
+          setsOrRounds: item.sets || (item.type === 'circuit' || item.type === 'emom' ? item.emom_rounds || 3 : 3),
+          repsTarget: item.type === 'isometry' ? undefined : (item.isMaxReps ? 'max' : String(item.reps || 10)),
+          durationSeconds: item.type === 'isometry' ? (item.duration_seconds || 30) : undefined,
+          restSeconds: item.rest_seconds ?? 90,
+          weightKg: item.weight_kg ?? null,
+          subExercises: item.subExercises?.map(s => ({
+            name: s.name,
+            type: s.type,
+            reps: s.reps,
+            duration_seconds: s.duration_seconds,
+            weight_kg: s.weight_kg ?? null,
+          })),
+          pyramidSteps: item.pyramid_steps?.map(p => ({
+            reps: p.reps,
+            restSeconds: p.rest_seconds,
+            weightKg: p.weight_kg ?? null,
+          })),
+        },
+        original ? {
+          name: original.name,
+          type: original.type,
+          sets: original.sets,
+          reps: original.reps,
+          weight_kg: original.weight_kg,
+          rest_seconds: original.rest_seconds,
+        } : null,
+        user?.id
+      );
+    });
+
     const drafts: ExerciseDraft[] = parsedItems.map(item => {
       const id = crypto.randomUUID();
 
@@ -614,6 +663,14 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                           className="flex-1 bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm font-bold text-white focus:border-brand-orange outline-none"
                         />
                       </div>
+                      {item.learnedRule && (
+                        <span
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1 shrink-0"
+                          title="Esercizio riconosciuto tramite regola appresa"
+                        >
+                          💡 Appreso
+                        </span>
+                      )}
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-brand-orange/20 text-brand-orange uppercase">
                         {item.type}
                       </span>

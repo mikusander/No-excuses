@@ -11,6 +11,7 @@ import {
   History,
   Check,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import type { ExerciseDraft } from '../hooks/useWorkoutBuilder';
 import type { UserExerciseHistoryItem } from '../hooks/useUserExerciseHistory';
 import { parseExerciseInput, type ParsedWorkoutItem } from '../utils/parseExerciseInput';
@@ -42,6 +43,7 @@ export const WorkoutExerciseRow: React.FC<WorkoutExerciseRowProps> = ({
   searchHistory,
   isFocused,
 }) => {
+  const { user } = useAuth();
   const [nameInput, setNameInput] = useState(exercise.name);
   const [suggestions, setSuggestions] = useState<UserExerciseHistoryItem[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -66,12 +68,12 @@ export const WorkoutExerciseRow: React.FC<WorkoutExerciseRowProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Ricerca nello storico quando l'utente digita
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setNameInput(val);
-
     if (val.trim().length >= 2) {
-      const results = searchHistory(val.trim());
+      const results = searchHistory(val, 4);
       setSuggestions(results);
       setShowSuggestions(results.length > 0);
     } else {
@@ -91,16 +93,22 @@ export const WorkoutExerciseRow: React.FC<WorkoutExerciseRowProps> = ({
       return;
     }
 
-    const parsed = parseExerciseInput(trimmed, exercise.rest_seconds || 90);
+    const parsed = parseExerciseInput(trimmed, exercise.rest_seconds || 90, user?.id);
 
     if (parsed.matched) {
       onApplyParsed(exercise.id, parsed);
       setNameInput(parsed.name);
-      setBannerNotice(
-        parsed.type === 'reps'
-          ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
-          : `✨ Trasformato in ${parsed.type.toUpperCase()}`
-      );
+      if (parsed.learnedRule) {
+        setBannerNotice(
+          `💡 Regola Appresa: ${parsed.name} (${parsed.type === 'reps' ? `${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}` : parsed.type.toUpperCase()})`
+        );
+      } else {
+        setBannerNotice(
+          parsed.type === 'reps'
+            ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
+            : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+        );
+      }
       setTimeout(() => setBannerNotice(null), 3000);
     } else {
       onUpdate(exercise.id, 'name', trimmed);
