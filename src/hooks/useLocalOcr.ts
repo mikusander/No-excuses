@@ -1,5 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createWorker } from 'tesseract.js';
+import {
+  preprocessTableImage,
+  reconstructTableLayout,
+  type WordBoundingBox,
+} from '../utils/ocrTablePreprocessor.ts';
 
 export type OcrStatus = 'idle' | 'preprocessing' | 'recognizing' | 'done' | 'error';
 
@@ -9,94 +14,9 @@ export interface UseLocalOcrReturn {
   statusText: string;
   error: string | null;
   recognizedText: string;
+  reconstructedLines: string[];
   recognizeImage: (file: File) => Promise<string>;
   resetOcr: () => void;
-}
-
-/**
- * Pre-elaborazione su Canvas off-screen per ottimizzare la precisione dell'OCR:
- * 1. Scala proporzionalmente se l'immagine è troppo grande (max 1800px per performance/RAM).
- * 2. Converte in scala di grigi ad alta precisione.
- * 3. Applica un aumento di contrasto/binarizzazione per evidenziare il testo rispetto allo sfondo.
- */
-async function preprocessImageCanvas(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
-
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-
-      const MAX_DIMENSION = 1800;
-      let width = img.naturalWidth || img.width;
-      let height = img.naturalHeight || img.height;
-
-      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-        if (width > height) {
-          height = Math.round((height * MAX_DIMENSION) / width);
-          width = MAX_DIMENSION;
-        } else {
-          width = Math.round((width * MAX_DIMENSION) / height);
-          height = MAX_DIMENSION;
-        }
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-
-      if (!ctx) {
-        // Fallback: restituisci URL originale se canvas 2d non disponibile
-        resolve(objectUrl);
-        return;
-      }
-
-      // Disegna immagine ridimensionata
-      ctx.drawImage(img, 0, 0, width, height);
-
-      try {
-        const imageData = ctx.getImageData(0, 0, width, height);
-        const data = imageData.data;
-        const len = data.length;
-
-        // Calcola luminosità media per soglia dinamica
-        let totalBrightness = 0;
-        for (let i = 0; i < len; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-          totalBrightness += 0.299 * r + 0.587 * g + 0.114 * b;
-        }
-        const avgBrightness = totalBrightness / (len / 4);
-
-        // Scala di grigi e contrast enhancement (soglia adattiva semplificata)
-        const threshold = Math.max(100, Math.min(160, avgBrightness));
-
-        for (let i = 0; i < len; i += 4) {
-          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          // Stretch di contrasto attorno alla soglia
-          const binary = gray > threshold ? 255 : Math.max(0, gray * 0.5);
-          data[i] = binary;
-          data[i + 1] = binary;
-          data[i + 2] = binary;
-        }
-
-        ctx.putImageData(imageData, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      } catch (err) {
-        console.warn('Canvas filter bypass (es. CORS o memoria):', err);
-        resolve(canvas.toDataURL('image/jpeg', 0.9));
-      }
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("Impossibile caricare l'immagine selezionata."));
-    };
-
-    img.src = objectUrl;
-  });
 }
 
 export function useLocalOcr(): UseLocalOcrReturn {
@@ -105,6 +25,7 @@ export function useLocalOcr(): UseLocalOcrReturn {
   const [statusText, setStatusText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [recognizedText, setRecognizedText] = useState('');
+  const [reconstructedLines, setReconstructedLines] = useState<string[]>([]);
 
   const workerRef = useRef<Awaited<ReturnType<typeof createWorker>> | null>(null);
 
@@ -124,18 +45,20 @@ export function useLocalOcr(): UseLocalOcrReturn {
     setStatusText('');
     setError(null);
     setRecognizedText('');
+    setReconstructedLines([]);
   }, []);
 
   const recognizeImage = useCallback(async (file: File): Promise<string> => {
     setError(null);
     setRecognizedText('');
+    setReconstructedLines([]);
     setStatus('preprocessing');
     setProgress(10);
-    setStatusText('Ottimizzazione contrasto e nitidezza immagine...');
+    setStatusText('Pre-processing Canvas: binarizzazione Otsu e contrasto griglie...');
 
     try {
-      // 1. Preprocessing su Canvas off-screen
-      const preprocessedDataUrl = await preprocessImageCanvas(file);
+      // 1. Preprocessing su Canvas off-screen con binarizzazione Otsu
+      const preprocessedDataUrl = await preprocessTableImage(file);
 
       setStatus('recognizing');
       setProgress(25);
@@ -146,9 +69,9 @@ export function useLocalOcr(): UseLocalOcrReturn {
         const worker = await createWorker(['ita', 'eng'], 1, {
           logger: (m) => {
             if (m.status === 'recognizing text') {
-              const currentProgress = Math.round(25 + m.progress * 70);
-              setProgress(Math.min(95, currentProgress));
-              setStatusText(`Riconoscimento testo... ${Math.round(m.progress * 100)}%`);
+              const currentProgress = Math.round(25 + m.progress * 65);
+              setProgress(Math.min(90, currentProgress));
+              setStatusText(`Riconoscimento caratteri e coordinate... ${Math.round(m.progress * 100)}%`);
             } else if (m.status === 'loading tesseract core') {
               setStatusText('Caricamento WebAssembly OCR...');
             } else if (m.status === 'loading language traineddata') {
@@ -156,21 +79,77 @@ export function useLocalOcr(): UseLocalOcrReturn {
             }
           },
         });
+
+        // Configurazione ottimale per blocchi di testo tabellare
+        await worker.setParameters({
+          tessedit_pageseg_mode: '11' as any, // Tesseract.PSM.SPARSE_TEXT
+          preserve_interword_spaces: '1',
+        });
+
         workerRef.current = worker;
       }
 
-      setStatusText('Analisi caratteri e tabelle in corso...');
-      const result = await workerRef.current.recognize(preprocessedDataUrl);
-      const text = result.data.text || '';
+      setStatusText('Analisi geometrica e Bounding Boxes delle celle...');
+      setProgress(92);
+
+      const result = await workerRef.current.recognize(
+        preprocessedDataUrl,
+        {},
+        { blocks: true }
+      );
+
+      // 3. Estrazione di tutti i token parola con le rispettive coordinate geometriche (Bounding Box)
+      const extractedWords: WordBoundingBox[] = [];
+      if (result.data.blocks) {
+        for (const block of result.data.blocks) {
+          for (const paragraph of block.paragraphs) {
+            for (const line of paragraph.lines) {
+              for (const word of line.words) {
+                if (word && word.text && word.text.trim().length > 0 && word.bbox) {
+                  extractedWords.push({
+                    text: word.text.trim(),
+                    bbox: {
+                      x0: word.bbox.x0,
+                      y0: word.bbox.y0,
+                      x1: word.bbox.x1,
+                      y1: word.bbox.y1,
+                    },
+                    confidence: word.confidence,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 4. Ricostruzione del layout tabellare (Clustering verticale Y + Ordinamento X + Gap colonne)
+      let finalText = '';
+      let finalLines: string[] = [];
+
+      if (extractedWords.length > 0) {
+        finalLines = reconstructTableLayout(extractedWords);
+        finalText = finalLines.join('\n');
+      }
+
+      // Fallback sul testo grezzo lineare se la ricostruzione geometrica non ha prodotto righe
+      if (!finalText.trim()) {
+        finalText = result.data.text || '';
+        finalLines = finalText
+          .split(/\r?\n/)
+          .map(l => l.trim())
+          .filter(l => l.length > 0);
+      }
 
       setProgress(100);
       setStatus('done');
-      setStatusText('Scansione completata con successo!');
-      setRecognizedText(text);
+      setStatusText('Layout tabellare ricostruito con successo!');
+      setRecognizedText(finalText);
+      setReconstructedLines(finalLines);
 
-      return text;
+      return finalText;
     } catch (err: unknown) {
-      console.error('Errore durante elaborazione OCR locale:', err);
+      console.error('Errore durante elaborazione OCR locale tabellare:', err);
       const msg = err instanceof Error ? err.message : 'Errore durante la scansione OCR.';
       setError(msg);
       setStatus('error');
@@ -185,6 +164,7 @@ export function useLocalOcr(): UseLocalOcrReturn {
     statusText,
     error,
     recognizedText,
+    reconstructedLines,
     recognizeImage,
     resetOcr,
   };

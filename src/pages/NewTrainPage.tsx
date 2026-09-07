@@ -739,6 +739,7 @@ const NewTrainPage: React.FC = () => {
           sets: parsed.sets,
           reps: parsed.reps,
           rest_seconds: parsed.rest_seconds,
+          weight_kg: parsed.weight_kg !== undefined ? parsed.weight_kg : ex.weight_kg,
         };
       })
     );
@@ -2154,7 +2155,9 @@ const NewTrainPage: React.FC = () => {
                                     ...prev,
                                     [ex.id]: parsed.type === 'pyramid'
                                       ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
-                                      : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+                                      : parsed.type === 'reps'
+                                        ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
+                                        : `✨ Trasformato in ${parsed.type.toUpperCase()}`
                                   }));
                                   setTimeout(() => {
                                     setExerciseNotices(prev => {
@@ -2177,7 +2180,9 @@ const NewTrainPage: React.FC = () => {
                                       ...prev,
                                       [ex.id]: parsed.type === 'pyramid'
                                         ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
-                                        : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+                                        : parsed.type === 'reps'
+                                          ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
+                                          : `✨ Trasformato in ${parsed.type.toUpperCase()}`
                                     }));
                                     setTimeout(() => {
                                       setExerciseNotices(prev => {
@@ -2421,7 +2426,7 @@ const NewTrainPage: React.FC = () => {
                                     [ex.id]: parsed.type === 'pyramid'
                                       ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
                                       : parsed.type === 'reps'
-                                        ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
+                                        ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
                                         : `✨ Trasformato in ${parsed.type.toUpperCase()}`
                                   }));
                                   setTimeout(() => {
@@ -2446,7 +2451,7 @@ const NewTrainPage: React.FC = () => {
                                       [ex.id]: parsed.type === 'pyramid'
                                         ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
                                         : parsed.type === 'reps'
-                                          ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
+                                          ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
                                           : `✨ Trasformato in ${parsed.type.toUpperCase()}`
                                     }));
                                     setTimeout(() => {

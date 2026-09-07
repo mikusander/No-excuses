@@ -242,6 +242,7 @@ export function useWorkoutBuilder(initialExercises: ExerciseDraft[] = []) {
           sets: parsed.sets,
           reps: parsed.reps,
           rest_seconds: parsed.rest_seconds,
+          weight_kg: parsed.weight_kg !== undefined ? parsed.weight_kg : ex.weight_kg,
         };
       })
     );

@@ -11,6 +11,9 @@
  *  - EMOM: "EMOM 10' 10 push up + 5 pull up", "EMOM 12m 90s: 12 burpees + 15 squat"
  */
 
+export * from './parseWorkoutInput.ts';
+import { parseWorkoutInput } from './parseWorkoutInput.ts';
+
 export type ParsedExerciseType = 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
 export interface ParsedSubExercise {
@@ -36,6 +39,7 @@ export interface ParsedWorkoutItem {
   reps: number;
   duration_seconds: number;
   rest_seconds: number;
+  weight_kg?: number | null;
   isMaxReps?: boolean;
   emom_rounds?: number;
   emom_round_duration?: number;
@@ -190,7 +194,7 @@ function cleanExerciseTitle(title: string): string {
  *  - "EMOM 10x: 12 burpees"
  *  - "emom 8r: 10 push up + 10 squat"
  */
-function tryParseEmom(input: string, fallbackRest: number): ParsedWorkoutItem | null {
+export function tryParseEmom(input: string, fallbackRest: number): ParsedWorkoutItem | null {
   const emomRegex = /^\s*emom\b\s*(.*)$/i;
   const match = input.match(emomRegex);
   if (!match) return null;
@@ -256,7 +260,7 @@ function tryParseEmom(input: string, fallbackRest: number): ParsedWorkoutItem | 
  *  - "squat piramide 15-12-10-8 2m"
  *  - "12-10-8-6 stacco"
  */
-function tryParsePyramid(input: string, fallbackRest: number): ParsedWorkoutItem | null {
+export function tryParsePyramid(input: string, fallbackRest: number): ParsedWorkoutItem | null {
   // Cerca pattern tipo 12-10-8-6 o 15/12/10/8 (almeno 3 numeri o 2 se preceduto da piramide)
   const isExplicitPyramid = /\b(?:piramide|pyramid|piramidale)\b/i.test(input);
 
@@ -324,7 +328,7 @@ function tryParsePyramid(input: string, fallbackRest: number): ParsedWorkoutItem
  *  - "circuito core 4x: crunch 20 + leg raise 15 + 45s plank 60s"
  *  - "circuit 3 round 2m: trazioni 8 + dip 10 + push up 15"
  */
-function tryParseCircuit(input: string, fallbackRest: number): ParsedWorkoutItem | null {
+export function tryParseCircuit(input: string, fallbackRest: number): ParsedWorkoutItem | null {
   const circuitRegex = /^\s*(?:circuito|circuit)\b\s*(.*)$/i;
   const match = input.match(circuitRegex);
   if (!match) return null;
@@ -403,7 +407,7 @@ function tryParseCircuit(input: string, fallbackRest: number): ParsedWorkoutItem
  *  - "trazioni 4x8 + dip 4x10 90s"
  *  - "trazioni + dip 4x10 90s"
  */
-function tryParseSuperset(input: string, fallbackRest: number): ParsedWorkoutItem | null {
+export function tryParseSuperset(input: string, fallbackRest: number): ParsedWorkoutItem | null {
   const isExplicitSuperset = /^\s*(?:superset|ss:)\b/i.test(input);
   const hasPlus = input.includes('+');
 
@@ -473,7 +477,7 @@ function tryParseSuperset(input: string, fallbackRest: number): ParsedWorkoutIte
  *  - "hollow body 4x30s 90s"
  *  - "wall sit 3x60s"
  */
-function tryParseIsometry(input: string, fallbackRest: number): ParsedWorkoutItem | null {
+export function tryParseIsometry(input: string, fallbackRest: number): ParsedWorkoutItem | null {
   // Cerca pattern: <nome> <sets>x<duration>s <rest>?
   const isoRegex = /^(.+?)\s+(\d+)\s*(?:x|\*)\s*(\d+)\s*(?:s|sec|"|'')(?:\s+(\d+\s*(?:s|sec|"|m|min|')?))?$/i;
   const match = input.match(isoRegex);
@@ -507,7 +511,7 @@ function tryParseIsometry(input: string, fallbackRest: number): ParsedWorkoutIte
  *  - "panca piana 5x5"
  *  - "dip 3*10 1m30s"
  */
-function tryParseStandardReps(input: string, fallbackRest: number): ParsedWorkoutItem | null {
+export function tryParseStandardReps(input: string, fallbackRest: number): ParsedWorkoutItem | null {
   // Regex: <nome> <sets>x<reps> <rest>?
   // reps può essere numero o "max" o "cedimento"
   const repsRegex = /^(.+?)\s+(\d+)\s*(?:[x*X×])\s*(\d+|max|cedimento)(?:\s+(.+))?$/i;
@@ -566,43 +570,130 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90): ParsedW
       reps: 10,
       duration_seconds: 0,
       rest_seconds: fallbackRest,
+      weight_kg: null,
       rawInput: '',
     };
   }
 
-  // 1. EMOM
-  const emomResult = tryParseEmom(trimmed, fallbackRest);
-  if (emomResult) return emomResult;
+  // Esegui il nuovo motore di parsing Modality-First con tolleranza ai refusi e supporto bilingue
+  const config = parseWorkoutInput(trimmed, fallbackRest);
 
-  // 2. Circuito
-  const circuitResult = tryParseCircuit(trimmed, fallbackRest);
-  if (circuitResult) return circuitResult;
+  // Determina se l'input contiene sintassi o parametri di allenamento riconoscibili
+  const hasNumbers = /\d/.test(trimmed);
+  const hasControlSyntax = /(?:x|\*|\/|\+|min|sec|round|serie|set|kg|chili|kili|pausa|rest|recup|rec|emom|piramid|pyramid|isometr|circuit|superset)/i.test(trimmed);
+  const isSpecialModality = config.modality !== 'reps';
 
-  // 3. Piramide
-  const pyramidResult = tryParsePyramid(trimmed, fallbackRest);
-  if (pyramidResult) return pyramidResult;
+  if (!hasNumbers && !hasControlSyntax && !isSpecialModality) {
+    return {
+      matched: false,
+      type: 'reps',
+      name: trimmed,
+      sets: 3,
+      reps: 10,
+      duration_seconds: 0,
+      rest_seconds: fallbackRest,
+      weight_kg: null,
+      rawInput: trimmed,
+    };
+  }
 
-  // 4. Superset
-  const supersetResult = tryParseSuperset(trimmed, fallbackRest);
-  if (supersetResult) return supersetResult;
+  // Dispatch in base alla modalità rilevata
+  if (config.modality === 'emom') {
+    return {
+      matched: true,
+      type: 'emom',
+      name: config.name,
+      sets: config.setsOrRounds,
+      reps: 0,
+      duration_seconds: 0,
+      rest_seconds: config.restSeconds,
+      emom_rounds: config.setsOrRounds,
+      emom_round_duration: config.intervalSeconds || 60,
+      subExercises: config.subExercises,
+      rawInput: trimmed,
+      confidence: 'high',
+    };
+  }
 
-  // 5. Isometria
-  const isometryResult = tryParseIsometry(trimmed, fallbackRest);
-  if (isometryResult) return isometryResult;
+  if (config.modality === 'pyramid') {
+    return {
+      matched: true,
+      type: 'pyramid',
+      name: config.name,
+      sets: 1,
+      reps: config.pyramidSteps?.[0]?.reps || 10,
+      duration_seconds: 0,
+      rest_seconds: 0,
+      weight_kg: config.weightKg ?? null,
+      pyramid_steps: config.pyramidSteps?.map(s => ({
+        reps: s.reps,
+        rest_seconds: s.restSeconds,
+        weight_kg: s.weightKg ?? null,
+      })),
+      rawInput: trimmed,
+      confidence: 'high',
+    };
+  }
 
-  // 6. Singolo standard
-  const standardResult = tryParseStandardReps(trimmed, fallbackRest);
-  if (standardResult) return standardResult;
+  if (config.modality === 'circuit') {
+    return {
+      matched: true,
+      type: 'circuit',
+      name: config.name,
+      sets: config.setsOrRounds,
+      reps: 0,
+      duration_seconds: 0,
+      rest_seconds: config.restSeconds,
+      subExercises: config.subExercises,
+      rawInput: trimmed,
+      confidence: 'high',
+    };
+  }
 
-  // Fallback: non è stata riconosciuta alcuna sintassi inline
+  if (config.modality === 'superset') {
+    return {
+      matched: true,
+      type: 'superset',
+      name: config.name,
+      sets: config.setsOrRounds,
+      reps: 0,
+      duration_seconds: 0,
+      rest_seconds: config.restSeconds,
+      subExercises: config.subExercises,
+      rawInput: trimmed,
+      confidence: 'high',
+    };
+  }
+
+  if (config.modality === 'isometry') {
+    return {
+      matched: true,
+      type: 'isometry',
+      name: config.name,
+      sets: config.setsOrRounds,
+      reps: 0,
+      duration_seconds: config.durationSeconds || 30,
+      rest_seconds: config.restSeconds,
+      rawInput: trimmed,
+      confidence: 'high',
+    };
+  }
+
+  // Default standard: reps
+  const isMaxReps = config.repsTarget === 'max' || config.repsTarget === 'cedimento';
+  const reps = isMaxReps ? 0 : (parseInt(config.repsTarget || '10', 10) || 10);
+
   return {
-    matched: false,
+    matched: true,
     type: 'reps',
-    name: trimmed,
-    sets: 3,
-    reps: 10,
+    name: config.name || trimmed,
+    sets: Math.max(1, config.setsOrRounds || 3),
+    reps,
     duration_seconds: 0,
-    rest_seconds: fallbackRest,
+    rest_seconds: config.restSeconds,
+    weight_kg: config.weightKg ?? null,
+    isMaxReps,
     rawInput: trimmed,
+    confidence: 'high',
   };
 }

@@ -301,8 +301,13 @@ export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90): Par
     if (formattedLine.includes('|')) {
       const cols = formattedLine.split('|').map(c => c.trim()).filter(c => c.length > 0);
       if (cols.length >= 2) {
-        // es: "Panca piana | 4x8 | 90s" -> "Panca piana 4x8 90s"
-        formattedLine = cols.join(' ');
+        // Se la riga ha formato tabellare: [Nome] | [Sets] | [Reps] ... (es: "Panca piana | 4 | 8 | 90s")
+        if (cols.length >= 3 && /^\d+$/.test(cols[1]) && /^(\d+|max|cedimento)$/i.test(cols[2])) {
+          formattedLine = `${cols[0]} ${cols[1]}x${cols[2]} ${cols.slice(3).join(' ')}`;
+        } else {
+          // es: "Panca piana | 4x8 | 90s" -> "Panca piana 4x8 90s"
+          formattedLine = cols.join(' ');
+        }
       }
     }
 
