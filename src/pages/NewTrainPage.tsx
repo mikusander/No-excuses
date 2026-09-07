@@ -102,6 +102,7 @@ interface ExerciseDraft {
     reps: number;
     rest_seconds: number;
     weight_kg?: number | null;
+    instruction_note?: string;
   }[];
 }
 
@@ -158,6 +159,7 @@ const normalizePyramidStepDraft = (raw: unknown) => {
     reps: toSafeInteger(step.reps, 10, 1),
     rest_seconds: toSafeInteger(step.rest_seconds, 60, 0),
     weight_kg: toSafeWeight(step.weight_kg),
+    instruction_note: String(step.instruction_note || ''),
   };
 };
 
@@ -702,6 +704,22 @@ const NewTrainPage: React.FC = () => {
           };
         }
 
+        if (parsed.type === 'pyramid') {
+          return {
+            ...ex,
+            type: 'pyramid',
+            name: parsed.name,
+            sets: 1,
+            rest_seconds: 0,
+            pyramid_steps: (parsed.pyramid_steps || []).map(s => ({
+              reps: s.reps,
+              rest_seconds: s.rest_seconds,
+              weight_kg: s.weight_kg ?? null,
+              instruction_note: '',
+            })),
+          };
+        }
+
         if (parsed.type === 'isometry') {
           return {
             ...ex,
@@ -744,15 +762,33 @@ const NewTrainPage: React.FC = () => {
     setExercises(prev =>
       prev.map(ex => {
         if (ex.id !== id) return ex;
+
+        if (item.type === 'pyramid' && item.pyramid_steps && item.pyramid_steps.length > 0) {
+          return {
+            ...ex,
+            name: item.name,
+            type: 'pyramid',
+            sets: 1,
+            rest_seconds: 0,
+            pyramid_steps: item.pyramid_steps.map(s => ({
+              reps: s.reps,
+              rest_seconds: s.rest_seconds,
+              weight_kg: s.weight_kg ?? null,
+              instruction_note: '',
+            })),
+          };
+        }
+
         return {
           ...ex,
           name: item.name,
-          type: item.type || ex.type || 'reps',
+          type: item.type || (ex.type === 'pyramid' ? 'reps' : ex.type) || 'reps',
           sets: item.sets || ex.sets || 3,
           reps: item.reps || ex.reps || 10,
           duration_seconds: item.duration_seconds || ex.duration_seconds || 30,
-          rest_seconds: item.rest_seconds ?? ex.rest_seconds ?? 90,
+          rest_seconds: item.rest_seconds ?? ex.rest_seconds ?? 60,
           weight_kg: item.weight_kg ?? null,
+          pyramid_steps: ex.type === 'pyramid' && item.type !== 'pyramid' ? undefined : ex.pyramid_steps,
         };
       })
     );
@@ -1640,6 +1676,10 @@ const NewTrainPage: React.FC = () => {
             const step = ex.pyramid_steps![stepIdx];
             const idEsercizio = await ensureExerciseDictionaryId(ex.name);
 
+            const stepNote = String(step.instruction_note || '').trim();
+            const exNote = String(ex.instruction_note || '').trim();
+            const combinedNote = stepNote && exNote ? `${exNote} - ${stepNote}` : (stepNote || exNote);
+
             rowsToInsert.push({
               id_scheda: Number(workoutIdToUse),
               id_esercizio: idEsercizio,
@@ -1648,7 +1688,7 @@ const NewTrainPage: React.FC = () => {
               rest_secondi: step.rest_seconds > 0 ? step.rest_seconds : null,
               rest_tra_esercizi: transitionRestToPersist,
               peso_kg: toDbWeight(step.weight_kg),
-              note_esercizio: String(ex.instruction_note || '').trim() || null,
+              note_esercizio: combinedNote || null,
               tipo: 'REPS',
               reps: Math.max(0, step.reps ?? 0),
               durata_secondi: null,
@@ -2051,72 +2091,292 @@ const NewTrainPage: React.FC = () => {
                       </button>
                     </div>
                   ) : ex.type === 'pyramid' ? (
-                    <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
-                      <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex items-center justify-center">
-                        📐 Pyramid
-                      </p>
-                      {ex.pyramid_steps?.map((step, sIdx) => (
-                        <div key={sIdx} className="flex items-center space-x-2 relative pr-8">
-                          <span className="text-xs text-brand-grey font-bold w-6 text-center">#{sIdx + 1}</span>
-                          <div className="flex-1">
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
-                              Reps
-                            </label>
-                            <input
-                              type="number" inputMode="numeric"
-                              min="1"
-                              value={getDraftOrValue(`${ex.id}:step:${sIdx}:reps`, step.reps)}
-                              onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:reps`, e.target.value)}
-                              onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'reps', `${ex.id}:step:${sIdx}:reps`, 1, 1)}
-                              onFocus={onNumberFocus}
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-1.5 text-center text-white text-sm focus:border-brand-orange outline-none"
-                            />
+                    <div className="space-y-3.5 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
+                      <div className="flex items-center justify-between pb-1 border-b border-brand-orange/10">
+                        <div className="flex items-center space-x-2">
+                          <p className="text-xs font-bold text-brand-orange uppercase tracking-wider flex items-center">
+                            📐 Piramide
+                          </p>
+                          <span className="text-[11px] text-brand-grey font-medium">
+                            ({ex.pyramid_steps?.length || 0} step)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateExercise(ex.id, 'type', 'reps')}
+                          className="text-[10px] uppercase font-bold text-brand-grey/60 hover:text-brand-orange transition-colors px-2 py-1 rounded bg-black/30 border border-white/5 hover:border-brand-orange/30"
+                          title="Converti in esercizio standard"
+                        >
+                          Passa a Standard
+                        </button>
+                      </div>
+
+                      {/* Banner notifica autofill o parse */}
+                      {exerciseNotices[ex.id] && (
+                        <div className="bg-brand-orange/15 border border-brand-orange/30 text-brand-orange text-xs px-3 py-1.5 rounded-xl flex items-center justify-between animate-fade-in">
+                          <div className="flex items-center space-x-1.5">
+                            <Sparkles size={14} />
+                            <span className="font-semibold">{exerciseNotices[ex.id]}</span>
                           </div>
-                          <div className="flex-1">
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
-                              Rest (s)
-                            </label>
-                            <input
-                              type="number" inputMode="numeric"
-                              min="0"
-                              value={getDraftOrValue(`${ex.id}:step:${sIdx}:rest`, step.rest_seconds)}
-                              onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:rest`, e.target.value)}
-                              onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'rest_seconds', `${ex.id}:step:${sIdx}:rest`, 0, 0)}
-                              onFocus={onNumberFocus}
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-1.5 text-center text-white text-sm focus:border-brand-orange outline-none"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
-                              Kg
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={getWeightDraftOrValue(`${ex.id}:step:${sIdx}:weight`, step.weight_kg)}
-                              onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:weight`, e.target.value)}
-                              onBlur={() => commitPyramidStepWeight(ex.id, sIdx, `${ex.id}:step:${sIdx}:weight`, step.weight_kg)}
-                              onFocus={onNumberFocus}
-                              placeholder="kg"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-1.5 text-center text-white text-sm focus:border-brand-orange outline-none"
-                            />
-                          </div>
-                          {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
-                            <button
-                              onClick={() => removePyramidStep(ex.id, sIdx)}
-                              className="absolute right-0 top-6 text-red-500/50 hover:text-red-500 p-1"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                          <Check size={14} />
+                        </div>
+                      )}
+
+                      {/* Nome esercizio Piramidale con Autocomplete e Parser Inline */}
+                      <div className="relative">
+                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                          Nome Esercizio
+                        </label>
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            placeholder="Nome esercizio (es. Panca Piana, Squat... o formula 12-10-8-6 90s)"
+                            value={ex.name}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateExercise(ex.id, 'name', val);
+                              if (val.trim().length >= 2) {
+                                const found = searchHistory(val.trim());
+                                setExerciseSuggestions(prev => ({ ...prev, [ex.id]: found }));
+                              } else {
+                                setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
+                              }
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
+                              }, 200);
+                              if (ex.name.trim()) {
+                                const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
+                                if (parsed.matched) {
+                                  handleApplyParsedToExercise(ex.id, parsed);
+                                  setExerciseNotices(prev => ({
+                                    ...prev,
+                                    [ex.id]: parsed.type === 'pyramid'
+                                      ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
+                                      : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+                                  }));
+                                  setTimeout(() => {
+                                    setExerciseNotices(prev => {
+                                      const n = { ...prev };
+                                      delete n[ex.id];
+                                      return n;
+                                    });
+                                  }, 3500);
+                                }
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (ex.name.trim()) {
+                                  const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
+                                  if (parsed.matched) {
+                                    handleApplyParsedToExercise(ex.id, parsed);
+                                    setExerciseNotices(prev => ({
+                                      ...prev,
+                                      [ex.id]: parsed.type === 'pyramid'
+                                        ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
+                                        : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+                                    }));
+                                    setTimeout(() => {
+                                      setExerciseNotices(prev => {
+                                        const n = { ...prev };
+                                        delete n[ex.id];
+                                        return n;
+                                      });
+                                    }, 3500);
+                                  }
+                                }
+                                setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
+                                (e.target as HTMLElement).blur();
+                              }
+                            }}
+                            className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors pr-10"
+                          />
+                          {(exerciseSuggestions[ex.id] || []).length > 0 && (
+                            <span className="absolute right-3 text-brand-orange/60 pointer-events-none" title="Suggerimenti disponibili">
+                              <History size={16} />
+                            </span>
                           )}
                         </div>
-                      ))}
-                      <button
-                        onClick={() => addPyramidStep(ex.id)}
-                        className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                      >
-                        <Plus size={14} className="mr-1" /> ADD STEP
-                      </button>
+
+                        {/* Dropdown Suggerimenti Autocomplete dallo Storico Utente */}
+                        {(exerciseSuggestions[ex.id] || []).length > 0 && (
+                          <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#181818] border border-brand-orange/30 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-white/5 backdrop-blur-md">
+                            <div className="p-2 bg-black/40 text-[10px] uppercase font-bold text-brand-grey/60 tracking-wider flex items-center">
+                              <History size={11} className="mr-1.5 text-brand-orange" />
+                              Usato nelle tue sessioni precedenti (clicca per compilare)
+                            </div>
+                            {(exerciseSuggestions[ex.id] || []).map((item, sIdx) => (
+                              <button
+                                key={sIdx}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleApplyHistoryItemToExercise(ex.id, item);
+                                  setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
+                                  setExerciseNotices(prev => ({
+                                    ...prev,
+                                    [ex.id]: item.pyramid_steps && item.pyramid_steps.length > 0
+                                      ? `Memoria utente: Piramide ${item.pyramid_steps.map(s => s.reps).join('-')}`
+                                      : `Memoria utente: ${item.name}`
+                                  }));
+                                  setTimeout(() => {
+                                    setExerciseNotices(prev => {
+                                      const n = { ...prev };
+                                      delete n[ex.id];
+                                      return n;
+                                    });
+                                  }, 3500);
+                                }}
+                                className="w-full text-left p-3 hover:bg-brand-orange/15 transition-colors flex items-center justify-between group"
+                              >
+                                <div>
+                                  <div className="text-sm font-semibold text-white group-hover:text-brand-orange transition-colors">
+                                    {item.name}
+                                  </div>
+                                  <div className="text-xs text-brand-grey/70 mt-0.5">
+                                    {item.pyramid_steps && item.pyramid_steps.length > 0
+                                      ? `Piramide ${item.pyramid_steps.map(s => s.reps).join('-')} reps`
+                                      : `${item.sets} serie × ${item.reps} reps • ${item.rest_seconds}s recupero`}
+                                    {item.weight_kg != null ? ` • ${item.weight_kg} kg` : ''}
+                                  </div>
+                                </div>
+                                <span className="text-[11px] font-bold text-brand-orange opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                                  Applica <Check size={12} className="ml-1" />
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Note dell'esercizio (opzionale) */}
+                      <div>
+                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
+                          Note esecuzione esercizio (opzionale)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={ex.instruction_note || ''}
+                          onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
+                          placeholder="E.g. presa prona, fermo 1 secondo al petto, incremento carico ad ogni set"
+                          className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
+                        />
+                      </div>
+
+                      {/* Step della sequenza piramidale */}
+                      <div className="space-y-2.5 pt-1">
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold">
+                            Step della piramide
+                          </span>
+                          <span className="text-[10px] text-brand-grey/50 font-medium">
+                            Imposta reps, kg e recupero al prossimo set
+                          </span>
+                        </div>
+
+                        {ex.pyramid_steps?.map((step, sIdx) => (
+                          <div key={sIdx} className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2.5 relative pr-9 transition-colors hover:border-brand-orange/20">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-brand-orange font-bold uppercase tracking-wider flex items-center">
+                                Step #{sIdx + 1}
+                              </span>
+                              {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removePyramidStep(ex.id, sIdx)}
+                                  className="absolute right-2 top-2.5 text-brand-grey/50 hover:text-red-500 p-1 rounded hover:bg-white/5 transition-colors"
+                                  title="Rimuovi step"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
+                                  Reps
+                                </label>
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  min="1"
+                                  value={getDraftOrValue(`${ex.id}:step:${sIdx}:reps`, step.reps)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:reps`, e.target.value)}
+                                  onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'reps', `${ex.id}:step:${sIdx}:reps`, 10, 1)}
+                                  onFocus={onNumberFocus}
+                                  placeholder="10"
+                                  className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-2 text-white text-center text-sm focus:border-brand-orange outline-none transition-colors"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
+                                  Kg
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={getWeightDraftOrValue(`${ex.id}:step:${sIdx}:weight`, step.weight_kg)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:weight`, e.target.value)}
+                                  onBlur={() => commitPyramidStepWeight(ex.id, sIdx, `${ex.id}:step:${sIdx}:weight`, step.weight_kg)}
+                                  onFocus={onNumberFocus}
+                                  placeholder="kg"
+                                  className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-2 text-white text-center text-sm focus:border-brand-orange outline-none transition-colors"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
+                                  Rest (sec)
+                                </label>
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  min="0"
+                                  value={getDraftOrValue(`${ex.id}:step:${sIdx}:rest`, step.rest_seconds)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:rest`, e.target.value)}
+                                  onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'rest_seconds', `${ex.id}:step:${sIdx}:rest`, 60, 0)}
+                                  onFocus={onNumberFocus}
+                                  placeholder="60"
+                                  className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-2 text-white text-center text-sm focus:border-brand-orange outline-none transition-colors"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <input
+                                type="text"
+                                placeholder="Note step (opzionale, es. drop set, scalare peso, spotter)"
+                                value={step.instruction_note || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setExercises(exercises.map(item => {
+                                    if (item.id === ex.id && item.pyramid_steps) {
+                                      const nextSteps = [...item.pyramid_steps];
+                                      nextSteps[sIdx] = { ...nextSteps[sIdx], instruction_note: val };
+                                      return { ...item, pyramid_steps: nextSteps };
+                                    }
+                                    return item;
+                                  }));
+                                }}
+                                className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-1.5 text-white text-xs focus:border-brand-orange outline-none placeholder:text-brand-grey/40 transition-colors"
+                              />
+                            </div>
+                          </div>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => addPyramidStep(ex.id)}
+                          className="w-full mt-1.5 py-2.5 border border-dashed border-brand-orange/30 text-brand-orange/80 hover:text-brand-orange hover:border-brand-orange/60 text-xs font-bold rounded-xl transition-colors flex justify-center items-center bg-brand-orange/5"
+                        >
+                          <Plus size={14} className="mr-1.5" /> AGGIUNGI STEP PIRAMIDE
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -2154,13 +2414,15 @@ const NewTrainPage: React.FC = () => {
                               }, 200);
                               if (ex.name.trim()) {
                                 const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
-                                if (parsed.matched && parsed.type !== 'pyramid') {
+                                if (parsed.matched) {
                                   handleApplyParsedToExercise(ex.id, parsed);
                                   setExerciseNotices(prev => ({
                                     ...prev,
-                                    [ex.id]: parsed.type === 'reps'
-                                      ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
-                                      : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+                                    [ex.id]: parsed.type === 'pyramid'
+                                      ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
+                                      : parsed.type === 'reps'
+                                        ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
+                                        : `✨ Trasformato in ${parsed.type.toUpperCase()}`
                                   }));
                                   setTimeout(() => {
                                     setExerciseNotices(prev => {
@@ -2177,13 +2439,15 @@ const NewTrainPage: React.FC = () => {
                                 e.preventDefault();
                                 if (ex.name.trim()) {
                                   const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
-                                  if (parsed.matched && parsed.type !== 'pyramid') {
+                                  if (parsed.matched) {
                                     handleApplyParsedToExercise(ex.id, parsed);
                                     setExerciseNotices(prev => ({
                                       ...prev,
-                                      [ex.id]: parsed.type === 'reps'
-                                        ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
-                                        : `✨ Trasformato in ${parsed.type.toUpperCase()}`
+                                      [ex.id]: parsed.type === 'pyramid'
+                                        ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
+                                        : parsed.type === 'reps'
+                                          ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps} • ${parsed.rest_seconds}s`
+                                          : `✨ Trasformato in ${parsed.type.toUpperCase()}`
                                     }));
                                     setTimeout(() => {
                                       setExerciseNotices(prev => {

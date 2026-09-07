@@ -9,7 +9,12 @@ export interface UserExerciseHistoryItem {
   duration_seconds?: number;
   rest_seconds: number;
   weight_kg?: number | null;
-  type?: 'reps' | 'isometry';
+  type?: 'reps' | 'isometry' | 'pyramid';
+  pyramid_steps?: {
+    reps: number;
+    rest_seconds: number;
+    weight_kg?: number | null;
+  }[];
   lastUsedDate?: string;
 }
 
@@ -50,14 +55,20 @@ export function useUserExerciseHistory(userId?: string) {
               const key = rawName.toLowerCase();
 
               if (!itemsMap.has(key)) {
+                const hasPyramidSteps = ex.type === 'pyramid' && Array.isArray(ex.pyramid_steps) && ex.pyramid_steps.length > 0;
                 itemsMap.set(key, {
                   name: rawName,
                   sets: Number(ex.sets) > 0 ? Number(ex.sets) : 3,
                   reps: Number(ex.reps) > 0 ? Number(ex.reps) : 10,
                   duration_seconds: Number(ex.duration_seconds) > 0 ? Number(ex.duration_seconds) : 30,
-                  rest_seconds: Number(ex.rest_seconds) >= 0 ? Number(ex.rest_seconds) : 90,
+                  rest_seconds: Number(ex.rest_seconds) >= 0 ? Number(ex.rest_seconds) : 60,
                   weight_kg: ex.weight_kg != null && Number(ex.weight_kg) > 0 ? Number(ex.weight_kg) : null,
-                  type: ex.type === 'isometry' ? 'isometry' : 'reps',
+                  type: hasPyramidSteps ? 'pyramid' : ex.type === 'isometry' ? 'isometry' : 'reps',
+                  pyramid_steps: hasPyramidSteps && ex.pyramid_steps ? ex.pyramid_steps.map((s: any) => ({
+                    reps: Number(s.reps) > 0 ? Number(s.reps) : 10,
+                    rest_seconds: Number(s.rest_seconds) >= 0 ? Number(s.rest_seconds) : 60,
+                    weight_kg: s.weight_kg != null && Number(s.weight_kg) > 0 ? Number(s.weight_kg) : null,
+                  })) : undefined,
                   lastUsedDate: date,
                 });
               }
