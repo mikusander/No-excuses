@@ -3991,14 +3991,10 @@ const ActiveWorkoutPage: React.FC = () => {
               type="button"
               onClick={async () => {
                 unlockAudio();
-                setNotificationTestFeedback('⏳ Invio notifica di test (5s)...');
-                const success = await testPushNotification(5);
-                if (success) {
-                  setNotificationTestFeedback('🔒 Blocca SUBITO lo schermo o cambia app! Tra 5s arriverà la notifica.');
-                } else {
-                  setNotificationTestFeedback('⚠️ Permesso notifiche non concesso. Assicurati di aver premuto "Consenti".');
-                }
-                setTimeout(() => setNotificationTestFeedback(null), 9000);
+                setNotificationTestFeedback('⏳ Invio notifica di test al server (5s)...');
+                const result = await testPushNotification(5);
+                setNotificationTestFeedback(result.message);
+                setTimeout(() => setNotificationTestFeedback(null), 12000);
               }}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
               title="Testa la notifica push a schermo bloccato (arriva tra 5 secondi)"

@@ -155,10 +155,10 @@ export const sendRestFinishedNotification = async ({
     icon: '/pwa-192x192.png',
     badge: '/pwa-192x192.png',
     tag: 'rest-timer',
-    renotify: false,
-    requireInteraction: false,
+    renotify: true,
+    requireInteraction: true,
     silent: false,
-    vibrate: [250, 100, 250],
+    vibrate: [350, 150, 350, 150, 500],
   };
 
   try {
@@ -368,18 +368,43 @@ export const closeActiveRestNotifications = async () => {
   }
 };
 
+export interface PushTestResult {
+  success: boolean;
+  message: string;
+}
+
 /**
  * Funzione di test: programma una notifica Web Push tra `delaySeconds` (default 5s).
- * Utile per permettere all'utente di premere il pulsante e bloccare immediatamente
- * lo schermo dell'iPhone per verificare l'accensione e il suono.
+ * Fornisce diagnostica trasparente all'utente per capire se è in Safari normale o in Standalone PWA,
+ * e verifica la corretta ricezione della chiamata dal server push.
  */
-export const testPushNotification = async (delaySeconds = 5): Promise<boolean> => {
+export const testPushNotification = async (delaySeconds = 5): Promise<PushTestResult> => {
+  const perm = getNotificationPermission();
+  if (perm === 'ios_pwa_required') {
+    return {
+      success: false,
+      message: "⚠️ Su iPhone le notifiche a schermo spento / altre app richiedono l'installazione PWA: tocca Condividi in Safari (⬆️) → 'Aggiungi a schermata Home', poi apri No Excuses dall'icona Home!",
+    };
+  }
+
   const granted = await requestNotificationPermission();
-  if (!granted) return false;
+  if (!granted) {
+    return {
+      success: false,
+      message: '⚠️ Permesso notifiche non concesso. Abilita le notifiche nelle impostazioni del browser o del dispositivo.',
+    };
+  }
 
   const sub = await getOrCreatePushSubscription();
+  if (!sub) {
+    return {
+      success: false,
+      message: "⚠️ Impossibile attivare la sottoscrizione Web Push. Assicurati che l'app sia aperta dalla Home Screen (PWA) o verifica le autorizzazioni del browser.",
+    };
+  }
+
   const testTitle = '⏱️ Test Notifica Riuscito!';
-  const testBody = 'La notifica e il suono di recupero funzionano perfettamente!';
+  const testBody = 'La notifica e il suono di recupero funzionano a schermo bloccato!';
   const testTargetTime = Date.now() + delaySeconds * 1000;
 
   // Programma il timer locale Service Worker
@@ -390,17 +415,6 @@ export const testPushNotification = async (delaySeconds = 5): Promise<boolean> =
     title: testTitle,
     body: testBody,
   });
-
-  if (!sub) {
-    // Se PushManager non è disponibile (es. Safari non PWA), programma anche fallback a timeout
-    setTimeout(() => {
-      void sendRestFinishedNotification({
-        nextExerciseName: 'Test Notifica iPhone',
-        nextSetInfo: 'Funziona correttamente!',
-      });
-    }, delaySeconds * 1000);
-    return true;
-  }
 
   try {
     const res = await fetch('/api/schedule-push', {
@@ -416,9 +430,24 @@ export const testPushNotification = async (delaySeconds = 5): Promise<boolean> =
         origin: typeof window !== 'undefined' ? window.location.origin : undefined,
       }),
     });
-    return res.ok;
-  } catch (err) {
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        message: `⚠️ Errore dal server push (${res.status}): ${errJson.error || 'Invio fallito'}`,
+      };
+    }
+
+    return {
+      success: true,
+      message: '🔒 Push inviato al server! Blocca SUBITO lo schermo o passa ad altre app (WhatsApp/Instagram): tra 5s riceverai la notifica di sistema.',
+    };
+  } catch (err: any) {
     console.debug('[Push] Errore testPushNotification:', err);
-    return true; // Il Service Worker locale è comunque programmato e suonerà
+    return {
+      success: false,
+      message: `⚠️ Impossibile contattare il server push: ${err.message || 'Errore di rete'}`,
+    };
   }
 };

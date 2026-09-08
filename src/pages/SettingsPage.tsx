@@ -113,15 +113,11 @@ const SettingsPage: React.FC = () => {
 
   const handleTestNotification = async () => {
     setNotificationTesting(true);
-    setNotificationTestFeedback('⏳ Invio notifica di test (5s)...');
-    const success = await testPushNotification(5);
+    setNotificationTestFeedback('⏳ Invio notifica di test al server (5s)...');
+    const result = await testPushNotification(5);
     setNotificationTesting(false);
-    if (success) {
-      setNotificationTestFeedback('🔒 Blocca subito lo schermo o cambia app! Tra 5s arriverà la notifica.');
-    } else {
-      setNotificationTestFeedback('⚠️ Impossibile inviare la notifica. Verifica i permessi.');
-    }
-    setTimeout(() => setNotificationTestFeedback(null), 8000);
+    setNotificationTestFeedback(result.message);
+    setTimeout(() => setNotificationTestFeedback(null), 12000);
   };
 
   const getProfileMailValue = () => {
