@@ -317,6 +317,7 @@ export const scheduleBackgroundRestNotification = async ({
           body,
           timerId,
           endsAtMs,
+          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
         }),
       }).catch((err) => {
         console.debug('[Push] Impossibile contattare /api/schedule-push:', err);
@@ -412,6 +413,7 @@ export const testPushNotification = async (delaySeconds = 5): Promise<boolean> =
         body: testBody,
         timerId: `test-${Date.now()}`,
         endsAtMs: testTargetTime,
+        origin: typeof window !== 'undefined' ? window.location.origin : undefined,
       }),
     });
     return res.ok;

@@ -430,6 +430,11 @@ const SettingsPage: React.FC = () => {
               </p>
             )}
 
+            <div className="text-[11px] text-brand-grey/60 bg-white/5 rounded-xl p-2.5 space-y-1">
+              <p className="font-semibold text-white/80">⏱️ Recuperi lunghi (es. 3-5 minuti):</p>
+              <p>L&apos;app mantiene lo schermo acceso automaticamente con Wake Lock durante il workout. Se blocchi manualmente lo schermo, assicurati che la connessione sia stabile o configura Upstash QStash per il recapito serverless oltre i 60s.</p>
+            </div>
+
             <div className="flex items-center justify-between pt-1 border-t border-white/5">
               <span className="text-[11px] text-brand-grey/70">Testa il funzionamento</span>
               <button

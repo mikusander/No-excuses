@@ -163,6 +163,12 @@ self.addEventListener('push', (event) => {
       try {
         const activeTimer = await getSharedActiveTimer();
         if (activeTimer) {
+          // Se il timer è stato interrotto o saltato dall'utente, scarta la notifica
+          if (activeTimer.status === 'stopped') {
+            console.debug('[SW] Timer annullato o terminato: notifica push scartata.');
+            return;
+          }
+
           // Se un altro timer è stato avviato dopo questo (timerId diverso ed è running), scarta quello vecchio
           if (
             payload.timerId &&
