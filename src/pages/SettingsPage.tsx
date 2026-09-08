@@ -40,7 +40,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellRing } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import HeaderLogo from '../components/HeaderLogo';
 import { supabase } from '../lib/supabase';
@@ -50,6 +50,12 @@ import {
   clearAllCorrectionRules,
   type UserCorrectionRule,
 } from '../utils/userCorrectionsManager';
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  testPushNotification,
+  type NotificationPermissionStatus,
+} from '../utils/workoutNotifications';
 
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
@@ -85,6 +91,37 @@ const SettingsPage: React.FC = () => {
       clearAllCorrectionRules(user?.id);
       setCorrectionRules([]);
     }
+  };
+
+  // Stato e gestione notifiche
+  const [notificationPerm, setNotificationPerm] = useState<NotificationPermissionStatus>('unsupported');
+  const [notificationTesting, setNotificationTesting] = useState(false);
+  const [notificationTestFeedback, setNotificationTestFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNotificationPerm(getNotificationPermission());
+  }, []);
+
+  const handleRequestNotification = async () => {
+    const granted = await requestNotificationPermission();
+    setNotificationPerm(getNotificationPermission());
+    if (granted) {
+      setNotificationTestFeedback('Notifiche attivate con successo!');
+      setTimeout(() => setNotificationTestFeedback(null), 4000);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    setNotificationTesting(true);
+    setNotificationTestFeedback('⏳ Invio notifica di test (5s)...');
+    const success = await testPushNotification(5);
+    setNotificationTesting(false);
+    if (success) {
+      setNotificationTestFeedback('🔒 Blocca subito lo schermo o cambia app! Tra 5s arriverà la notifica.');
+    } else {
+      setNotificationTestFeedback('⚠️ Impossibile inviare la notifica. Verifica i permessi.');
+    }
+    setTimeout(() => setNotificationTestFeedback(null), 8000);
   };
 
   const getProfileMailValue = () => {
@@ -343,6 +380,73 @@ const SettingsPage: React.FC = () => {
             </div>
             {voiceSyncError && (
               <p className="text-red-400 text-xs mt-2">{voiceSyncError}</p>
+            )}
+          </div>
+
+          {/* Notifiche di Recupero & Schermo Spento */}
+          <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-500/15 text-blue-400">
+                  <Bell size={18} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-white font-bold text-sm">Notifiche di Recupero</p>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                      notificationPerm === 'granted'
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                        : notificationPerm === 'ios_pwa_required'
+                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                          : 'bg-red-500/20 text-red-400 border-red-500/30'
+                    }`}>
+                      {notificationPerm === 'granted'
+                        ? 'Attive'
+                        : notificationPerm === 'ios_pwa_required'
+                          ? 'Richiede PWA'
+                          : 'Non attive'}
+                    </span>
+                  </div>
+                  <p className="text-brand-grey/60 text-xs mt-0.5">
+                    Avviso a fine pausa anche a schermo spento
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {notificationPerm !== 'granted' && notificationPerm !== 'ios_pwa_required' && (
+              <button
+                type="button"
+                onClick={handleRequestNotification}
+                className="w-full py-2 px-3 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-bold transition-all shadow cursor-pointer"
+              >
+                Attiva Notifiche
+              </button>
+            )}
+
+            {notificationPerm === 'ios_pwa_required' && (
+              <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
+                💡 Su iPhone le notifiche a schermo spento richiedono di aggiungere l&apos;app alla schermata Home (tasto Condividi di Safari → &quot;Aggiungi a schermata Home&quot;).
+              </p>
+            )}
+
+            <div className="flex items-center justify-between pt-1 border-t border-white/5">
+              <span className="text-[11px] text-brand-grey/70">Testa il funzionamento</span>
+              <button
+                type="button"
+                disabled={notificationTesting}
+                onClick={handleTestNotification}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <BellRing size={13} />
+                <span>{notificationTesting ? 'Invio in corso...' : 'Prova Notifica (5s)'}</span>
+              </button>
+            </div>
+
+            {notificationTestFeedback && (
+              <p className="text-center text-[11px] text-blue-400 font-semibold bg-blue-500/10 border border-blue-500/20 rounded-xl p-2 animate-in fade-in duration-200">
+                {notificationTestFeedback}
+              </p>
             )}
           </div>
 

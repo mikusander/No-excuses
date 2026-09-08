@@ -112,6 +112,7 @@ import {
   playCountdownBeep,
   playRestFinishedSound,
   unlockAudio,
+  testAudio,
 } from '../utils/audio';
 import { pipManager } from '../utils/pipManager';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock';
@@ -121,6 +122,8 @@ import {
   scheduleBackgroundRestNotification,
   closeActiveRestNotifications,
   getNotificationPermission,
+  sendRestFinishedNotification,
+  testPushNotification,
 } from '../utils/workoutNotifications';
 import {
   updateRestMediaSession,
@@ -348,6 +351,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const [restRemaining, setRestRemaining] = useState(0);
   const [restInitialDuration, setRestInitialDuration] = useState(0);
   const [restEndsAtMs, setRestEndsAtMs] = useState<number | null>(null);
+  const [audioTestFeedback, setAudioTestFeedback] = useState<string | null>(null);
+  const [notificationTestFeedback, setNotificationTestFeedback] = useState<string | null>(null);
 
   // Timer State for Isometry
   const [isometryActive, setIsometryActive] = useState(false);
@@ -617,12 +622,14 @@ const ActiveWorkoutPage: React.FC = () => {
     }).catch(() => {});
   };
 
-  const stopRestCountdown = () => {
+  const stopRestCountdown = (keepActiveNotifications = false) => {
     setIsResting(false);
     setRestEndsAtMs(null);
     stopRestMediaSession();
     pipManager.closePiP();
-    closeActiveRestNotifications();
+    if (!keepActiveNotifications) {
+      closeActiveRestNotifications();
+    }
   };
 
   const pauseRestCountdown = () => {
@@ -2059,6 +2066,11 @@ const ActiveWorkoutPage: React.FC = () => {
         stopRestMediaSession();
         pipManager.closePiP();
         playRestFinishedSound();
+        const upcoming = getUpcomingRestTargetInfo();
+        void sendRestFinishedNotification({
+          nextExerciseName: upcoming.nextExerciseName,
+          nextSetInfo: upcoming.nextSetInfo,
+        });
 
         if (isWorkoutOverviewModalOpen) {
           setIsWorkoutOverviewAdvancePending(true);
@@ -2092,7 +2104,6 @@ const ActiveWorkoutPage: React.FC = () => {
     if (!isResting) {
       stopRestMediaSession();
       pipManager.closePiP();
-      closeActiveRestNotifications();
       return;
     }
 
@@ -3447,7 +3458,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const finishRestAndNextSet = (naturalExpiry = false) => {
-    stopRestCountdown();
+    stopRestCountdown(naturalExpiry);
 
     if (pendingExerciseAdvance) {
       setPendingExerciseAdvance(false);
@@ -3960,19 +3971,66 @@ const ActiveWorkoutPage: React.FC = () => {
           Tap to {restEndsAtMs != null ? 'pause' : 'start'} / hold to reset
         </p>
 
-        {pipManager.isSupported() && (
-          <div className="flex items-center justify-center -mt-2 mb-8">
+        <div className="flex flex-col items-center justify-center gap-2 -mt-2 mb-8">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
-              onClick={handleTogglePiP}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-brand-orange/40 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all shadow-lg shadow-black/40 cursor-pointer"
-              title="Mostra timer flottante sopra altre app (PiP)"
+              onClick={async () => {
+                unlockAudio();
+                await testAudio();
+                setAudioTestFeedback('🔊 Segnale inviato! Se non lo senti, disattiva il Silenzioso (tasto suoneria iPhone) o usa cuffie/AirPods.');
+                setTimeout(() => setAudioTestFeedback(null), 5500);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-brand-orange/40 bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
+              title="Verifica il suono del timer (funziona anche con Spotify in riproduzione)"
             >
-              <Layers size={14} />
-              <span>{pipManager.isActive() ? 'Chiudi Overlay Flottante' : 'Mini-Timer Flottante (PiP)'}</span>
+              <span>🔊 Prova Suono</span>
             </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                unlockAudio();
+                setNotificationTestFeedback('⏳ Invio notifica di test (5s)...');
+                const success = await testPushNotification(5);
+                if (success) {
+                  setNotificationTestFeedback('🔒 Blocca SUBITO lo schermo o cambia app! Tra 5s arriverà la notifica.');
+                } else {
+                  setNotificationTestFeedback('⚠️ Permesso notifiche non concesso. Assicurati di aver premuto "Consenti".');
+                }
+                setTimeout(() => setNotificationTestFeedback(null), 9000);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
+              title="Testa la notifica push a schermo bloccato (arriva tra 5 secondi)"
+            >
+              <span>🔔 Prova Notifica (5s)</span>
+            </button>
+
+            {pipManager.isSupported() && (
+              <button
+                type="button"
+                onClick={handleTogglePiP}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-brand-orange/40 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all shadow-lg shadow-black/40 cursor-pointer"
+                title="Mostra timer flottante sopra altre app (PiP)"
+              >
+                <Layers size={14} />
+                <span>{pipManager.isActive() ? 'Chiudi Overlay Flottante' : 'Mini-Timer Flottante (PiP)'}</span>
+              </button>
+            )}
           </div>
-        )}
+
+          {audioTestFeedback && (
+            <div className="max-w-xs text-center text-[11px] leading-snug text-brand-orange bg-brand-darkGrey/95 border border-brand-orange/40 rounded-xl px-3.5 py-2 shadow-xl animate-in fade-in duration-200">
+              {audioTestFeedback}
+            </div>
+          )}
+
+          {notificationTestFeedback && (
+            <div className="max-w-xs text-center text-[11px] leading-snug text-blue-400 bg-brand-darkGrey/95 border border-blue-500/40 rounded-xl px-3.5 py-2 shadow-xl animate-in fade-in duration-200 font-semibold">
+              {notificationTestFeedback}
+            </div>
+          )}
+        </div>
 
         <div className="text-center space-y-2 mb-12">
           <button

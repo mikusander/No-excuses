@@ -119,6 +119,24 @@ async function getSharedActiveTimer(): Promise<SharedActiveTimer | null> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GESTIONE TIMER LOCALE SERVICE WORKER (Fallback 100% Offline & App-Switching)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let localRestTimeout: ReturnType<typeof setTimeout> | null = null;
+let localRestResolve: (() => void) | null = null;
+
+function clearLocalRestTimer() {
+  if (localRestTimeout !== null) {
+    clearTimeout(localRestTimeout);
+    localRestTimeout = null;
+  }
+  if (localRestResolve) {
+    localRestResolve();
+    localRestResolve = null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GESTIONE PUSH NOTIFICATIONS (Apple APNs per iOS 16.4+ a schermo spento)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -137,55 +155,44 @@ self.addEventListener('push', (event) => {
   }
 
   const pushProcessPromise = (async () => {
-    // 1. VERIFICA PRESENZA UTENTE NELL'APP:
-    // Se l'utente ha l'app aperta e visibile, NON mostrare alcuna notifica push
-    // poiché può già vedere e sentire il timer direttamente nell'interfaccia.
-    try {
-      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      const isAppInForeground = clientList.some((client) => client.visibilityState === 'visible');
-      if (isAppInForeground) {
-        console.debug('[SW] Utente attivo nell\'app: notifica push soppressa.');
-        return;
+    // 1. VERIFICA STATO E SINCRONIZZAZIONE TIMER TRAMITE INDEXEDDB:
+    // Se è un test manuale ("test-..."), consentilo sempre
+    const isTestNotification = Boolean(payload.timerId && payload.timerId.startsWith('test-'));
+
+    if (!isTestNotification) {
+      try {
+        const activeTimer = await getSharedActiveTimer();
+        if (activeTimer) {
+          // Se un altro timer è stato avviato dopo questo (timerId diverso ed è running), scarta quello vecchio
+          if (
+            payload.timerId &&
+            activeTimer.timerId &&
+            payload.timerId !== activeTimer.timerId &&
+            activeTimer.status === 'running'
+          ) {
+            console.debug('[SW] Nuovo timer attivo con ID differente: notifica precedente scartata.');
+            return;
+          }
+
+          // Se la notifica è arrivata con anticipo anomalo (> 10 secondi prima della scadenza)
+          if (activeTimer.endsAtMs && Date.now() < activeTimer.endsAtMs - 10000) {
+            console.debug('[SW] Notifica push arrivata troppo in anticipo: scartata.');
+            return;
+          }
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
 
-    // 2. VERIFICA STATO E SINCRONIZZAZIONE TIMER TRAMITE INDEXEDDB:
-    // Se l'utente ha stoppato, resettato o cambiato timer, scarta la notifica obsoleta.
-    try {
-      const activeTimer = await getSharedActiveTimer();
-      if (activeTimer) {
-        // Se il timer è stato stoppato o pausato, non notificare
-        if (activeTimer.status !== 'running') {
-          console.debug('[SW] Timer non attivo (stato: ' + activeTimer.status + '): notifica scartata.');
-          return;
-        }
-
-        // Se il timerId della notifica non corrisponde a quello attivo (il timer è stato riavviato/resettato)
-        if (payload.timerId && activeTimer.timerId && payload.timerId !== activeTimer.timerId) {
-          console.debug('[SW] Timer riavviato con nuovo ID: notifica vecchia scartata.');
-          return;
-        }
-
-        // Se la notifica è arrivata troppo in anticipo rispetto al tempo di fine effettivo
-        if (activeTimer.endsAtMs && Date.now() < activeTimer.endsAtMs - 2000) {
-          console.debug('[SW] Notifica push anticipata rispetto al timer attuale: scartata.');
-          return;
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    // 3. DEDUPLICAZIONE ATOMICA: massimo 1 notifica ogni 5 secondi
+    // 2. DEDUPLICAZIONE ATOMICA: massimo 1 notifica ogni 5 secondi (evita doppioni tra push e local timer)
     const canShow = await acquireNotificationSlot(5000);
     if (!canShow) {
       console.debug('[SW] Notifica push duplicata soppressa dal mutex.');
       return;
     }
 
-    // 4. Chiudi preventivamente qualsiasi notifica precedente con lo stesso tag
+    // 3. Chiudi preventivamente qualsiasi notifica precedente con lo stesso tag
     try {
       const existing = await self.registration.getNotifications({ tag: 'rest-timer' });
       for (const notif of existing) {
@@ -195,7 +202,7 @@ self.addEventListener('push', (event) => {
       // ignore
     }
 
-    // 5. Mostra l'unica notifica garantita
+    // 4. Mostra la notifica garantita
     const title = payload.title || '⏱️ Recupero Terminato!';
     const options: NotificationOptions & Record<string, unknown> = {
       body: payload.body || 'È ora di iniziare la prossima serie!',
@@ -228,7 +235,50 @@ self.addEventListener('message', (event) => {
   const data = event.data;
   if (!data || typeof data !== 'object') return;
 
-  if (data.type === 'CANCEL_REST_NOTIFICATION') {
+  if (data.type === 'SCHEDULE_REST_NOTIFICATION') {
+    clearLocalRestTimer();
+
+    const targetTime = Number(data.targetTime || data.endsAtMs) || 0;
+    const delay = Math.max(0, targetTime - Date.now());
+
+    const title = data.title || '⏱️ Recupero Terminato!';
+    const body = data.body || 'È ora di iniziare la prossima serie!';
+
+    const restPromise = new Promise<void>((resolve) => {
+      localRestResolve = resolve;
+
+      localRestTimeout = setTimeout(async () => {
+        localRestTimeout = null;
+        localRestResolve = null;
+        try {
+          const canShow = await acquireNotificationSlot(5000);
+          if (canShow) {
+            await self.registration.showNotification(title, {
+              body,
+              icon: '/pwa-192x192.png',
+              badge: '/pwa-192x192.png',
+              tag: 'rest-timer',
+              renotify: false,
+              requireInteraction: false,
+              silent: false,
+              vibrate: [250, 100, 250],
+              data: { url: '/' },
+            } as any);
+          }
+        } catch (err) {
+          console.debug('[SW] Local rest timer notification error:', err);
+        } finally {
+          resolve();
+        }
+      }, delay);
+    });
+
+    if (event.waitUntil) {
+      event.waitUntil(restPromise);
+    }
+  } else if (data.type === 'CANCEL_REST_NOTIFICATION') {
+    clearLocalRestTimer();
+
     const cancelPromise = self.registration
       .getNotifications({ tag: 'rest-timer' })
       .then((notifications) => {

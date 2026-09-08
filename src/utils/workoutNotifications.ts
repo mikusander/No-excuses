@@ -295,7 +295,16 @@ export const scheduleBackgroundRestNotification = async ({
       status: 'running',
     });
 
-    // Web Push API (APNs) per risveglio dell'iPhone a schermo spento
+    // 1. Programma il timer locale Service Worker (100% offline, zero-latency, fallback affidabile)
+    postMessageToSW({
+      type: 'SCHEDULE_REST_NOTIFICATION',
+      endsAtMs,
+      targetTime: endsAtMs,
+      title,
+      body,
+    });
+
+    // 2. Web Push API (APNs) per risveglio dell'iPhone a schermo spento
     const sub = await getOrCreatePushSubscription();
     if (sub) {
       void fetch('/api/schedule-push', {
@@ -368,8 +377,21 @@ export const testPushNotification = async (delaySeconds = 5): Promise<boolean> =
   if (!granted) return false;
 
   const sub = await getOrCreatePushSubscription();
+  const testTitle = '⏱️ Test Notifica Riuscito!';
+  const testBody = 'La notifica e il suono di recupero funzionano perfettamente!';
+  const testTargetTime = Date.now() + delaySeconds * 1000;
+
+  // Programma il timer locale Service Worker
+  postMessageToSW({
+    type: 'SCHEDULE_REST_NOTIFICATION',
+    endsAtMs: testTargetTime,
+    targetTime: testTargetTime,
+    title: testTitle,
+    body: testBody,
+  });
+
   if (!sub) {
-    // Se PushManager non è disponibile (es. Safari non PWA), prova notifica locale
+    // Se PushManager non è disponibile (es. Safari non PWA), programma anche fallback a timeout
     setTimeout(() => {
       void sendRestFinishedNotification({
         nextExerciseName: 'Test Notifica iPhone',
@@ -386,14 +408,15 @@ export const testPushNotification = async (delaySeconds = 5): Promise<boolean> =
       body: JSON.stringify({
         subscription: sub.toJSON(),
         delaySeconds,
-        title: '⏱️ Test Notifica iPhone Riuscito!',
-        body: 'La notifica è arrivata anche a schermo spento senza fermare Spotify!',
+        title: testTitle,
+        body: testBody,
         timerId: `test-${Date.now()}`,
+        endsAtMs: testTargetTime,
       }),
     });
     return res.ok;
   } catch (err) {
     console.debug('[Push] Errore testPushNotification:', err);
-    return false;
+    return true; // Il Service Worker locale è comunque programmato e suonerà
   }
 };
