@@ -54,6 +54,7 @@ import {
   getNotificationPermission,
   requestNotificationPermission,
   testPushNotification,
+  isNativeApp,
   type NotificationPermissionStatus,
 } from '../utils/workoutNotifications';
 
@@ -397,14 +398,16 @@ const SettingsPage: React.FC = () => {
                           : 'bg-red-500/20 text-red-400 border-red-500/30'
                     }`}>
                       {notificationPerm === 'granted'
-                        ? 'Attive'
+                        ? (isNativeApp() ? 'Attive (iOS Nativo)' : 'Attive (PWA)')
                         : notificationPerm === 'ios_pwa_required'
                           ? 'Richiede PWA'
                           : 'Non attive'}
                     </span>
                   </div>
                   <p className="text-brand-grey/60 text-xs mt-0.5">
-                    Avviso a fine pausa anche a schermo spento
+                    {isNativeApp()
+                      ? "Sveglia hardware programmata sul chip dell'iPhone (100% offline)"
+                      : "Avviso a fine pausa anche a schermo spento"}
                   </p>
                 </div>
               </div>
@@ -420,15 +423,21 @@ const SettingsPage: React.FC = () => {
               </button>
             )}
 
-            {notificationPerm === 'ios_pwa_required' && (
+            {!isNativeApp() && notificationPerm === 'ios_pwa_required' && (
               <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
-                💡 Su iPhone le notifiche a schermo spento richiedono di aggiungere l&apos;app alla schermata Home (tasto Condividi di Safari → &quot;Aggiungi a schermata Home&quot;).
+                💡 Su iPhone Web le notifiche a schermo spento richiedono di aggiungere l&apos;app alla schermata Home (tasto Condividi di Safari → &quot;Aggiungi a schermata Home&quot;).
               </p>
             )}
 
             <div className="text-[11px] text-brand-grey/60 bg-white/5 rounded-xl p-2.5 space-y-1">
-              <p className="font-semibold text-white/80">⏱️ Recuperi lunghi (es. 3-5 minuti):</p>
-              <p>L&apos;app mantiene lo schermo acceso automaticamente con Wake Lock durante il workout. Se blocchi manualmente lo schermo, assicurati che la connessione sia stabile o configura Upstash QStash per il recapito serverless oltre i 60s.</p>
+              <p className="font-semibold text-white/80">
+                {isNativeApp() ? '📱 App Nativa iOS:' : '⏱️ Recuperi lunghi (es. 3-5 minuti):'}
+              </p>
+              <p>
+                {isNativeApp()
+                  ? "Su questa versione nativa, i timer di recupero sono gestiti direttamente dal processore del telefono: funzionano con qualsiasi durata anche a schermo bloccato e senza connessione internet."
+                  : "L'app mantiene lo schermo acceso automaticamente con Wake Lock durante il workout. Se blocchi lo schermo, la notifica push serverless ti avvisa al termine del recupero."}
+              </p>
             </div>
 
             <div className="flex items-center justify-between pt-1 border-t border-white/5">
@@ -440,7 +449,11 @@ const SettingsPage: React.FC = () => {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 <BellRing size={13} />
-                <span>{notificationTesting ? 'Invio in corso...' : 'Prova Notifica (5s)'}</span>
+                <span>
+                  {notificationTesting
+                    ? 'Programmazione...'
+                    : (isNativeApp() ? 'Prova Sveglia Nativa (5s)' : 'Prova Notifica (5s)')}
+                </span>
               </button>
             </div>
 

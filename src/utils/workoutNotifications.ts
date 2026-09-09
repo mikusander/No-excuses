@@ -8,6 +8,16 @@
  * - Mantiene un fallback locale con il Service Worker per browser desktop.
  */
 
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { Haptics, NotificationType } from '@capacitor/haptics';
+
+export const isNativeApp = (): boolean => {
+  return typeof window !== 'undefined' && Capacitor.isNativePlatform();
+};
+
+let cachedNativePermission: NotificationPermissionStatus | null = null;
+
 const VAPID_PUBLIC_KEY =
   import.meta.env.VITE_VAPID_PUBLIC_KEY ||
   'BEWZ76lMUhZyU6voX38JPp08bzti_3y3aOYLs3nHExturpMD1-U0VvvGF2b72MHgw7DyAPf6HRP_jOpfyCHz4zE';
@@ -62,6 +72,10 @@ export type NotificationPermissionStatus =
 export const getNotificationPermission = (): NotificationPermissionStatus => {
   if (typeof window === 'undefined') return 'unsupported';
 
+  if (isNativeApp()) {
+    return cachedNativePermission || 'granted';
+  }
+
   if (isIosDevice() && !isStandalonePwa()) {
     return 'ios_pwa_required';
   }
@@ -81,6 +95,8 @@ export const isNotificationPermissionGranted = (): boolean => {
  * Ottiene la sottoscrizione Web Push esistente o ne crea una nuova con le chiavi VAPID.
  */
 export const getOrCreatePushSubscription = async (): Promise<PushSubscription | null> => {
+  if (isNativeApp()) return null;
+
   if (
     typeof window === 'undefined' ||
     !('serviceWorker' in navigator) ||
@@ -109,7 +125,21 @@ export const getOrCreatePushSubscription = async (): Promise<PushSubscription | 
 };
 
 export const requestNotificationPermission = async (): Promise<boolean> => {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
+  if (typeof window === 'undefined') return false;
+
+  if (isNativeApp()) {
+    try {
+      const result = await LocalNotifications.requestPermissions();
+      const granted = result.display === 'granted';
+      cachedNativePermission = granted ? 'granted' : 'denied';
+      return granted;
+    } catch (err) {
+      console.debug('[Capacitor] Errore richiesta permessi notifiche locali:', err);
+      return false;
+    }
+  }
+
+  if (!('Notification' in window)) {
     return false;
   }
   try {
@@ -135,7 +165,9 @@ export const sendRestFinishedNotification = async ({
   nextExerciseName,
   nextSetInfo,
 }: RestNotificationPayload) => {
-  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+  if (isNativeApp()) {
+    void Haptics.notification({ type: NotificationType.Success }).catch(() => {});
+  } else if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
     try {
       navigator.vibrate([250, 100, 250]);
     } catch {
@@ -295,6 +327,32 @@ export const scheduleBackgroundRestNotification = async ({
       status: 'running',
     });
 
+    // Se l'app gira in modalità Nativa (Capacitor iOS / Android):
+    // Usa la notifica locale programmata direttamente nel chip di sistema (100% offline, zero server, precisione assoluta)
+    if (isNativeApp()) {
+      try {
+        await LocalNotifications.cancel({ notifications: [{ id: 1001 }] });
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: 1001,
+              title,
+              body,
+              schedule: { at: new Date(endsAtMs) },
+              sound: 'beep.wav',
+              extra: {
+                timerId,
+                endsAtMs,
+              },
+            },
+          ],
+        });
+        return;
+      } catch (nativeErr) {
+        console.error('[Capacitor] Errore schedulazione notifica locale nativa:', nativeErr);
+      }
+    }
+
     // 1. Programma il timer locale Service Worker (100% offline, zero-latency, fallback affidabile)
     postMessageToSW({
       type: 'SCHEDULE_REST_NOTIFICATION',
@@ -331,6 +389,10 @@ export const scheduleBackgroundRestNotification = async ({
 };
 
 export const cancelBackgroundRestNotification = () => {
+  if (isNativeApp()) {
+    void LocalNotifications.cancel({ notifications: [{ id: 1001 }] }).catch(() => {});
+  }
+
   // Sincronizza immediatamente lo stato in IndexedDB come 'stopped'
   // così il Service Worker scarterà qualsiasi push in arrivo da questo timer
   setSharedActiveTimerState({
@@ -379,6 +441,40 @@ export interface PushTestResult {
  * e verifica la corretta ricezione della chiamata dal server push.
  */
 export const testPushNotification = async (delaySeconds = 5): Promise<PushTestResult> => {
+  if (isNativeApp()) {
+    try {
+      const perm = await LocalNotifications.requestPermissions();
+      if (perm.display !== 'granted') {
+        return {
+          success: false,
+          message: '⚠️ Permesso notifiche non concesso nelle impostazioni del tuo iPhone.',
+        };
+      }
+      await LocalNotifications.cancel({ notifications: [{ id: 9999 }] });
+      const testEndsAt = new Date(Date.now() + delaySeconds * 1000);
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: 9999,
+            title: '⏱️ Test Notifica Nativa Riuscito!',
+            body: 'La sveglia hardware iOS funziona a schermo bloccato e 100% offline!',
+            schedule: { at: testEndsAt },
+            sound: 'beep.wav',
+          },
+        ],
+      });
+      return {
+        success: true,
+        message: `🔒 Sveglia nativa iOS programmata tra ${delaySeconds}s! Puoi bloccare lo schermo o uscire dall'app: suonerà all'istante senza internet o server.`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `⚠️ Errore notifica locale: ${err.message || 'Errore nativo'}`,
+      };
+    }
+  }
+
   const perm = getNotificationPermission();
   if (perm === 'ios_pwa_required') {
     return {
