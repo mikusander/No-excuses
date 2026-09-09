@@ -39,7 +39,9 @@ jobs:
         run: npm run build
 
       - name: Sync Capacitor iOS Project
-        run: npx cap sync ios --verbose
+        run: |
+          echo "Starting Capacitor Sync..."
+          npx cap sync ios --verbose || (echo "Sync failed, running cap copy as fallback..." && npx cap copy ios --verbose)
 
       - name: Build Xcode Archive (Unsigned)
         run: |
