@@ -39,7 +39,12 @@ jobs:
         run: npm run build
 
       - name: Sync Capacitor iOS Project
-        run: npx cap sync ios --verbose
+        run: |
+          echo "Node version: $(node -v)"
+          echo "NPM version: $(npm -v)"
+          echo "Xcode version: $(xcodebuild -version)"
+          npx cap doctor ios || true
+          npx cap sync ios --verbose
 
       - name: Build Xcode Archive (Unsigned)
         run: |
