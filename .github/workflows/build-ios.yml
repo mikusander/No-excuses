@@ -44,7 +44,7 @@ jobs:
           echo "NPM version: $(npm -v)"
           echo "Xcode version: $(xcodebuild -version)"
           npx cap doctor ios || true
-          npx cap sync ios --verbose
+          npx cap sync ios
 
       - name: Build Xcode Archive (Unsigned)
         run: |
@@ -70,7 +70,7 @@ jobs:
       - name: Package into IPA
         run: |
           mkdir -p build/Payload
-          cp -R build/App.xcarchive/Products/Applications/*.app build/Payload/App.app
+          cp -R build/App.xcarchive/Products/Applications/*.app build/Payload/
           cd build
           zip -r NoExcuses.ipa Payload
           ls -lh NoExcuses.ipa
