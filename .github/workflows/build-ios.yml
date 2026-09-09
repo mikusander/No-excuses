@@ -29,7 +29,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Dependencies
@@ -39,9 +39,7 @@ jobs:
         run: npm run build
 
       - name: Sync Capacitor iOS Project
-        run: |
-          echo "Starting Capacitor Sync..."
-          npx cap sync ios --verbose || (echo "Sync failed, running cap copy as fallback..." && npx cap copy ios --verbose)
+        run: npx cap sync ios --verbose
 
       - name: Build Xcode Archive (Unsigned)
         run: |
