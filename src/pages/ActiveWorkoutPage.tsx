@@ -576,14 +576,6 @@ const ActiveWorkoutPage: React.FC = () => {
     }
 
     if (currentEx.type === 'superset' && currentEx.subExercises) {
-      const isAdvancingSub = currentSubExerciseIdx < currentEx.subExercises.length - 1;
-      if (isAdvancingSub) {
-        const nextSub = currentEx.subExercises[currentSubExerciseIdx + 1];
-        return {
-          nextExerciseName: nextSub?.name || 'Next Station',
-          nextSetInfo: `Station ${currentSubExerciseIdx + 2} of ${currentEx.subExercises.length}`,
-        };
-      }
       return {
         nextExerciseName: currentEx.name,
         nextSetInfo: `Round ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
@@ -594,7 +586,7 @@ const ActiveWorkoutPage: React.FC = () => {
       nextExerciseName: currentEx.name,
       nextSetInfo: `Set ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
     };
-  }, [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSubExerciseIdx, currentSetIdx]);
+  }, [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSetIdx]);
 
   const startRestCountdown = (durationSeconds: number) => {
     unlockAudio();
@@ -1431,6 +1423,17 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
+    if (currentEx.type === 'superset') {
+      if (currentSetIdx > 0) {
+        setCurrentSetIdx(prev => prev - 1);
+        setCurrentSubExerciseIdx(0);
+        resetCurrentExerciseTimerState();
+      } else {
+        handlePrevExercise();
+      }
+      return;
+    }
+
     if (isResting) {
       stopRestCountdown();
       setPendingExerciseAdvance(false);
@@ -1439,24 +1442,11 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    if (currentEx.type === 'superset' && currentSubExerciseIdx > 0) {
-      const prevSubIdx = currentSubExerciseIdx - 1;
-      setCurrentSubExerciseIdx(prevSubIdx);
-      const prevSubEx = currentEx.subExercises![prevSubIdx];
-      setIsometryRemainingWithSync(prevSubEx.type === 'isometry' ? prevSubEx.duration_seconds : 0);
-      return;
-    }
-
     if (currentSetIdx > 0) {
       const prevSetIdx = currentSetIdx - 1;
       setCurrentSetIdx(prevSetIdx);
       const ex = workout?.exercises[currentExerciseIdx];
-      if (ex && ex.type === 'superset' && ex.subExercises) {
-        const lastSubIdx = ex.subExercises.length - 1;
-        setCurrentSubExerciseIdx(lastSubIdx);
-        const lastSubEx = ex.subExercises[lastSubIdx];
-        setIsometryRemainingWithSync(lastSubEx.type === 'isometry' ? lastSubEx.duration_seconds : 0);
-      } else if (ex) {
+      if (ex) {
         setIsometryRemainingWithSync(getTargetIsometry(ex, null));
       }
       return;
@@ -2315,11 +2305,7 @@ const ActiveWorkoutPage: React.FC = () => {
       ? (isLastSet && isLastEmomRound)
       : isPyramid
         ? isLastPyramidStep
-        : isCircuit
-          ? isLastSet
-          : isSuperset
-            ? (isLastSet && currentSubExerciseIdx >= (currentExercise.subExercises?.length || 1) - 1)
-            : isLastSet
+        : isLastSet
   );
 
   const getCurrentExerciseNoteContext = () => {
@@ -3230,28 +3216,14 @@ const ActiveWorkoutPage: React.FC = () => {
 
     if (currentExercise.type === 'superset') {
       stopIsometryCountdown();
-      const subs = currentExercise.subExercises || [];
-      const isLastSub = currentSubExerciseIdx >= subs.length - 1;
-
-      if (!isLastSub) {
-        // Passaggio al sotto-esercizio successivo all'interno del round
-        const transitionRest = currentExercise.transition_rest_seconds || 0;
-        if (transitionRest > 0) {
-          startRestCountdown(transitionRest);
-        } else {
-          const nextSubIdx = currentSubExerciseIdx + 1;
-          setCurrentSubExerciseIdx(nextSubIdx);
-          const nextSub = subs[nextSubIdx];
-          setIsometryRemainingWithSync(nextSub?.type === 'isometry' ? nextSub.duration_seconds : 0);
-        }
-        return;
-      }
-
-      // Superset
       if (isLastSet) {
         queueNextExerciseFlow(currentExercise);
       } else {
-        startRestCountdown(currentExercise.rest_seconds);
+        if (currentExercise.rest_seconds > 0) {
+          startRestCountdown(currentExercise.rest_seconds);
+        } else {
+          finishRestAndNextSet();
+        }
       }
       return;
     }
@@ -3318,18 +3290,9 @@ const ActiveWorkoutPage: React.FC = () => {
     }
 
     if (currentExercise.type === 'superset') {
-      const maxSubIdx = Math.max(0, (currentExercise.subExercises?.length || 1) - 1);
-      if (currentSubExerciseIdx < maxSubIdx) {
-        const nextSubIdx = currentSubExerciseIdx + 1;
-        setCurrentSubExerciseIdx(nextSubIdx);
-        const nextSub = currentExercise.subExercises?.[nextSubIdx];
-        setIsometryRemainingWithSync(nextSub?.type === 'isometry' ? nextSub.duration_seconds : 0);
-        return;
-      }
       const maxSetIdx = Math.max(0, currentExercise.sets - 1);
       if (currentSetIdx >= maxSetIdx) return;
       setCurrentSetIdx((prev) => Math.min(maxSetIdx, prev + 1));
-      setCurrentSubExerciseIdx(0);
       resetCurrentExerciseTimerState();
       return;
     }
@@ -3365,19 +3328,9 @@ const ActiveWorkoutPage: React.FC = () => {
     }
 
     if (currentExercise.type === 'superset') {
-      if (currentSubExerciseIdx > 0) {
-        const prevSubIdx = currentSubExerciseIdx - 1;
-        setCurrentSubExerciseIdx(prevSubIdx);
-        const prevSub = currentExercise.subExercises?.[prevSubIdx];
-        setIsometryRemainingWithSync(prevSub?.type === 'isometry' ? prevSub.duration_seconds : 0);
-        return;
-      }
       if (currentSetIdx <= 0) return;
       setCurrentSetIdx((prev) => Math.max(0, prev - 1));
-      const lastSubIdx = Math.max(0, (currentExercise.subExercises?.length || 1) - 1);
-      setCurrentSubExerciseIdx(lastSubIdx);
-      const lastSub = currentExercise.subExercises?.[lastSubIdx];
-      setIsometryRemainingWithSync(lastSub?.type === 'isometry' ? lastSub.duration_seconds : 0);
+      resetCurrentExerciseTimerState();
       return;
     }
 
@@ -3474,21 +3427,6 @@ const ActiveWorkoutPage: React.FC = () => {
         speakCue(buildSetAnnouncementCue(currentExercise, currentSetIdx, nextPyramidStepIdx));
       }
       return;
-    }
-
-    // Se eravamo all'interno di un superset con transizione tra sotto-esercizi
-    if (currentExercise.type === 'superset' && currentExercise.subExercises) {
-      const subs = currentExercise.subExercises;
-      if (currentSubExerciseIdx < subs.length - 1) {
-        const nextSubIdx = currentSubExerciseIdx + 1;
-        setCurrentSubExerciseIdx(nextSubIdx);
-        const nextSub = subs[nextSubIdx];
-        setIsometryRemainingWithSync(nextSub?.type === 'isometry' ? nextSub.duration_seconds : 0);
-        if (naturalExpiry) {
-          speakCue(nextSub.name);
-        }
-        return;
-      }
     }
 
     // Increment set
@@ -4658,11 +4596,11 @@ const ActiveWorkoutPage: React.FC = () => {
                 ? <>COMPLETA CIRCUITO <ArrowRight size={24} className="ml-2" /></>
                 : <>FINE SET & RECUPERO <ArrowRight size={24} className="ml-2" /></>
             ) : isSuperset ? (
-              currentSubExerciseIdx < (currentExercise.subExercises?.length || 1) - 1
+              isLastSet
                 ? <>PROSSIMO ESERCIZIO <ArrowRight size={24} className="ml-2" /></>
-                : isLastSet
-                  ? <>NEXT EXERCISE <ArrowRight size={24} className="ml-2" /></>
-                  : <>NEXT ROUND <ArrowRight size={24} className="ml-2" /></>
+                : currentExercise.rest_seconds > 0
+                  ? <>FINE ROUND & RECUPERO <ArrowRight size={24} className="ml-2" /></>
+                  : <>PROSSIMO ROUND <ArrowRight size={24} className="ml-2" /></>
             ) : isLastSet ? (
               <>FINISH EXERCISE <ArrowRight size={24} className="ml-2" /></>
             ) : (
