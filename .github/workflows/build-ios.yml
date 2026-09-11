@@ -48,6 +48,7 @@ jobs:
 
       - name: Build Production IPA (NoExcuses.ipa)
         run: |
+          cp ios/App/App/Assets.xcassets/AppIcon-Prod.png ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png
           mkdir -p build
           if [ -d "ios/App/App.xcworkspace" ]; then
             TARGET_ARG="-workspace ios/App/App.xcworkspace"
@@ -80,6 +81,7 @@ jobs:
       - name: Build Dev Live Reload IPA (NoExcuses-Dev.ipa)
         run: |
           BUILD_DEV=true npx cap sync ios
+          cp ios/App/App/Assets.xcassets/AppIcon-Dev.png ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png
 
           if [ -d "ios/App/App.xcworkspace" ]; then
             TARGET_ARG="-workspace ios/App/App.xcworkspace"
