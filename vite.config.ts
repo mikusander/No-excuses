@@ -159,9 +159,11 @@ export default defineConfig({
     }),
   ],
   server: {
+    host: true,
     https: httpsConfig,
   },
   preview: {
+    host: true,
     https: httpsConfig,
   },
 })

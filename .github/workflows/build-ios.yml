@@ -38,7 +38,7 @@ jobs:
       - name: Build Web Application
         run: npm run build
 
-      - name: Sync Capacitor iOS Project
+      - name: Sync Capacitor iOS Project (Production)
         run: |
           echo "Node version: $(node -v)"
           echo "NPM version: $(npm -v)"
@@ -46,7 +46,7 @@ jobs:
           npx cap doctor ios || true
           npx cap sync ios
 
-      - name: Build Xcode Archive (Unsigned)
+      - name: Build Production IPA (NoExcuses.ipa)
         run: |
           mkdir -p build
           if [ -d "ios/App/App.xcworkspace" ]; then
@@ -61,24 +61,65 @@ jobs:
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath build/App.xcarchive \
+            -archivePath build/App-Prod.xcarchive \
+            PRODUCT_BUNDLE_IDENTIFIER="com.noexcuses.workout" \
+            PRODUCT_NAME="No Excuses" \
             archive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Package into IPA
-        run: |
-          mkdir -p build/Payload
-          cp -R build/App.xcarchive/Products/Applications/*.app build/Payload/
+          mkdir -p build/Payload-Prod
+          cp -R build/App-Prod.xcarchive/Products/Applications/*.app build/Payload-Prod/
           cd build
+          mv Payload-Prod Payload
           zip -r NoExcuses.ipa Payload
+          rm -rf Payload
           ls -lh NoExcuses.ipa
 
-      - name: Upload IPA Artifact
+      - name: Build Dev Live Reload IPA (NoExcuses-Dev.ipa)
+        run: |
+          BUILD_DEV=true npx cap sync ios
+
+          if [ -d "ios/App/App.xcworkspace" ]; then
+            TARGET_ARG="-workspace ios/App/App.xcworkspace"
+          else
+            TARGET_ARG="-project ios/App/App.xcodeproj"
+          fi
+
+          xcodebuild \
+            $TARGET_ARG \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/App-Dev.xcarchive \
+            PRODUCT_BUNDLE_IDENTIFIER="com.noexcuses.workout.dev" \
+            PRODUCT_NAME="No Excuses Dev" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+          mkdir -p build/Payload-Dev
+          cp -R build/App-Dev.xcarchive/Products/Applications/*.app build/Payload-Dev/
+          cd build
+          mv Payload-Dev Payload
+          zip -r NoExcuses-Dev.ipa Payload
+          rm -rf Payload
+          ls -lh NoExcuses-Dev.ipa
+
+      - name: Upload Production IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: NoExcuses-iOS-IPA
           path: build/NoExcuses.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Dev Live Reload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NoExcuses-Dev-iOS-IPA
+          path: build/NoExcuses-Dev.ipa
           if-no-files-found: error
           retention-days: 14

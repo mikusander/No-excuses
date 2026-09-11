@@ -93,11 +93,25 @@ public/           # Asset statici (modelli MediaPipe, audio wav/mp3, icone PWA, 
   - NON alterare `vite.config.ts`, `tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`, `eslint.config.js` o `src/sw.ts` a meno che il prompt non richieda esplicitamente modifiche di configurazione.
 - **Nessun File Residuo**: NON creare script temporanei, scratchpad o file di dump all'interno dell'albero `src/` o nella root del repository.
 
-### Scope e Chirurgia del Codice
-- **Strict Scope Constraint**: Modifica esclusivamente le funzioni, i blocchi di codice o i file esplicitamente richiesti nel prompt.
-- **Zero Refactoring Collaterale**: Non ripulire, riformattare, rinominare o "migliorare" funzioni, variabili o commenti circostanti non direttamente correlati all'obiettivo.
-- **Preservazione dell'API Esistente**: Non alterare firme di funzioni pubbliche, interfacce, tipi esportati o prop di componenti salvo esplicita richiesta.
-- **Diff Minimale**: Preferisci sempre la modifica minima indispensabile ("surgical edit") rispetto alla riscrittura dell'intero file o di moduli adiacenti.
+### ⚠️ Divieto Assoluto di Modifiche Extra e Non Richieste (REGOLA FONDAMENTALE)
+
+1. **Principio "Se non è richiesto, NON esiste":**
+   - Modifica **esclusivamente** il file, la funzione o il blocco di codice esplicitamente indicato nella richiesta dell'utente.
+   - È **severamente vietato** toccare, modificare, "migliorare", ripulire o rifattorizzare parti di codice adiacenti o altri file, anche se noti codice legacy, inefficiente, ridondante o migliorabile. Se funziona e non è nell'ordine di lavoro esplicito, **NON TOCCARLO**.
+
+2. **Divieto di Modifiche Proattive o "Già che ci siamo":**
+   - Non aggiungere mai controlli extra, parametri facoltativi, refactoring estetici, riscritture di import o nuove utility se non sono l'oggetto centrale della richiesta.
+   - Non riscrivere o sostituire intere funzioni se il cambio richiede solo 1 o 2 righe (preferire sempre e categoricamente la modifica chirurgica / diff minimale).
+
+3. **Integrità del Comportamento Esistente:**
+   - Preserva sempre al 100% tutte le funzioni, variabili, commenti e interfacce esistenti non correlate alla richiesta.
+   - Non eliminare o riscrivere logiche funzionanti già validate dall'utente per "adeguarle" a nuovi pattern o gusti stilistici.
+
+4. **Regola di Verifica del Diff (`git diff` check):**
+   - Prima di considerare conclusa qualsiasi modifica, l'agente deve controllare che il diff contenga **unicamente** le righe strettamente indispensabili per soddisfare il prompt. Se nel diff compaiono modifiche collaterali o file non richiesti, l'agente deve annullarle immediatamente.
+
+5. **In caso di ambiguità o dipendenze:**
+   - Se per risolvere un problema ritieni necessario toccare anche altre parti di codice non menzionate, **fermati e chiedi prima conferma esplicita all'utente** spiegando il motivo, SENZA procedere autonomamente.
 
 ---
 
