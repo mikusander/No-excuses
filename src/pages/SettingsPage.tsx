@@ -380,89 +380,71 @@ const SettingsPage: React.FC = () => {
             )}
           </div>
 
-          {/* Notifiche di Recupero & Schermo Spento */}
-          <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-blue-500/15 text-blue-400">
-                  <Bell size={18} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-white font-bold text-sm">Notifiche di Recupero</p>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
-                      notificationPerm === 'granted'
-                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                        : notificationPerm === 'ios_pwa_required'
-                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                          : 'bg-red-500/20 text-red-400 border-red-500/30'
-                    }`}>
-                      {notificationPerm === 'granted'
-                        ? (isNativeApp() ? 'Attive (iOS Nativo)' : 'Attive (PWA)')
-                        : notificationPerm === 'ios_pwa_required'
-                          ? 'Richiede PWA'
-                          : 'Non attive'}
-                    </span>
+          {/* Notifiche di Recupero & Schermo Spento (Solo App Nativa iPhone) */}
+          {isNativeApp() && (
+            <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-blue-500/15 text-blue-400">
+                    <Bell size={18} />
                   </div>
-                  <p className="text-brand-grey/60 text-xs mt-0.5">
-                    {isNativeApp()
-                      ? "Sveglia hardware programmata sul chip dell'iPhone (100% offline)"
-                      : "Avviso a fine pausa anche a schermo spento"}
-                  </p>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-white font-bold text-sm">Notifiche di Recupero</p>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                        notificationPerm === 'granted'
+                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                          : 'bg-red-500/20 text-red-400 border-red-500/30'
+                      }`}>
+                        {notificationPerm === 'granted' ? 'Attive (iOS Nativo)' : 'Non attive'}
+                      </span>
+                    </div>
+                    <p className="text-brand-grey/60 text-xs mt-0.5">
+                      Sveglia hardware programmata sul chip dell'iPhone (100% offline)
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              {notificationPerm !== 'granted' && (
+                <button
+                  type="button"
+                  onClick={handleRequestNotification}
+                  className="w-full py-2 px-3 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  Attiva Notifiche
+                </button>
+              )}
+
+              <div className="text-[11px] text-brand-grey/60 bg-white/5 rounded-xl p-2.5 space-y-1">
+                <p className="font-semibold text-white/80">📱 App Nativa iOS:</p>
+                <p>
+                  Su questa versione nativa, i timer di recupero sono gestiti direttamente dal processore del telefono: funzionano con qualsiasi durata anche a schermo bloccato e senza connessione internet.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                <span className="text-[11px] text-brand-grey/70">Testa il funzionamento</span>
+                <button
+                  type="button"
+                  disabled={notificationTesting}
+                  onClick={handleTestNotification}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  <BellRing size={13} />
+                  <span>
+                    {notificationTesting ? 'Programmazione...' : 'Prova Sveglia Nativa (5s)'}
+                  </span>
+                </button>
+              </div>
+
+              {notificationTestFeedback && (
+                <p className="text-center text-[11px] text-blue-400 font-semibold bg-blue-500/10 border border-blue-500/20 rounded-xl p-2 animate-in fade-in duration-200">
+                  {notificationTestFeedback}
+                </p>
+              )}
             </div>
-
-            {notificationPerm !== 'granted' && notificationPerm !== 'ios_pwa_required' && (
-              <button
-                type="button"
-                onClick={handleRequestNotification}
-                className="w-full py-2 px-3 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-bold transition-all shadow cursor-pointer"
-              >
-                Attiva Notifiche
-              </button>
-            )}
-
-            {!isNativeApp() && notificationPerm === 'ios_pwa_required' && (
-              <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
-                💡 Su iPhone Web le notifiche a schermo spento richiedono di aggiungere l&apos;app alla schermata Home (tasto Condividi di Safari → &quot;Aggiungi a schermata Home&quot;).
-              </p>
-            )}
-
-            <div className="text-[11px] text-brand-grey/60 bg-white/5 rounded-xl p-2.5 space-y-1">
-              <p className="font-semibold text-white/80">
-                {isNativeApp() ? '📱 App Nativa iOS:' : '⏱️ Recuperi lunghi (es. 3-5 minuti):'}
-              </p>
-              <p>
-                {isNativeApp()
-                  ? "Su questa versione nativa, i timer di recupero sono gestiti direttamente dal processore del telefono: funzionano con qualsiasi durata anche a schermo bloccato e senza connessione internet."
-                  : "L'app mantiene lo schermo acceso automaticamente con Wake Lock durante il workout. Se blocchi lo schermo, la notifica push serverless ti avvisa al termine del recupero."}
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between pt-1 border-t border-white/5">
-              <span className="text-[11px] text-brand-grey/70">Testa il funzionamento</span>
-              <button
-                type="button"
-                disabled={notificationTesting}
-                onClick={handleTestNotification}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-              >
-                <BellRing size={13} />
-                <span>
-                  {notificationTesting
-                    ? 'Programmazione...'
-                    : (isNativeApp() ? 'Prova Sveglia Nativa (5s)' : 'Prova Notifica (5s)')}
-                </span>
-              </button>
-            </div>
-
-            {notificationTestFeedback && (
-              <p className="text-center text-[11px] text-blue-400 font-semibold bg-blue-500/10 border border-blue-500/20 rounded-xl p-2 animate-in fade-in duration-200">
-                {notificationTestFeedback}
-              </p>
-            )}
-          </div>
+          )}
 
           {/* Memoria Correzioni OCR & Parser */}
           <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4">

@@ -124,6 +124,7 @@ import {
   getNotificationPermission,
   sendRestFinishedNotification,
   testPushNotification,
+  isNativeApp,
 } from '../utils/workoutNotifications';
 import {
   updateRestMediaSession,
@@ -1353,9 +1354,11 @@ const ActiveWorkoutPage: React.FC = () => {
     void requestScreenWakeLock();
     void initServiceWorker();
 
-    const perm = getNotificationPermission();
-    if (perm === 'default' || perm === 'ios_pwa_required') {
-      setShowNotificationPrompt(true);
+    if (isNativeApp()) {
+      const perm = getNotificationPermission();
+      if (perm === 'default') {
+        setShowNotificationPrompt(true);
+      }
     }
 
     return () => {
@@ -3553,7 +3556,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const currentPermStatus = getNotificationPermission();
   const isIosNonPwa = currentPermStatus === 'ios_pwa_required';
 
-  const notificationPermissionBanner = showNotificationPrompt ? (
+  const notificationPermissionBanner = isNativeApp() && showNotificationPrompt ? (
     <div className="fixed top-16 left-4 right-4 z-50 max-w-md mx-auto bg-brand-darkGrey/95 border border-brand-orange/40 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3 animate-in fade-in duration-300">
       <div className="flex items-center gap-2.5 min-w-0">
         <div className="p-2 rounded-xl bg-brand-orange/20 text-brand-orange shrink-0">
@@ -3608,7 +3611,7 @@ const ActiveWorkoutPage: React.FC = () => {
     </div>
   ) : null;
 
-  const iosPwaGuideModal = isIosPwaGuideOpen ? (
+  const iosPwaGuideModal = isNativeApp() && isIosPwaGuideOpen ? (
     <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
       <div className="w-full max-w-sm bg-brand-darkGrey border border-brand-orange/40 rounded-3xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between">
@@ -3925,20 +3928,22 @@ const ActiveWorkoutPage: React.FC = () => {
               <span>🔊 Prova Suono</span>
             </button>
 
-            <button
-              type="button"
-              onClick={async () => {
-                unlockAudio();
-                setNotificationTestFeedback('⏳ Invio notifica di test al server (5s)...');
-                const result = await testPushNotification(5);
-                setNotificationTestFeedback(result.message);
-                setTimeout(() => setNotificationTestFeedback(null), 12000);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
-              title="Testa la notifica push a schermo bloccato (arriva tra 5 secondi)"
-            >
-              <span>🔔 Prova Notifica (5s)</span>
-            </button>
+            {isNativeApp() && (
+              <button
+                type="button"
+                onClick={async () => {
+                  unlockAudio();
+                  setNotificationTestFeedback('⏳ Programmazione notifica di test (5s)...');
+                  const result = await testPushNotification(5);
+                  setNotificationTestFeedback(result.message);
+                  setTimeout(() => setNotificationTestFeedback(null), 12000);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
+                title="Testa la notifica a schermo bloccato (arriva tra 5 secondi)"
+              >
+                <span>🔔 Prova Notifica (5s)</span>
+              </button>
+            )}
 
             {pipManager.isSupported() && (
               <button
@@ -3959,7 +3964,7 @@ const ActiveWorkoutPage: React.FC = () => {
             </div>
           )}
 
-          {notificationTestFeedback && (
+          {isNativeApp() && notificationTestFeedback && (
             <div className="max-w-xs text-center text-[11px] leading-snug text-blue-400 bg-brand-darkGrey/95 border border-blue-500/40 rounded-xl px-3.5 py-2 shadow-xl animate-in fade-in duration-200 font-semibold">
               {notificationTestFeedback}
             </div>
