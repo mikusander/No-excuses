@@ -1,6 +1,7 @@
 /**
  * periodicReportEngine.ts — Motore di calcolo analitico, aggregazione delle metriche,
- * ripartizione per gruppi muscolari e dossier sintetico delle note per esercizio.
+ * ripartizione per gruppi muscolari, dossier sintetico delle note per esercizio
+ * e separazione netta tra Macro Dashboard (Salute, Tempo, Hard Sets) e Micro Dettaglio (TUT, Sovraccarico, PR).
  */
 
 import { matchExercise, calculateStringSimilarity, type MuscleGroup } from './exerciseClassifier';
@@ -36,6 +37,73 @@ export interface RawWorkoutSession {
 const toSafeNumber = (value: unknown, fallback: number): number => {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+};
+
+/**
+ * Rileva in modo intelligente se un esercizio è una tenuta isometrica o skill di calisthenics
+ * (es. planche, front lever, human flag, hollow body, l-sit, plank, ecc.)
+ */
+export const isIsometricExercise = (
+  name: string,
+  type?: string,
+  durationSeconds?: number,
+  reps?: number
+): boolean => {
+  if (type === 'isometry') return true;
+  if (durationSeconds && durationSeconds > 0 && (!reps || reps <= 1)) return true;
+
+  const normalized = (name || '').toLowerCase();
+  const isometricKeywords = [
+    'planche',
+    'front lever',
+    'back lever',
+    'human flag',
+    'bandiera',
+    'hollow body',
+    'hollow hold',
+    'hollow rock',
+    'arch body',
+    'superman hold',
+    'l-sit',
+    'v-sit',
+    'manna',
+    'plank',
+    'side plank',
+    'wall sit',
+    'dead hang',
+    'active hang',
+    'sospensione',
+    'isometria',
+    'isometric',
+    'hold',
+    'tenuta',
+  ];
+
+  return isometricKeywords.some((kw) => normalized.includes(kw));
+};
+
+/**
+ * Formatta i secondi in durata leggibile (ore/minuti o minuti)
+ */
+export const formatDurationHuman = (seconds: number): string => {
+  if (!seconds || seconds <= 0) return '0m';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  return `${Math.max(1, minutes)}m`;
+};
+
+/**
+ * Formatta i secondi di TUT in minuti e secondi (es. 240s -> 4m 00s, 45s -> 45s)
+ */
+export const formatTUTHold = (seconds: number): string => {
+  if (!seconds || seconds <= 0) return '0s';
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${m}m`;
 };
 
 /**
@@ -124,19 +192,74 @@ export interface MuscleGroupSummary {
   }>;
 }
 
-export interface ExerciseReportItem {
+// ─── MODELLO DOMINIO ANALITICO MACRO & MICRO ─────────────────────────
+
+export interface ExerciseHistoryPoint {
+  date: string;
+  formattedDate: string;
+  workoutName: string;
+  reps: number;
+  durationSeconds: number;
+  sets: number;
+  weightKg: number;
+  metricValue: number;
+  metricLabel: string;
+}
+
+export interface PersonalRecordInfo {
+  type: 'isometric_tut' | 'weight_load' | 'reps_volume';
+  value: number;
+  formatted: string;
+  details?: string;
+}
+
+export interface WeeklyProgressionDelta {
+  percentChange: number | null;
+  direction: 'up' | 'down' | 'stable' | 'new';
+  comparisonLabel: string;
+}
+
+export interface MicroExerciseDetail {
   canonicalId: string;
   displayName: string;
   muscleGroup: MuscleGroup;
   isCanonical: boolean;
-  totalVolumeKg: number;
-  totalSets: number;
+  isIsometric: boolean;
+
+  // Volume specifico
   totalReps: number;
-  maxWeightKg: number;
+  totalDurationSeconds: number; // TUT in secondi
+  formattedTUT: string;
+  totalVolumeKg: number; // Tonnellaggio
+  averageWeightKg: number;
+  totalSets: number; // Hard sets per questo esercizio
+  totalHardSets: number;
   sessionsCount: number;
+
+  // Personal Record
+  pr: PersonalRecordInfo;
+
+  // Progressione
+  progression: WeeklyProgressionDelta;
   trend: 'up' | 'down' | 'stable' | 'new';
   percentChange: number | null;
+
+  // Punti storici per grafico SVG
+  historyPoints: ExerciseHistoryPoint[];
   dates: string[];
+}
+
+export type ExerciseReportItem = MicroExerciseDetail;
+
+export interface MacroDashboardStats {
+  totalDurationSeconds: number;
+  formattedTotalDuration: string;
+  averageDurationSeconds: number;
+  formattedAverageDuration: string;
+  totalCompletedSessions: number;
+  weeklyFrequency: number;
+  totalHardSets: number;
+  averageHardSetsPerSession: number;
 }
 
 export interface CategorizedNoteEntry {
@@ -159,6 +282,7 @@ export interface ExerciseNotesDossier {
 
 export interface PeriodicReportResult {
   period: ReportPeriodInfo;
+  macro: MacroDashboardStats;
   totalVolumeKg: number;
   totalSets: number;
   totalReps: number;
@@ -166,7 +290,7 @@ export interface PeriodicReportResult {
   averageVolumePerWorkout: number;
   averageSetsPerWorkout: number;
   muscleGroups: MuscleGroupSummary[];
-  exercises: ExerciseReportItem[];
+  exercises: MicroExerciseDetail[];
   notesDossiers: ExerciseNotesDossier[];
   allNotesCount: number;
 }
@@ -197,6 +321,16 @@ export const formatSafeDate = (dateVal: unknown): string => {
   }
 };
 
+export const formatShortDate = (dateVal: unknown): string => {
+  const d = parseSafeDate(dateVal);
+  if (!d) return '';
+  try {
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+  } catch {
+    return d.toISOString().split('T')[0];
+  }
+};
+
 export const getPeriodInfo = (
   periodType: ReportPeriodType,
   customRange?: CustomDateRange
@@ -214,7 +348,6 @@ export const getPeriodInfo = (
     const parsedStart = rawStart || defaultStart;
     const parsedEnd = rawEnd || now;
 
-    // Assicura che startDate <= endDate
     const validStart = parsedStart <= parsedEnd ? parsedStart : parsedEnd;
     const validEnd = parsedStart <= parsedEnd ? parsedEnd : parsedStart;
 
@@ -277,7 +410,6 @@ export const getPeriodInfo = (
 
 /**
  * Estrae il nome dell'esercizio e il testo pulito da una nota memorizzata nel DB.
- * Supporta formati come `[1. Panca Piana] Ottimo feeling...` o testo semplice.
  */
 export const parseNoteContext = (rawText: unknown): { exerciseName: string | null; body: string } => {
   if (rawText == null) return { exerciseName: null, body: '' };
@@ -293,7 +425,6 @@ export const parseNoteContext = (rawText: unknown): { exerciseName: string | nul
   const tag = match[1].trim();
   const body = match[2].trim();
 
-  // Rimuove eventuale prefisso numerico "1. " o "2. "
   const nameWithoutPrefix = tag.replace(/^\d+[\.\)]\s*/, '').trim();
   return {
     exerciseName: nameWithoutPrefix.length > 0 ? nameWithoutPrefix : null,
@@ -367,7 +498,6 @@ const composeExerciseNotesNarrative = (
     narrative += `Le note registrano sensazioni generali di tenuta e ritmo delle serie. `;
   }
 
-  // Aggiunge un estratto dall'ultima nota cronologica
   const latestNote = notes[notes.length - 1];
   if (latestNote && latestNote.text) {
     const preview = latestNote.text.length > 90 ? `${latestNote.text.slice(0, 90)}...` : latestNote.text;
@@ -384,11 +514,14 @@ export interface UnpackedExerciseItem {
   weightKg: number;
   durationSeconds: number;
   parentType?: string;
+  isIsometric: boolean;
+  repsPerSet: number;
+  durationPerSet: number;
 }
 
 /**
- * Spacchetta un esercizio complesso (EMOM, Circuito, Superset) nei suoi sotto-esercizi effettivi.
- * Se l'esercizio è singolo o piramidale, restituisce un array con un solo elemento.
+ * Spacchetta un esercizio complesso (EMOM, Circuito, Superset) nei suoi sotto-esercizi effettivi,
+ * identificando accuratamente se ciascun movimento è dinamico o isometrico.
  */
 export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
   if (!rawEx || typeof rawEx !== 'object') {
@@ -403,7 +536,7 @@ export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
     rawEx.group_category === 'superset' ||
     (Array.isArray(rawEx.subExercises) && rawEx.subExercises.length > 0);
 
-  // Se è un blocco composto con sub-esercizi definiti
+  // Blocco composto con sub-esercizi definiti
   if (isComplex && Array.isArray(rawEx.subExercises) && rawEx.subExercises.length > 0) {
     const parentSets =
       rawEx.type === 'emom'
@@ -416,25 +549,34 @@ export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
 
     if (validSubs.length > 0) {
       return validSubs.map((sub) => {
-        const subReps = Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0)));
+        const subName = String(sub.name || rawEx.name || 'Esercizio');
+        const rawDuration = Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0)));
+        const rawReps = Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0)));
+        const isIso = isIsometricExercise(subName, String(sub.type || ''), rawDuration, rawReps);
+
+        const subReps = isIso ? 0 : rawReps;
         const totalRepsForSub = subReps * parentSets;
         const rawWeight = Number(sub.weight_kg);
         const subWeight = Number.isFinite(rawWeight) ? Math.max(0, rawWeight) : 0;
-        const subDuration = Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0))) * parentSets;
+        const durationPerSet = isIso ? (rawDuration > 0 ? rawDuration : 15) : 0;
+        const subDuration = durationPerSet * parentSets;
 
         return {
-          name: String(sub.name || rawEx.name || 'Esercizio'),
+          name: subName,
           sets: parentSets,
           reps: totalRepsForSub,
           weightKg: subWeight,
           durationSeconds: subDuration,
           parentType: rawEx.type,
+          isIsometric: isIso,
+          repsPerSet: subReps,
+          durationPerSet,
         };
       });
     }
   }
 
-  // Se è una piramide con step
+  // Blocco piramidale
   if (rawEx.type === 'pyramid' && Array.isArray(rawEx.pyramid_steps) && rawEx.pyramid_steps.length > 0) {
     const validSteps = (rawEx.pyramid_steps as Array<unknown>).filter(
       (step): step is Record<string, unknown> => Boolean(step && typeof step === 'object')
@@ -457,26 +599,39 @@ export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
           reps: totalReps,
           weightKg: maxWeight,
           durationSeconds: 0,
+          isIsometric: false,
+          repsPerSet: Math.round(totalReps / validSteps.length),
+          durationPerSet: 0,
         },
       ];
     }
   }
 
   // Esercizio standard (reps o isometria)
+  const exName = String(rawEx.name || 'Esercizio');
   const sets = Math.max(1, Math.trunc(toSafeNumber(rawEx.sets, 1)));
-  const repsPerSet = Math.max(0, Math.trunc(toSafeNumber(rawEx.reps, 0)));
+  const rawDuration = Math.max(0, Math.trunc(toSafeNumber(rawEx.duration_seconds, 0)));
+  const rawReps = Math.max(0, Math.trunc(toSafeNumber(rawEx.reps, 0)));
+  const isIso = isIsometricExercise(exName, rawEx.type, rawDuration, rawReps);
+
+  const repsPerSet = isIso ? 0 : rawReps;
   const totalReps = sets * repsPerSet;
   const rawWeight = Number(rawEx.weight_kg);
   const weight = Number.isFinite(rawWeight) ? Math.max(0, rawWeight) : 0;
-  const duration = Math.max(0, Math.trunc(toSafeNumber(rawEx.duration_seconds, 0))) * sets;
+  const durationPerSet = isIso ? (rawDuration > 0 ? rawDuration : 20) : 0;
+  const duration = durationPerSet * sets;
 
   return [
     {
-      name: String(rawEx.name || 'Esercizio'),
+      name: exName,
       sets,
       reps: totalReps,
       weightKg: weight,
       durationSeconds: duration,
+      parentType: rawEx.type,
+      isIsometric: isIso,
+      repsPerSet,
+      durationPerSet,
     },
   ];
 };
@@ -517,6 +672,16 @@ export const getEmptyReport = (
   const ALL_GROUPS: MuscleGroup[] = ['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome', 'Altro'];
   return {
     period,
+    macro: {
+      totalDurationSeconds: 0,
+      formattedTotalDuration: '0m',
+      averageDurationSeconds: 0,
+      formattedAverageDuration: '0m',
+      totalCompletedSessions: 0,
+      weeklyFrequency: 0,
+      totalHardSets: 0,
+      averageHardSetsPerSession: 0,
+    },
     totalVolumeKg: 0,
     totalSets: 0,
     totalReps: 0,
@@ -540,7 +705,7 @@ export const getEmptyReport = (
 };
 
 /**
- * Motore Principale: Genera il Report Periodico Completo.
+ * Motore Principale: Genera il Report Periodico Completo con separazione Macro e Micro.
  */
 export const generatePeriodicReport = (
   workouts: RawWorkoutSession[],
@@ -563,14 +728,36 @@ export const generatePeriodicReport = (
     return timeA - timeB;
   });
 
-  // Punto mediano per calcolare il trend di progressione
-  const midTimestamp = period.startDate.getTime() + (period.endDate.getTime() - period.startDate.getTime()) / 2;
+  // Calcolo tempo complessivo effettivo o stimato per ciascuna sessione
+  let totalDurationSeconds = 0;
+  inRangeWorkouts.forEach((session) => {
+    if (session.totalDurationSeconds != null && session.totalDurationSeconds > 0) {
+      totalDurationSeconds += session.totalDurationSeconds;
+    } else {
+      let estimated = 0;
+      (session.exercises || []).forEach((ex) => {
+        const items = unpackExercise(ex);
+        items.forEach((item) => {
+          if (item.isIsometric) {
+            estimated += item.durationSeconds + item.sets * 45;
+          } else {
+            estimated += item.reps * 3 + item.sets * 60;
+          }
+        });
+      });
+      totalDurationSeconds += estimated > 0 ? estimated : 45 * 60;
+    }
+  });
 
+  const averageDurationSeconds = inRangeWorkouts.length > 0 ? Math.round(totalDurationSeconds / inRangeWorkouts.length) : 0;
+  const weeksInRange = Math.max(1, period.days / 7);
+  const weeklyFrequency = Math.round((inRangeWorkouts.length / weeksInRange) * 10) / 10;
+
+  let totalHardSets = 0;
   let totalVolumeKg = 0;
-  let totalSets = 0;
-  let totalReps = 0;
+  let totalRepsAll = 0;
 
-  // Strutture di aggregazione
+  // Strutture di aggregazione per Gruppi Muscolari
   const muscleMap = new Map<MuscleGroup, {
     volumeKg: number;
     setsCount: number;
@@ -595,17 +782,26 @@ export const generatePeriodicReport = (
     displayName: string;
     muscleGroup: MuscleGroup;
     isCanonical: boolean;
+    isIsometric: boolean;
     totalVolumeKg: number;
     totalSets: number;
     totalReps: number;
+    totalDurationSeconds: number;
     maxWeightKg: number;
+    maxHoldSeconds: number;
+    maxRepsPerSet: number;
+    weightedSetsCount: number;
+    sumWeightsForAverage: number;
     sessionsCount: number;
-    firstHalfVolume: number;
-    secondHalfVolume: number;
-    firstHalfReps: number;
-    secondHalfReps: number;
-    firstHalfSessions: number;
-    secondHalfSessions: number;
+    sessionHistory: Map<string, {
+      date: string;
+      formattedDate: string;
+      workoutName: string;
+      reps: number;
+      durationSeconds: number;
+      sets: number;
+      weightKg: number;
+    }>;
     dates: Set<string>;
   }
 
@@ -623,16 +819,13 @@ export const generatePeriodicReport = (
 
   // Itera su ogni sessione di allenamento nel periodo
   inRangeWorkouts.forEach((session) => {
-    const sessionDate = parseSafeDate(session.executedAt) || new Date();
-    const isSecondHalf = sessionDate.getTime() >= midTimestamp;
     const sessionDateStr = formatSafeDate(session.executedAt);
+    const shortDateStr = formatShortDate(session.executedAt);
 
     // Traccia gli esercizi già incontrati in questa singola sessione per il conteggio sessioni
     const exercisesInThisSession = new Set<string>();
 
-    // ─── EURISTICA CONTESTUALE DELLA SESSIONE ─────────────────────────────────
-    // Calcola la frequenza dei gruppi muscolari noti presenti nella seduta.
-    // Il gruppo dominante "presta" la sua classificazione agli esercizi non riconosciuti.
+    // Calcolo gruppo dominante contestuale della sessione
     const sessionGroupCounts = new Map<MuscleGroup, number>();
     (session.exercises || []).forEach((rawEx) => {
       const items = unpackExercise(rawEx);
@@ -655,30 +848,27 @@ export const generatePeriodicReport = (
     }
 
     (session.exercises || []).forEach((rawEx) => {
-      // Spacchetta gli esercizi complessi (EMOM, circuiti, superset) nei sotto-esercizi effettivi
       const items = unpackExercise(rawEx);
 
       items.forEach((item) => {
         if (!item) return;
-        // Classificazione con euristica contestuale della sessione
         const classified = matchExercise(item.name, sessionDominantGroup);
         const itemReps = Math.max(0, Number(item.reps) || 0);
         const itemWeight = Math.max(0, Number(item.weightKg) || 0);
         const itemVolumeKg = Math.round(itemReps * itemWeight * 100) / 100;
         const itemSets = Math.max(1, Number(item.sets) || 1);
-        const itemMaxWeight = itemWeight;
+        const itemDuration = Math.max(0, Number(item.durationSeconds) || 0);
+        const isIso = Boolean(item.isIsometric);
 
         totalVolumeKg += itemVolumeKg;
-        totalSets += itemSets;
-        totalReps += itemReps;
+        totalHardSets += itemSets;
+        totalRepsAll += itemReps;
 
-        // ─── AUTO-DEDUPLICAZIONE & CLUSTERING DINAMICO PER ESERCIZI CUSTOM ─────
-        // Se l'esercizio è personalizzato/sconosciuto, controlla se esiste già
-        // un altro esercizio custom con grafia molto simile (refuso di battitura)
         let targetId = classified.id;
         let targetDisplayName = classified.displayName;
         let targetGroup = classified.muscleGroup;
 
+        // Auto-clustering custom exercises
         if (!classified.isCanonical) {
           for (const existing of exerciseMap.values()) {
             if (!existing.isCanonical) {
@@ -686,7 +876,6 @@ export const generatePeriodicReport = (
               if (sim >= 0.82) {
                 targetId = existing.canonicalId;
                 targetDisplayName = existing.displayName;
-                // Se l'esistente era 'Altro' e il nuovo ha un gruppo dedotto, aggiorna l'esistente
                 if (existing.muscleGroup === 'Altro' && targetGroup !== 'Altro') {
                   existing.muscleGroup = targetGroup;
                 } else {
@@ -698,7 +887,7 @@ export const generatePeriodicReport = (
           }
         }
 
-        // Aggregazione Gruppo Muscolare (con fallback sicuro su Altro)
+        // Aggregazione Gruppo Muscolare
         const mGroup = muscleMap.get(targetGroup) || muscleMap.get('Altro')!;
         mGroup.volumeKg += itemVolumeKg;
         mGroup.setsCount += itemSets;
@@ -716,7 +905,7 @@ export const generatePeriodicReport = (
         existingExVol.reps += itemReps;
         mGroup.exerciseVolumes.set(targetId, existingExVol);
 
-        // Aggregazione Esercizio Canonico o Clusterizzato
+        // Aggregazione Esercizio Micro
         let exAgg = exerciseMap.get(targetId);
         if (!exAgg) {
           exAgg = {
@@ -724,49 +913,71 @@ export const generatePeriodicReport = (
             displayName: targetDisplayName,
             muscleGroup: targetGroup,
             isCanonical: classified.isCanonical,
+            isIsometric: isIso,
             totalVolumeKg: 0,
             totalSets: 0,
             totalReps: 0,
+            totalDurationSeconds: 0,
             maxWeightKg: 0,
+            maxHoldSeconds: 0,
+            maxRepsPerSet: 0,
+            weightedSetsCount: 0,
+            sumWeightsForAverage: 0,
             sessionsCount: 0,
-            firstHalfVolume: 0,
-            secondHalfVolume: 0,
-            firstHalfReps: 0,
-            secondHalfReps: 0,
-            firstHalfSessions: 0,
-            secondHalfSessions: 0,
+            sessionHistory: new Map(),
             dates: new Set(),
           };
           exerciseMap.set(targetId, exAgg);
         }
 
+        if (isIso) {
+          exAgg.isIsometric = true;
+        }
+
         exAgg.totalVolumeKg += itemVolumeKg;
         exAgg.totalSets += itemSets;
         exAgg.totalReps += itemReps;
-        exAgg.maxWeightKg = Math.max(exAgg.maxWeightKg, itemMaxWeight);
+        exAgg.totalDurationSeconds += itemDuration;
+        exAgg.maxWeightKg = Math.max(exAgg.maxWeightKg, itemWeight);
+        if (item.durationPerSet > 0) {
+          exAgg.maxHoldSeconds = Math.max(exAgg.maxHoldSeconds, item.durationPerSet);
+        }
+        if (item.repsPerSet > 0) {
+          exAgg.maxRepsPerSet = Math.max(exAgg.maxRepsPerSet, item.repsPerSet);
+        }
+
+        if (itemWeight > 0) {
+          exAgg.weightedSetsCount += itemSets;
+          exAgg.sumWeightsForAverage += itemWeight * itemSets;
+        }
+
         exAgg.dates.add(sessionDateStr);
+
+        // Traccia cronologia di sessione per grafico SVG
+        const sessionKey = `${session.id || session.executedAt}`;
+        const currentHist = exAgg.sessionHistory.get(sessionKey) || {
+          date: session.executedAt,
+          formattedDate: shortDateStr,
+          workoutName: session.workoutName,
+          reps: 0,
+          durationSeconds: 0,
+          sets: 0,
+          weightKg: 0,
+        };
+        currentHist.reps += itemReps;
+        currentHist.durationSeconds += itemDuration;
+        currentHist.sets += itemSets;
+        currentHist.weightKg = Math.max(currentHist.weightKg, itemWeight);
+        exAgg.sessionHistory.set(sessionKey, currentHist);
 
         if (!exercisesInThisSession.has(targetId)) {
           exercisesInThisSession.add(targetId);
           exAgg.sessionsCount += 1;
-          if (isSecondHalf) {
-            exAgg.secondHalfSessions += 1;
-          } else {
-            exAgg.firstHalfSessions += 1;
-          }
-        }
-
-        if (isSecondHalf) {
-          exAgg.secondHalfVolume += itemVolumeKg;
-          exAgg.secondHalfReps += itemReps;
-        } else {
-          exAgg.firstHalfVolume += itemVolumeKg;
-          exAgg.firstHalfReps += itemReps;
         }
       });
     });
 
-    // Elaborazione delle note qualitative lasciate nella sessione
+    // Elaborazione delle note qualitative della sessione
     (session.notes || []).forEach((noteObj) => {
       if (!noteObj || typeof noteObj !== 'object') return;
       const rawText = noteObj.text;
@@ -778,7 +989,6 @@ export const generatePeriodicReport = (
       const { exerciseName: taggedExName, body } = parseNoteContext(str);
       const categories = categorizeNoteText(body);
 
-      // Raccoglie tutti i sotto-esercizi svolti nella sessione per eventuale abbinamento
       const allSessionItems: UnpackedExerciseItem[] = [];
       (session.exercises || []).forEach((ex) => {
         allSessionItems.push(...unpackExercise(ex));
@@ -804,12 +1014,10 @@ export const generatePeriodicReport = (
         }
       }
 
-      // Se non è collegabile a un esercizio specifico, finisce sotto le note generali di sessione
       let canonicalKey = targetClassified ? targetClassified.id : 'generale_sessione';
       let displayName = targetClassified ? targetClassified.displayName : 'Note Generali Sessione';
       let group = targetClassified ? targetClassified.muscleGroup : 'Altro';
 
-      // Se l'esercizio è custom, controlla se è stato unificato a un cluster esistente
       if (targetClassified && !targetClassified.isCanonical) {
         for (const existing of exerciseMap.values()) {
           if (!existing.isCanonical) {
@@ -845,7 +1053,7 @@ export const generatePeriodicReport = (
     });
   });
 
-  // Costruisce i risultati dei Gruppi Muscolari
+  // Costruzione Gruppi Muscolari
   const muscleGroups: MuscleGroupSummary[] = [];
   ALL_GROUPS.forEach((groupName) => {
     const data = muscleMap.get(groupName) || {
@@ -875,75 +1083,147 @@ export const generatePeriodicReport = (
       volumeKg: Math.round(data.volumeKg),
       volumePercent: totalVolumeKg > 0 ? Math.round((data.volumeKg / totalVolumeKg) * 100) : 0,
       setsCount: data.setsCount,
-      setsPercent: totalSets > 0 ? Math.round((data.setsCount / totalSets) * 100) : 0,
+      setsPercent: totalHardSets > 0 ? Math.round((data.setsCount / totalHardSets) * 100) : 0,
       repsCount: data.repsCount,
       exerciseCount: data.exerciseSet.size,
       topExercises,
     });
   });
 
-  // Ordina i gruppi muscolari per volume decrescente (o per ripetizioni se volume 0)
   muscleGroups.sort((a, b) => {
-    if (b.volumeKg !== a.volumeKg) return b.volumeKg - a.volumeKg;
-    return b.repsCount - a.repsCount;
+    if (b.setsCount !== a.setsCount) return b.setsCount - a.setsCount;
+    return b.volumeKg - a.volumeKg;
   });
 
-  // Costruisce i risultati per Esercizio Canonico
-  const exercises: ExerciseReportItem[] = Array.from(exerciseMap.values()).map((ex) => {
-    // Calcola il trend tra prima e seconda metà del periodo
-    // Se l'esercizio ha volume carico (>0), usa il volume. Se è a corpo libero (0kg), usa le ripetizioni!
-    const usesVolume = ex.totalVolumeKg > 0;
-    const firstAvg = ex.firstHalfSessions > 0
-      ? (usesVolume ? ex.firstHalfVolume : ex.firstHalfReps) / ex.firstHalfSessions
-      : 0;
-    const secondAvg = ex.secondHalfSessions > 0
-      ? (usesVolume ? ex.secondHalfVolume : ex.secondHalfReps) / ex.secondHalfSessions
-      : 0;
+  // Costruzione Dettaglio Esercizi (Livello Micro)
+  const exercises: MicroExerciseDetail[] = Array.from(exerciseMap.values()).map((ex) => {
+    // Punti storici ordinati cronologicamente
+    const historyPoints: ExerciseHistoryPoint[] = Array.from(ex.sessionHistory.values())
+      .sort((a, b) => (parseSafeDate(a.date)?.getTime() || 0) - (parseSafeDate(b.date)?.getTime() || 0))
+      .map((pt) => {
+        let metricValue = 0;
+        let metricLabel = 'rip';
 
+        if (ex.isIsometric) {
+          // Per isometrici: TUT totale o tenuta media per set
+          metricValue = pt.durationSeconds > 0 ? pt.durationSeconds : (pt.sets > 0 ? pt.sets * 20 : 20);
+          metricLabel = 's';
+        } else if (ex.maxWeightKg > 0 && pt.weightKg > 0) {
+          metricValue = pt.weightKg;
+          metricLabel = 'kg';
+        } else {
+          metricValue = pt.reps;
+          metricLabel = 'rip';
+        }
+
+        return {
+          date: pt.date,
+          formattedDate: pt.formattedDate,
+          workoutName: pt.workoutName,
+          reps: pt.reps,
+          durationSeconds: pt.durationSeconds,
+          sets: pt.sets,
+          weightKg: pt.weightKg,
+          metricValue,
+          metricLabel,
+        };
+      });
+
+    // Calcolo Personal Record (PR)
+    let pr: PersonalRecordInfo;
+    if (ex.isIsometric) {
+      const maxTUT = ex.maxHoldSeconds > 0 ? ex.maxHoldSeconds : (ex.totalDurationSeconds > 0 ? Math.round(ex.totalDurationSeconds / Math.max(1, ex.totalSets)) : 20);
+      pr = {
+        type: 'isometric_tut',
+        value: maxTUT,
+        formatted: `${maxTUT}s tenuta`,
+        details: `Max tenuta su singola serie (${formatTUTHold(ex.totalDurationSeconds)} TUT totale)`,
+      };
+    } else if (ex.maxWeightKg > 0) {
+      pr = {
+        type: 'weight_load',
+        value: ex.maxWeightKg,
+        formatted: `${ex.maxWeightKg} kg`,
+        details: `Carico massimo sollevato`,
+      };
+    } else {
+      const maxReps = ex.maxRepsPerSet > 0 ? ex.maxRepsPerSet : (ex.totalReps > 0 ? Math.round(ex.totalReps / Math.max(1, ex.totalSets)) : 10);
+      pr = {
+        type: 'reps_volume',
+        value: maxReps,
+        formatted: `${maxReps} rip / serie`,
+        details: `Max ripetizioni su singola serie`,
+      };
+    }
+
+    // Calcolo Progressione Settimanale (% Delta WoW o vs sessione precedente)
     let trend: 'up' | 'down' | 'stable' | 'new' = 'stable';
     let percentChange: number | null = null;
+    let comparisonLabel = 'Prima registrazione';
 
-    if (ex.firstHalfSessions === 0 && ex.secondHalfSessions > 0) {
+    if (historyPoints.length <= 1) {
       trend = 'new';
-    } else if (firstAvg > 0 && secondAvg > 0) {
-      const diff = secondAvg - firstAvg;
-      const pct = Math.round((diff / firstAvg) * 100);
-      percentChange = pct;
-      if (pct >= 4) trend = 'up';
-      else if (pct <= -4) trend = 'down';
-      else trend = 'stable';
+      percentChange = null;
+      comparisonLabel = 'Nuovo nel periodo';
+    } else {
+      const lastPt = historyPoints[historyPoints.length - 1];
+      const prevPt = historyPoints[historyPoints.length - 2];
+      const baselineVal = prevPt.metricValue;
+      const currentVal = lastPt.metricValue;
+
+      if (baselineVal > 0) {
+        const diff = currentVal - baselineVal;
+        const pct = Math.round((diff / baselineVal) * 100);
+        percentChange = pct;
+        comparisonLabel = 'vs sessione prec.';
+        if (pct >= 3) trend = 'up';
+        else if (pct <= -3) trend = 'down';
+        else trend = 'stable';
+      }
     }
+
+    const averageWeightKg = ex.weightedSetsCount > 0 ? Math.round((ex.sumWeightsForAverage / ex.weightedSetsCount) * 10) / 10 : 0;
 
     return {
       canonicalId: String(ex.canonicalId || 'ex'),
       displayName: String(ex.displayName || 'Esercizio'),
       muscleGroup: ex.muscleGroup || 'Altro',
       isCanonical: Boolean(ex.isCanonical),
-      totalVolumeKg: Math.round(Number(ex.totalVolumeKg) || 0),
-      totalSets: Number(ex.totalSets) || 0,
+      isIsometric: ex.isIsometric,
       totalReps: Number(ex.totalReps) || 0,
-      maxWeightKg: Number(ex.maxWeightKg) || 0,
+      totalDurationSeconds: Number(ex.totalDurationSeconds) || 0,
+      formattedTUT: formatTUTHold(Number(ex.totalDurationSeconds) || 0),
+      totalVolumeKg: Math.round(Number(ex.totalVolumeKg) || 0),
+      averageWeightKg,
+      totalSets: Number(ex.totalSets) || 0,
+      totalHardSets: Number(ex.totalSets) || 0,
       sessionsCount: Number(ex.sessionsCount) || 0,
+      pr,
+      progression: {
+        percentChange,
+        direction: trend,
+        comparisonLabel,
+      },
       trend,
       percentChange,
+      historyPoints,
       dates: Array.from(ex.dates),
     };
   });
 
-  // Ordina gli esercizi: prioritariamente per ripetizioni totali o volume carico
+  // Ordinamento esercizi: prima per serie completate o tonnellaggio
   exercises.sort((a, b) => {
-    if (b.totalVolumeKg > 0 && a.totalVolumeKg > 0 && b.totalVolumeKg !== a.totalVolumeKg) {
+    if (b.totalHardSets !== a.totalHardSets) {
+      return b.totalHardSets - a.totalHardSets;
+    }
+    if (b.totalVolumeKg !== a.totalVolumeKg) {
       return b.totalVolumeKg - a.totalVolumeKg;
     }
-    if (b.totalReps !== a.totalReps) {
-      return b.totalReps - a.totalReps;
-    }
-    return b.totalSets - a.totalSets;
+    return b.totalReps - a.totalReps;
   });
 
-  // Costruisce i Dossier delle Note per Esercizio
+  // Costruzione Dossier delle Note
   const notesDossiers: ExerciseNotesDossier[] = Array.from(notesByCanonicalExercise.values()).map((entry) => {
-    // Calcola i temi dominanti
     const themeCounts = new Map<'Progresso' | 'Fatica' | 'Fastidio' | 'Tecnica' | 'Generale', number>();
     entry.notes.forEach((n) => {
       n.categories.forEach((cat) => {
@@ -968,18 +1248,29 @@ export const generatePeriodicReport = (
     };
   });
 
-  // Ordina i dossier delle note: prima quelli con più note
   notesDossiers.sort((a, b) => b.totalNotes - a.totalNotes);
 
   const totalWorkouts = inRangeWorkouts.length;
   const averageVolumePerWorkout = totalWorkouts > 0 ? Math.round(totalVolumeKg / totalWorkouts) : 0;
-  const averageSetsPerWorkout = totalWorkouts > 0 ? Math.round((totalSets / totalWorkouts) * 10) / 10 : 0;
+  const averageSetsPerWorkout = totalWorkouts > 0 ? Math.round((totalHardSets / totalWorkouts) * 10) / 10 : 0;
+
+  const macro: MacroDashboardStats = {
+    totalDurationSeconds,
+    formattedTotalDuration: formatDurationHuman(totalDurationSeconds),
+    averageDurationSeconds,
+    formattedAverageDuration: formatDurationHuman(averageDurationSeconds),
+    totalCompletedSessions: totalWorkouts,
+    weeklyFrequency,
+    totalHardSets,
+    averageHardSetsPerSession: averageSetsPerWorkout,
+  };
 
   return {
     period,
+    macro,
     totalVolumeKg: Math.round(totalVolumeKg),
-    totalSets,
-    totalReps,
+    totalSets: totalHardSets,
+    totalReps: totalRepsAll,
     totalWorkouts,
     averageVolumePerWorkout,
     averageSetsPerWorkout,
@@ -991,44 +1282,48 @@ export const generatePeriodicReport = (
 };
 
 /**
- * Esporta il report in un formato testo/markdown sintetico pronto per essere copiato negli appunti.
+ * Esporta il report sintetico formattato aderendo alla separazione Macro / Micro.
  */
 export const exportReportSummaryText = (report: PeriodicReportResult): string => {
   const lines: string[] = [];
 
-  lines.push(`📊 REPORT PERIODICO ALLENAMENTI — NO EXCUSES`);
+  lines.push(`📊 REPORT ANALITICO ALLENAMENTI — NO EXCUSES`);
   lines.push(`Periodo: ${report.period.label}`);
   lines.push(`----------------------------------------`);
-  lines.push(`🏋️ METRICHE GENERALI:`);
-  lines.push(`• Volume totale carico: ${report.totalVolumeKg.toLocaleString('it-IT')} kg (${(report.totalVolumeKg / 1000).toFixed(2)} t)`);
-  lines.push(`• Volume totale ripetizioni: ${report.totalReps.toLocaleString('it-IT')} rip.`);
-  lines.push(`• Serie totali completate: ${report.totalSets}`);
-  lines.push(`• Sessioni di allenamento: ${report.totalWorkouts}`);
-  lines.push(`• Media ripetizioni a seduta: ${report.totalWorkouts > 0 ? Math.round(report.totalReps / report.totalWorkouts).toLocaleString('it-IT') : 0} rip.`);
-  lines.push(`• Media serie a seduta: ${report.averageSetsPerWorkout}`);
+  lines.push(`⏱️ DASHBOARD GENERALE (LIVELLO MACRO - SALUTE & ADERENZA):`);
+  lines.push(`• Tempo totale di allenamento: ${report.macro.formattedTotalDuration}`);
+  lines.push(`• Tempo medio per sessione: ${report.macro.formattedAverageDuration}`);
+  lines.push(`• Sessioni completate: ${report.macro.totalCompletedSessions} workout (${report.macro.weeklyFrequency} a settimana)`);
+  lines.push(`• Serie allenanti totali (Hard Sets): ${report.macro.totalHardSets} serie (media ${report.macro.averageHardSetsPerSession} / seduta)`);
   lines.push(``);
 
-  lines.push(`💪 DISTRIBUZIONE PER GRUPPI MUSCOLARI:`);
+  lines.push(`💪 DISTRIBUZIONE CARICO SISTEMICO PER GRUPPI MUSCOLARI:`);
   report.muscleGroups
-    .filter((mg) => mg.volumeKg > 0 || mg.setsCount > 0 || mg.repsCount > 0)
+    .filter((mg) => mg.setsCount > 0 || mg.volumeKg > 0)
     .forEach((mg) => {
-      const kgStr = mg.volumeKg > 0 ? `${mg.volumeKg.toLocaleString('it-IT')} kg (${mg.volumePercent}%) | ` : '';
-      lines.push(`• ${mg.group}: ${kgStr}${mg.repsCount.toLocaleString('it-IT')} rip. in ${mg.setsCount} serie (${mg.setsPercent}%)`);
+      const kgStr = mg.volumeKg > 0 ? ` | ${mg.volumeKg.toLocaleString('it-IT')} kg tonnellaggio` : '';
+      lines.push(`• ${mg.group}: ${mg.setsCount} serie (${mg.setsPercent}%)${kgStr}`);
     });
   lines.push(``);
 
-  lines.push(`🏆 DETTAGLIO ESERCIZI (VOLUME & PROGRESSI):`);
-  report.exercises.slice(0, 10).forEach((ex, idx) => {
-    const trendIcon = ex.trend === 'up' ? `(+${ex.percentChange}% ↗️)` : ex.trend === 'down' ? `(${ex.percentChange}% ↘️)` : '';
-    const loadStr = ex.totalVolumeKg > 0 ? `, ${ex.totalVolumeKg.toLocaleString('it-IT')} kg` : ' (a corpo libero)';
-    const maxStr = ex.maxWeightKg > 0 ? `Max ${ex.maxWeightKg} kg` : 'Bodyweight';
-    lines.push(`${idx + 1}. ${ex.displayName} [${ex.muscleGroup}]: ${ex.totalReps.toLocaleString('it-IT')} rip. (${ex.totalSets} serie${loadStr}, ${maxStr}) ${trendIcon}`);
+  lines.push(`🏋️ SCHEDA DETTAGLIO ESERCIZI (LIVELLO MICRO - SOVRACCARICO PROGRESSIVO):`);
+  report.exercises.slice(0, 12).forEach((ex, idx) => {
+    const trendIcon = ex.progression.direction === 'up'
+      ? `(+${ex.progression.percentChange}% ↗️)`
+      : ex.progression.direction === 'down'
+        ? `(${ex.progression.percentChange}% ↘️)`
+        : '';
+    const volStr = ex.isIsometric
+      ? `${ex.formattedTUT} TUT in ${ex.totalHardSets} serie`
+      : `${ex.totalReps} rip in ${ex.totalHardSets} serie${ex.totalVolumeKg > 0 ? ` (${ex.totalVolumeKg} kg)` : ' (corpo libero)'}`;
+
+    lines.push(`${idx + 1}. ${ex.displayName} [${ex.muscleGroup}]: ${volStr} | 🏆 PR: ${ex.pr.formatted} ${trendIcon}`);
   });
   lines.push(``);
 
   if (report.notesDossiers.length > 0) {
     lines.push(`📋 RESOCONTO OSSERVAZIONI PER ESERCIZIO:`);
-    report.notesDossiers.forEach((dossier) => {
+    report.notesDossiers.slice(0, 5).forEach((dossier) => {
       lines.push(`\n▶ ${dossier.exerciseName} (${dossier.totalNotes} note):`);
       lines.push(dossier.writtenSynthesis);
     });

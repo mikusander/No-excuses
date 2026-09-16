@@ -230,13 +230,13 @@ const WorkoutHistoryPage: React.FC = () => {
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-white font-black text-base sm:text-lg tracking-wide">Analitiche & Progressi</h2>
+                  <h2 className="text-white font-black text-base sm:text-lg tracking-wide">Statistiche & Progressi</h2>
                   <span className="bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <Sparkles size={10} /> Report Periodico
+                    <Sparkles size={10} /> Macro & Micro
                   </span>
                 </div>
                 <p className="text-xs text-brand-grey mt-0.5 leading-relaxed">
-                  Volume totale, serie per gruppo muscolare e dossier narrativo delle note.
+                  Tempo effettivo, frequenza, Hard Sets e progressione per esercizio con curve di trend.
                 </p>
               </div>
             </div>
@@ -246,7 +246,7 @@ const WorkoutHistoryPage: React.FC = () => {
               className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-brand-orange to-[#ff6b22] text-black font-extrabold text-sm shadow-xl shadow-brand-orange/20 hover:brightness-110 active:scale-95 transition-all cursor-pointer"
             >
               <BarChart3 size={18} />
-              <span>📊 Genera Report Periodico</span>
+              <span>📊 Statistiche & Progressi</span>
             </button>
           </div>
         )}

@@ -1,9 +1,7 @@
 /**
  * PeriodicReportModal.tsx — Modale interattivo per la visualizzazione del Report Periodico
- * degli Allenamenti, analisi dei gruppi muscolari, dettaglio esercizi e resoconto delle note.
- *
- * Include gestione difensiva dei dati storici/snapshot e Error Boundary per evitare
- * schermate nere o crash su dati imprevisti.
+ * degli Allenamenti, con separazione rigorosa tra Livello Macro (Salute, Tempo, Hard Sets)
+ * e Livello Micro (Performance specifica dell'esercizio, TUT, PR, progressione e trend).
  */
 
 import React, { useState, useMemo, Component, type ErrorInfo, type ReactNode } from 'react';
@@ -11,7 +9,6 @@ import {
   X,
   BarChart3,
   Dumbbell,
-  Layers,
   Calendar,
   TrendingUp,
   TrendingDown,
@@ -23,8 +20,12 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
-  Activity,
   AlertTriangle,
+  Clock,
+  Timer,
+  Flame,
+  Trophy,
+  Zap,
 } from 'lucide-react';
 import type { MuscleGroup } from '../utils/exerciseClassifier';
 import {
@@ -36,6 +37,7 @@ import {
   exportReportSummaryText,
   parseSafeDate,
 } from '../utils/periodicReportEngine';
+import { ExerciseTrendChart } from './ExerciseTrendChart';
 
 interface PeriodicReportModalProps {
   isOpen: boolean;
@@ -43,48 +45,55 @@ interface PeriodicReportModalProps {
   workouts: RawWorkoutSession[];
 }
 
-const MUSCLE_COLORS: Record<MuscleGroup, { bar: string; text: string; bg: string; border: string }> = {
+const MUSCLE_COLORS: Record<MuscleGroup, { bar: string; text: string; bg: string; border: string; hex: string }> = {
   Petto: {
     bar: 'bg-orange-500',
     text: 'text-orange-400',
     bg: 'bg-orange-500/10',
     border: 'border-orange-500/30',
+    hex: '#f97316',
   },
   Dorso: {
     bar: 'bg-cyan-500',
     text: 'text-cyan-400',
     bg: 'bg-cyan-500/10',
     border: 'border-cyan-500/30',
+    hex: '#06b6d4',
   },
   Gambe: {
     bar: 'bg-emerald-500',
     text: 'text-emerald-400',
     bg: 'bg-emerald-500/10',
     border: 'border-emerald-500/30',
+    hex: '#10b981',
   },
   Spalle: {
     bar: 'bg-purple-500',
     text: 'text-purple-400',
     bg: 'bg-purple-500/10',
     border: 'border-purple-500/30',
+    hex: '#a855f7',
   },
   Braccia: {
     bar: 'bg-rose-500',
     text: 'text-rose-400',
     bg: 'bg-rose-500/10',
     border: 'border-rose-500/30',
+    hex: '#f43f5e',
   },
   Addome: {
     bar: 'bg-amber-500',
     text: 'text-amber-400',
     bg: 'bg-amber-500/10',
     border: 'border-amber-500/30',
+    hex: '#f59e0b',
   },
   Altro: {
     bar: 'bg-slate-500',
     text: 'text-slate-400',
     bg: 'bg-slate-500/10',
     border: 'border-slate-500/30',
+    hex: '#64748b',
   },
 };
 
@@ -207,11 +216,12 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
     return formatIsoDate(new Date());
   });
 
-  const [activeTab, setActiveTab] = useState<'muscles' | 'exercises' | 'notes'>('muscles');
+  const [activeTab, setActiveTab] = useState<'exercises' | 'muscles' | 'notes'>('exercises');
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState('');
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState<string>('all');
-  const [exerciseSortMode, setExerciseSortMode] = useState<'reps' | 'volume' | 'sets'>('reps');
+  const [exerciseSortMode, setExerciseSortMode] = useState<'sets' | 'volume' | 'reps'>('sets');
   const [copiedNotification, setCopiedNotification] = useState(false);
+  const [expandedExerciseSessions, setExpandedExerciseSessions] = useState<Record<string, boolean>>({});
   const [expandedDossiers, setExpandedDossiers] = useState<Record<string, boolean>>({});
 
   const customRange = useMemo<CustomDateRange>(() => {
@@ -292,7 +302,14 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
     }));
   };
 
-  // Filtro e ordinamento esercizi
+  const toggleExerciseSessionExpanded = (canonicalId: string) => {
+    setExpandedExerciseSessions((prev) => ({
+      ...prev,
+      [canonicalId]: !prev[canonicalId],
+    }));
+  };
+
+  // Filtro e ordinamento esercizi micro
   const sortedFilteredExercises = useMemo(() => {
     const list = (report?.exercises || []).filter((ex) => {
       if (!ex) return false;
@@ -306,23 +323,26 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
     });
 
     return list.sort((a, b) => {
-      const aReps = Number(a?.totalReps) || 0;
-      const bReps = Number(b?.totalReps) || 0;
+      const aSets = Number(a?.totalHardSets) || 0;
+      const bSets = Number(b?.totalHardSets) || 0;
       const aVol = Number(a?.totalVolumeKg) || 0;
       const bVol = Number(b?.totalVolumeKg) || 0;
-      const aSets = Number(a?.totalSets) || 0;
-      const bSets = Number(b?.totalSets) || 0;
+      const aTut = Number(a?.totalDurationSeconds) || 0;
+      const bTut = Number(b?.totalDurationSeconds) || 0;
+      const aReps = Number(a?.totalReps) || 0;
+      const bReps = Number(b?.totalReps) || 0;
 
-      if (exerciseSortMode === 'reps') {
-        if (bReps !== aReps) return bReps - aReps;
-        return bVol - aVol;
+      if (exerciseSortMode === 'sets') {
+        if (bSets !== aSets) return bSets - aSets;
+        return (bVol + bTut) - (aVol + aTut);
       }
       if (exerciseSortMode === 'volume') {
         if (bVol !== aVol) return bVol - aVol;
-        return bReps - aReps;
+        if (bTut !== aTut) return bTut - aTut;
+        return bSets - aSets;
       }
-      if (bSets !== aSets) return bSets - aSets;
-      return bReps - aReps;
+      if (bReps !== aReps) return bReps - aReps;
+      return bSets - aSets;
     });
   }, [report?.exercises, exerciseSearchQuery, selectedMuscleFilter, exerciseSortMode]);
 
@@ -357,7 +377,7 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-4xl h-full max-h-full sm:max-h-[88vh] flex flex-col bg-[#141414] border border-white/15 rounded-3xl shadow-[0_0_60px_rgba(0,0,0,0.9)] overflow-hidden min-h-0"
       >
-        
+
         {/* ─── HEADER ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between p-3.5 sm:p-6 border-b border-white/10 bg-black/60 sticky top-0 z-20 shrink-0">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
@@ -367,14 +387,14 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-2xl font-black tracking-tight text-white truncate">
-                  Report Periodico
+                  Report Statistiche
                 </h2>
                 <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange border border-brand-orange/40 shrink-0">
-                  <Sparkles size={11} /> Analytics
+                  <Sparkles size={11} /> Macro & Micro
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-brand-grey/80 mt-0.5 truncate">
-                {report.period?.label || 'Periodo'} • {report.totalWorkouts} {report.totalWorkouts === 1 ? 'sessione' : 'sessioni'}
+                {report.period?.label || 'Periodo'} • {report.macro.totalCompletedSessions} {report.macro.totalCompletedSessions === 1 ? 'sessione' : 'sessioni'} • {report.macro.formattedTotalDuration}
               </p>
             </div>
           </div>
@@ -384,11 +404,11 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
               onClick={handleCopySummary}
               type="button"
               className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-bold transition-all border border-brand-orange/40 bg-brand-orange/15 hover:bg-brand-orange/30 text-brand-orange active:scale-95 cursor-pointer shadow-sm"
-              title="Copia riepilogo testuale per appunti o WhatsApp"
+              title="Copia riepilogo analitico negli appunti"
             >
               {copiedNotification ? <Check size={15} className="text-green-400" /> : <Copy size={15} />}
               <span className="hidden md:inline">
-                {copiedNotification ? 'Copiato!' : 'Copia Riepilogo'}
+                {copiedNotification ? 'Copiato!' : 'Copia Report'}
               </span>
             </button>
 
@@ -405,12 +425,12 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
 
         {/* ─── CORPO SCORREVOLE ────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6 space-y-6">
-          
+
           {/* SELETTORE PERIODO TEMPORALE */}
           <div className="flex flex-col gap-3 p-2.5 sm:p-3.5 rounded-2xl bg-black/40 border border-white/5">
             <div className="flex flex-wrap items-center justify-between gap-2.5">
               <span className="text-xs font-black uppercase tracking-wider text-brand-grey/70 ml-1">
-                Periodo di Analisi:
+                Intervallo Temporale:
               </span>
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 {[
@@ -440,20 +460,19 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
               </div>
             </div>
 
-            {/* SELEZIONE DATA PERSONALIZZATA (QUANDO selectedPeriod === 'custom') */}
+            {/* SELEZIONE DATA PERSONALIZZATA */}
             {selectedPeriod === 'custom' && (
               <div className="mt-1 pt-3 border-t border-white/10 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs font-bold text-white">
                     <span className="text-brand-orange flex items-center gap-1">
-                      <Calendar size={14} /> Intervallo Date:
+                      <Calendar size={14} /> Date Selezionate:
                     </span>
                     <span className="text-brand-grey text-[11px] font-medium">
                       {report.period.label}
                     </span>
                   </div>
 
-                  {/* Scorciatoie rapide preimpostate */}
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
@@ -488,7 +507,6 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                   </div>
                 </div>
 
-                {/* Date Inputs con formato dark mode nativo e look premium */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="flex items-center gap-2 bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 focus-within:border-brand-orange transition-colors">
                     <span className="text-xs font-black text-brand-orange uppercase tracking-wider w-8 shrink-0">
@@ -514,98 +532,94 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                     />
                   </div>
                 </div>
-
-                {customStartDate && customEndDate && customStartDate > customEndDate && (
-                  <p className="text-[11px] text-amber-400 font-medium flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/20 px-3 py-1.5 rounded-lg">
-                    <AlertTriangle size={13} className="shrink-0" />
-                    <span>La data di inizio è successiva alla data di fine: le date verranno invertite automaticamente nel calcolo.</span>
-                  </p>
-                )}
               </div>
             )}
           </div>
 
-          {/* KPI CARDS GENERALI */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-brand-orange/5 rounded-full blur-2xl pointer-events-none" />
-              <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
-                <Dumbbell size={16} className="text-brand-orange" />
-                <span>Volume Carico</span>
-              </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {formatSafeNumber(report.totalVolumeKg)}
-                </span>
-                <span className="text-xs font-bold text-brand-orange uppercase">kg</span>
-              </div>
-              <p className="text-[11px] text-brand-grey/60 mt-1">
-                ≈ {((Number(report.totalVolumeKg) || 0) / 1000).toFixed(2)} tonnellate sollevate
-              </p>
+          {/* ─── DASHBOARD GENERALE (LIVELLO MACRO - SALUTE, TEMPO & HARD SETS) ─ */}
+          <div>
+            <div className="flex items-center justify-between mb-2.5 px-1">
+              <span className="text-[11px] font-black uppercase tracking-widest text-brand-grey/80 flex items-center gap-1.5">
+                <Zap size={13} className="text-brand-orange" />
+                Dashboard Generale (Livello Macro)
+              </span>
+              <span className="text-[10px] text-brand-grey/50">
+                Aderenza, tempo effettivo e carico sistemico
+              </span>
             </div>
 
-            <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
-              <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
-                <Activity size={16} className="text-cyan-400" />
-                <span>Volume Ripetizioni</span>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              {/* 1. Tempo Totale di Allenamento */}
+              <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-brand-orange/5 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
+                  <Clock size={16} className="text-brand-orange" />
+                  <span>Tempo Totale</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    {report.macro.formattedTotalDuration}
+                  </span>
+                </div>
+                <p className="text-[11px] text-brand-grey/60 mt-1 truncate">
+                  Tempo speso nelle sessioni
+                </p>
               </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {formatSafeNumber(report.totalReps)}
-                </span>
-                <span className="text-xs font-bold text-cyan-400 uppercase">rip.</span>
-              </div>
-              <p className="text-[11px] text-brand-grey/60 mt-1">
-                Media {report.totalWorkouts > 0 ? Math.round((Number(report.totalReps) || 0) / report.totalWorkouts).toLocaleString('it-IT') : 0} rip a sessione
-              </p>
-            </div>
 
-            <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
-              <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
-                <Layers size={16} className="text-emerald-400" />
-                <span>Serie Totali</span>
+              {/* 2. Tempo Medio per Sessione */}
+              <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
+                <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
+                  <Timer size={16} className="text-cyan-400" />
+                  <span>Media Sessione</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    {report.macro.formattedAverageDuration}
+                  </span>
+                </div>
+                <p className="text-[11px] text-brand-grey/60 mt-1 truncate">
+                  Efficienza temporale media
+                </p>
               </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {Number(report.totalSets) || 0}
-                </span>
-                <span className="text-xs font-bold text-emerald-400 uppercase">serie</span>
-              </div>
-              <p className="text-[11px] text-brand-grey/60 mt-1">
-                Media {Number(report.averageSetsPerWorkout) || 0} serie a sessione
-              </p>
-            </div>
 
-            <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
-              <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
-                <Calendar size={16} className="text-purple-400" />
-                <span>Sessioni Svolte</span>
+              {/* 3. Sessioni Completate */}
+              <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
+                <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
+                  <Calendar size={16} className="text-purple-400" />
+                  <span>Sessioni Completate</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    {report.macro.totalCompletedSessions}
+                  </span>
+                  <span className="text-xs font-bold text-purple-400 uppercase">workout</span>
+                </div>
+                <p className="text-[11px] text-brand-grey/60 mt-1 truncate">
+                  Frequenza: {report.macro.weeklyFrequency} / sett.
+                </p>
               </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {Number(report.totalWorkouts) || 0}
-                </span>
-                <span className="text-xs font-bold text-purple-400 uppercase">workout</span>
+
+              {/* 4. Serie Allenanti Totali (Hard Sets) */}
+              <div className="bg-brand-darkGrey/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
+                <div className="flex items-center gap-2 text-brand-grey/80 text-xs font-bold uppercase tracking-wider mb-1">
+                  <Flame size={16} className="text-emerald-400" />
+                  <span>Hard Sets Totali</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    {report.macro.totalHardSets}
+                  </span>
+                  <span className="text-xs font-bold text-emerald-400 uppercase">serie</span>
+                </div>
+                <p className="text-[11px] text-brand-grey/60 mt-1 truncate">
+                  Media {report.macro.averageHardSetsPerSession} serie a seduta
+                </p>
               </div>
-              <p className="text-[11px] text-brand-grey/60 mt-1">
-                {(report.notesDossiers || []).length} esercizi con note registrate
-              </p>
             </div>
           </div>
 
           {/* TAB BAR DI NAVIGAZIONE INTERNA */}
           <div className="flex border-b border-white/10 gap-2 sm:gap-6">
-            <button
-              onClick={() => setActiveTab('muscles')}
-              type="button"
-              className={`pb-3 text-xs sm:text-sm font-black uppercase tracking-wider transition-all cursor-pointer border-b-2 ${
-                activeTab === 'muscles'
-                  ? 'text-brand-orange border-brand-orange'
-                  : 'text-brand-grey/60 border-transparent hover:text-white'
-              }`}
-            >
-              💪 Gruppi Muscolari
-            </button>
             <button
               onClick={() => setActiveTab('exercises')}
               type="button"
@@ -615,10 +629,21 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                   : 'text-brand-grey/60 border-transparent hover:text-white'
               }`}
             >
-              <span>🏋️ Dettaglio Esercizi</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 text-white/80">
+              <span>🏋️ Dettaglio Esercizi (Micro)</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-brand-orange/20 text-brand-orange font-bold">
                 {(report.exercises || []).length}
               </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('muscles')}
+              type="button"
+              className={`pb-3 text-xs sm:text-sm font-black uppercase tracking-wider transition-all cursor-pointer border-b-2 ${
+                activeTab === 'muscles'
+                  ? 'text-brand-orange border-brand-orange'
+                  : 'text-brand-grey/60 border-transparent hover:text-white'
+              }`}
+            >
+              💪 Ripartizione Muscolare
             </button>
             <button
               onClick={() => setActiveTab('notes')}
@@ -629,61 +654,342 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                   : 'text-brand-grey/60 border-transparent hover:text-white'
               }`}
             >
-              <span>📋 Resoconto Note & Dossier</span>
+              <span>📋 Resoconto Note</span>
               {(report.notesDossiers || []).length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-brand-orange/20 text-brand-orange font-bold">
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 text-white/80">
                   {report.notesDossiers.length}
                 </span>
               )}
             </button>
           </div>
 
-          {/* ─── TAB 1: GRUPPI MUSCOLARI ───────────────────────────────────── */}
+          {/* ─── TAB 1: DETTAGLIO ESERCIZI (LIVELLO MICRO - PERFORMANCE SPECIFICA) */}
+          {activeTab === 'exercises' && (
+            <div className="space-y-4">
+              {/* Barra di ricerca e filtro gruppo muscolare */}
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-grey/50" />
+                    <input
+                      type="text"
+                      placeholder="Cerca esercizio (es. planche, panca, trazioni)..."
+                      value={exerciseSearchQuery}
+                      onChange={(e) => setExerciseSearchQuery(e.target.value)}
+                      className="w-full bg-brand-darkGrey/30 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-brand-grey/40 focus:outline-none focus:border-brand-orange"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                    <button
+                      onClick={() => setSelectedMuscleFilter('all')}
+                      type="button"
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
+                        selectedMuscleFilter === 'all'
+                          ? 'bg-brand-orange text-black font-black'
+                          : 'bg-white/5 hover:bg-white/10 text-brand-grey'
+                      }`}
+                    >
+                      Tutti
+                    </button>
+                    {['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome'].map((group) => (
+                      <button
+                        key={group}
+                        onClick={() => setSelectedMuscleFilter(group)}
+                        type="button"
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
+                          selectedMuscleFilter === group
+                            ? 'bg-brand-orange text-black font-black'
+                            : 'bg-white/5 hover:bg-white/10 text-brand-grey'
+                        }`}
+                      >
+                        {group}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Selettore ordinamento */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[11px] font-bold text-brand-grey/60 mr-1">Ordina per:</span>
+                  <button
+                    onClick={() => setExerciseSortMode('sets')}
+                    type="button"
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      exerciseSortMode === 'sets'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
+                    }`}
+                  >
+                    🔥 Serie Allenanti (Hard Sets)
+                  </button>
+                  <button
+                    onClick={() => setExerciseSortMode('volume')}
+                    type="button"
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      exerciseSortMode === 'volume'
+                        ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/40'
+                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
+                    }`}
+                  >
+                    🏋️ Carico (kg) / TUT
+                  </button>
+                  <button
+                    onClick={() => setExerciseSortMode('reps')}
+                    type="button"
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      exerciseSortMode === 'reps'
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
+                    }`}
+                  >
+                    🔢 Ripetizioni
+                  </button>
+                </div>
+              </div>
+
+              {sortedFilteredExercises.length === 0 ? (
+                <div className="text-center py-12 bg-brand-darkGrey/15 border border-dashed border-white/10 rounded-2xl">
+                  <Dumbbell size={36} className="mx-auto text-brand-grey/30 mb-2" />
+                  <p className="text-sm text-brand-grey font-bold">Nessun esercizio trovato per i filtri selezionati</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {sortedFilteredExercises.map((ex) => {
+                    const theme = getMuscleColorTheme(ex.muscleGroup);
+                    const isSessionsExpanded = Boolean(expandedExerciseSessions[ex.canonicalId]);
+
+                    return (
+                      <div
+                        key={ex.canonicalId}
+                        className="bg-brand-darkGrey/25 border border-white/10 hover:border-white/20 rounded-2xl p-4 sm:p-5 transition-all space-y-3.5"
+                      >
+                        {/* 1. Header Esercizio */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <span
+                              className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${theme.bg} ${theme.text} ${theme.border} mt-0.5 shrink-0`}
+                            >
+                              {ex.muscleGroup}
+                            </span>
+
+                            {ex.isIsometric ? (
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border bg-cyan-500/15 text-cyan-300 border-cyan-500/30 mt-0.5 shrink-0">
+                                Skill / Isometria
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border bg-orange-500/15 text-orange-300 border-orange-500/30 mt-0.5 shrink-0">
+                                Dinamico
+                              </span>
+                            )}
+
+                            <div className="min-w-0">
+                              <h3 className="text-base sm:text-lg font-black text-white leading-snug break-words">
+                                {ex.displayName}
+                              </h3>
+                              <p className="text-[11px] text-brand-grey/60 mt-0.5">
+                                Svolto in {ex.sessionsCount} {ex.sessionsCount === 1 ? 'sessione' : 'sessioni'} • {ex.totalHardSets} serie allenanti (Hard Sets)
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Badge rapido PR in testata */}
+                          <div className="self-start sm:self-center shrink-0">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-xs shadow-sm">
+                              <Trophy size={14} className="text-amber-400" />
+                              <span className="text-[10px] uppercase tracking-wider text-amber-400 font-black">PR:</span>
+                              <span className="font-mono font-black">{ex.pr.formatted}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Micro Metriche di Performance (Pills Grid) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          {/* Volume nel periodo */}
+                          <div className="bg-black/40 rounded-xl p-3 border border-white/5 flex flex-col justify-between">
+                            <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">
+                              Volume nel Periodo
+                            </span>
+                            <div className="mt-1">
+                              {ex.isIsometric ? (
+                                <>
+                                  <span className="text-base sm:text-lg font-black text-cyan-300 font-mono">
+                                    {ex.totalDurationSeconds}s TUT
+                                  </span>
+                                  <span className="text-[10px] text-brand-grey/60 block mt-0.5">
+                                    ≈ {ex.formattedTUT} di tenuta totale
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-base sm:text-lg font-black text-white font-mono">
+                                    {formatSafeNumber(ex.totalReps)} <span className="text-xs text-brand-grey">rip</span>
+                                  </span>
+                                  <span className="text-[10px] text-brand-grey/60 block mt-0.5 truncate">
+                                    {ex.totalVolumeKg > 0
+                                      ? `${formatSafeNumber(ex.totalVolumeKg)} kg (media ${ex.averageWeightKg} kg)`
+                                      : 'Eseguito a corpo libero'}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Personal Record & Scheda di Carico */}
+                          <div className="bg-black/40 rounded-xl p-3 border border-white/5 flex flex-col justify-between">
+                            <span className="text-[10px] uppercase font-bold text-amber-400/90 flex items-center gap-1">
+                              <Trophy size={12} className="text-amber-400" /> Personal Record
+                            </span>
+                            <div className="mt-1">
+                              <span className="text-base sm:text-lg font-black text-amber-300 font-mono">
+                                {ex.pr.formatted}
+                              </span>
+                              <span className="text-[10px] text-brand-grey/60 block mt-0.5 truncate">
+                                {ex.pr.details}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Progressione Settimanale (% WoW) */}
+                          <div className="bg-black/40 rounded-xl p-3 border border-white/5 flex flex-col justify-between">
+                            <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">
+                              Progressione
+                            </span>
+                            <div className="mt-1 flex items-center gap-2">
+                              {ex.progression.direction === 'up' && (
+                                <span className="inline-flex items-center gap-1 text-sm font-black text-emerald-400">
+                                  <TrendingUp size={16} /> +{ex.progression.percentChange}%
+                                </span>
+                              )}
+                              {ex.progression.direction === 'down' && (
+                                <span className="inline-flex items-center gap-1 text-sm font-black text-rose-400">
+                                  <TrendingDown size={16} /> {ex.progression.percentChange}%
+                                </span>
+                              )}
+                              {ex.progression.direction === 'stable' && (
+                                <span className="inline-flex items-center gap-1 text-sm font-black text-brand-grey/80">
+                                  <Minus size={16} /> Stabile
+                                </span>
+                              )}
+                              {ex.progression.direction === 'new' && (
+                                <span className="inline-flex items-center text-xs font-black text-brand-orange uppercase">
+                                  Nuovo nel periodo
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-brand-grey/60 block mt-0.5">
+                              {ex.progression.comparisonLabel}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 3. Trend Temporale (Curva di Progressione SVG a Zero Dipendenze) */}
+                        <div className="pt-1">
+                          <ExerciseTrendChart
+                            historyPoints={ex.historyPoints}
+                            isIsometric={ex.isIsometric}
+                            metricLabel={ex.isIsometric ? 's' : ex.totalVolumeKg > 0 ? 'kg' : 'rip'}
+                            accentColor={ex.isIsometric ? '#06b6d4' : ex.totalVolumeKg > 0 ? '#f97316' : '#10b981'}
+                          />
+                        </div>
+
+                        {/* 4. Dettaglio Cronologico delle Sedute per questo Esercizio */}
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleExerciseSessionExpanded(ex.canonicalId)}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-brand-orange hover:text-brand-lightOrange transition-colors cursor-pointer"
+                          >
+                            <span>
+                              {isSessionsExpanded
+                                ? 'Nascondi storico sedute'
+                                : `Visualizza storico sedute (${ex.historyPoints.length})`}
+                            </span>
+                            {isSessionsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+
+                          {isSessionsExpanded && (
+                            <div className="mt-2.5 space-y-1.5 pt-2 border-t border-white/5 animate-in fade-in duration-150">
+                              {ex.historyPoints.map((pt, pIdx) => (
+                                <div
+                                  key={pIdx}
+                                  className="flex items-center justify-between text-xs py-2 px-3 rounded-xl bg-black/40 border border-white/5"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-brand-grey text-[11px]">
+                                      {pt.formattedDate}
+                                    </span>
+                                    <span className="text-white font-medium truncate max-w-[140px] sm:max-w-xs">
+                                      {pt.workoutName}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 font-mono">
+                                    <span className="text-brand-grey/70 text-[11px]">
+                                      {pt.sets} {pt.sets === 1 ? 'serie' : 'serie'}
+                                    </span>
+                                    <span className="font-bold text-white bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
+                                      {ex.isIsometric
+                                        ? `${pt.metricValue}s TUT`
+                                        : `${pt.reps} rip${pt.weightKg > 0 ? ` @ ${pt.weightKg}kg` : ''}`}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── TAB 2: RIPARTIZIONE MUSCOLARE ─────────────────────────────── */}
           {activeTab === 'muscles' && (
             <div className="space-y-6">
-              {/* Barra di Distribuzione Proporzionale del Volume */}
+              {/* Barra di Distribuzione Hard Sets */}
               <div className="bg-brand-darkGrey/20 border border-white/10 rounded-2xl p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-black uppercase tracking-wider text-white">
-                    Distribuzione Proporzionale del Volume (kg)
+                    Distribuzione Serie Allenanti (Hard Sets)
                   </span>
                   <span className="text-xs text-brand-grey/70">
-                    Totale: {formatSafeNumber(report.totalVolumeKg)} kg
+                    Totale: {report.macro.totalHardSets} serie
                   </span>
                 </div>
 
-                {/* Progress bar multicolore */}
                 <div className="w-full h-4 sm:h-5 bg-black/60 rounded-full overflow-hidden flex border border-white/5">
                   {(report.muscleGroups || [])
-                    .filter((mg) => Number(mg.volumePercent) > 0)
+                    .filter((mg) => Number(mg.setsPercent) > 0)
                     .map((mg) => (
                       <div
                         key={mg.group}
-                        style={{ width: `${mg.volumePercent}%` }}
+                        style={{ width: `${mg.setsPercent}%` }}
                         className={`${getMuscleColorTheme(mg.group).bar} transition-all duration-500 relative group`}
-                        title={`${mg.group}: ${mg.volumePercent}% (${formatSafeNumber(mg.volumeKg)} kg)`}
+                        title={`${mg.group}: ${mg.setsCount} serie (${mg.setsPercent}%)`}
                       />
                     ))}
                 </div>
 
-                {/* Legenda rapida */}
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-4 text-xs">
                   {(report.muscleGroups || [])
-                    .filter((mg) => Number(mg.volumePercent) > 0)
+                    .filter((mg) => Number(mg.setsPercent) > 0)
                     .map((mg) => (
                       <div key={mg.group} className="flex items-center gap-1.5">
                         <span className={`w-3 h-3 rounded-full ${getMuscleColorTheme(mg.group).bar}`} />
                         <span className="text-white/80 font-semibold">{mg.group}:</span>
-                        <span className="font-bold text-white">{mg.volumePercent}%</span>
+                        <span className="font-bold text-white">{mg.setsCount} serie ({mg.setsPercent}%)</span>
                       </div>
                     ))}
                 </div>
               </div>
 
-              {/* Schede Dettagliate per ciascun Gruppo Muscolare */}
+              {/* Schede Dettagliate per Gruppo Muscolare */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(report.muscleGroups || [])
-                  .filter((mg) => Number(mg.volumeKg) > 0 || Number(mg.setsCount) > 0 || Number(mg.repsCount) > 0)
+                  .filter((mg) => Number(mg.setsCount) > 0 || Number(mg.volumeKg) > 0)
                   .map((mg) => {
                     const theme = getMuscleColorTheme(mg.group);
                     return (
@@ -703,22 +1009,22 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
 
                           <div className="grid grid-cols-2 gap-2 mb-4">
                             <div className="bg-black/30 rounded-xl p-2.5 border border-white/5">
-                              <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Volume Carico</span>
+                              <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Serie Allenanti</span>
                               <span className="text-lg font-black text-white">
-                                {formatSafeNumber(mg.volumeKg)} <span className="text-xs text-brand-orange">kg</span>
+                                {Number(mg.setsCount) || 0} <span className="text-xs text-emerald-400">set</span>
                               </span>
                               <span className="text-[10px] text-brand-grey/60 block mt-0.5">
-                                {Number(mg.volumePercent) || 0}% del totale
+                                {Number(mg.setsPercent) || 0}% del carico totale
                               </span>
                             </div>
 
                             <div className="bg-black/30 rounded-xl p-2.5 border border-white/5">
-                              <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Volume Ripetizioni</span>
+                              <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">Tonnellaggio</span>
                               <span className="text-lg font-black text-white">
-                                {formatSafeNumber(mg.repsCount)} <span className="text-xs text-cyan-400">rip</span>
+                                {formatSafeNumber(mg.volumeKg)} <span className="text-xs text-brand-orange">kg</span>
                               </span>
                               <span className="text-[10px] text-brand-grey/60 block mt-0.5">
-                                in {Number(mg.setsCount) || 0} serie ({Number(mg.setsPercent) || 0}%)
+                                {Number(mg.volumePercent) || 0}% carico sovracc.
                               </span>
                             </div>
                           </div>
@@ -726,25 +1032,22 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                           {(mg.topExercises || []).length > 0 && (
                             <div>
                               <span className="text-[10px] uppercase font-bold text-brand-grey/50 block mb-1.5">
-                                Principali movimenti:
+                                Movimenti principali nel gruppo:
                               </span>
                               <div className="space-y-1">
-                                {(mg.topExercises || []).map((topEx, idx) => {
-                                  if (!topEx) return null;
-                                  return (
-                                    <div
-                                      key={idx}
-                                      className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-white/5"
-                                    >
-                                      <span className="text-white/90 font-medium truncate max-w-[55%]">
-                                        {String(topEx.displayName || 'Esercizio')}
-                                      </span>
-                                      <span className="font-mono text-cyan-300 font-bold text-[11px]">
-                                        {formatSafeNumber(topEx.reps)} rip ({Number(topEx.sets) || 0} set{Number(topEx.volumeKg) > 0 ? ` • ${formatSafeNumber(topEx.volumeKg)} kg` : ''})
-                                      </span>
-                                    </div>
-                                  );
-                                })}
+                                {(mg.topExercises || []).map((topEx, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-white/5"
+                                  >
+                                    <span className="text-white/90 font-medium truncate max-w-[60%]">
+                                      {String(topEx.displayName || 'Esercizio')}
+                                    </span>
+                                    <span className="font-mono text-emerald-400 font-bold text-[11px]">
+                                      {Number(topEx.sets) || 0} serie{Number(topEx.volumeKg) > 0 ? ` • ${formatSafeNumber(topEx.volumeKg)} kg` : ''}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}
@@ -753,189 +1056,6 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                     );
                   })}
               </div>
-            </div>
-          )}
-
-          {/* ─── TAB 2: DETTAGLIO ESERCIZI ─────────────────────────────────── */}
-          {activeTab === 'exercises' && (
-            <div className="space-y-4">
-              {/* Barra di ricerca e filtro gruppo muscolare */}
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-grey/50" />
-                    <input
-                      type="text"
-                      placeholder="Cerca esercizio..."
-                      value={exerciseSearchQuery}
-                      onChange={(e) => setExerciseSearchQuery(e.target.value)}
-                      className="w-full bg-brand-darkGrey/30 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-brand-grey/40 focus:outline-none focus:border-brand-orange"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                    <button
-                      onClick={() => setSelectedMuscleFilter('all')}
-                      type="button"
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
-                        selectedMuscleFilter === 'all'
-                          ? 'bg-brand-orange text-black'
-                          : 'bg-white/5 hover:bg-white/10 text-brand-grey'
-                      }`}
-                    >
-                      Tutti
-                    </button>
-                    {['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome'].map((group) => (
-                      <button
-                        key={group}
-                        onClick={() => setSelectedMuscleFilter(group)}
-                        type="button"
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
-                          selectedMuscleFilter === group
-                            ? 'bg-brand-orange text-black'
-                            : 'bg-white/5 hover:bg-white/10 text-brand-grey'
-                        }`}
-                      >
-                        {group}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Selettore ordinamento: Ripetizioni, Carico, Serie */}
-                <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                  <span className="text-[11px] font-bold text-brand-grey/60 mr-1">Ordina per:</span>
-                  <button
-                    onClick={() => setExerciseSortMode('reps')}
-                    type="button"
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                      exerciseSortMode === 'reps'
-                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
-                    }`}
-                  >
-                    🔢 Ripetizioni (Volume)
-                  </button>
-                  <button
-                    onClick={() => setExerciseSortMode('volume')}
-                    type="button"
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                      exerciseSortMode === 'volume'
-                        ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/40'
-                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
-                    }`}
-                  >
-                    🏋️ Carico (kg)
-                  </button>
-                  <button
-                    onClick={() => setExerciseSortMode('sets')}
-                    type="button"
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                      exerciseSortMode === 'sets'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
-                        : 'bg-white/5 text-brand-grey hover:bg-white/10'
-                    }`}
-                  >
-                    📋 Serie (Set)
-                  </button>
-                </div>
-              </div>
-
-              {sortedFilteredExercises.length === 0 ? (
-                <div className="text-center py-12 bg-brand-darkGrey/15 border border-dashed border-white/10 rounded-2xl">
-                  <Dumbbell size={36} className="mx-auto text-brand-grey/30 mb-2" />
-                  <p className="text-sm text-brand-grey font-bold">Nessun esercizio trovato per i filtri selezionati</p>
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {sortedFilteredExercises.map((ex) => {
-                    const theme = getMuscleColorTheme(ex.muscleGroup);
-                    return (
-                      <div
-                        key={ex.canonicalId}
-                        className="bg-brand-darkGrey/20 border border-white/10 hover:border-white/20 rounded-2xl p-3.5 sm:p-4 transition-all"
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="flex items-start gap-2.5">
-                            <span
-                              className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${theme.bg} ${theme.text} ${theme.border} mt-0.5 shrink-0`}
-                            >
-                              {ex.muscleGroup}
-                            </span>
-                            <div>
-                              <h3 className="text-sm sm:text-base font-bold text-white leading-snug">
-                                {ex.displayName}
-                              </h3>
-                              <p className="text-[11px] text-brand-grey/60 mt-0.5">
-                                Eseguito in {Number(ex.sessionsCount) || 0} {Number(ex.sessionsCount) === 1 ? 'sessione' : 'sessioni'} • {Number(ex.totalSets) || 0} serie totali
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 sm:gap-5 self-end sm:self-auto flex-wrap">
-                            {/* Volume Ripetizioni */}
-                            <div className="text-right min-w-[75px]">
-                              <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Vol. Ripetizioni</span>
-                              <span className="text-sm font-black text-cyan-400 font-mono">
-                                {formatSafeNumber(ex.totalReps)} <span className="text-[10px]">rip</span>
-                              </span>
-                            </div>
-
-                            {/* Volume Carico (se > 0 o corpo libero) */}
-                            <div className="text-right min-w-[75px]">
-                              <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Vol. Carico</span>
-                              {Number(ex.totalVolumeKg) > 0 ? (
-                                <span className="text-sm font-black text-brand-orange font-mono">
-                                  {formatSafeNumber(ex.totalVolumeKg)} <span className="text-[10px]">kg</span>
-                                </span>
-                              ) : (
-                                <span className="text-xs font-semibold text-brand-grey/60">
-                                  Corpo Libero
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Carico Max / PR */}
-                            {Number(ex.maxWeightKg) > 0 && (
-                              <div className="text-right min-w-[55px]">
-                                <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Carico Max</span>
-                                <span className="text-xs font-black text-white font-mono">
-                                  {ex.maxWeightKg} <span className="text-brand-orange text-[10px]">kg</span>
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Indicatore di Trend */}
-                            <div className="text-right min-w-[60px]">
-                              <span className="text-[10px] uppercase font-bold text-brand-grey/50 block">Trend</span>
-                              {ex.trend === 'up' && (
-                                <span className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-400">
-                                  <TrendingUp size={14} /> +{ex.percentChange ?? 0}%
-                                </span>
-                              )}
-                              {ex.trend === 'down' && (
-                                <span className="inline-flex items-center gap-0.5 text-xs font-bold text-rose-400">
-                                  <TrendingDown size={14} /> {ex.percentChange ?? 0}%
-                                </span>
-                              )}
-                              {ex.trend === 'stable' && (
-                                <span className="inline-flex items-center gap-0.5 text-xs font-bold text-brand-grey/70">
-                                  <Minus size={14} /> Stabile
-                                </span>
-                              )}
-                              {ex.trend === 'new' && (
-                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-brand-orange uppercase">
-                                  Nuovo
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
 
@@ -949,8 +1069,8 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                     Resoconto Sintetico delle Note per Esercizio
                   </h3>
                   <p className="text-xs text-white/80 mt-1 leading-relaxed">
-                    Il sistema ha analizzato tutte le note lasciate nelle sessioni del periodo, raggruppandole
-                    sotto ciascun esercizio canonico per offrirti una sintesi descrittiva di sensazioni, progressioni di carico e affaticamento.
+                    Tutte le osservazioni lasciate nelle sessioni del periodo, raggruppate
+                    sotto ciascun esercizio per offrirti una sintesi descrittiva di sensazioni, progressioni e affaticamento.
                   </p>
                 </div>
               </div>
@@ -974,7 +1094,6 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                         key={dossier.canonicalId}
                         className="bg-brand-darkGrey/25 border border-white/10 rounded-2xl p-4 sm:p-5 transition-all"
                       >
-                        {/* Header Dossier */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                           <div className="flex items-center gap-2">
                             <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${theme.bg} ${theme.text} ${theme.border}`}>
@@ -989,7 +1108,6 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                             <span className="text-xs text-brand-grey/70">
                               {Number(dossier.totalNotes) || 0} {Number(dossier.totalNotes) === 1 ? 'osservazione' : 'osservazioni'}
                             </span>
-                            {/* Temi dominanti badge */}
                             {(dossier.dominantThemes || []).map((themeTag) => (
                               <span
                                 key={themeTag}
@@ -1015,14 +1133,12 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Sintesi Scritta Descrittiva */}
                         <div className="bg-black/40 border border-white/5 rounded-xl p-3 sm:p-4 mb-3">
                           <p className="text-xs sm:text-sm text-white/90 leading-relaxed font-sans">
                             {dossier.writtenSynthesis}
                           </p>
                         </div>
 
-                        {/* Pulsante per mostrare/nascondere la cronologia dettagliata note */}
                         <button
                           onClick={() => toggleDossierExpanded(dossier.canonicalId)}
                           type="button"
@@ -1032,24 +1148,20 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                           {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                         </button>
 
-                        {/* Lista cronologica note espandibile */}
                         {isExpanded && (
                           <div className="mt-3 space-y-2 pt-3 border-t border-white/5">
-                            {(dossier.chronologicalNotes || []).map((note, idx) => {
-                              if (!note) return null;
-                              return (
-                                <div
-                                  key={idx}
-                                  className="bg-white/5 rounded-xl p-3 border border-white/5 text-xs space-y-1"
-                                >
-                                  <div className="flex items-center justify-between text-brand-grey/60 text-[10px]">
-                                    <span className="font-bold text-white/70">{String(note.formattedDate || '')}</span>
-                                    <span>{String(note.workoutName || 'Workout')}</span>
-                                  </div>
-                                  <p className="text-white text-xs leading-relaxed">{String(note.text || '')}</p>
+                            {(dossier.chronologicalNotes || []).map((note, idx) => (
+                              <div
+                                key={idx}
+                                className="bg-white/5 rounded-xl p-3 border border-white/5 text-xs space-y-1"
+                              >
+                                <div className="flex items-center justify-between text-brand-grey/60 text-[10px]">
+                                  <span className="font-bold text-white/70">{String(note.formattedDate || '')}</span>
+                                  <span>{String(note.workoutName || 'Workout')}</span>
                                 </div>
-                              );
-                            })}
+                                <p className="text-white text-xs leading-relaxed">{String(note.text || '')}</p>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -1064,7 +1176,7 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
         {/* ─── FOOTER ──────────────────────────────────────────────────────── */}
         <div className="p-3.5 sm:p-4 border-t border-white/10 bg-black/80 flex items-center justify-between shrink-0">
           <span className="text-xs text-brand-grey/60 truncate mr-2">
-            {Number(report.totalWorkouts) || 0} {Number(report.totalWorkouts) === 1 ? 'sessione' : 'sessioni'} • {formatSafeNumber(report.totalVolumeKg)} kg totali
+            {report.macro.totalCompletedSessions} workout • {report.macro.formattedTotalDuration} • {report.macro.totalHardSets} hard sets
           </span>
           <button
             onClick={onClose}
