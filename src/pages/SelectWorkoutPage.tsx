@@ -53,15 +53,22 @@
  * vengono eliminati (`clearAllWorkoutProgressCheckpoints`) per evitare che
  * la HomePage proponga di riprendere una sessione ormai superata.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Calendar, ArrowLeft, PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil } from 'lucide-react';
+import { Dumbbell, Calendar, ArrowLeft, PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Folder } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { useNavigate } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
 import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
+import {
+  getFolders,
+  getFolderAssignments,
+  subscribeToFolderChanges,
+  type WorkoutFolder,
+  type FolderAssignmentMap,
+} from '../utils/folderManager';
 
 interface Exercise {
   id: string;
@@ -186,6 +193,30 @@ const SelectWorkoutPage: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isSavingAndStarting, setIsSavingAndStarting] = useState(false);
+
+  // Folder filtering
+  const [folders, setFolders] = useState<WorkoutFolder[]>(() => getFolders(user?.id));
+  const [folderAssignments, setFolderAssignments] = useState<FolderAssignmentMap>(() => getFolderAssignments(user?.id));
+  const [selectedFolderFilter, setSelectedFolderFilter] = useState<'all' | 'root' | string>('all');
+
+  useEffect(() => {
+    setFolders(getFolders(user?.id));
+    setFolderAssignments(getFolderAssignments(user?.id));
+
+    const unsub = subscribeToFolderChanges(() => {
+      setFolders(getFolders(user?.id));
+      setFolderAssignments(getFolderAssignments(user?.id));
+    });
+    return unsub;
+  }, [user?.id]);
+
+  const filteredWorkouts = useMemo(() => {
+    if (selectedFolderFilter === 'all') return workouts;
+    if (selectedFolderFilter === 'root') {
+      return workouts.filter((w) => !folderAssignments[w.id]);
+    }
+    return workouts.filter((w) => folderAssignments[w.id] === selectedFolderFilter);
+  }, [workouts, folderAssignments, selectedFolderFilter]);
 
   useEffect(() => {
     fetchWorkouts();
@@ -423,29 +454,97 @@ const SelectWorkoutPage: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-            {workouts.map((workout) => (
-              <button
-                key={workout.id}
-                onClick={() => openWorkoutPreview(workout)}
-                className="w-full text-left bg-brand-darkGrey/40 hover:bg-brand-darkGrey border border-brand-grey/20 hover:border-brand-orange/50 transition-all rounded-3xl p-6 shadow-lg group flex items-center justify-between"
-              >
-                <div className="flex items-center">
-                  <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 group-hover:scale-110 transition-transform">
-                    <Calendar className="text-brand-orange" size={28} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white leading-tight">{workout.name}</h2>
-                    <p className="text-xs text-brand-grey/60 font-semibold mt-1">
-                      {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </p>
-                  </div>
-                </div>
-                <div className="bg-brand-orange/10 group-hover:bg-brand-orange text-brand-orange group-hover:text-black p-3 rounded-full transition-colors">
-                  <PlayCircle size={28} />
-                </div>
-              </button>
-            ))}
+          <div>
+            {folders.length > 0 && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-4 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setSelectedFolderFilter('all')}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                    selectedFolderFilter === 'all'
+                      ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20'
+                      : 'bg-brand-darkGrey/60 text-zinc-400 hover:text-white border border-white/5'
+                  }`}
+                >
+                  Tutte ({workouts.length})
+                </button>
+                {folders.map((f) => {
+                  const count = workouts.filter((w) => folderAssignments[w.id] === f.id).length;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setSelectedFolderFilter(f.id)}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                        selectedFolderFilter === f.id
+                          ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20'
+                          : 'bg-brand-darkGrey/60 text-zinc-400 hover:text-white border border-white/5'
+                      }`}
+                    >
+                      <Folder size={12} />
+                      <span>{f.name}</span>
+                      <span className="opacity-70 text-[10px]">({count})</span>
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setSelectedFolderFilter('root')}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                    selectedFolderFilter === 'root'
+                      ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20'
+                      : 'bg-brand-darkGrey/60 text-zinc-400 hover:text-white border border-white/5'
+                  }`}
+                >
+                  Senza cartella ({workouts.filter((w) => !folderAssignments[w.id]).length})
+                </button>
+              </div>
+            )}
+
+            {filteredWorkouts.length === 0 ? (
+              <div className="text-center py-12 bg-brand-darkGrey/20 rounded-3xl border border-dashed border-brand-grey/20">
+                <Folder size={36} className="mx-auto text-brand-grey/40 mb-3" />
+                <p className="text-zinc-400 text-sm">Nessuna scheda trovata con questo filtro.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredWorkouts.map((workout) => {
+                  const folderId = folderAssignments[workout.id];
+                  const folderName = folderId ? folders.find((f) => f.id === folderId)?.name : null;
+
+                  return (
+                    <button
+                      key={workout.id}
+                      onClick={() => openWorkoutPreview(workout)}
+                      className="w-full text-left bg-brand-darkGrey/40 hover:bg-brand-darkGrey border border-brand-grey/20 hover:border-brand-orange/50 transition-all rounded-3xl p-6 shadow-lg group flex items-center justify-between cursor-pointer"
+                    >
+                      <div className="flex items-center min-w-0 pr-4">
+                        <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 group-hover:scale-110 transition-transform shrink-0">
+                          <Calendar className="text-brand-orange" size={28} />
+                        </div>
+                        <div className="min-w-0">
+                          <h2 className="text-xl font-bold text-white leading-tight truncate">{workout.name}</h2>
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <p className="text-xs text-brand-grey/60 font-semibold">
+                              {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </p>
+                            {folderName && selectedFolderFilter === 'all' && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-400/90 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                                <Folder size={10} />
+                                {folderName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-brand-orange/10 group-hover:bg-brand-orange text-brand-orange group-hover:text-black p-3 rounded-full transition-colors shrink-0">
+                        <PlayCircle size={28} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </main>

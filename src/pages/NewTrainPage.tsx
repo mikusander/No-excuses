@@ -69,12 +69,19 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move, Copy, Minus, Sparkles, History, Check, Camera, Mic } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move, Copy, Minus, Sparkles, History, Check, Camera, Mic, Folder } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import WorkoutBulkToolbar from '../components/WorkoutBulkToolbar';
 import WorkoutQuickImportModal from '../components/WorkoutQuickImportModal';
 import { useUserExerciseHistory, type UserExerciseHistoryItem } from '../hooks/useUserExerciseHistory';
 import { parseExerciseInput, type ParsedWorkoutItem } from '../utils/parseExerciseInput';
+import {
+  getFolders,
+  createFolder,
+  assignSchedaToFolder,
+  getFolderForScheda,
+  type WorkoutFolder,
+} from '../utils/folderManager';
 
 interface ExerciseDraft {
   id: string;
@@ -252,6 +259,33 @@ const NewTrainPage: React.FC = () => {
     return Math.max(1, Math.trunc(parsed));
   }, [location.search]);
   const isCreateMode = !id;
+
+  // Folder assignment state
+  const [availableFolders, setAvailableFolders] = useState<WorkoutFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [isNewFolderModalOpen, setIsNewFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+
+  React.useEffect(() => {
+    const folders = getFolders(user?.id);
+    setAvailableFolders(folders);
+
+    if (isCreateMode) {
+      const queryFolderId = new URLSearchParams(location.search).get('folderId');
+      if (queryFolderId && folders.some((f) => f.id === queryFolderId)) {
+        setSelectedFolderId(queryFolderId);
+      }
+    }
+  }, [user?.id, isCreateMode, location.search]);
+
+  const handleCreateFolderInline = () => {
+    if (!newFolderName.trim()) return;
+    const created = createFolder(newFolderName.trim(), user?.id);
+    setAvailableFolders(getFolders(user?.id));
+    setSelectedFolderId(created.id);
+    setNewFolderName('');
+    setIsNewFolderModalOpen(false);
+  };
 
   const hasCreateDraftHydratedRef = React.useRef(false);
   const createDraftPersistTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -536,6 +570,8 @@ const NewTrainPage: React.FC = () => {
 
       if (data) {
         setWorkoutName(data.nome);
+        const currentFolder = getFolderForScheda(workoutId, user?.id);
+        setSelectedFolderId(currentFolder);
         const parsed = parseDbExerciseRows(data.esecuzioni || []).map((ex: any) => ({
           ...ex,
           id: crypto.randomUUID(),
@@ -1742,6 +1778,10 @@ const NewTrainPage: React.FC = () => {
 
       if (exercisesError) throw exercisesError;
 
+      if (workoutIdToUse) {
+        assignSchedaToFolder(workoutIdToUse, selectedFolderId, user?.id);
+      }
+
       if (isCreateMode && user?.id) {
         preserveCreateDraftOnUnmountRef.current = false;
         suppressCreateDraftPersistenceRef.current = true;
@@ -1749,7 +1789,7 @@ const NewTrainPage: React.FC = () => {
         clearCreateWorkoutDraft(user.id);
       }
 
-      navigate('/gym-card');
+      navigate('/gym-card', { state: { openFolderId: selectedFolderId } });
 
     } catch (err: any) {
       setError(err.message || 'Error occurred while saving');
@@ -1801,6 +1841,50 @@ const NewTrainPage: React.FC = () => {
             onChange={(e) => setWorkoutName(e.target.value)}
             className="w-full bg-brand-darkGrey/40 border-2 border-brand-grey/20 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors text-lg shadow-inner shadow-black/50"
           />
+        </div>
+
+        {/* Selezione Cartella */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-2 ml-1">
+            <label className="text-brand-grey font-semibold text-sm flex items-center gap-1.5">
+              <Folder size={16} className="text-brand-orange" />
+              Cartella
+            </label>
+            <button
+              type="button"
+              onClick={() => setIsNewFolderModalOpen(true)}
+              className="text-xs font-semibold text-brand-orange hover:text-orange-400 flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <Plus size={14} /> Nuova Cartella
+            </button>
+          </div>
+          <div className="relative">
+            <select
+              value={selectedFolderId || ''}
+              onChange={(e) => setSelectedFolderId(e.target.value || null)}
+              className="w-full bg-brand-darkGrey/40 border-2 border-brand-grey/20 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors text-sm appearance-none cursor-pointer"
+            >
+              <option value="" className="bg-[#1e1e1e] text-zinc-300">
+                📁 Nessuna cartella (Principale)
+              </option>
+              {availableFolders.map((f) => (
+                <option key={f.id} value={f.id} className="bg-[#1e1e1e] text-white">
+                  📁 {f.name}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-zinc-400">
+              <Folder size={16} />
+            </div>
+          </div>
+          {selectedFolderId && (
+            <p className="text-xs text-zinc-400 mt-1.5 ml-1">
+              Questa scheda verrà salvata all'interno della cartella:{' '}
+              <span className="text-brand-orange font-medium">
+                {availableFolders.find((f) => f.id === selectedFolderId)?.name || 'Cartella'}
+              </span>
+            </p>
+          )}
         </div>
 
         <div className="space-y-4 mb-8">
@@ -2863,6 +2947,48 @@ const NewTrainPage: React.FC = () => {
           onClose={() => setIsImportModalOpen(false)}
           onImportExercises={handleImportExercises}
         />
+
+        {isNewFolderModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+              <h3 className="text-lg font-bold text-white mb-2">Crea Nuova Cartella</h3>
+              <p className="text-xs text-zinc-400 mb-4">
+                Assegna un nome alla cartella per raggruppare le tue schede.
+              </p>
+              <input
+                type="text"
+                placeholder="Es. Schede Estate, Ipertrofia..."
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreateFolderInline();
+                }}
+                autoFocus
+                className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-2.5 text-white focus:border-brand-orange focus:outline-none text-sm mb-4"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNewFolderModalOpen(false);
+                    setNewFolderName('');
+                  }}
+                  className="flex-1 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-sm font-medium transition-colors cursor-pointer"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateFolderInline}
+                  disabled={!newFolderName.trim()}
+                  className="flex-1 py-2 rounded-xl bg-brand-orange hover:bg-orange-600 disabled:opacity-50 text-white text-sm font-bold transition-colors cursor-pointer"
+                >
+                  Crea
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

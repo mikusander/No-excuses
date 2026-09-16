@@ -47,14 +47,45 @@
  *  - `parseOptionalWeight(raw)` : accetta virgola o punto come separatore decimale,
  *    restituisce null se vuoto o zero (= nessun peso / bodyweight)
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Calendar, Trash2, Clock, Timer, Repeat, Pencil, Plus, X, Copy, Loader2 } from 'lucide-react';
+import {
+  Dumbbell,
+  Calendar,
+  Trash2,
+  Clock,
+  Timer,
+  Repeat,
+  Pencil,
+  Plus,
+  X,
+  Copy,
+  Loader2,
+  Folder,
+  FolderPlus,
+  FolderInput,
+  FolderOpen,
+  ArrowLeft,
+  ChevronRight,
+  Check,
+} from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
+import {
+  getFolders,
+  createFolder,
+  renameFolder,
+  deleteFolder,
+  getFolderAssignments,
+  assignSchedaToFolder,
+  moveSchedeToFolder,
+  subscribeToFolderChanges,
+  type WorkoutFolder,
+  type FolderAssignmentMap,
+} from '../utils/folderManager';
 
 interface Exercise {
   id: string;
@@ -125,6 +156,73 @@ const GymCardPage: React.FC = () => {
   const [isQuickEditSaving, setIsQuickEditSaving] = useState(false);
   const [quickEditError, setQuickEditError] = useState<string | null>(null);
   const [duplicatingWorkoutId, setDuplicatingWorkoutId] = useState<string | null>(null);
+
+  const location = useLocation();
+  const [folders, setFolders] = useState<WorkoutFolder[]>(() => getFolders(user?.id));
+  const [folderAssignments, setFolderAssignments] = useState<FolderAssignmentMap>(() => getFolderAssignments(user?.id));
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(() => {
+    return (location.state as any)?.openFolderId || null;
+  });
+
+  // Modali cartella
+  const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
+  const [folderNameToCreate, setFolderNameToCreate] = useState('');
+  const [folderColorToCreate, setFolderColorToCreate] = useState('#ff7700');
+
+  const [folderToRename, setFolderToRename] = useState<WorkoutFolder | null>(null);
+  const [renamedFolderName, setRenamedFolderName] = useState('');
+
+  // Modale per spostare schede multiple in una cartella
+  const [isMoveSchedeModalOpen, setIsMoveSchedeModalOpen] = useState(false);
+  const [selectedSchedeIdsToMove, setSelectedSchedeIdsToMove] = useState<Set<string>>(new Set());
+
+  // Modale per spostare una singola scheda
+  const [singleSchedaToAssign, setSingleSchedaToAssign] = useState<Workout | null>(null);
+
+  useEffect(() => {
+    setFolders(getFolders(user?.id));
+    setFolderAssignments(getFolderAssignments(user?.id));
+
+    const unsubscribe = subscribeToFolderChanges(() => {
+      setFolders(getFolders(user?.id));
+      setFolderAssignments(getFolderAssignments(user?.id));
+    });
+
+    return unsubscribe;
+  }, [user?.id]);
+
+  // Cartella attualmente aperta (se presente)
+  const currentFolder = useMemo(() => {
+    if (!currentFolderId) return null;
+    return folders.find((f) => f.id === currentFolderId) || null;
+  }, [folders, currentFolderId]);
+
+  // Se la cartella aperta non esiste più (es. cancellata), torna alla radice
+  useEffect(() => {
+    if (currentFolderId && !currentFolder) {
+      setCurrentFolderId(null);
+    }
+  }, [currentFolderId, currentFolder]);
+
+  // Schede nella cartella aperta
+  const folderWorkouts = useMemo(() => {
+    if (!currentFolderId) return [];
+    return workouts.filter((w) => folderAssignments[w.id] === currentFolderId);
+  }, [workouts, folderAssignments, currentFolderId]);
+
+  // Schede senza cartella (livello radice)
+  const rootWorkouts = useMemo(() => {
+    return workouts.filter((w) => {
+      const fId = folderAssignments[w.id];
+      return !fId || !folders.some((f) => f.id === fId);
+    });
+  }, [workouts, folderAssignments, folders]);
+
+  // Schede disponibili da spostare nella cartella corrente (tutte tranne quelle già dentro)
+  const candidateWorkoutsToMove = useMemo(() => {
+    if (!currentFolderId) return [];
+    return workouts.filter((w) => folderAssignments[w.id] !== currentFolderId);
+  }, [workouts, folderAssignments, currentFolderId]);
 
   useEffect(() => {
     fetchWorkouts();
@@ -697,104 +795,470 @@ const GymCardPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
-      <header className="p-4 relative flex items-center justify-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
-        <h1 className="text-xl font-bold text-center">Your Workouts</h1>
-        <button
-          onClick={() => navigate('/new-train')}
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-brand-orange hover:text-brand-lightOrange transition-colors bg-brand-orange/10 rounded-full shadow-lg"
-          title="Create New Workout"
-        >
-          <Plus size={24} />
-        </button>
+      <header className="p-4 relative flex items-center justify-between bg-black/50 sticky top-0 z-20 backdrop-blur-md">
+        {currentFolder ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={() => setCurrentFolderId(null)}
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white hover:text-brand-orange transition-colors shrink-0 cursor-pointer"
+              title="Torna a tutte le schede"
+            >
+              <ArrowLeft size={22} />
+            </button>
+            <div className="min-w-0 flex items-center gap-2">
+              <span
+                className="w-3 h-3 rounded-full shrink-0"
+                style={{ backgroundColor: currentFolder.color || '#ff7700' }}
+              />
+              <h1 className="text-lg sm:text-xl font-black text-white truncate">
+                {currentFolder.name}
+              </h1>
+            </div>
+          </div>
+        ) : (
+          <h1 className="text-xl font-bold text-center flex-1">Your Workouts</h1>
+        )}
+
+        <div className="flex items-center gap-2">
+          {!currentFolder && (
+            <button
+              onClick={() => {
+                setFolderNameToCreate('');
+                setFolderColorToCreate('#ff7700');
+                setIsCreateFolderModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold text-brand-orange hover:text-brand-lightOrange bg-brand-orange/15 border border-brand-orange/30 hover:bg-brand-orange/25 transition-all rounded-full shadow-md cursor-pointer active:scale-95"
+              title="Crea Nuova Cartella"
+            >
+              <FolderPlus size={16} />
+              <span className="hidden sm:inline">Nuova Cartella</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              if (currentFolderId) {
+                navigate(`/new-train?folderId=${currentFolderId}`);
+              } else {
+                navigate('/new-train');
+              }
+            }}
+            className="p-2 text-brand-orange hover:text-brand-lightOrange transition-colors bg-brand-orange/10 rounded-full shadow-lg cursor-pointer active:scale-95"
+            title={currentFolder ? `Crea Scheda in "${currentFolder.name}"` : 'Crea Nuova Scheda'}
+          >
+            <Plus size={24} />
+          </button>
+        </div>
       </header>
 
-      <main className="flex-1 p-6 w-full max-w-2xl mx-auto space-y-6">
+      <main className="flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto space-y-6">
         {loading ? (
           <div className="flex justify-center items-center h-48">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey"></div>
           </div>
-        ) : workouts.length === 0 ? (
-          <div className="text-center bg-brand-darkGrey/20 border border-dashed border-brand-grey/30 rounded-3xl p-8 mt-12">
-            <Dumbbell size={48} className="mx-auto text-brand-grey/50 mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">No Workouts</h2>
-            <p className="text-brand-grey text-sm mb-6">You haven't created any training programs yet.</p>
-            <button 
-              onClick={() => navigate('/new-train')}
-              className="bg-brand-orange hover:bg-brand-lightOrange text-black font-bold py-3 px-6 rounded-full transition-colors"
-            >
-              CREATE ONE NOW
-            </button>
+        ) : currentFolder ? (
+          /* ─── VISTA INTERNA ALLA CARTELLA ──────────────────────────────── */
+          <div className="space-y-5 animate-in fade-in duration-200">
+            {/* Header info cartella & azioni veloci */}
+            <div className="bg-gradient-to-r from-brand-darkGrey/60 via-black/40 to-transparent border border-white/10 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm"
+                    style={{ backgroundColor: currentFolder.color || '#ff7700' }}
+                  />
+                  <h2 className="text-xl font-black text-white">
+                    {currentFolder.name}
+                  </h2>
+                </div>
+                <p className="text-xs text-brand-grey/70 mt-1">
+                  {folderWorkouts.length} {folderWorkouts.length === 1 ? 'scheda all\'interno' : 'schede all\'interno'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFolderToRename(currentFolder);
+                    setRenamedFolderName(currentFolder.name);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-brand-grey hover:text-white border border-white/10 transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  title="Rinomina cartella"
+                >
+                  <Pencil size={14} />
+                  <span>Rinomina</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`Vuoi eliminare la cartella "${currentFolder.name}"? Le schede contenute torneranno all'elenco principale.`)) {
+                      deleteFolder(currentFolder.id, user?.id);
+                      setCurrentFolderId(null);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  title="Elimina cartella"
+                >
+                  <Trash2 size={14} />
+                  <span>Elimina</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Barra azioni interna: Crea Scheda qui & Sposta Schede Esistenti */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(`/new-train?folderId=${currentFolder.id}`)}
+                className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-sm transition-all shadow-lg shadow-brand-orange/20 cursor-pointer active:scale-95"
+              >
+                <Plus size={18} />
+                <span>Crea Scheda Qui</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedSchedeIdsToMove(new Set());
+                  setIsMoveSchedeModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-brand-darkGrey/40 hover:bg-brand-darkGrey/70 border border-white/10 text-white font-bold text-sm transition-all cursor-pointer active:scale-95"
+              >
+                <FolderInput size={18} className="text-brand-orange" />
+                <span>Sposta Schede ({candidateWorkoutsToMove.length} disponibili)</span>
+              </button>
+            </div>
+
+            {/* Schede nella cartella */}
+            {folderWorkouts.length === 0 ? (
+              <div className="text-center bg-brand-darkGrey/20 border border-dashed border-white/15 rounded-3xl p-8 mt-4">
+                <FolderOpen size={44} className="mx-auto text-brand-grey/40 mb-3" />
+                <h3 className="text-base font-bold text-white mb-1">Questa cartella è vuota</h3>
+                <p className="text-xs text-brand-grey/70 mb-5">
+                  Crea una nuova scheda al suo interno oppure sposta qui delle schede già create.
+                </p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button
+                    onClick={() => navigate(`/new-train?folderId=${currentFolder.id}`)}
+                    className="bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-xs uppercase px-4 py-2.5 rounded-xl transition-all cursor-pointer active:scale-95 shadow-md shadow-brand-orange/20"
+                  >
+                    Crea Scheda Qui
+                  </button>
+                  {candidateWorkoutsToMove.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setSelectedSchedeIdsToMove(new Set());
+                        setIsMoveSchedeModalOpen(true);
+                      }}
+                      className="bg-white/10 hover:bg-white/15 text-white font-bold text-xs px-4 py-2.5 rounded-xl border border-white/10 transition-all cursor-pointer active:scale-95"
+                    >
+                      Sposta Schede Esistenti
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {folderWorkouts.map((workout) => (
+                  <div
+                    key={workout.id}
+                    className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 shadow-xl relative overflow-hidden cursor-pointer hover:border-brand-orange/40 transition-colors"
+                    onClick={() => openWorkoutModal(workout)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openWorkoutModal(workout);
+                      }
+                    }}
+                  >
+                    <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSingleSchedaToAssign(workout);
+                        }}
+                        className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
+                        title="Sposta in un'altra cartella o rimuovi"
+                      >
+                        <FolderInput size={20} />
+                      </button>
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void duplicateWorkout(workout);
+                        }}
+                        disabled={duplicatingWorkoutId === workout.id}
+                        className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg disabled:opacity-50"
+                        title="Duplicate Workout"
+                      >
+                        {duplicatingWorkoutId === workout.id ? (
+                          <Loader2 size={20} className="animate-spin text-brand-orange" />
+                        ) : (
+                          <Copy size={20} />
+                        )}
+                      </button>
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          navigate(`/edit-train/${workout.id}`);
+                        }}
+                        className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
+                        title="Edit Workout"
+                      >
+                        <Pencil size={20} />
+                      </button>
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void deleteWorkout(workout.id);
+                        }}
+                        className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg"
+                        title="Delete Workout"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center pr-28 py-1">
+                      <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 shrink-0">
+                        <Calendar className="text-brand-orange" size={28} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
+                        <p className="text-xs text-brand-grey/60 font-semibold mt-1">
+                          {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-brand-grey/60 font-bold uppercase tracking-wider mt-3 pl-16">
+                      Tap to view workout details
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
-          workouts.map((workout) => (
-            <div
-              key={workout.id}
-              className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 shadow-xl relative overflow-hidden cursor-pointer hover:border-brand-grey/40 transition-colors"
-              onClick={() => openWorkoutModal(workout)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  openWorkoutModal(workout);
-                }
-              }}
-            >
-              <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
-                <button 
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void duplicateWorkout(workout);
-                  }}
-                  disabled={duplicatingWorkoutId === workout.id}
-                  className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg disabled:opacity-50"
-                  title="Duplicate Workout"
-                >
-                  {duplicatingWorkoutId === workout.id ? (
-                    <Loader2 size={20} className="animate-spin text-brand-orange" />
-                  ) : (
-                    <Copy size={20} />
+          /* ─── VISTA RADICE (CARTELLE + SCHEDE SENZA CARTELLA) ─────────────── */
+          <div className="space-y-6">
+            {/* Sezione Cartelle */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Folder className="text-brand-orange" size={20} />
+                  <h2 className="text-base font-black text-white uppercase tracking-wider">Cartelle</h2>
+                  {folders.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange font-bold border border-brand-orange/30">
+                      {folders.length}
+                    </span>
                   )}
-                </button>
-                <button 
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    navigate(`/edit-train/${workout.id}`);
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFolderNameToCreate('');
+                    setFolderColorToCreate('#ff7700');
+                    setIsCreateFolderModalOpen(true);
                   }}
-                  className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
-                  title="Edit Workout"
+                  className="text-xs font-bold text-brand-orange hover:text-brand-lightOrange flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-orange/10 border border-brand-orange/30 active:scale-95 transition-all cursor-pointer shadow-sm"
                 >
-                  <Pencil size={20} />
-                </button>
-                <button 
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void deleteWorkout(workout.id);
-                  }}
-                  className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg"
-                  title="Delete Workout"
-                >
-                  <Trash2 size={20} />
+                  <FolderPlus size={15} />
+                  <span>+ Nuova Cartella</span>
                 </button>
               </div>
 
-              <div className="flex items-center pr-24 py-1">
-                <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4">
-                  <Calendar className="text-brand-orange" size={28} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
-                  <p className="text-xs text-brand-grey/60 font-semibold mt-1">
-                    {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+              {folders.length === 0 ? (
+                <div className="bg-brand-darkGrey/20 border border-dashed border-white/10 rounded-2xl p-4 text-center">
+                  <p className="text-xs text-brand-grey/70">
+                    Non hai ancora creato nessuna cartella. Clicca su "+ Nuova Cartella" per organizzare le tue schede.
                   </p>
                 </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {folders.map((folder) => {
+                    const count = workouts.filter((w) => folderAssignments[w.id] === folder.id).length;
+                    return (
+                      <div
+                        key={folder.id}
+                        onClick={() => setCurrentFolderId(folder.id)}
+                        className="bg-brand-darkGrey/35 hover:bg-brand-darkGrey/60 border border-white/10 hover:border-brand-orange/40 rounded-2xl p-4 transition-all cursor-pointer group flex items-center justify-between shadow-lg relative"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className="p-2.5 rounded-xl text-black font-bold shrink-0 shadow-md transition-transform group-hover:scale-105"
+                            style={{ backgroundColor: folder.color || '#ff7700' }}
+                          >
+                            <Folder size={22} className="text-black fill-black/30" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-white text-base truncate group-hover:text-brand-orange transition-colors">
+                              {folder.name}
+                            </h3>
+                            <p className="text-xs text-brand-grey/60 mt-0.5 font-medium">
+                              {count} {count === 1 ? 'scheda' : 'schede'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFolderToRename(folder);
+                              setRenamedFolderName(folder.name);
+                            }}
+                            className="p-1.5 text-brand-grey/40 hover:text-white transition-colors rounded-lg"
+                            title="Rinomina cartella"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Vuoi eliminare la cartella "${folder.name}"? Le schede contenute torneranno all'elenco principale.`)) {
+                                deleteFolder(folder.id, user?.id);
+                              }
+                            }}
+                            className="p-1.5 text-brand-grey/40 hover:text-red-400 transition-colors rounded-lg"
+                            title="Elimina cartella"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                          <ChevronRight size={18} className="text-brand-grey/40 group-hover:text-brand-orange transition-colors" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Sezione Schede Libere / Tutte le schede */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Dumbbell className="text-brand-orange" size={20} />
+                  <h2 className="text-base font-black text-white uppercase tracking-wider">
+                    {folders.length > 0 ? 'Schede senza cartella' : 'Le tue Schede'}
+                  </h2>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/80 font-bold">
+                    {rootWorkouts.length}
+                  </span>
+                </div>
               </div>
 
-              <p className="text-[11px] text-brand-grey/60 font-bold uppercase tracking-wider mt-3 pl-16">
-                Tap to view workout details
-              </p>
+              {rootWorkouts.length === 0 ? (
+                <div className="text-center bg-brand-darkGrey/20 border border-dashed border-brand-grey/30 rounded-3xl p-8 mt-2">
+                  <Dumbbell size={48} className="mx-auto text-brand-grey/50 mb-4" />
+                  <h2 className="text-lg font-bold text-white mb-2">
+                    {folders.length > 0 ? 'Tutte le schede sono organizzate in cartelle' : 'Nessuna scheda creata'}
+                  </h2>
+                  <p className="text-brand-grey text-xs sm:text-sm mb-6">
+                    {folders.length > 0
+                      ? 'Puoi creare una nuova scheda libera o aprirne una dalle cartelle in alto.'
+                      : 'Non hai ancora creato nessuna scheda di allenamento.'}
+                  </p>
+                  <button 
+                    onClick={() => navigate('/new-train')}
+                    className="bg-brand-orange hover:bg-brand-lightOrange text-black font-extrabold py-3 px-6 rounded-full transition-colors text-xs uppercase tracking-wider"
+                  >
+                    CREA NUOVA SCHEDA
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {rootWorkouts.map((workout) => (
+                    <div
+                      key={workout.id}
+                      className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 shadow-xl relative overflow-hidden cursor-pointer hover:border-brand-grey/40 transition-colors"
+                      onClick={() => openWorkoutModal(workout)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openWorkoutModal(workout);
+                        }
+                      }}
+                    >
+                      <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
+                        {folders.length > 0 && (
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSingleSchedaToAssign(workout);
+                            }}
+                            className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
+                            title="Sposta in una cartella"
+                          >
+                            <FolderInput size={20} />
+                          </button>
+                        )}
+                        <button 
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void duplicateWorkout(workout);
+                          }}
+                          disabled={duplicatingWorkoutId === workout.id}
+                          className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg disabled:opacity-50"
+                          title="Duplicate Workout"
+                        >
+                          {duplicatingWorkoutId === workout.id ? (
+                            <Loader2 size={20} className="animate-spin text-brand-orange" />
+                          ) : (
+                            <Copy size={20} />
+                          )}
+                        </button>
+                        <button 
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/edit-train/${workout.id}`);
+                          }}
+                          className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
+                          title="Edit Workout"
+                        >
+                          <Pencil size={20} />
+                        </button>
+                        <button 
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void deleteWorkout(workout.id);
+                          }}
+                          className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg"
+                          title="Delete Workout"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center pr-28 py-1">
+                        <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 shrink-0">
+                          <Calendar className="text-brand-orange" size={28} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
+                          <p className="text-xs text-brand-grey/60 font-semibold mt-1">
+                            {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-brand-grey/60 font-bold uppercase tracking-wider mt-3 pl-16">
+                        Tap to view workout details
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))
+          </div>
         )}
       </main>
 
@@ -1356,6 +1820,376 @@ const GymCardPage: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60"
               >
                 {isQuickEditSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODALE CREA NUOVA CARTELLA ────────────────────────────────── */}
+      {isCreateFolderModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setIsCreateFolderModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-brand-darkGrey/95 border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="flex items-center gap-2 text-white font-black text-lg">
+                <FolderPlus className="text-brand-orange" size={22} />
+                <span>Nuova Cartella</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateFolderModalOpen(false)}
+                className="p-1 text-brand-grey hover:text-white rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-brand-grey/80 mb-1">
+                  Nome della cartella
+                </label>
+                <input
+                  type="text"
+                  placeholder="Es. Calisthenics Skills, Scheda Massa..."
+                  value={folderNameToCreate}
+                  onChange={(e) => setFolderNameToCreate(e.target.value)}
+                  autoFocus
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-4 py-2.5 text-white placeholder-brand-grey/40 focus:outline-none focus:border-brand-orange text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (folderNameToCreate.trim()) {
+                        createFolder(folderNameToCreate, user?.id, folderColorToCreate);
+                        setIsCreateFolderModalOpen(false);
+                      }
+                    }
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-brand-grey/80 mb-2">
+                  Colore distintivo
+                </label>
+                <div className="flex items-center gap-2.5">
+                  {['#ff7700', '#06b6d4', '#10b981', '#a855f7', '#f43f5e', '#f59e0b', '#64748b'].map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => setFolderColorToCreate(col)}
+                      className={`w-7 h-7 rounded-full transition-transform cursor-pointer flex items-center justify-center ${
+                        folderColorToCreate === col ? 'scale-125 ring-2 ring-white shadow-lg' : 'hover:scale-110 opacity-80'
+                      }`}
+                      style={{ backgroundColor: col }}
+                    >
+                      {folderColorToCreate === col && <Check size={14} className="text-black font-black" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsCreateFolderModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-brand-grey hover:text-white border border-white/10 transition-colors"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                disabled={!folderNameToCreate.trim()}
+                onClick={() => {
+                  if (folderNameToCreate.trim()) {
+                    createFolder(folderNameToCreate, user?.id, folderColorToCreate);
+                    setIsCreateFolderModalOpen(false);
+                  }
+                }}
+                className="px-5 py-2 rounded-xl text-xs font-black bg-brand-orange hover:bg-brand-lightOrange text-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer shadow-md"
+              >
+                Crea Cartella
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODALE RINOMINA CARTELLA ────────────────────────────────────── */}
+      {folderToRename && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setFolderToRename(null)}
+        >
+          <div
+            className="w-full max-w-md bg-brand-darkGrey/95 border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="flex items-center gap-2 text-white font-black text-lg">
+                <Pencil className="text-brand-orange" size={20} />
+                <span>Rinomina Cartella</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFolderToRename(null)}
+                className="p-1 text-brand-grey hover:text-white rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-brand-grey/80 mb-1">
+                Nuovo nome
+              </label>
+              <input
+                type="text"
+                value={renamedFolderName}
+                onChange={(e) => setRenamedFolderName(e.target.value)}
+                autoFocus
+                className="w-full bg-black/50 border border-white/15 rounded-xl px-4 py-2.5 text-white placeholder-brand-grey/40 focus:outline-none focus:border-brand-orange text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (renamedFolderName.trim()) {
+                      renameFolder(folderToRename.id, renamedFolderName, user?.id);
+                      setFolderToRename(null);
+                    }
+                  }
+                }}
+              />
+            </div>
+
+            <div className="pt-3 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setFolderToRename(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-brand-grey hover:text-white border border-white/10 transition-colors"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                disabled={!renamedFolderName.trim()}
+                onClick={() => {
+                  if (renamedFolderName.trim()) {
+                    renameFolder(folderToRename.id, renamedFolderName, user?.id);
+                    setFolderToRename(null);
+                  }
+                }}
+                className="px-5 py-2 rounded-xl text-xs font-black bg-brand-orange hover:bg-brand-lightOrange text-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer shadow-md"
+              >
+                Salva
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODALE SPOSTA SCHEDE ESISTENTI NELLA CARTELLA CORRENTE ─────── */}
+      {isMoveSchedeModalOpen && currentFolder && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setIsMoveSchedeModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg bg-brand-darkGrey/95 border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2 text-white font-black text-base sm:text-lg truncate">
+                <FolderInput className="text-brand-orange shrink-0" size={22} />
+                <span className="truncate">Sposta in "{currentFolder.name}"</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMoveSchedeModalOpen(false)}
+                className="p-1 text-brand-grey hover:text-white rounded-lg shrink-0"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p className="text-xs text-brand-grey/80 shrink-0">
+              Seleziona le schede che desideri spostare all'interno di questa cartella:
+            </p>
+
+            <div className="flex-1 overflow-y-auto space-y-2 min-h-0 pr-1">
+              {candidateWorkoutsToMove.length === 0 ? (
+                <div className="p-6 text-center text-xs text-brand-grey/60 border border-dashed border-white/10 rounded-2xl">
+                  Non ci sono altre schede disponibili da spostare.
+                </div>
+              ) : (
+                candidateWorkoutsToMove.map((w) => {
+                  const isChecked = selectedSchedeIdsToMove.has(w.id);
+                  const currentFolderIdForW = folderAssignments[w.id];
+                  const currentFolderNameForW = currentFolderIdForW
+                    ? folders.find((f) => f.id === currentFolderIdForW)?.name
+                    : null;
+
+                  return (
+                    <div
+                      key={w.id}
+                      onClick={() => {
+                        setSelectedSchedeIdsToMove((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(w.id)) next.delete(w.id);
+                          else next.add(w.id);
+                          return next;
+                        });
+                      }}
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                        isChecked
+                          ? 'bg-brand-orange/15 border-brand-orange text-white'
+                          : 'bg-black/40 border-white/10 text-white/80 hover:border-white/25'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <span className="font-bold text-sm block truncate text-white">{w.name}</span>
+                        <span className="text-[11px] text-brand-grey/60 block mt-0.5">
+                          {currentFolderNameForW ? `Attualmente in: 📁 ${currentFolderNameForW}` : 'Attualmente: Scheda libera'}
+                        </span>
+                      </div>
+
+                      <div
+                        className={`w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 transition-colors ${
+                          isChecked
+                            ? 'bg-brand-orange border-brand-orange text-black'
+                            : 'border-white/20 bg-white/5'
+                        }`}
+                      >
+                        {isChecked && <Check size={16} strokeWidth={3} />}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between shrink-0">
+              <span className="text-xs text-brand-grey/70">
+                {selectedSchedeIdsToMove.size} selezionate
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMoveSchedeModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-brand-grey hover:text-white border border-white/10"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedSchedeIdsToMove.size === 0}
+                  onClick={() => {
+                    moveSchedeToFolder(
+                      Array.from(selectedSchedeIdsToMove),
+                      currentFolder.id,
+                      user?.id
+                    );
+                    setIsMoveSchedeModalOpen(false);
+                  }}
+                  className="px-5 py-2 rounded-xl text-xs font-black bg-brand-orange hover:bg-brand-lightOrange text-black uppercase tracking-wider disabled:opacity-50 transition-colors shadow-md"
+                >
+                  Sposta qui
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODALE SPOSTA SINGOLA SCHEDA ────────────────────────────────── */}
+      {singleSchedaToAssign && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setSingleSchedaToAssign(null)}
+        >
+          <div
+            className="w-full max-w-md bg-brand-darkGrey/95 border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="min-w-0 pr-2">
+                <h3 className="text-base font-black text-white truncate">
+                  Sposta "{singleSchedaToAssign.name}"
+                </h3>
+                <p className="text-xs text-brand-grey/70 mt-0.5">
+                  Scegli la cartella di destinazione
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSingleSchedaToAssign(null)}
+                className="p-1 text-brand-grey hover:text-white rounded-lg shrink-0"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {/* Opzione Radice (Nessuna cartella) */}
+              <button
+                type="button"
+                onClick={() => {
+                  assignSchedaToFolder(singleSchedaToAssign.id, null, user?.id);
+                  setSingleSchedaToAssign(null);
+                }}
+                className={`w-full p-3 rounded-xl border text-left transition-all flex items-center justify-between ${
+                  !folderAssignments[singleSchedaToAssign.id]
+                    ? 'bg-brand-orange/20 border-brand-orange text-brand-orange font-black'
+                    : 'bg-black/30 border-white/10 text-white/90 hover:border-white/20'
+                }`}
+              >
+                <span>Nessuna cartella (Elenco principale)</span>
+                {!folderAssignments[singleSchedaToAssign.id] && <Check size={16} />}
+              </button>
+
+              {/* Cartelle esistenti */}
+              {folders.map((f) => {
+                const isSelected = folderAssignments[singleSchedaToAssign.id] === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      assignSchedaToFolder(singleSchedaToAssign.id, f.id, user?.id);
+                      setSingleSchedaToAssign(null);
+                    }}
+                    className={`w-full p-3 rounded-xl border text-left transition-all flex items-center justify-between ${
+                      isSelected
+                        ? 'bg-brand-orange/20 border-brand-orange text-brand-orange font-black'
+                        : 'bg-black/30 border-white/10 text-white/90 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ backgroundColor: f.color || '#ff7700' }}
+                      />
+                      <span>📁 {f.name}</span>
+                    </div>
+                    {isSelected && <Check size={16} />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSingleSchedaToAssign(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-brand-grey hover:text-white border border-white/10"
+              >
+                Chiudi
               </button>
             </div>
           </div>
