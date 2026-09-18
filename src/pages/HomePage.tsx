@@ -115,7 +115,7 @@ const HomePage = () => {
   };
 
   return (
-    <div className="pb-24 flex flex-col items-center relative min-h-screen">
+    <div className="safe-pb-nav flex flex-col items-center relative min-h-screen">
       <HeaderLogo />
 
       <main className="w-full flex flex-col items-center mt-4 space-y-8">

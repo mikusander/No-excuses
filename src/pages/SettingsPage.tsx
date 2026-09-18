@@ -42,7 +42,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellRing } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
-import HeaderLogo from '../components/HeaderLogo';
+import AppHeader from '../components/AppHeader';
+import { hapticLight, hapticMedium, hapticHeavy } from '../utils/haptics';
 import { supabase } from '../lib/supabase';
 import {
   loadCorrectionRules,
@@ -198,6 +199,7 @@ const SettingsPage: React.FC = () => {
   const handleToggleVoiceAssistance = async () => {
     if (!user || voiceSaving) return;
 
+    void hapticLight();
     const previous = voiceAssistanceEnabled;
     const next = !voiceAssistanceEnabled;
 
@@ -267,6 +269,7 @@ const SettingsPage: React.FC = () => {
       return;
     }
 
+    void hapticMedium();
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -300,34 +303,46 @@ const SettingsPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
-      <HeaderLogo />
+    <div className="min-h-screen bg-brand-dark flex flex-col safe-pb-nav relative">
+      <AppHeader
+        title="Impostazioni"
+        subtitle="Profilo & Preferenze"
+      />
 
-      <main className="flex-1 w-full flex flex-col items-center px-6 mt-6">
-        {/* User Info Section */}
-        <div className="bg-brand-darkGrey/40 w-full max-w-sm rounded-3xl p-6 flex flex-col items-center border border-brand-grey/20 relative">
-          <div className="bg-brand-orange/20 p-4 rounded-full mb-4">
-            <User className="text-brand-orange" size={40} />
+      <main className="flex-1 w-full max-w-md mx-auto px-4 sm:px-6 mt-4 flex flex-col items-center space-y-5">
+        {/* User Info Section - Inset Grouped */}
+        <div className="bg-[#1C1C1E] w-full rounded-3xl p-6 flex flex-col items-center border border-white/10 shadow-xl relative">
+          <div className="bg-brand-orange/15 border border-brand-orange/30 p-4 rounded-full mb-3 shadow-lg shadow-brand-orange/10">
+            <User className="text-brand-orange" size={36} />
           </div>
           
           {!isEditing ? (
             <>
               <div className="flex items-center gap-2">
                 {profileLoading ? (
-                  <div className="h-8 w-44 rounded-md bg-brand-grey/20 animate-pulse" />
+                  <div className="h-8 w-44 rounded-md bg-white/10 animate-pulse" />
                 ) : (
                   <>
-                    <h2 className="text-2xl font-bold text-white capitalize">{userName}</h2>
-                    <button onClick={() => { setIsEditing(true); setNewName(userName); setError(null); }} className="text-brand-grey hover:text-white transition-colors">
-                      <Edit2 size={16} />
+                    <h2 className="text-xl font-bold text-white capitalize">{userName}</h2>
+                    <button
+                      onClick={() => {
+                        void hapticLight();
+                        setIsEditing(true);
+                        setNewName(userName);
+                        setError(null);
+                      }}
+                      className="text-brand-grey/60 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                      title="Modifica username"
+                    >
+                      <Edit2 size={15} />
                     </button>
                   </>
                 )}
               </div>
               {profileLoading ? (
-                <div className="h-4 w-52 rounded-md bg-brand-grey/20 animate-pulse mt-1" />
+                <div className="h-4 w-52 rounded-md bg-white/10 animate-pulse mt-1" />
               ) : (
-                <p className="text-sm text-brand-grey mt-1">{user?.email}</p>
+                <p className="text-xs text-brand-grey/60 mt-1">{user?.email}</p>
               )}
             </>
           ) : (
@@ -336,42 +351,58 @@ const SettingsPage: React.FC = () => {
                 type="text"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="New username"
-                className="w-full bg-black/50 border-2 border-brand-orange/50 rounded-xl px-4 py-2 text-white text-center focus:border-brand-orange focus:outline-none mb-3"
+                placeholder="Nuovo username"
+                className="w-full bg-black/60 border border-brand-orange/60 rounded-xl px-4 py-2.5 text-white text-center focus:border-brand-orange focus:outline-none mb-3 text-sm font-semibold"
                 autoFocus
                 maxLength={20}
               />
-              {error && <p className="text-xs text-red-500 font-bold mb-3 text-center">{error}</p>}
+              {error && <p className="text-xs text-red-400 font-semibold mb-3 text-center">{error}</p>}
               <div className="flex gap-3">
-                <button type="button" onClick={() => setIsEditing(false)} disabled={saving} className="p-2 rounded-xl bg-red-500/20 text-red-500 hover:bg-red-500/40 transition-colors">
-                  <X size={20} />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void hapticLight();
+                    setIsEditing(false);
+                  }}
+                  disabled={saving}
+                  className="p-2 rounded-xl bg-red-500/15 text-red-400 hover:bg-red-500/30 transition-colors cursor-pointer"
+                >
+                  <X size={18} />
                 </button>
-                <button type="submit" disabled={saving} className="p-2 rounded-xl bg-green-500/20 text-green-500 hover:bg-green-500/40 transition-colors disabled:opacity-50">
-                  <Check size={20} />
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/30 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  <Check size={18} />
                 </button>
               </div>
             </form>
           )}
 
-          {success && <p className="text-xs text-green-400 mt-3 absolute -bottom-6 font-bold">Username updated!</p>}
+          {success && <p className="text-xs text-emerald-400 mt-2 font-bold animate-in fade-in">Username aggiornato!</p>}
         </div>
 
-        {/* Spazio per future impostazioni */}
-        <div className="w-full max-w-sm mt-8 space-y-4">
-          <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4">
+        {/* Impostazioni Grouped Card */}
+        <div className="w-full space-y-4">
+          <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white font-bold text-sm">Voice Assistance</p>
-                <p className="text-brand-grey/60 text-xs mt-1">Countdown and workout voice cues</p>
+                <p className="text-white font-bold text-sm">Assistente Vocale</p>
+                <p className="text-brand-grey/60 text-xs mt-0.5">Countdown e avvisi vocali durante l'allenamento</p>
               </div>
               <button
                 onClick={handleToggleVoiceAssistance}
                 disabled={voiceSaving || profileLoading}
-                className={`relative w-12 h-7 rounded-full overflow-hidden transition-colors ${voiceAssistanceEnabled ? 'bg-brand-orange' : 'bg-brand-grey/30'}`}
-                aria-label="Toggle voice assistance"
+                className={`relative w-12 h-7 rounded-full transition-colors cursor-pointer shrink-0 select-none ${
+                  voiceAssistanceEnabled ? 'bg-brand-orange' : 'bg-white/20'
+                }`}
+                aria-label="Toggle assistente vocale"
               >
                 <span
-                  className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${voiceAssistanceEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                  className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform shadow-md ${
+                    voiceAssistanceEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
                 />
               </button>
             </div>
@@ -382,25 +413,25 @@ const SettingsPage: React.FC = () => {
 
           {/* Notifiche di Recupero & Schermo Spento (Solo App Nativa iPhone) */}
           {isNativeApp() && (
-            <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4 space-y-3">
+            <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-xl space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-blue-500/15 text-blue-400">
+                  <div className="p-2.5 rounded-2xl bg-blue-500/15 text-blue-400 border border-blue-500/25">
                     <Bell size={18} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-white font-bold text-sm">Notifiche di Recupero</p>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                         notificationPerm === 'granted'
                           ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                           : 'bg-red-500/20 text-red-400 border-red-500/30'
                       }`}>
-                        {notificationPerm === 'granted' ? 'Attive (iOS Nativo)' : 'Non attive'}
+                        {notificationPerm === 'granted' ? 'Attive (iOS)' : 'Non attive'}
                       </span>
                     </div>
                     <p className="text-brand-grey/60 text-xs mt-0.5">
-                      Sveglia hardware programmata sul chip dell'iPhone (100% offline)
+                      Sveglia hardware offline a schermo bloccato
                     </p>
                   </div>
                 </div>
@@ -410,21 +441,21 @@ const SettingsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleRequestNotification}
-                  className="w-full py-2 px-3 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-bold transition-all shadow cursor-pointer"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-all shadow-lg shadow-brand-orange/20 cursor-pointer active:scale-95"
                 >
                   Attiva Notifiche
                 </button>
               )}
 
-              <div className="text-[11px] text-brand-grey/60 bg-white/5 rounded-xl p-2.5 space-y-1">
-                <p className="font-semibold text-white/80">📱 App Nativa iOS:</p>
+              <div className="text-[11px] text-brand-grey/70 bg-white/5 rounded-2xl p-3 space-y-1 border border-white/5">
+                <p className="font-semibold text-white/90">📱 App Nativa iOS:</p>
                 <p>
-                  Su questa versione nativa, i timer di recupero sono gestiti direttamente dal processore del telefono: funzionano con qualsiasi durata anche a schermo bloccato e senza connessione internet.
+                  I timer di recupero su iPhone suonano e vibrano puntuali anche se blocchi lo schermo o esci dall'app.
                 </p>
               </div>
 
               <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                <span className="text-[11px] text-brand-grey/70">Testa il funzionamento</span>
+                <span className="text-xs text-brand-grey/70 font-medium">Testa il funzionamento</span>
                 <button
                   type="button"
                   disabled={notificationTesting}
@@ -433,7 +464,7 @@ const SettingsPage: React.FC = () => {
                 >
                   <BellRing size={13} />
                   <span>
-                    {notificationTesting ? 'Programmazione...' : 'Prova Sveglia Nativa (5s)'}
+                    {notificationTesting ? 'Programmazione...' : 'Prova Sveglia (5s)'}
                   </span>
                 </button>
               </div>
@@ -447,10 +478,10 @@ const SettingsPage: React.FC = () => {
           )}
 
           {/* Memoria Correzioni OCR & Parser */}
-          <div className="bg-brand-darkGrey/20 border border-brand-grey/10 rounded-2xl p-4">
+          <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-400">
+                <div className="p-2.5 rounded-2xl bg-amber-500/15 text-amber-400 border border-amber-500/25">
                   <Brain size={18} />
                 </div>
                 <div>
@@ -468,8 +499,11 @@ const SettingsPage: React.FC = () => {
               {correctionRules.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setShowRulesList(!showRulesList)}
-                  className="text-brand-grey hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                  onClick={() => {
+                    void hapticLight();
+                    setShowRulesList(!showRulesList);
+                  }}
+                  className="text-brand-grey/70 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
                   aria-label="Mostra o nascondi elenco regole"
                 >
                   {showRulesList ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -490,7 +524,7 @@ const SettingsPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleClearAllRules}
-                    className="text-[10px] text-red-400/80 hover:text-red-400 font-semibold transition-colors"
+                    className="text-[10px] text-red-400/80 hover:text-red-400 font-semibold transition-colors cursor-pointer"
                   >
                     Cancella tutte
                   </button>
@@ -526,7 +560,7 @@ const SettingsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleDeleteRule(rule.id)}
-                        className="text-brand-grey/40 hover:text-red-400 p-1.5 rounded-lg transition-colors shrink-0"
+                        className="text-brand-grey/40 hover:text-red-400 p-1.5 rounded-lg transition-colors shrink-0 cursor-pointer"
                         title="Elimina regola"
                       >
                         <Trash2 size={14} />
@@ -539,14 +573,17 @@ const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Logout Button pushed to the end */}
-        <div className="mt-auto w-full max-w-sm pt-12 mb-24">
+        {/* Logout Button */}
+        <div className="w-full pt-4 pb-8">
           <button 
-            onClick={signOut}
-            className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 font-bold text-lg py-4 rounded-xl flex items-center justify-center transition-colors shadow-lg shadow-red-500/5"
+            onClick={() => {
+              void hapticHeavy();
+              void signOut();
+            }}
+            className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/25 font-bold text-sm py-3.5 rounded-2xl flex items-center justify-center transition-all cursor-pointer active:scale-98 shadow-lg shadow-red-500/5"
           >
-            <LogOut size={24} className="mr-2" />
-            SIGN OUT
+            <LogOut size={18} className="mr-2" />
+            ESCI DALL'ACCOUNT
           </button>
         </div>
       </main>

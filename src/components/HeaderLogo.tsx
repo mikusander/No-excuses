@@ -13,13 +13,18 @@ import { logoBase64 } from '../assets/logoBase64';
 
 const HeaderLogo: React.FC = () => {
   return (
-    <header className="w-full flex justify-center items-center py-6 mt-4">
+    <header
+      className="w-full flex justify-center items-center py-4"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+      }}
+    >
       <div className="relative">
         {/* We use the logo image directly since it matches the mockup perfectly */}
         <img 
           src={logoBase64} 
           alt="No Excuses Logo" 
-          className="h-20 md:h-24 rounded-2xl border-2 border-white object-contain"
+          className="h-20 md:h-24 rounded-2xl border-2 border-white/80 object-contain shadow-2xl"
         />
       </div>
     </header>

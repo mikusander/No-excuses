@@ -41,6 +41,8 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
 import PeriodicReportModal from '../components/PeriodicReportModal';
+import AppHeader from '../components/AppHeader';
+import { hapticLight, hapticHeavy } from '../utils/haptics';
 import {
   type RawWorkoutSession,
   toSnapshotExercises,
@@ -215,35 +217,39 @@ const WorkoutHistoryPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
-      <header className="p-4 relative flex items-center justify-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
-        <h1 className="text-xl font-bold text-center">Workout History</h1>
-      </header>
+    <div className="min-h-screen bg-brand-dark flex flex-col safe-pb-nav relative">
+      <AppHeader
+        title="Storico Allenamenti"
+        subtitle={!loading && historyItems.length > 0 ? `${historyItems.length} completati` : undefined}
+      />
 
-      <main className="flex-1 p-6 w-full max-w-2xl mx-auto space-y-4">
+      <main className="flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto space-y-4">
         {/* Banner Genera Report Periodico in primo piano */}
         {!loading && historyItems.length > 0 && (
-          <div className="bg-gradient-to-br from-[#1a1410] via-brand-darkGrey/80 to-black border border-brand-orange/40 rounded-3xl p-5 shadow-2xl backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="bg-gradient-to-br from-[#1C1C1E] via-[#241E1A] to-[#1C1C1E] border border-brand-orange/30 rounded-3xl p-5 shadow-2xl backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3.5 w-full sm:w-auto">
-              <div className="p-3 bg-brand-orange/20 border border-brand-orange/40 rounded-2xl text-brand-orange shrink-0 shadow-lg shadow-brand-orange/10">
-                <BarChart3 size={28} />
+              <div className="p-3 bg-brand-orange/15 border border-brand-orange/30 rounded-2xl text-brand-orange shrink-0 shadow-lg shadow-brand-orange/10">
+                <BarChart3 size={26} />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-white font-black text-base sm:text-lg tracking-wide">Statistiche & Progressi</h2>
-                  <span className="bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <h2 className="text-white font-extrabold text-base sm:text-lg tracking-tight">Statistiche & Progressi</h2>
+                  <span className="bg-brand-orange/20 border border-brand-orange/30 text-brand-orange text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Sparkles size={10} /> Macro & Micro
                   </span>
                 </div>
-                <p className="text-xs text-brand-grey mt-0.5 leading-relaxed">
+                <p className="text-xs text-brand-grey/80 mt-0.5 leading-relaxed">
                   Tempo effettivo, frequenza, Hard Sets e progressione per esercizio con curve di trend.
                 </p>
               </div>
             </div>
 
             <button
-              onClick={() => setIsReportModalOpen(true)}
-              className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-brand-orange to-[#ff6b22] text-black font-extrabold text-sm shadow-xl shadow-brand-orange/20 hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+              onClick={() => {
+                void hapticLight();
+                setIsReportModalOpen(true);
+              }}
+              className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-brand-orange to-brand-lightOrange text-black font-extrabold text-sm shadow-xl shadow-brand-orange/20 hover:brightness-110 active:scale-95 transition-all cursor-pointer select-none"
             >
               <BarChart3 size={18} />
               <span>📊 Statistiche & Progressi</span>
@@ -253,43 +259,49 @@ const WorkoutHistoryPage: React.FC = () => {
 
         {loading ? (
           <div className="flex justify-center items-center h-48">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey"></div>
+            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-brand-orange border-b-2 border-white/10"></div>
           </div>
         ) : historyItems.length === 0 ? (
-          <div className="text-center bg-brand-darkGrey/20 border border-dashed border-brand-grey/30 rounded-3xl p-8 mt-12">
-            <Dumbbell size={48} className="mx-auto text-brand-grey/50 mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">No Completed Workouts Yet</h2>
-            <p className="text-brand-grey text-sm mb-6">Complete a workout and it will appear here with date and time.</p>
+          <div className="text-center bg-[#1C1C1E]/60 border border-white/10 rounded-3xl p-8 mt-8">
+            <Dumbbell size={48} className="mx-auto text-brand-grey/40 mb-4" />
+            <h2 className="text-xl font-bold text-white mb-2">Nessun allenamento salvato</h2>
+            <p className="text-brand-grey/70 text-sm mb-6 max-w-xs mx-auto">Completa una sessione per vederla apparire qui con data, esercizi e note.</p>
             <button
-              onClick={() => navigate('/select-workout')}
-              className="bg-brand-orange hover:bg-brand-lightOrange text-black font-bold py-3 px-6 rounded-full transition-colors"
+              onClick={() => {
+                void hapticLight();
+                navigate('/select-workout');
+              }}
+              className="bg-brand-orange hover:bg-brand-lightOrange text-black font-extrabold py-3 px-6 rounded-full transition-all shadow-lg shadow-brand-orange/20 cursor-pointer active:scale-95"
             >
-              START A WORKOUT
+              INIZIA ALLENAMENTO
             </button>
           </div>
         ) : (
           historyItems.map((item) => (
-            <div key={item.id} className="relative">
+            <div key={item.id} className="relative group">
               <button
-                onClick={() => navigate(`/workout-history/${item.id}`)}
+                onClick={() => {
+                  void hapticLight();
+                  navigate(`/workout-history/${item.id}`);
+                }}
                 aria-label={`Open details for ${item.workoutName}`}
-                className="w-full text-left bg-brand-darkGrey/40 hover:bg-brand-darkGrey border border-brand-grey/20 hover:border-brand-orange/40 rounded-3xl p-5 pr-16 shadow-xl transition-colors group"
+                className="w-full text-left bg-[#1C1C1E] hover:bg-[#2C2C2E] border border-white/10 hover:border-brand-orange/40 rounded-3xl p-4 sm:p-5 pr-14 sm:pr-16 shadow-lg transition-all active:scale-[0.99] cursor-pointer"
                 disabled={deletingWorkoutId === item.id}
               >
                 <div className="flex items-start justify-between min-w-0 gap-4">
                   <div className="flex items-start min-w-0">
-                    <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 mt-1">
-                      <Calendar className="text-brand-orange" size={24} />
+                    <div className="bg-brand-orange/15 border border-brand-orange/25 p-3 rounded-2xl mr-4 mt-0.5 shrink-0">
+                      <Calendar className="text-brand-orange" size={22} />
                     </div>
                     <div className="min-w-0">
-                      <h2 className="text-lg font-bold text-white leading-tight break-words">{item.workoutName}</h2>
-                      <p className="text-sm text-brand-grey mt-1">{formatExecutedAt(item.executedAt)}</p>
-                      <p className="text-xs text-brand-orange/90 mt-2 uppercase tracking-wide font-bold">Tap to view details</p>
+                      <h2 className="text-base sm:text-lg font-bold text-white leading-tight break-words">{item.workoutName}</h2>
+                      <p className="text-xs sm:text-sm text-brand-grey/70 mt-1">{formatExecutedAt(item.executedAt)}</p>
+                      <p className="text-[11px] text-brand-orange font-semibold mt-2 tracking-wide uppercase">Tocca per dettagli</p>
                     </div>
                   </div>
 
-                  <div className="shrink-0 mt-1 text-brand-grey/70 group-hover:text-brand-orange transition-colors">
-                    <ChevronRight size={22} />
+                  <div className="shrink-0 mt-1 text-brand-grey/50 group-hover:text-brand-orange transition-colors">
+                    <ChevronRight size={20} />
                   </div>
                 </div>
               </button>
@@ -297,15 +309,16 @@ const WorkoutHistoryPage: React.FC = () => {
               <button
                 onClick={(event) => {
                   event.stopPropagation();
+                  void hapticHeavy();
                   void deleteHistoryWorkout(item.id);
                 }}
                 disabled={deletingWorkoutId != null}
-                className="absolute top-4 right-4 p-2 rounded-lg bg-black/30 border border-white/10 text-brand-grey/70 hover:text-red-300 hover:border-red-400/40 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                title="Delete completed workout"
-                aria-label={`Delete ${item.workoutName}`}
+                className="absolute top-4 right-4 p-2 rounded-xl bg-black/40 hover:bg-red-500/20 border border-white/10 hover:border-red-500/40 text-brand-grey/60 hover:text-red-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                title="Elimina allenamento completato"
+                aria-label={`Elimina ${item.workoutName}`}
               >
                 {deletingWorkoutId === item.id ? (
-                  <Loader2 size={16} className="animate-spin" />
+                  <Loader2 size={16} className="animate-spin text-brand-orange" />
                 ) : (
                   <Trash2 size={16} />
                 )}
