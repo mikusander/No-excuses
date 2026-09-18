@@ -6,6 +6,7 @@
  *  - Assegnare o spostare singole schede o gruppi di schede tra cartelle (o al livello radice)
  *  - Propagare i cambiamenti in tempo reale tra componenti tramite CustomEvent e listener di storage
  */
+import { supabase } from '../lib/supabase';
 
 export interface WorkoutFolder {
   id: string;
@@ -22,6 +23,9 @@ const FOLDERS_STORAGE_PREFIX = 'workout_folders_v1:';
 const ASSIGNMENTS_STORAGE_PREFIX = 'workout_folder_assignments_v1:';
 export const FOLDER_CHANGE_EVENT = 'workout-folders-changed';
 
+let cloudPushTimeout: ReturnType<typeof setTimeout> | null = null;
+let isCloudSyncing = false;
+
 const getCleanUserId = (userId?: string): string => {
   return userId && userId.trim() ? userId.trim() : 'guest';
 };
@@ -29,6 +33,105 @@ const getCleanUserId = (userId?: string): string => {
 const notifyFolderChanges = (): void => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(FOLDER_CHANGE_EVENT));
+  }
+};
+
+/**
+ * Spinge l'elenco cartelle e assegnazioni locali verso i metadati utente Supabase (con debounce 500ms).
+ */
+export const pushFoldersToCloud = (userId?: string): void => {
+  const cleanId = getCleanUserId(userId);
+  if (cleanId === 'guest') return;
+
+  if (cloudPushTimeout) {
+    clearTimeout(cloudPushTimeout);
+  }
+
+  cloudPushTimeout = setTimeout(async () => {
+    try {
+      const currentFolders = getFolders(cleanId);
+      const currentAssignments = getFolderAssignments(cleanId);
+
+      await supabase.auth.updateUser({
+        data: {
+          workout_folders: currentFolders,
+          workout_folder_assignments: currentAssignments,
+        },
+      });
+    } catch (err) {
+      console.debug('Cloud folder push skipped/failed:', err);
+    }
+  }, 500);
+};
+
+/**
+ * Sincronizza bidirezionalmente le cartelle locali con Supabase:
+ * - Se il cloud ha cartelle e il locale è vuoto (es. nuovo dispositivo / iPhone): scarica dal cloud nel localStorage.
+ * - Se il locale ha cartelle e il cloud è vuoto (es. primo sync dal PC): effettua il push al cloud.
+ * - Se entrambi hanno dati: unifica le cartelle e le assegnazioni.
+ */
+export const syncFoldersWithCloud = async (userId?: string): Promise<void> => {
+  const cleanId = getCleanUserId(userId);
+  if (cleanId === 'guest' || isCloudSyncing) return;
+
+  isCloudSyncing = true;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user || data.user.id !== cleanId) {
+      return;
+    }
+
+    const metadata = data.user.user_metadata || {};
+    const cloudFolders = Array.isArray(metadata.workout_folders) ? (metadata.workout_folders as WorkoutFolder[]) : null;
+    const cloudAssignments = (metadata.workout_folder_assignments && typeof metadata.workout_folder_assignments === 'object')
+      ? (metadata.workout_folder_assignments as FolderAssignmentMap)
+      : null;
+
+    const localFolders = getFolders(cleanId);
+    const localAssignments = getFolderAssignments(cleanId);
+
+    // Caso 1: il cloud ha dati e il locale è vuoto (es. iPhone con app appena installata)
+    if (cloudFolders && cloudFolders.length > 0 && localFolders.length === 0) {
+      saveFolders(cloudFolders, cleanId, true);
+      if (cloudAssignments) {
+        saveFolderAssignments(cloudAssignments, cleanId, true);
+      }
+      return;
+    }
+
+    // Caso 2: il locale ha dati e il cloud è ancora vuoto (es. primo sync dal PC)
+    if (localFolders.length > 0 && (!cloudFolders || cloudFolders.length === 0)) {
+      pushFoldersToCloud(cleanId);
+      return;
+    }
+
+    // Caso 3: entrambi hanno dati -> unione (merge)
+    if (cloudFolders && cloudFolders.length > 0 && localFolders.length > 0) {
+      const folderMap = new Map<string, WorkoutFolder>();
+      cloudFolders.forEach((f) => folderMap.set(f.id, f));
+      localFolders.forEach((f) => folderMap.set(f.id, f));
+      const mergedFolders = Array.from(folderMap.values());
+
+      const mergedAssignments: FolderAssignmentMap = {
+        ...(cloudAssignments || {}),
+        ...localAssignments,
+      };
+
+      const localFoldersJson = JSON.stringify(localFolders);
+      const mergedFoldersJson = JSON.stringify(mergedFolders);
+      const localAssignJson = JSON.stringify(localAssignments);
+      const mergedAssignJson = JSON.stringify(mergedAssignments);
+
+      if (localFoldersJson !== mergedFoldersJson || localAssignJson !== mergedAssignJson) {
+        saveFolders(mergedFolders, cleanId, true);
+        saveFolderAssignments(mergedAssignments, cleanId, true);
+        pushFoldersToCloud(cleanId);
+      }
+    }
+  } catch (err) {
+    console.debug('Error in syncFoldersWithCloud:', err);
+  } finally {
+    isCloudSyncing = false;
   }
 };
 
@@ -55,7 +158,7 @@ export const getFolders = (userId?: string): WorkoutFolder[] => {
 /**
  * Salva l'elenco delle cartelle in localStorage per l'utente.
  */
-export const saveFolders = (folders: WorkoutFolder[], userId?: string): void => {
+export const saveFolders = (folders: WorkoutFolder[], userId?: string, skipCloudPush = false): void => {
   if (typeof window === 'undefined' || !window.localStorage) {
     return;
   }
@@ -66,6 +169,9 @@ export const saveFolders = (folders: WorkoutFolder[], userId?: string): void => 
       JSON.stringify(folders)
     );
     notifyFolderChanges();
+    if (!skipCloudPush) {
+      pushFoldersToCloud(userId);
+    }
   } catch (err) {
     console.warn('Errore durante il salvataggio delle cartelle utente:', err);
   }
@@ -172,7 +278,8 @@ export const getFolderAssignments = (userId?: string): FolderAssignmentMap => {
  */
 export const saveFolderAssignments = (
   assignments: FolderAssignmentMap,
-  userId?: string
+  userId?: string,
+  skipCloudPush = false
 ): void => {
   if (typeof window === 'undefined' || !window.localStorage) {
     return;
@@ -184,6 +291,9 @@ export const saveFolderAssignments = (
       JSON.stringify(assignments)
     );
     notifyFolderChanges();
+    if (!skipCloudPush) {
+      pushFoldersToCloud(userId);
+    }
   } catch (err) {
     console.warn('Errore durante il salvataggio delle assegnazioni cartella:', err);
   }

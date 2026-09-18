@@ -71,7 +71,7 @@ Questo file funge da riferimento principale per qualsiasi agente AI e sviluppato
   - `profili`: preferenze utente (username, voice_assistant).
 - **Cartelle Schede (`src/utils/folderManager.ts`)**:
   - Gestione cartelle offline-first in `localStorage` (`workout_folders_v1:${userId}` e `workout_folder_assignments_v1:${userId}`).
-  - Aggiornamento reattivo senza modifiche al database Supabase.
+  - **Sincronizzazione Cloud Automatica**: salvataggio bidirezionale nei metadati utente Supabase (`user_metadata.workout_folders` e `user_metadata.workout_folder_assignments`) tramite `supabase.auth.updateUser` e `getUser()`. Zero migrazioni DDL sul database, piena persistenza tra PC, browser e iPhone.
 - **Ripresa Workout (`src/lib/workoutProgressStorage.ts`)**:
   - Salvataggio checkpoint in tempo reale per prevenire perdite di sessione.
 

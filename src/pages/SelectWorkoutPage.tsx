@@ -66,6 +66,7 @@ import {
   getFolders,
   getFolderAssignments,
   subscribeToFolderChanges,
+  syncFoldersWithCloud,
   type WorkoutFolder,
   type FolderAssignmentMap,
 } from '../utils/folderManager';
@@ -202,6 +203,10 @@ const SelectWorkoutPage: React.FC = () => {
   useEffect(() => {
     setFolders(getFolders(user?.id));
     setFolderAssignments(getFolderAssignments(user?.id));
+
+    if (user?.id) {
+      void syncFoldersWithCloud(user.id);
+    }
 
     const unsub = subscribeToFolderChanges(() => {
       setFolders(getFolders(user?.id));

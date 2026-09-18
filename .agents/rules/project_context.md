@@ -97,9 +97,12 @@ L'interfaccia adotta i principi visivi di Apple iOS Dark Mode:
 - Durante l'allenamento attivo, ogni progresso viene salvato su `localStorage` in tempo reale.
 - Se l'utente ricarica la pagina o riapre l'app, la Home propone un modal di ripresa immediata senza perdita di set o timer.
 
-### D. Organizzazione Schede in Cartelle (`src/utils/folderManager.ts`)
+### D. Organizzazione Schede in Cartelle e Sincronizzazione Cloud (`src/utils/folderManager.ts`)
 - Sistema di cartelle personalizzate per organizzare le schede (`workout_folders_v1:${userId}` e `workout_folder_assignments_v1:${userId}`).
-- Funziona in modo reattivo via `localStorage` e sottoscrizioni ad eventi (`subscribeToFolderChanges`), senza richiedere migrazioni al database Supabase (zero downtime).
+- **Architettura Offline-First con Cloud Sync su Supabase**:
+  - Le cartelle e le relative assegnazioni vengono salvate localmente in `localStorage` per zero latenza e supporto offline.
+  - A ogni modifica locale (o all'avvio sessione in `AuthContext`, `GymCardPage`, `SelectWorkoutPage`), una sincronizzazione bidirezionale (`pushFoldersToCloud` con debounce e `syncFoldersWithCloud`) salva e preleva i dati da `user_metadata` dell'utente autenticato su Supabase (`supabase.auth.updateUser`).
+  - Questo garantisce che le cartelle create su PC o browser appaiano automaticamente sull'iPhone (e viceversa), senza necessitare di migrazioni SQL DDL o tabelle aggiuntive.
 
 ---
 

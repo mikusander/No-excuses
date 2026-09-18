@@ -19,6 +19,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigError } from '../lib/supabase';
+import { syncFoldersWithCloud } from '../utils/folderManager';
 
 /** Forma del context */
 interface AuthContextType {
@@ -68,6 +69,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      if (session?.user?.id) {
+        void syncFoldersWithCloud(session.user.id);
+      }
     });
 
     // Listen for auth changes
@@ -75,6 +79,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      if (session?.user?.id) {
+        void syncFoldersWithCloud(session.user.id);
+      }
       // Attivato quando l'utente clicca il link "Reset Password" dalla mail
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);

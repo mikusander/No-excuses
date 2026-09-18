@@ -83,6 +83,7 @@ import {
   assignSchedaToFolder,
   moveSchedeToFolder,
   subscribeToFolderChanges,
+  syncFoldersWithCloud,
   type WorkoutFolder,
   type FolderAssignmentMap,
 } from '../utils/folderManager';
@@ -182,6 +183,10 @@ const GymCardPage: React.FC = () => {
   useEffect(() => {
     setFolders(getFolders(user?.id));
     setFolderAssignments(getFolderAssignments(user?.id));
+
+    if (user?.id) {
+      void syncFoldersWithCloud(user.id);
+    }
 
     const unsubscribe = subscribeToFolderChanges(() => {
       setFolders(getFolders(user?.id));
