@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: isDev
     ? {
-        url: 'http://10.10.111.194:5173',
+        url: process.env.CAPACITOR_DEV_SERVER_URL || 'http://172.20.10.2:5173',
         cleartext: true,
       }
     : undefined,
