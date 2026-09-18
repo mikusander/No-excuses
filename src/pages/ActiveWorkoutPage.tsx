@@ -3990,7 +3990,10 @@ const ActiveWorkoutPage: React.FC = () => {
             </div>
           </div>
         )}
-        <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-10 p-2">
+        <div
+          className="absolute left-4 right-4 flex justify-between items-center z-10 p-2"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+        >
           <button onClick={handleLeaveWorkout} className="text-white/50 hover:text-white transition-colors">
             <ArrowLeft size={28} />
           </button>
@@ -4207,7 +4210,10 @@ const ActiveWorkoutPage: React.FC = () => {
   // RENDER ACTIVE EXERCISE VIEW
   // ----------------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-brand-dark flex flex-col pt-4 pb-12 px-6 safe-top safe-bottom relative">
+    <div
+      className="min-h-screen bg-brand-dark flex flex-col pb-12 px-6 safe-bottom relative"
+      style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+    >
       {voiceCommandsHelpBubble}
       <header className="flex items-center justify-between mb-8 z-10 relative">
         <button onClick={handleLeaveWorkout} className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors">

@@ -799,8 +799,11 @@ const GymCardPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
-      <header className="p-4 relative flex items-center justify-between bg-black/50 sticky top-0 z-20 backdrop-blur-md">
+    <div className="min-h-screen bg-brand-dark flex flex-col safe-pb-nav relative">
+      <header
+        className="px-4 pb-3.5 relative flex items-center justify-between bg-black/75 backdrop-blur-2xl border-b border-white/5 sticky top-0 z-20"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+      >
         {currentFolder ? (
           <div className="flex items-center gap-2 min-w-0">
             <button

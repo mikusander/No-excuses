@@ -37,12 +37,18 @@
 
 @layer utilities {
   /* Safe Area Utilities */
-  .safe-area-top {
-    padding-top: env(safe-area-inset-top, 0px);
+  .safe-area-top,
+  .safe-top {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
   }
 
-  .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+  .safe-area-bottom,
+  .safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+  }
+
+  .safe-pt-header {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
   }
 
   /* Extra bottom padding to ensure scrollable content is not obscured by the floating navigation bar */

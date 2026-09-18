@@ -56,8 +56,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Calendar, ArrowLeft, PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Folder } from 'lucide-react';
+import { Dumbbell, Calendar, PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Folder } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
+import AppHeader from '../components/AppHeader';
 import { useNavigate } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
@@ -430,16 +431,11 @@ const SelectWorkoutPage: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen bg-brand-dark flex flex-col pb-24 relative">
-      <header className="p-4 flex items-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
-        <button
-          onClick={() => navigate('/')}
-          className="p-2 text-white hover:text-brand-orange transition-colors"
-        >
-          <ArrowLeft size={28} />
-        </button>
-        <h1 className="text-xl font-bold ml-2">Select Workout</h1>
-      </header>
+    <div className="min-h-screen bg-brand-dark flex flex-col safe-pb-nav relative">
+      <AppHeader
+        title="Select Workout"
+        onBack={() => navigate('/')}
+      />
 
       <main className="flex-1 p-6 w-full max-w-2xl mx-auto space-y-6">
         {loading ? (

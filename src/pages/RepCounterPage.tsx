@@ -612,7 +612,10 @@ const RepCounterPage: React.FC = () => {
   if (!selectedExercise) {
     return (
       <div className="min-h-screen bg-brand-dark flex flex-col">
-        <header className="p-4 flex items-center bg-black/50">
+        <header
+          className="px-4 pb-3 flex items-center bg-black/50"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+        >
           <button onClick={() => location.state?.returnUrl ? navigate(location.state.returnUrl) : navigate('/')} className="p-2 text-white hover:text-brand-orange transition-colors">
             <ArrowLeft size={28} />
           </button>
@@ -749,7 +752,10 @@ const RepCounterPage: React.FC = () => {
     return (
       <div className="relative flex min-h-screen flex-col overflow-hidden bg-brand-dark">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(196,90,0,0.18),transparent_55%)]" />
-        <div className="relative z-10 flex items-center justify-between p-4 sm:p-6 bg-black/30 backdrop-blur-md border-b border-white/10">
+        <div
+          className="relative z-10 flex items-center justify-between px-4 pb-4 sm:px-6 bg-black/30 backdrop-blur-md border-b border-white/10"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+        >
           <button onClick={cancelWorkout} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
             <ArrowLeft className="w-6 h-6 text-white" />
           </button>
@@ -866,7 +872,10 @@ const RepCounterPage: React.FC = () => {
   return (
     <div className="relative flex flex-col h-screen overflow-hidden bg-black lg:h-[90vh] lg:mt-8 lg:rounded-3xl border border-white/10 shadow-2xl">
       {/* Header Overlay */}
-      <div className="absolute top-0 left-0 right-0 z-20 p-4 sm:p-6 bg-gradient-to-b from-black/90 to-transparent">
+      <div
+        className="absolute top-0 left-0 right-0 z-20 px-4 pb-4 sm:px-6 bg-gradient-to-b from-black/90 to-transparent"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+      >
         <div className="flex items-center justify-between">
           <button onClick={cancelWorkout} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
             <ArrowLeft className="w-6 h-6 text-white" />

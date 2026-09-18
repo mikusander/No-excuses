@@ -49,7 +49,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
     <header
       className={`sticky top-0 z-30 w-full bg-black/75 backdrop-blur-2xl border-b border-white/5 transition-all duration-200 ${className}`}
       style={{
-        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.35rem)',
       }}
     >
       <div className="max-w-3xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between gap-3">

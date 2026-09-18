@@ -69,7 +69,8 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move, Copy, Minus, Sparkles, History, Check, Camera, Mic, Folder } from 'lucide-react';
+import { Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move, Copy, Minus, Sparkles, History, Check, Camera, Mic, Folder } from 'lucide-react';
+import AppHeader from '../components/AppHeader';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import WorkoutBulkToolbar from '../components/WorkoutBulkToolbar';
 import WorkoutQuickImportModal from '../components/WorkoutQuickImportModal';
@@ -1815,15 +1816,10 @@ const NewTrainPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pb-24">
-      <header className="p-4 flex items-center bg-black/50 sticky top-0 z-20 backdrop-blur-md">
-        <button
-          onClick={handleBackFromCreate}
-          className="p-2 text-white hover:text-brand-orange transition-colors"
-        >
-          <ArrowLeft size={28} />
-        </button>
-        <h1 className="text-xl font-bold ml-2">{id ? 'Edit Workout' : 'New Workout'}</h1>
-      </header>
+      <AppHeader
+        title={id ? 'Edit Workout' : 'New Workout'}
+        onBack={handleBackFromCreate}
+      />
 
       <main className="flex-1 p-6 flex flex-col max-w-lg mx-auto w-full">
         {error && (

@@ -53,10 +53,11 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X, Flame } from 'lucide-react';
+import { Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X, Flame } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
+import AppHeader from '../components/AppHeader';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import type { UiExercise, UiSubExercise } from '../lib/workoutSchemaAdapter';
 import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
@@ -592,15 +593,15 @@ const WorkoutHistoryDetailPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-brand-dark text-white pb-32 px-5 pt-6">
-      <header className="max-w-3xl mx-auto w-full mb-6">
-        <button
-          onClick={() => navigate('/workout-history')}
-          className="inline-flex items-center text-brand-grey hover:text-white transition-colors mb-4"
-        >
-          <ArrowLeft size={18} className="mr-2" />
-          Back to history
-        </button>
+    <div className="min-h-screen bg-brand-dark text-white pb-32">
+      <AppHeader
+        title="Dettaglio Allenamento"
+        onBack={() => navigate('/workout-history')}
+        backLabel="Storico"
+      />
+
+      <div className="px-5 pt-4">
+        <header className="max-w-3xl mx-auto w-full mb-6">
 
         <div className="bg-brand-darkGrey/50 border border-brand-grey/20 rounded-3xl p-5 shadow-xl">
           <div className="flex items-start justify-between gap-3">
@@ -965,6 +966,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           Delete from history
         </button>
       </main>
+      </div>
 
       {isExerciseNoteModalOpen && exerciseNoteModalContext && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
@@ -1019,6 +1021,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           </div>
         </div>
       )}
+
 
       <BottomNavigation />
     </div>
