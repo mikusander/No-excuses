@@ -614,12 +614,33 @@ export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
   const rawReps = Math.max(0, Math.trunc(toSafeNumber(rawEx.reps, 0)));
   const isIso = isIsometricExercise(exName, rawEx.type, rawDuration, rawReps);
 
-  const repsPerSet = isIso ? 0 : rawReps;
-  const totalReps = sets * repsPerSet;
+  const completedRecords = Array.isArray(rawEx.completed_sets_records)
+    ? rawEx.completed_sets_records
+    : Array.isArray(rawEx.completed_sets_reps)
+    ? rawEx.completed_sets_reps
+    : null;
+
+  let repsPerSet = isIso ? 0 : rawReps;
+  let totalReps = sets * repsPerSet;
   const rawWeight = Number(rawEx.weight_kg);
   const weight = Number.isFinite(rawWeight) ? Math.max(0, rawWeight) : 0;
-  const durationPerSet = isIso ? (rawDuration > 0 ? rawDuration : 20) : 0;
-  const duration = durationPerSet * sets;
+  let durationPerSet = isIso ? (rawDuration > 0 ? rawDuration : 20) : 0;
+  let duration = durationPerSet * sets;
+
+  if (completedRecords && completedRecords.length > 0) {
+    const validNumbers = completedRecords
+      .filter((v): v is number => v != null && Number.isFinite(Number(v)) && Number(v) > 0)
+      .map(Number);
+    if (validNumbers.length > 0) {
+      if (isIso) {
+        duration = validNumbers.reduce((a, b) => a + b, 0);
+        durationPerSet = Math.round(duration / validNumbers.length);
+      } else {
+        totalReps = validNumbers.reduce((a, b) => a + b, 0);
+        repsPerSet = Math.round(totalReps / validNumbers.length);
+      }
+    }
+  }
 
   return [
     {

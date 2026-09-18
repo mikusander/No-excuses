@@ -65,6 +65,8 @@ export interface UiExercise {
   subExercises?: UiSubExercise[];
   instruction_note?: string | null;
   auto_count_type?: 'pushups' | 'pullups' | null;
+  completed_sets_records?: (number | null)[];
+  completed_sets_reps?: (number | null)[];
 }
 
 const toSafeInt = (value: unknown, fallback: number) => {

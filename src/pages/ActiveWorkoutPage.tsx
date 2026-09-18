@@ -104,7 +104,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis } from '../utils/voice';
 import {
@@ -157,6 +157,8 @@ interface Exercise {
   emom_round_duration?: number;
   pyramid_steps?: { reps: number; rest_seconds: number; weight_kg?: number | null }[];
   order_index: number;
+  completed_sets_records?: (number | null)[];
+  completed_sets_reps?: (number | null)[];
   subExercises?: {
     name: string;
     type: 'reps' | 'isometry';
@@ -242,6 +244,7 @@ interface PersistedWorkoutProgressState {
   circuitLapTimes?: number[];
   exerciseNotesByKey: Record<string, ExerciseNoteEntry>;
   workoutStartedAtMs: number | null;
+  recordedMaxPerformance?: Record<string, Record<number, number>>;
 }
 
 interface PersistedWorkoutProgressPayload {
@@ -360,6 +363,21 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isometryRemaining, setIsometryRemaining] = useState(0);
   const [isometryEndsAtMs, setIsometryEndsAtMs] = useState<number | null>(null);
   const [supersetIsometrySubIdx, setSupersetIsometrySubIdx] = useState<number | null>(null);
+
+  // Tracciamento prestazioni a sfinimento (MAX) per set
+  const [recordedMaxPerformance, setRecordedMaxPerformance] = useState<Record<string, Record<number, number>>>({});
+  const recordedMaxPerformanceRef = useRef<Record<string, Record<number, number>>>({});
+  recordedMaxPerformanceRef.current = recordedMaxPerformance;
+
+  const [isMaxPromptModalOpen, setIsMaxPromptModalOpen] = useState(false);
+  const [targetEditingSetIdx, setTargetEditingSetIdx] = useState<number>(0);
+  const [modalPerformanceValue, setModalPerformanceValue] = useState<number>(0);
+  const isPendingSetAdvanceRef = useRef(false);
+
+  // Stopwatch per isometria MAX (conteggio in avanti)
+  const [isometryStopwatchActive, setIsometryStopwatchActive] = useState(false);
+  const [isometryElapsedSeconds, setIsometryElapsedSeconds] = useState(0);
+  const isometryStopwatchStartMsRef = useRef<number | null>(null);
 
   // Timer State for EMOM
   const [emomActive, setEmomActive] = useState(false);
@@ -782,6 +800,27 @@ const ActiveWorkoutPage: React.FC = () => {
     const currentExerciseForIso = workout?.exercises[currentExerciseIdx];
     if (!currentExerciseForIso) return;
 
+    const isMaxIso = currentExerciseForIso.type === 'isometry'
+      ? isMaxTarget(currentExerciseForIso.duration_seconds)
+      : currentExerciseForIso.type === 'superset'
+      ? isMaxTarget(currentExerciseForIso.subExercises?.[currentSubExerciseIdx]?.duration_seconds)
+      : false;
+
+    if (isMaxIso) {
+      setIsometryStopwatchActive(false);
+      isometryStopwatchStartMsRef.current = null;
+      setIsometryElapsedSeconds(0);
+      setLoggedPerformanceForSet(
+        currentExerciseIdx,
+        currentExerciseForIso,
+        currentSetIdx,
+        0,
+        currentExerciseForIso.type === 'superset' ? currentSubExerciseIdx : undefined
+      );
+      playCountdownBeep(0);
+      return;
+    }
+
     let targetDuration = 0;
     if (currentExerciseForIso.type === 'isometry') {
       targetDuration = Math.max(1, normalizeDurationSeconds(currentExerciseForIso.duration_seconds));
@@ -941,16 +980,38 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const handleIsometryTimerTap = () => {
-    if (isometryActive) {
-      pauseIsometryCountdown();
-      return;
-    }
-
     const currentExerciseForIso = workout?.exercises[currentExerciseIdx];
     if (!currentExerciseForIso) return;
     const currentSub = currentExerciseForIso.type === 'superset'
       ? currentExerciseForIso.subExercises?.[currentSubExerciseIdx]
       : null;
+    const isMaxIso = currentSub
+      ? (currentSub.type === 'isometry' && isMaxTarget(currentSub.duration_seconds))
+      : (currentExerciseForIso.type === 'isometry' && isMaxTarget(currentExerciseForIso.duration_seconds));
+
+    if (isMaxIso) {
+      if (isometryStopwatchActive) {
+        setIsometryStopwatchActive(false);
+        setLoggedPerformanceForSet(
+          currentExerciseIdx,
+          currentExerciseForIso,
+          currentSetIdx,
+          isometryElapsedSeconds,
+          currentSub ? currentSubExerciseIdx : undefined
+        );
+      } else {
+        isometryStopwatchStartMsRef.current = Date.now() - (isometryElapsedSeconds * 1000);
+        setIsometryStopwatchActive(true);
+        speakCue('start');
+      }
+      return;
+    }
+
+    if (isometryActive) {
+      pauseIsometryCountdown();
+      return;
+    }
+
     const fallbackTarget = getTargetIsometry(currentExerciseForIso, currentSub);
     const nextIsometryDuration = isometryRemaining > 0 ? isometryRemaining : fallbackTarget;
     if (nextIsometryDuration > 0) {
@@ -1038,6 +1099,88 @@ const ActiveWorkoutPage: React.FC = () => {
       type: 'scheda',
       id: Math.trunc(Number(candidateSchedaId)),
     };
+  };
+
+  // Helper per tracciamento a sfinimento (MAX)
+  const isMaxPerformance = (
+    exercise: Exercise,
+    sub?: { reps: number; duration_seconds: number; type: 'reps' | 'isometry' } | null
+  ) => {
+    if (sub) {
+      if (sub.type === 'isometry') return isMaxTarget(sub.duration_seconds);
+      return isMaxTarget(sub.reps);
+    }
+    if (exercise.type === 'isometry') {
+      return isMaxTarget(exercise.duration_seconds);
+    }
+    if (exercise.type === 'reps') {
+      return isMaxTarget(exercise.reps);
+    }
+    return false;
+  };
+
+  const getPerformanceUnit = (
+    exercise: Exercise,
+    sub?: { type: 'reps' | 'isometry' } | null
+  ): 'reps' | 'sec' => {
+    if (sub?.type === 'isometry' || exercise.type === 'isometry') return 'sec';
+    return 'reps';
+  };
+
+  const getPerformanceKey = (exIdx: number, exercise: Exercise, subIdx?: number) => {
+    const base = exercise.id ? String(exercise.id) : `ex_${exIdx}`;
+    return subIdx != null ? `${base}_sub_${subIdx}` : base;
+  };
+
+  const getLoggedPerformanceForSet = (
+    exIdx: number,
+    exercise: Exercise,
+    setIdx: number,
+    subIdx?: number
+  ): number | undefined => {
+    const key = getPerformanceKey(exIdx, exercise, subIdx);
+    return recordedMaxPerformanceRef.current[key]?.[setIdx];
+  };
+
+  const setLoggedPerformanceForSet = (
+    exIdx: number,
+    exercise: Exercise,
+    setIdx: number,
+    value: number,
+    subIdx?: number
+  ) => {
+    const key = getPerformanceKey(exIdx, exercise, subIdx);
+    const safeVal = Math.max(0, Math.trunc(value));
+    setRecordedMaxPerformance((prev) => {
+      const next = {
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          [setIdx]: safeVal,
+        },
+      };
+      recordedMaxPerformanceRef.current = next;
+      return next;
+    });
+  };
+
+  const adjustCurrentSetPerformance = (delta: number) => {
+    const currentKey = getPerformanceKey(currentExerciseIdx, currentExercise);
+    const currentVal = recordedMaxPerformanceRef.current[currentKey]?.[currentSetIdx] || 0;
+    const nextVal = Math.max(0, currentVal + delta);
+    setLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx, nextVal);
+    if (currentExercise.type === 'isometry' && isMaxTarget(currentExercise.duration_seconds)) {
+      setIsometryElapsedSeconds(nextVal);
+    }
+  };
+
+  const openEditSpecificSetModal = (setIdx: number) => {
+    setTargetEditingSetIdx(setIdx);
+    const key = getPerformanceKey(currentExerciseIdx, currentExercise);
+    const existing = recordedMaxPerformanceRef.current[key]?.[setIdx];
+    setModalPerformanceValue(existing != null && existing > 0 ? existing : 0);
+    isPendingSetAdvanceRef.current = false;
+    setIsMaxPromptModalOpen(true);
   };
 
   const getWorkoutProgressStorageKey = (nextSourceSchedaId?: number | null) => {
@@ -1128,6 +1271,7 @@ const ActiveWorkoutPage: React.FC = () => {
         circuitLapTimes: circuitLapTimes || [],
         exerciseNotesByKey: safeExerciseNotesByKey,
         workoutStartedAtMs: workoutStartedAtMsRef.current,
+        recordedMaxPerformance: recordedMaxPerformanceRef.current,
       },
     };
 
@@ -1282,6 +1426,11 @@ const ActiveWorkoutPage: React.FC = () => {
     }
     if (Array.isArray(state.circuitLapTimes)) {
       setCircuitLapTimes(state.circuitLapTimes.map(n => Math.max(0, normalizeDurationSeconds(n))));
+    }
+
+    if (state.recordedMaxPerformance) {
+      setRecordedMaxPerformance(state.recordedMaxPerformance);
+      recordedMaxPerformanceRef.current = state.recordedMaxPerformance;
     }
 
     setExerciseNotesByKey(safeNotes);
@@ -1930,11 +2079,23 @@ const ActiveWorkoutPage: React.FC = () => {
           : 'Workout')
     ).trim();
     const exercisesSnapshot = Array.isArray(workout?.exercises)
-      ? workout.exercises.map((exercise) => ({
-        ...exercise,
-        subExercises: exercise.subExercises || [],
-        pyramid_steps: exercise.pyramid_steps || [],
-      }))
+      ? workout.exercises.map((exercise, exIdx) => {
+        const key = getPerformanceKey(exIdx, exercise);
+        const setsMap = recordedMaxPerformanceRef.current[key] || {};
+        const totalSets = Math.max(1, exercise.sets || 1);
+        const completed_sets_records = Array.from({ length: totalSets }, (_, sIdx) => {
+          const val = setsMap[sIdx];
+          return val != null ? val : null;
+        });
+
+        return {
+          ...exercise,
+          subExercises: exercise.subExercises || [],
+          pyramid_steps: exercise.pyramid_steps || [],
+          completed_sets_records: completed_sets_records.some((v) => v != null) ? completed_sets_records : undefined,
+          completed_sets_reps: completed_sets_records.some((v) => v != null) ? completed_sets_records : undefined,
+        };
+      })
       : [];
 
     let data: { id_workout?: number } | null = null;
@@ -2012,7 +2173,34 @@ const ActiveWorkoutPage: React.FC = () => {
   const saveWorkoutNotes = async (workoutRunId: number) => {
     if (workoutNotesSavedRef.current) return;
 
-    const currentNotes = exerciseNotesByKeyRef.current || exerciseNotesByKey;
+    const currentNotes = { ...(exerciseNotesByKeyRef.current || exerciseNotesByKey) };
+
+    if (workout?.exercises) {
+      workout.exercises.forEach((ex, exIdx) => {
+        if (isMaxPerformance(ex)) {
+          const key = getPerformanceKey(exIdx, ex);
+          const setsMap = recordedMaxPerformanceRef.current[key];
+          if (setsMap && Object.keys(setsMap).length > 0) {
+            const unit = getPerformanceUnit(ex) === 'sec' ? 's' : ' reps';
+            const entries = Object.entries(setsMap)
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([sIdx, val]) => `Set ${Number(sIdx) + 1}: ${val}${unit}`);
+            if (entries.length > 0) {
+              const summaryLine = `A sfinimento: ${entries.join(' · ')}`;
+              const noteKey = `${ex.order_index}_${ex.name.toLowerCase().trim()}`;
+              const existing = currentNotes[noteKey]?.note || '';
+              if (!existing.includes('A sfinimento:')) {
+                currentNotes[noteKey] = {
+                  exerciseName: ex.name,
+                  note: existing ? `${existing} | ${summaryLine}` : summaryLine,
+                };
+              }
+            }
+          }
+        }
+      });
+    }
+
     const rowsToInsert = Object.values(currentNotes)
       .map((entry) => ({
         id_workout: workoutRunId,
@@ -2244,6 +2432,36 @@ const ActiveWorkoutPage: React.FC = () => {
       window.removeEventListener('focus', handleWakeSync);
     };
   }, [isometryActive, isometryEndsAtMs]);
+
+  // Timer logic for MAX ISOMETRY stopwatch (conteggio in avanti fino a cedimento)
+  useEffect(() => {
+    if (!isometryStopwatchActive || isometryStopwatchStartMsRef.current == null) return;
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const syncElapsed = () => {
+      const startMs = isometryStopwatchStartMsRef.current;
+      if (startMs == null) return;
+      const elapsed = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+      setIsometryElapsedSeconds(elapsed);
+    };
+
+    intervalId = setInterval(syncElapsed, 250);
+    syncElapsed();
+
+    const handleWakeSync = () => {
+      if (document.visibilityState === 'hidden') return;
+      syncElapsed();
+    };
+
+    document.addEventListener('visibilitychange', handleWakeSync);
+    window.addEventListener('focus', handleWakeSync);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleWakeSync);
+      window.removeEventListener('focus', handleWakeSync);
+    };
+  }, [isometryStopwatchActive]);
 
   useEffect(() => {
     if (!isometryActive || isometryRemaining > 3 || isometryRemaining <= 0) {
@@ -3449,6 +3667,11 @@ const ActiveWorkoutPage: React.FC = () => {
       speakCue(buildSetAnnouncementCue(currentExercise, nextSetIdx));
     }
 
+    // Reset isometry stopwatch if needed
+    setIsometryStopwatchActive(false);
+    isometryStopwatchStartMsRef.current = null;
+    setIsometryElapsedSeconds(0);
+
     // Reset isometry timer if needed
     setIsometryRemainingWithSync(getTargetIsometry(currentExercise, currentExercise.subExercises?.[0]));
   };
@@ -3526,6 +3749,31 @@ const ActiveWorkoutPage: React.FC = () => {
         startRestCountdown(currentExercise.rest_seconds);
       }
       return;
+    }
+
+    // Controllo per esercizio a sfinimento (MAX) prima di completare il set
+    const isCurrentMax = isMaxPerformance(currentExercise);
+    if (isCurrentMax) {
+      // Se l'isometria era attiva col cronometro, ferma e salva
+      if (isometryStopwatchActive) {
+        setIsometryStopwatchActive(false);
+        setLoggedPerformanceForSet(
+          currentExerciseIdx,
+          currentExercise,
+          currentSetIdx,
+          isometryElapsedSeconds
+        );
+      }
+
+      const currentKey = getPerformanceKey(currentExerciseIdx, currentExercise);
+      const currentVal = recordedMaxPerformanceRef.current[currentKey]?.[currentSetIdx];
+      if ((currentVal == null || currentVal === 0) && !location.state?.autoCompleteAction) {
+        setTargetEditingSetIdx(currentSetIdx);
+        setModalPerformanceValue(isometryElapsedSeconds > 0 ? isometryElapsedSeconds : 0);
+        isPendingSetAdvanceRef.current = true;
+        setIsMaxPromptModalOpen(true);
+        return;
+      }
     }
 
     completeSet();
@@ -3996,6 +4244,31 @@ const ActiveWorkoutPage: React.FC = () => {
               ))}
             </div>
           )}
+          {/* Riepilogo set completato a sfinimento durante il recupero */}
+          {isMaxPerformance(currentExercise) && (
+            <div className="bg-brand-darkGrey/80 border border-brand-orange/40 rounded-2xl p-3.5 mb-3 max-w-xs w-full mx-auto shadow-lg flex items-center justify-between text-left">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-zinc-400 block">
+                  Set {currentSetIdx + 1} (A Sfinimento)
+                </span>
+                <span className="text-base font-black text-brand-orange font-mono">
+                  {getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) != null &&
+                  (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
+                    ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)} ${getPerformanceUnit(currentExercise) === 'sec' ? 's' : 'reps'}`
+                    : 'MAX'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => openEditSpecificSetModal(currentSetIdx)}
+                className="px-3 py-1.5 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all border border-brand-orange/30 cursor-pointer flex items-center gap-1"
+              >
+                <Pencil size={11} />
+                <span>Modifica</span>
+              </button>
+            </div>
+          )}
+
           <p className="text-brand-orange font-bold font-mono">
             {transitionNextExercise
               ? `Transition to Exercise ${currentExerciseIdx + 2} of ${workout.exercises.length}`
@@ -4464,24 +4737,116 @@ const ActiveWorkoutPage: React.FC = () => {
               className="text-center w-full max-w-xs relative group select-none"
             >
               <div
-                className={`relative w-64 h-64 mx-auto rounded-full border-[12px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${isometryActive ? 'border-brand-orange shadow-[0_0_40px_rgba(255,107,0,0.3)]' : 'border-brand-darkGrey'}`}
+                className={`relative w-64 h-64 mx-auto rounded-full border-[12px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${isometryStopwatchActive || isometryActive ? 'border-brand-orange shadow-[0_0_40px_rgba(255,107,0,0.3)]' : 'border-brand-darkGrey'}`}
                 onPointerDown={(event) => handleTimerPointerDown(event, resetIsometryCountdown)}
                 onPointerUp={(event) => handleTimerPointerUp(event, handleIsometryTimerTap)}
                 onPointerCancel={handleTimerPointerAbort}
                 onPointerLeave={handleTimerPointerAbort}
               >
-                <span className={`text-[80px] font-mono tracking-tighter ${isometryActive ? 'text-white' : 'text-brand-grey'} transition-colors leading-none`}>
-                  {isMaxTarget(currentExercise.duration_seconds) ? 'MAX' : isometryRemaining}
+                <span className={`text-[80px] font-mono tracking-tighter ${isometryStopwatchActive || isometryActive ? 'text-brand-orange animate-pulse' : 'text-white'} transition-colors leading-none`}>
+                  {isMaxTarget(currentExercise.duration_seconds)
+                    ? (isometryElapsedSeconds > 0 ? isometryElapsedSeconds : (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 'MAX'))
+                    : isometryRemaining}
                 </span>
-                <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2">SEC</span>
+                <span className="text-brand-grey font-bold uppercase tracking-widest text-xs mt-2">
+                  {isMaxTarget(currentExercise.duration_seconds) && isometryElapsedSeconds === 0 && !getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)
+                    ? 'A SFINIMENTO'
+                    : 'SEC'}
+                </span>
 
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
-                  {isometryActive ? <Pause size={48} className="text-white" /> : <Play size={48} className="text-white" />}
+                  {isometryStopwatchActive || isometryActive ? <Pause size={48} className="text-white" /> : <Play size={48} className="text-white" />}
                 </div>
               </div>
-              <p className="text-center text-xs text-brand-grey mt-6 uppercase tracking-wider font-bold">
-                Tap to {isometryActive ? 'pause' : 'start'} / hold to reset
+              <p className="text-center text-xs text-brand-grey mt-4 uppercase tracking-wider font-bold">
+                {isMaxTarget(currentExercise.duration_seconds)
+                  ? 'Tocca per avviare cronometro / tieni premuto per azzerare'
+                  : `Tap to ${isometryActive ? 'pause' : 'start'} / hold to reset`}
               </p>
+
+              {/* Stepper e riepilogo set per isometria MAX */}
+              {isMaxTarget(currentExercise.duration_seconds) && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(-5)}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
+                    >
+                      -5s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(-1)}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
+                    >
+                      -1s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditSpecificSetModal(currentSetIdx)}
+                      className="px-3 py-1.5 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 active:scale-95 text-brand-orange font-bold text-xs border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Pencil size={11} />
+                      <span>Modifica</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(1)}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
+                    >
+                      +1s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(5)}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
+                    >
+                      +5s
+                    </button>
+                  </div>
+
+                  {/* Pillole Set per isometria MAX */}
+                  <div className="mt-3 w-full max-w-sm mx-auto">
+                    <div className="flex items-center justify-between mb-1 px-1">
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-400">
+                        Tenuta per Set (MAX)
+                      </span>
+                      <span className="text-[10px] text-brand-orange font-bold">
+                        Set {currentSetIdx + 1} di {currentExercise.sets || 1}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {Array.from({ length: currentExercise.sets || 1 }, (_, sIdx) => {
+                        const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
+                        const isCurrent = sIdx === currentSetIdx;
+                        const isDone = logged != null && logged > 0;
+                        return (
+                          <button
+                            key={sIdx}
+                            type="button"
+                            onClick={() => openEditSpecificSetModal(sIdx)}
+                            className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                              isCurrent
+                                ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-md shadow-brand-orange/20'
+                                : isDone
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                                : 'bg-white/5 border-white/5 text-zinc-500'
+                            }`}
+                          >
+                            <span className="text-[9px] uppercase font-bold tracking-wider opacity-70">
+                              Set {sIdx + 1}
+                            </span>
+                            <span className="text-xs font-black font-mono mt-0.5">
+                              {logged != null && logged > 0 ? `${logged}s` : isCurrent ? `${isometryElapsedSeconds || '-'}s` : '-'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="mt-4 w-full max-w-sm grid grid-cols-2 gap-2">
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">Set</span>
@@ -4508,10 +4873,115 @@ const ActiveWorkoutPage: React.FC = () => {
             </div>
           ) : (
             <div className="text-center">
-              <span className="block text-[120px] font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_30px_rgba(255,107,0,0.2)]">
-                {formatBigTargetValue(currentExercise.reps)}
-              </span>
-              <span className="text-brand-grey font-bold uppercase tracking-widest text-lg">Reps</span>
+              {isMaxTarget(currentExercise.reps) ? (
+                <div className="flex flex-col items-center">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-xs font-black uppercase tracking-wider mb-3">
+                    <Flame size={14} className="animate-pulse" />
+                    <span>A Sfinimento (MAX Reps)</span>
+                  </div>
+
+                  {/* Stepper + Valore del Set Corrente */}
+                  <div className="flex items-center justify-center gap-2.5 w-full max-w-xs mb-2">
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(-5)}
+                      className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                      title="-5 reps"
+                    >
+                      -5
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(-1)}
+                      className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-xl flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                      title="-1 rep"
+                    >
+                      -
+                    </button>
+
+                    {/* Tocco diretto per digitare */}
+                    <div
+                      onClick={() => openEditSpecificSetModal(currentSetIdx)}
+                      className="flex-1 bg-black/40 border-2 border-brand-orange/50 hover:border-brand-orange rounded-3xl py-2.5 px-3 flex flex-col items-center justify-center cursor-pointer shadow-[0_0_25px_rgba(255,107,0,0.15)] transition-all group select-none"
+                      title="Tocca per inserire le reps fatte"
+                    >
+                      <span className="text-5xl font-mono font-black text-brand-orange leading-tight group-hover:scale-105 transition-transform">
+                        {(getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
+                          ? getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)
+                          : 'MAX'}
+                      </span>
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-0.5">
+                        <Pencil size={10} className="text-brand-orange" />
+                        Reps Eseguite
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(1)}
+                      className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-xl flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                      title="+1 rep"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(5)}
+                      className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                      title="+5 reps"
+                    >
+                      +5
+                    </button>
+                  </div>
+
+                  {/* Pillole di riepilogo Set per reps MAX */}
+                  <div className="mt-2 w-full max-w-sm">
+                    <div className="flex items-center justify-between mb-1 px-1">
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-400">
+                        Riepilogo Set (MAX)
+                      </span>
+                      <span className="text-[10px] text-brand-orange font-bold">
+                        Set {currentSetIdx + 1} di {currentExercise.sets || 1}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {Array.from({ length: currentExercise.sets || 1 }, (_, sIdx) => {
+                        const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
+                        const isCurrent = sIdx === currentSetIdx;
+                        const isDone = logged != null && logged > 0;
+                        return (
+                          <button
+                            key={sIdx}
+                            type="button"
+                            onClick={() => openEditSpecificSetModal(sIdx)}
+                            className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                              isCurrent
+                                ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-md shadow-brand-orange/20'
+                                : isDone
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                                : 'bg-white/5 border-white/5 text-zinc-500'
+                            }`}
+                          >
+                            <span className="text-[9px] uppercase font-bold tracking-wider opacity-70">
+                              Set {sIdx + 1}
+                            </span>
+                            <span className="text-xs font-black font-mono mt-0.5">
+                              {logged != null && logged > 0 ? `${logged}` : isCurrent ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || '-'}` : '-'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <span className="block text-[120px] font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_30px_rgba(255,107,0,0.2)]">
+                    {formatBigTargetValue(currentExercise.reps)}
+                  </span>
+                  <span className="text-brand-grey font-bold uppercase tracking-widest text-lg">Reps</span>
+                </>
+              )}
               <div className={`mt-4 w-full max-w-sm grid ${isSuperset ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
                 <div className="bg-brand-darkGrey/30 border border-white/5 rounded-lg py-2 px-3 text-center">
                   <span className="text-[10px] uppercase tracking-widest text-brand-grey block">{isSuperset ? 'Round' : 'Set'}</span>
@@ -5252,6 +5722,118 @@ const ActiveWorkoutPage: React.FC = () => {
                   <p className="text-brand-grey text-xs mt-1">Keep phone in your pocket</p>
                 </div>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal per Prompt / Modifica Performance Set a Sfinimento */}
+      {isMaxPromptModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-brand-orange/40 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-brand-orange/20 text-brand-orange">
+                  <Flame size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white uppercase tracking-wider">
+                    Set {targetEditingSetIdx + 1} · A Sfinimento
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    {currentExercise.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMaxPromptModalOpen(false)}
+                className="text-zinc-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-300 text-center">
+              Inserisci {getPerformanceUnit(currentExercise) === 'sec' ? 'i secondi di tenuta' : 'le ripetizioni'} eseguiti in questo set:
+            </p>
+
+            <div className="flex items-center justify-center gap-2 py-2">
+              <button
+                type="button"
+                onClick={() => setModalPerformanceValue((prev) => Math.max(0, prev - 5))}
+                className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+              >
+                -5
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalPerformanceValue((prev) => Math.max(0, prev - 1))}
+                className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-lg flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+              >
+                -1
+              </button>
+
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={modalPerformanceValue > 0 ? modalPerformanceValue : ''}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setModalPerformanceValue(Number.isFinite(val) && val >= 0 ? Math.trunc(val) : 0);
+                }}
+                placeholder="0"
+                autoFocus
+                className="w-24 h-14 bg-black/60 border-2 border-brand-orange rounded-2xl text-center text-3xl font-mono font-black text-brand-orange focus:outline-none"
+              />
+
+              <button
+                type="button"
+                onClick={() => setModalPerformanceValue((prev) => prev + 1)}
+                className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-lg flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+              >
+                +1
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalPerformanceValue((prev) => prev + 5)}
+                className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+              >
+                +5
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoggedPerformanceForSet(currentExerciseIdx, currentExercise, targetEditingSetIdx, modalPerformanceValue);
+                  setIsMaxPromptModalOpen(false);
+                  if (targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current) {
+                    isPendingSetAdvanceRef.current = false;
+                    completeSet();
+                  }
+                }}
+                className="w-full py-3.5 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-sm uppercase tracking-wider transition-colors shadow-lg shadow-brand-orange/20 cursor-pointer"
+              >
+                {targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current
+                  ? 'Salva e Continua'
+                  : 'Salva'}
+              </button>
+              {targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    isPendingSetAdvanceRef.current = false;
+                    setIsMaxPromptModalOpen(false);
+                    completeSet();
+                  }}
+                  className="text-xs text-zinc-400 hover:text-zinc-200 py-1 transition-colors cursor-pointer"
+                >
+                  Salta / Lascia MAX
+                </button>
+              )}
             </div>
           </div>
         </div>

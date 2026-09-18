@@ -53,7 +53,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X, Flame } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
@@ -197,6 +197,12 @@ const toSnapshotExercises = (raw: unknown): UiExercise[] => {
         }))
         : undefined;
 
+      const completed_sets_records = Array.isArray(item.completed_sets_records)
+        ? (item.completed_sets_records as unknown[]).map((r) => (Number.isFinite(Number(r)) ? Number(r) : null))
+        : Array.isArray(item.completed_sets_reps)
+        ? (item.completed_sets_reps as unknown[]).map((r) => (Number.isFinite(Number(r)) ? Number(r) : null))
+        : undefined;
+
       return {
         id: String(item.id || `snapshot-${idx}`),
         type,
@@ -212,6 +218,8 @@ const toSnapshotExercises = (raw: unknown): UiExercise[] => {
           item.emom_round_duration == null ? undefined : Math.max(1, Math.trunc(toSafeNumber(item.emom_round_duration, 1))),
         pyramid_steps: pyramidSteps,
         subExercises,
+        completed_sets_records,
+        completed_sets_reps: completed_sets_records,
       } satisfies UiExercise;
     })
     .sort((a, b) => a.order_index - b.order_index);
@@ -779,6 +787,30 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                           Rest
                         </span>
                         <span className="text-sm text-brand-lightOrange">{formatSecs(exercise.rest_seconds)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {Array.isArray(exercise.completed_sets_records) && exercise.completed_sets_records.some((r) => r != null && r > 0) && (
+                    <div className="mt-3 bg-brand-orange/5 border border-brand-orange/20 rounded-xl p-3 w-full">
+                      <span className="text-[10px] font-bold text-brand-orange uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+                        <Flame size={12} />
+                        {exercise.type === 'isometry' ? 'Tenuta a sfinimento registrata per set:' : 'Reps a sfinimento registrate per set:'}
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {exercise.completed_sets_records.map((val, sIdx) => (
+                          <span
+                            key={sIdx}
+                            className="inline-flex items-center gap-1 text-xs font-mono font-bold bg-black/40 border border-white/10 px-2.5 py-1 rounded-lg text-white"
+                          >
+                            <span className="text-zinc-400 text-[10px] font-sans">Set {sIdx + 1}:</span>
+                            <span className="text-brand-orange">
+                              {val != null && val > 0
+                                ? `${val} ${exercise.type === 'isometry' ? 's' : 'reps'}`
+                                : 'MAX'}
+                            </span>
+                          </span>
+                        ))}
                       </div>
                     </div>
                   )}
