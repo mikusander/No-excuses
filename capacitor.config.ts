@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: isDev
     ? {
-        url: process.env.CAPACITOR_DEV_SERVER_URL || 'http://192.168.1.153:5173',
+        url: process.env.CAPACITOR_DEV_SERVER_URL || 'http://laptop-ep4l8ck1.local:5173',
         cleartext: true,
       }
     : undefined,
