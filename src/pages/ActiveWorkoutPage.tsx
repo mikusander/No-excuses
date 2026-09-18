@@ -118,13 +118,9 @@ import { pipManager } from '../utils/pipManager';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock';
 import {
   initServiceWorker,
-  requestNotificationPermission,
   scheduleBackgroundRestNotification,
   closeActiveRestNotifications,
-  getNotificationPermission,
   sendRestFinishedNotification,
-  testPushNotification,
-  isNativeApp,
 } from '../utils/workoutNotifications';
 import {
   updateRestMediaSession,
@@ -356,7 +352,6 @@ const ActiveWorkoutPage: React.FC = () => {
   const [restInitialDuration, setRestInitialDuration] = useState(0);
   const [restEndsAtMs, setRestEndsAtMs] = useState<number | null>(null);
   const [audioTestFeedback, setAudioTestFeedback] = useState<string | null>(null);
-  const [notificationTestFeedback, setNotificationTestFeedback] = useState<string | null>(null);
 
   // Timer State for Isometry
   const [isometryActive, setIsometryActive] = useState(false);
@@ -427,8 +422,6 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isWorkoutOverviewAdvancePending, setIsWorkoutOverviewAdvancePending] = useState(false);
   const [isAutoCountModalOpen, setIsAutoCountModalOpen] = useState(false);
   const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
-  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
-  const [isIosPwaGuideOpen, setIsIosPwaGuideOpen] = useState(false);
   const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
     sets: '',
     restSeconds: '',
@@ -1503,12 +1496,7 @@ const ActiveWorkoutPage: React.FC = () => {
     void requestScreenWakeLock();
     void initServiceWorker();
 
-    if (isNativeApp()) {
-      const perm = getNotificationPermission();
-      if (perm === 'default') {
-        setShowNotificationPrompt(true);
-      }
-    }
+
 
     return () => {
       void releaseScreenWakeLock();
@@ -3801,110 +3789,7 @@ const ActiveWorkoutPage: React.FC = () => {
     </div>
   ) : null;
 
-  const currentPermStatus = getNotificationPermission();
-  const isIosNonPwa = currentPermStatus === 'ios_pwa_required';
 
-  const notificationPermissionBanner = isNativeApp() && showNotificationPrompt ? (
-    <div className="fixed top-16 left-4 right-4 z-50 max-w-md mx-auto bg-brand-darkGrey/95 border border-brand-orange/40 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3 animate-in fade-in duration-300">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <div className="p-2 rounded-xl bg-brand-orange/20 text-brand-orange shrink-0">
-          <Smartphone size={18} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs font-bold text-white leading-tight">
-            {isIosNonPwa ? 'Notifiche su iPhone' : 'Attiva notifiche di recupero'}
-          </p>
-          <p className="text-[10px] text-brand-grey/70 truncate">
-            {isIosNonPwa ? "Aggiungi l'app alla Home per riceverle" : 'Ti avviseremo a schermo spento'}
-          </p>
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5 shrink-0">
-        {isIosNonPwa ? (
-          <button
-            type="button"
-            onClick={() => {
-              unlockAudio();
-              setIsIosPwaGuideOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-colors shadow"
-          >
-            Come fare
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={async () => {
-              unlockAudio();
-              await requestNotificationPermission();
-              setShowNotificationPrompt(false);
-            }}
-            className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-colors shadow"
-          >
-            Attiva
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            localStorage.setItem('notifications_prompt_dismissed', 'true');
-            setShowNotificationPrompt(false);
-          }}
-          className="p-1.5 text-brand-grey/60 hover:text-white rounded-lg transition-colors"
-          title="Chiudi"
-        >
-          <X size={16} />
-        </button>
-      </div>
-    </div>
-  ) : null;
-
-  const iosPwaGuideModal = isNativeApp() && isIosPwaGuideOpen ? (
-    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
-      <div className="w-full max-w-sm bg-brand-darkGrey border border-brand-orange/40 rounded-3xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-black text-white flex items-center gap-2">
-            <Smartphone className="text-brand-orange" size={20} />
-            Notifiche su iPhone
-          </h3>
-          <button
-            onClick={() => setIsIosPwaGuideOpen(false)}
-            className="p-1.5 text-brand-grey hover:text-white rounded-lg transition-colors"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="space-y-3 text-xs text-white/85 leading-relaxed">
-          <p>
-            Su iOS/Safari, Apple consente le notifiche a schermo spento solo se l'app è aggiunta alla schermata Home.
-          </p>
-          <div className="bg-black/40 border border-brand-orange/20 rounded-2xl p-3.5 space-y-2 text-left">
-            <p className="font-black text-brand-orange text-xs uppercase tracking-wider">Istruzioni:</p>
-            <ol className="list-decimal list-inside space-y-2 text-white/90">
-              <li>Tocca il tasto <strong className="text-brand-orange">Condividi</strong> in basso su Safari (quadrato con freccia in alto ⬆️).</li>
-              <li>Scorri e seleziona <strong className="text-brand-orange">"Aggiungi alla schermata Home"</strong>.</li>
-              <li>Apri <strong>No Excuses</strong> dall'icona Home per avere notifiche complete anche a schermo spento!</li>
-            </ol>
-          </div>
-          <p className="text-[11px] text-brand-grey/80">
-            Durante ogni recupero, il <strong>widget sulla schermata di blocco</strong> mostrerà comunque il tempo rimanente e i controlli multimediali.
-          </p>
-        </div>
-
-        <button
-          onClick={() => {
-            localStorage.setItem('notifications_prompt_dismissed', 'true');
-            setShowNotificationPrompt(false);
-            setIsIosPwaGuideOpen(false);
-          }}
-          className="w-full py-3 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-xs uppercase tracking-wider transition-colors shadow-lg"
-        >
-          Ho Capito
-        </button>
-      </div>
-    </div>
-  ) : null;
 
   const transitionNextExercise = pendingExerciseAdvance && !isLastExercise
     ? workout.exercises[currentExerciseIdx + 1]
@@ -3975,8 +3860,6 @@ const ActiveWorkoutPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-brand-dark flex flex-col justify-center items-center p-6 relative">
         {voiceCommandsHelpBubble}
-        {notificationPermissionBanner}
-        {iosPwaGuideModal}
         {isWorkoutOverviewModalOpen && (
           <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
             <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
@@ -4176,23 +4059,6 @@ const ActiveWorkoutPage: React.FC = () => {
               <span>🔊 Prova Suono</span>
             </button>
 
-            {isNativeApp() && (
-              <button
-                type="button"
-                onClick={async () => {
-                  unlockAudio();
-                  setNotificationTestFeedback('⏳ Programmazione notifica di test (5s)...');
-                  const result = await testPushNotification(5);
-                  setNotificationTestFeedback(result.message);
-                  setTimeout(() => setNotificationTestFeedback(null), 12000);
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 shadow-md shadow-black/40 cursor-pointer"
-                title="Testa la notifica a schermo bloccato (arriva tra 5 secondi)"
-              >
-                <span>🔔 Prova Notifica (5s)</span>
-              </button>
-            )}
-
             {pipManager.isSupported() && (
               <button
                 type="button"
@@ -4209,12 +4075,6 @@ const ActiveWorkoutPage: React.FC = () => {
           {audioTestFeedback && (
             <div className="max-w-xs text-center text-[11px] leading-snug text-brand-orange bg-brand-darkGrey/95 border border-brand-orange/40 rounded-xl px-3.5 py-2 shadow-xl animate-in fade-in duration-200">
               {audioTestFeedback}
-            </div>
-          )}
-
-          {isNativeApp() && notificationTestFeedback && (
-            <div className="max-w-xs text-center text-[11px] leading-snug text-blue-400 bg-brand-darkGrey/95 border border-blue-500/40 rounded-xl px-3.5 py-2 shadow-xl animate-in fade-in duration-200 font-semibold">
-              {notificationTestFeedback}
             </div>
           )}
         </div>
@@ -4349,8 +4209,6 @@ const ActiveWorkoutPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col pt-4 pb-12 px-6 safe-top safe-bottom relative">
       {voiceCommandsHelpBubble}
-      {notificationPermissionBanner}
-      {iosPwaGuideModal}
       <header className="flex items-center justify-between mb-8 z-10 relative">
         <button onClick={handleLeaveWorkout} className="p-2 -ml-2 text-white hover:text-brand-orange transition-colors">
           <ArrowLeft size={28} />

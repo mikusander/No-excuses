@@ -40,7 +40,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellRing } from 'lucide-react';
+import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeader from '../components/AppHeader';
 import { hapticLight, hapticMedium, hapticHeavy } from '../utils/haptics';
@@ -51,13 +51,6 @@ import {
   clearAllCorrectionRules,
   type UserCorrectionRule,
 } from '../utils/userCorrectionsManager';
-import {
-  getNotificationPermission,
-  requestNotificationPermission,
-  testPushNotification,
-  isNativeApp,
-  type NotificationPermissionStatus,
-} from '../utils/workoutNotifications';
 
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
@@ -95,32 +88,7 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  // Stato e gestione notifiche
-  const [notificationPerm, setNotificationPerm] = useState<NotificationPermissionStatus>('unsupported');
-  const [notificationTesting, setNotificationTesting] = useState(false);
-  const [notificationTestFeedback, setNotificationTestFeedback] = useState<string | null>(null);
 
-  useEffect(() => {
-    setNotificationPerm(getNotificationPermission());
-  }, []);
-
-  const handleRequestNotification = async () => {
-    const granted = await requestNotificationPermission();
-    setNotificationPerm(getNotificationPermission());
-    if (granted) {
-      setNotificationTestFeedback('Notifiche attivate con successo!');
-      setTimeout(() => setNotificationTestFeedback(null), 4000);
-    }
-  };
-
-  const handleTestNotification = async () => {
-    setNotificationTesting(true);
-    setNotificationTestFeedback('⏳ Invio notifica di test al server (5s)...');
-    const result = await testPushNotification(5);
-    setNotificationTesting(false);
-    setNotificationTestFeedback(result.message);
-    setTimeout(() => setNotificationTestFeedback(null), 12000);
-  };
 
   const getProfileMailValue = () => {
     const normalizedEmail = String(user?.email || '').trim().toLowerCase();
@@ -411,71 +379,7 @@ const SettingsPage: React.FC = () => {
             )}
           </div>
 
-          {/* Notifiche di Recupero & Schermo Spento (Solo App Nativa iPhone) */}
-          {isNativeApp() && (
-            <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-xl space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2.5 rounded-2xl bg-blue-500/15 text-blue-400 border border-blue-500/25">
-                    <Bell size={18} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-white font-bold text-sm">Notifiche di Recupero</p>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                        notificationPerm === 'granted'
-                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                          : 'bg-red-500/20 text-red-400 border-red-500/30'
-                      }`}>
-                        {notificationPerm === 'granted' ? 'Attive (iOS)' : 'Non attive'}
-                      </span>
-                    </div>
-                    <p className="text-brand-grey/60 text-xs mt-0.5">
-                      Sveglia hardware offline a schermo bloccato
-                    </p>
-                  </div>
-                </div>
-              </div>
 
-              {notificationPerm !== 'granted' && (
-                <button
-                  type="button"
-                  onClick={handleRequestNotification}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-brand-orange hover:bg-brand-lightOrange text-black text-xs font-black transition-all shadow-lg shadow-brand-orange/20 cursor-pointer active:scale-95"
-                >
-                  Attiva Notifiche
-                </button>
-              )}
-
-              <div className="text-[11px] text-brand-grey/70 bg-white/5 rounded-2xl p-3 space-y-1 border border-white/5">
-                <p className="font-semibold text-white/90">📱 App Nativa iOS:</p>
-                <p>
-                  I timer di recupero su iPhone suonano e vibrano puntuali anche se blocchi lo schermo o esci dall'app.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                <span className="text-xs text-brand-grey/70 font-medium">Testa il funzionamento</span>
-                <button
-                  type="button"
-                  disabled={notificationTesting}
-                  onClick={handleTestNotification}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/40 bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  <BellRing size={13} />
-                  <span>
-                    {notificationTesting ? 'Programmazione...' : 'Prova Sveglia (5s)'}
-                  </span>
-                </button>
-              </div>
-
-              {notificationTestFeedback && (
-                <p className="text-center text-[11px] text-blue-400 font-semibold bg-blue-500/10 border border-blue-500/20 rounded-xl p-2 animate-in fade-in duration-200">
-                  {notificationTestFeedback}
-                </p>
-              )}
-            </div>
-          )}
 
           {/* Memoria Correzioni OCR & Parser */}
           <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-xl">
