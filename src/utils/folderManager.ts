@@ -5,6 +5,7 @@
  *  - Creare, rinominare ed eliminare cartelle per utente
  *  - Assegnare o spostare singole schede o gruppi di schede tra cartelle (o al livello radice)
  *  - Propagare i cambiamenti in tempo reale tra componenti tramite CustomEvent e listener di storage
+ *  - Sincronizzazione automatica e bidirezionale in tempo reale su Supabase Cloud (user_metadata)
  */
 import { supabase } from '../lib/supabase';
 
@@ -12,6 +13,7 @@ export interface WorkoutFolder {
   id: string;
   name: string;
   createdAt: string;
+  updatedAt?: string;
   color?: string; // Colore tema per badge/bordo/icona (es. orange, cyan, emerald, purple, rose, amber)
 }
 
@@ -21,10 +23,12 @@ export interface FolderAssignmentMap {
 
 const FOLDERS_STORAGE_PREFIX = 'workout_folders_v1:';
 const ASSIGNMENTS_STORAGE_PREFIX = 'workout_folder_assignments_v1:';
+const DELETED_STORAGE_PREFIX = 'workout_deleted_folders_v1:';
 export const FOLDER_CHANGE_EVENT = 'workout-folders-changed';
 
 let cloudPushTimeout: ReturnType<typeof setTimeout> | null = null;
 let isCloudSyncing = false;
+let pendingPushUserId: string | null = null;
 
 const getCleanUserId = (userId?: string): string => {
   return userId && userId.trim() ? userId.trim() : 'guest';
@@ -37,47 +41,136 @@ const notifyFolderChanges = (): void => {
 };
 
 /**
- * Spinge l'elenco cartelle e assegnazioni locali verso i metadati utente Supabase (con debounce 500ms).
+ * Recupera l'elenco degli ID di cartelle eliminate localmente (tombstones per sincronizzazione)
  */
-export const pushFoldersToCloud = (userId?: string): void => {
-  const cleanId = getCleanUserId(userId);
-  if (cleanId === 'guest') return;
-
-  if (cloudPushTimeout) {
-    clearTimeout(cloudPushTimeout);
+export const getDeletedFolderIds = (userId?: string): string[] => {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    const raw = localStorage.getItem(`${DELETED_STORAGE_PREFIX}${getCleanUserId(userId)}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
-
-  cloudPushTimeout = setTimeout(async () => {
-    try {
-      const currentFolders = getFolders(cleanId);
-      const currentAssignments = getFolderAssignments(cleanId);
-
-      await supabase.auth.updateUser({
-        data: {
-          workout_folders: currentFolders,
-          workout_folder_assignments: currentAssignments,
-        },
-      });
-    } catch (err) {
-      console.debug('Cloud folder push skipped/failed:', err);
-    }
-  }, 500);
 };
 
 /**
- * Sincronizza bidirezionalmente le cartelle locali con Supabase:
- * - Se il cloud ha cartelle e il locale è vuoto (es. nuovo dispositivo / iPhone): scarica dal cloud nel localStorage.
- * - Se il locale ha cartelle e il cloud è vuoto (es. primo sync dal PC): effettua il push al cloud.
- * - Se entrambi hanno dati: unifica le cartelle e le assegnazioni.
+ * Memorizza un ID di cartella eliminata localmente
+ */
+const markFolderDeleted = (folderId: string, userId?: string): void => {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const current = getDeletedFolderIds(userId);
+    if (!current.includes(folderId)) {
+      const next = [...current.slice(-100), folderId]; // Tieni fino a 100 tombstones
+      localStorage.setItem(`${DELETED_STORAGE_PREFIX}${getCleanUserId(userId)}`, JSON.stringify(next));
+    }
+  } catch (err) {
+    console.debug('Errore memorizzazione tombstone cartella:', err);
+  }
+};
+
+/**
+ * Risolve l'ID utente autenticato da Supabase se non esplicitamente fornito.
+ */
+const resolveUserId = async (userId?: string): Promise<string | null> => {
+  const clean = getCleanUserId(userId);
+  if (clean !== 'guest') return clean;
+
+  try {
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user?.id) {
+      return data.session.user.id;
+    }
+  } catch {
+    // Sessione non disponibile
+  }
+  return null;
+};
+
+/**
+ * Spinge l'elenco cartelle e assegnazioni locali verso i metadati utente Supabase.
+ * Supporta esecuzione immediata (per azioni utente) o debounced.
+ */
+export const pushFoldersToCloud = async (userId?: string, immediate = true): Promise<void> => {
+  const targetId = await resolveUserId(userId);
+  if (!targetId) return;
+
+  pendingPushUserId = targetId;
+
+  const executePush = async () => {
+    try {
+      const currentFolders = getFolders(targetId);
+      const currentAssignments = getFolderAssignments(targetId);
+      const currentDeleted = getDeletedFolderIds(targetId);
+
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          workout_folders: currentFolders,
+          workout_folder_assignments: currentAssignments,
+          workout_deleted_folders: currentDeleted,
+        },
+      });
+
+      if (error) {
+        console.warn('Errore sync cartelle su Supabase:', error.message);
+      } else {
+        pendingPushUserId = null;
+      }
+    } catch (err) {
+      console.warn('Eccezione durante push cartelle su Supabase:', err);
+    }
+  };
+
+  if (cloudPushTimeout) {
+    clearTimeout(cloudPushTimeout);
+    cloudPushTimeout = null;
+  }
+
+  if (immediate) {
+    await executePush();
+  } else {
+    cloudPushTimeout = setTimeout(() => {
+      void executePush();
+    }, 300);
+  }
+};
+
+/**
+ * Sincronizza bidirezionalmente le cartelle locali con Supabase Cloud:
+ * - Migra eventuali cartelle create come 'guest' al profilo autenticato.
+ * - Sincronizza cartelle, assegnazioni e cancellazioni tra tutti i dispositivi (iPhone, PWA, PC).
  */
 export const syncFoldersWithCloud = async (userId?: string): Promise<void> => {
-  const cleanId = getCleanUserId(userId);
-  if (cleanId === 'guest' || isCloudSyncing) return;
+  const targetId = await resolveUserId(userId);
+  if (!targetId || isCloudSyncing) return;
 
   isCloudSyncing = true;
   try {
+    // Migrazione automatica cartelle 'guest' (es. se create prima che l'auth caricasse)
+    const guestFolders = getFolders('guest');
+    const guestAssignments = getFolderAssignments('guest');
+    if (guestFolders.length > 0) {
+      const existingUserFolders = getFolders(targetId);
+      const existingUserAssignments = getFolderAssignments(targetId);
+
+      const mergedWithGuest = [...existingUserFolders];
+      guestFolders.forEach((gf) => {
+        if (!mergedWithGuest.some((f) => f.id === gf.id)) {
+          mergedWithGuest.push(gf);
+        }
+      });
+
+      saveFolders(mergedWithGuest, targetId, true);
+      saveFolderAssignments({ ...existingUserAssignments, ...guestAssignments }, targetId, true);
+
+      localStorage.removeItem(`${FOLDERS_STORAGE_PREFIX}guest`);
+      localStorage.removeItem(`${ASSIGNMENTS_STORAGE_PREFIX}guest`);
+    }
+
     const { data, error } = await supabase.auth.getUser();
-    if (error || !data?.user || data.user.id !== cleanId) {
+    if (error || !data?.user || data.user.id !== targetId) {
       return;
     }
 
@@ -86,36 +179,67 @@ export const syncFoldersWithCloud = async (userId?: string): Promise<void> => {
     const cloudAssignments = (metadata.workout_folder_assignments && typeof metadata.workout_folder_assignments === 'object')
       ? (metadata.workout_folder_assignments as FolderAssignmentMap)
       : null;
+    const cloudDeleted = Array.isArray(metadata.workout_deleted_folders) ? (metadata.workout_deleted_folders as string[]) : [];
 
-    const localFolders = getFolders(cleanId);
-    const localAssignments = getFolderAssignments(cleanId);
+    const localFolders = getFolders(targetId);
+    const localAssignments = getFolderAssignments(targetId);
+    const localDeleted = getDeletedFolderIds(targetId);
 
-    // Caso 1: il cloud ha dati e il locale è vuoto (es. iPhone con app appena installata)
+    // Unisci lista delle cartelle cancellate (tombstones)
+    const allDeleted = Array.from(new Set([...cloudDeleted, ...localDeleted]));
+    if (allDeleted.length > localDeleted.length) {
+      localStorage.setItem(`${DELETED_STORAGE_PREFIX}${targetId}`, JSON.stringify(allDeleted));
+    }
+
+    // Caso 1: il cloud ha dati e il locale è vuoto (es. iPhone con app o PWA appena aperta)
     if (cloudFolders && cloudFolders.length > 0 && localFolders.length === 0) {
-      saveFolders(cloudFolders, cleanId, true);
+      const filtered = cloudFolders.filter((f) => !allDeleted.includes(f.id));
+      saveFolders(filtered, targetId, true);
       if (cloudAssignments) {
-        saveFolderAssignments(cloudAssignments, cleanId, true);
+        saveFolderAssignments(cloudAssignments, targetId, true);
       }
       return;
     }
 
-    // Caso 2: il locale ha dati e il cloud è ancora vuoto (es. primo sync dal PC)
+    // Caso 2: il locale ha dati e il cloud è ancora vuoto (es. primo sync)
     if (localFolders.length > 0 && (!cloudFolders || cloudFolders.length === 0)) {
-      pushFoldersToCloud(cleanId);
+      await pushFoldersToCloud(targetId, true);
       return;
     }
 
-    // Caso 3: entrambi hanno dati -> unione (merge)
+    // Caso 3: entrambi hanno dati -> unione intelligente basata su updatedAt (Last-Write-Wins) ed esclusione tombstones
     if (cloudFolders && cloudFolders.length > 0 && localFolders.length > 0) {
       const folderMap = new Map<string, WorkoutFolder>();
-      cloudFolders.forEach((f) => folderMap.set(f.id, f));
-      localFolders.forEach((f) => folderMap.set(f.id, f));
-      const mergedFolders = Array.from(folderMap.values());
 
+      const processFolder = (f: WorkoutFolder) => {
+        if (allDeleted.includes(f.id)) return;
+        const existing = folderMap.get(f.id);
+        if (!existing) {
+          folderMap.set(f.id, f);
+        } else {
+          const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+          const incomingTime = new Date(f.updatedAt || f.createdAt || 0).getTime();
+          if (incomingTime >= existingTime) {
+            folderMap.set(f.id, f);
+          }
+        }
+      };
+
+      cloudFolders.forEach(processFolder);
+      localFolders.forEach(processFolder);
+
+      const mergedFolders = Array.from(folderMap.values());
       const mergedAssignments: FolderAssignmentMap = {
         ...(cloudAssignments || {}),
         ...localAssignments,
       };
+
+      // Pulizia assegnazioni di cartelle eliminate
+      Object.entries(mergedAssignments).forEach(([schedaId, folderId]) => {
+        if (allDeleted.includes(folderId) || !mergedFolders.some((f) => f.id === folderId)) {
+          delete mergedAssignments[schedaId];
+        }
+      });
 
       const localFoldersJson = JSON.stringify(localFolders);
       const mergedFoldersJson = JSON.stringify(mergedFolders);
@@ -123,9 +247,9 @@ export const syncFoldersWithCloud = async (userId?: string): Promise<void> => {
       const mergedAssignJson = JSON.stringify(mergedAssignments);
 
       if (localFoldersJson !== mergedFoldersJson || localAssignJson !== mergedAssignJson) {
-        saveFolders(mergedFolders, cleanId, true);
-        saveFolderAssignments(mergedAssignments, cleanId, true);
-        pushFoldersToCloud(cleanId);
+        saveFolders(mergedFolders, targetId, true);
+        saveFolderAssignments(mergedAssignments, targetId, true);
+        await pushFoldersToCloud(targetId, true);
       }
     }
   } catch (err) {
@@ -134,6 +258,22 @@ export const syncFoldersWithCloud = async (userId?: string): Promise<void> => {
     isCloudSyncing = false;
   }
 };
+
+/**
+ * Listener globali per sincronizzare al focus dell'app e salvare alla chiusura
+ */
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => {
+    void syncFoldersWithCloud();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      void syncFoldersWithCloud();
+    } else if (document.visibilityState === 'hidden' && pendingPushUserId) {
+      void pushFoldersToCloud(pendingPushUserId, true);
+    }
+  });
+}
 
 /**
  * Recupera l'elenco delle cartelle per l'utente specificato.
@@ -156,7 +296,7 @@ export const getFolders = (userId?: string): WorkoutFolder[] => {
 };
 
 /**
- * Salva l'elenco delle cartelle in localStorage per l'utente.
+ * Salva l'elenco delle cartelle in localStorage per l'utente e propaga su cloud.
  */
 export const saveFolders = (folders: WorkoutFolder[], userId?: string, skipCloudPush = false): void => {
   if (typeof window === 'undefined' || !window.localStorage) {
@@ -170,7 +310,7 @@ export const saveFolders = (folders: WorkoutFolder[], userId?: string, skipCloud
     );
     notifyFolderChanges();
     if (!skipCloudPush) {
-      pushFoldersToCloud(userId);
+      void pushFoldersToCloud(userId, true);
     }
   } catch (err) {
     console.warn('Errore durante il salvataggio delle cartelle utente:', err);
@@ -186,10 +326,12 @@ export const createFolder = (
   color = '#ff7700'
 ): WorkoutFolder => {
   const trimmed = name.trim() || 'Nuova Cartella';
+  const now = new Date().toISOString();
   const newFolder: WorkoutFolder = {
     id: `folder_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: trimmed,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     color,
   };
 
@@ -212,10 +354,11 @@ export const renameFolder = (
 
   const existing = getFolders(userId);
   let updatedFolder: WorkoutFolder | null = null;
+  const now = new Date().toISOString();
 
   const nextFolders = existing.map((f) => {
     if (f.id === folderId) {
-      updatedFolder = { ...f, name: trimmed };
+      updatedFolder = { ...f, name: trimmed, updatedAt: now };
       return updatedFolder;
     }
     return f;
@@ -231,6 +374,8 @@ export const renameFolder = (
  * Elimina una cartella. Le schede collegate tornano automaticamente al livello radice (non eliminate).
  */
 export const deleteFolder = (folderId: string, userId?: string): void => {
+  markFolderDeleted(folderId, userId);
+
   const existing = getFolders(userId);
   const nextFolders = existing.filter((f) => f.id !== folderId);
   saveFolders(nextFolders, userId);
@@ -274,7 +419,7 @@ export const getFolderAssignments = (userId?: string): FolderAssignmentMap => {
 };
 
 /**
- * Salva la mappa delle assegnazioni in localStorage.
+ * Salva la mappa delle assegnazioni in localStorage e su cloud.
  */
 export const saveFolderAssignments = (
   assignments: FolderAssignmentMap,
@@ -292,7 +437,7 @@ export const saveFolderAssignments = (
     );
     notifyFolderChanges();
     if (!skipCloudPush) {
-      pushFoldersToCloud(userId);
+      void pushFoldersToCloud(userId, true);
     }
   } catch (err) {
     console.warn('Errore durante il salvataggio delle assegnazioni cartella:', err);
