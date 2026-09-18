@@ -39,6 +39,7 @@ import SelectWorkoutPage from './pages/SelectWorkoutPage';
 import ActiveWorkoutPage from './pages/ActiveWorkoutPage';
 import { useAuth } from './context/AuthContext';
 import ResetPasswordModal from './components/ResetPasswordModal';
+import ActiveWorkoutBanner from './components/ActiveWorkoutBanner';
 import { supabaseConfigError } from './lib/supabase';
 
 /**
@@ -86,7 +87,8 @@ function App() {
       {/* Modal globale per il reset password — visibile solo dopo click su link email di recupero */}
       {isPasswordRecovery && <ResetPasswordModal />}
       <Router>
-      <Routes>
+        <ActiveWorkoutBanner />
+        <Routes>
         {/* Public Routes */}
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/" element={<HomePage />} />

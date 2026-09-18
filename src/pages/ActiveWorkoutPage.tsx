@@ -134,6 +134,7 @@ import {
   clearAllWorkoutProgressCheckpoints,
   clearWorkoutProgressCheckpointByIdentity,
   pruneWorkoutProgressCheckpoints,
+  notifyWorkoutProgressChanged,
   WORKOUT_PROGRESS_MAX_AGE_MS,
   type WorkoutProgressIdentity,
 } from '../lib/workoutProgressStorage';
@@ -243,6 +244,10 @@ interface PersistedWorkoutProgressState {
   circuitLapTimes?: number[];
   exerciseNotesByKey: Record<string, ExerciseNoteEntry>;
   workoutStartedAtMs: number | null;
+  workoutElapsedSeconds?: number;
+  workoutName?: string;
+  currentExerciseName?: string;
+  totalSets?: number;
   recordedMaxPerformance?: Record<string, Record<number, number>>;
 }
 
@@ -401,6 +406,31 @@ const ActiveWorkoutPage: React.FC = () => {
   const workoutNotesSavedRef = useRef(false);
   const workoutCompletionHandledRef = useRef(false);
   const workoutStartedAtMsRef = useRef<number | null>(null);
+  const workoutElapsedSecondsRef = useRef<number>(0);
+  const sessionForegroundStartedAtMsRef = useRef<number | null>(null);
+
+  const getCurrentWorkoutElapsedSeconds = useCallback((): number => {
+    let elapsed = workoutElapsedSecondsRef.current;
+    if (sessionForegroundStartedAtMsRef.current != null) {
+      const activeForegroundSegment = Math.max(0, Math.trunc((Date.now() - sessionForegroundStartedAtMsRef.current) / 1000));
+      elapsed += activeForegroundSegment;
+    }
+    return Math.max(0, elapsed);
+  }, []);
+
+  const freezeForegroundWorkoutTime = useCallback(() => {
+    if (sessionForegroundStartedAtMsRef.current != null) {
+      const activeForegroundSegment = Math.max(0, Math.trunc((Date.now() - sessionForegroundStartedAtMsRef.current) / 1000));
+      workoutElapsedSecondsRef.current += activeForegroundSegment;
+      sessionForegroundStartedAtMsRef.current = null;
+    }
+  }, []);
+
+  const unfreezeForegroundWorkoutTime = useCallback(() => {
+    if (sessionForegroundStartedAtMsRef.current == null) {
+      sessionForegroundStartedAtMsRef.current = Date.now();
+    }
+  }, []);
   const lastProgressPersistAtMsRef = useRef(0);
   const persistWorkoutProgressRef = useRef<((force?: boolean) => void) | null>(null);
   const suppressProgressPersistenceRef = useRef(false);
@@ -1267,6 +1297,10 @@ const ActiveWorkoutPage: React.FC = () => {
         circuitLapTimes: circuitLapTimes || [],
         exerciseNotesByKey: safeExerciseNotesByKey,
         workoutStartedAtMs: workoutStartedAtMsRef.current,
+        workoutElapsedSeconds: getCurrentWorkoutElapsedSeconds(),
+        workoutName: workout.name,
+        currentExerciseName: safeExercise?.name,
+        totalSets: safeExercise?.sets,
         recordedMaxPerformance: recordedMaxPerformanceRef.current,
       },
     };
@@ -1276,6 +1310,7 @@ const ActiveWorkoutPage: React.FC = () => {
         pruneWorkoutProgressCheckpoints(user.id, storageKey);
       }
       localStorage.setItem(storageKey, JSON.stringify(payload));
+      notifyWorkoutProgressChanged();
       lastProgressPersistAtMsRef.current = now;
     } catch (error) {
       console.error('Error persisting workout progress:', error);
@@ -1512,6 +1547,12 @@ const ActiveWorkoutPage: React.FC = () => {
     workoutStartedAtMsRef.current = Number.isFinite(restoredStartedAt) && restoredStartedAt > 0
       ? restoredStartedAt
       : Date.now();
+
+    const restoredElapsed = Number(state.workoutElapsedSeconds);
+    workoutElapsedSecondsRef.current = Number.isFinite(restoredElapsed) && restoredElapsed >= 0
+      ? restoredElapsed
+      : 0;
+    sessionForegroundStartedAtMsRef.current = Date.now();
 
     return true;
   };
@@ -1915,12 +1956,15 @@ const ActiveWorkoutPage: React.FC = () => {
 
   useEffect(() => {
     const flushProgress = () => {
+      freezeForegroundWorkoutTime();
       persistWorkoutProgressRef.current?.(true);
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
         flushProgress();
+      } else if (document.visibilityState === 'visible') {
+        unfreezeForegroundWorkoutTime();
       }
     };
 
@@ -1934,7 +1978,7 @@ const ActiveWorkoutPage: React.FC = () => {
       window.removeEventListener('pagehide', flushProgress);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, []);
+  }, [freezeForegroundWorkoutTime, unfreezeForegroundWorkoutTime]);
 
   const fetchWorkout = async () => {
     if (!user?.id) {
@@ -1976,6 +2020,8 @@ const ActiveWorkoutPage: React.FC = () => {
       workoutNotesSavedRef.current = false;
       workoutCompletionHandledRef.current = false;
       workoutStartedAtMsRef.current = Date.now();
+      workoutElapsedSecondsRef.current = 0;
+      sessionForegroundStartedAtMsRef.current = Date.now();
       lastProgressPersistAtMsRef.current = 0;
       suppressProgressPersistenceRef.current = false;
 
@@ -2136,13 +2182,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (workoutRunSavedRef.current) return workoutRunIdRef.current;
     if (!user?.id) return null;
 
-    const workoutDurationSeconds = (() => {
-      const startedAtMs = workoutStartedAtMsRef.current;
-      if (startedAtMs == null) return null;
-      const elapsedSeconds = Math.trunc((Date.now() - startedAtMs) / 1000);
-      if (!Number.isFinite(elapsedSeconds)) return null;
-      return Math.max(0, elapsedSeconds);
-    })();
+    const workoutDurationSeconds = Math.max(0, getCurrentWorkoutElapsedSeconds());
 
     const fallbackSchedaId = Number(id);
     const computedSchedaId = sourceSchedaId != null
@@ -3766,11 +3806,15 @@ const ActiveWorkoutPage: React.FC = () => {
   const nextRecoveryLabel = getNextRecoveryLabel();
 
   const handleLeaveWorkout = () => {
-    suppressProgressPersistenceRef.current = true;
-    clearPersistedWorkoutProgress();
+    freezeForegroundWorkoutTime();
+    persistWorkoutProgress(true);
     stopRestMediaSession();
     void releaseScreenWakeLock();
-    navigate('/');
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/');
+    }
   };
 
   const markWorkoutComplete = async () => {

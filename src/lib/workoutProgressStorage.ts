@@ -33,10 +33,42 @@ export interface WorkoutProgressCheckpointMeta {
   key: string;                    // Chiave localStorage completa
   identity: WorkoutProgressIdentity;
   savedAtMs: number;              // Timestamp Unix (ms) dell'ultimo salvataggio
+  workoutName?: string;
+  currentExerciseName?: string;
+  currentSetIdx?: number;
+  totalSets?: number;
 }
 
 /** Prefisso comune per tutte le chiavi di checkpoint nell'app */
 export const WORKOUT_PROGRESS_STORAGE_PREFIX = 'active_workout_progress_v1';
+export const WORKOUT_PROGRESS_EVENT = 'workout-progress-changed';
+
+/** Notifica i componenti che lo stato di progresso di un workout è cambiato */
+export const notifyWorkoutProgressChanged = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(WORKOUT_PROGRESS_EVENT));
+  }
+};
+
+/** Sottoscrizione reattiva alle modifiche dei checkpoint di allenamento */
+export const subscribeToWorkoutProgress = (callback: () => void): (() => void) => {
+  if (typeof window === 'undefined') return () => {};
+
+  const handleEvent = () => callback();
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key && e.key.startsWith(WORKOUT_PROGRESS_STORAGE_PREFIX)) {
+      callback();
+    }
+  };
+
+  window.addEventListener(WORKOUT_PROGRESS_EVENT, handleEvent);
+  window.addEventListener('storage', handleStorage);
+
+  return () => {
+    window.removeEventListener(WORKOUT_PROGRESS_EVENT, handleEvent);
+    window.removeEventListener('storage', handleStorage);
+  };
+};
 
 /** TTL dei checkpoint: 3 giorni in millisecondi */
 export const WORKOUT_PROGRESS_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 3;
@@ -84,17 +116,6 @@ const parseIdentityFromKey = (key: string, userId: string): WorkoutProgressIdent
   const prefix = getUserPrefix(userId);
   if (!key.startsWith(prefix)) return null;
   return parseIdentitySuffix(key.slice(prefix.length));
-};
-
-/**
- * Legge il campo `savedAtMs` da un raw JSON string di localStorage.
- * Restituisce null se il JSON non è valido o il valore non è un numero finito positivo.
- */
-const readSavedAtMsFromRaw = (raw: string): number | null => {
-  const parsed = JSON.parse(raw) as { savedAtMs?: unknown };
-  const savedAtMs = Number(parsed.savedAtMs);
-  if (!Number.isFinite(savedAtMs) || savedAtMs <= 0) return null;
-  return savedAtMs;
 };
 
 /**
@@ -163,16 +184,17 @@ export const getValidWorkoutProgressCheckpoints = (userId: string): WorkoutProgr
       continue;
     }
 
-    // Parsa il timestamp di salvataggio
-    let savedAtMs: number | null = null;
+    let parsed: any = null;
     try {
-      savedAtMs = readSavedAtMsFromRaw(raw);
+      parsed = JSON.parse(raw);
     } catch {
-      savedAtMs = null;
+      safeRemoveItem(key);
+      continue;
     }
 
-    if (savedAtMs == null) {
-      safeRemoveItem(key); // JSON corrotto o senza timestamp
+    const savedAtMs = Number(parsed?.savedAtMs);
+    if (!Number.isFinite(savedAtMs) || savedAtMs <= 0) {
+      safeRemoveItem(key);
       continue;
     }
 
@@ -182,7 +204,21 @@ export const getValidWorkoutProgressCheckpoints = (userId: string): WorkoutProgr
       continue;
     }
 
-    checkpoints.push({ key, identity, savedAtMs });
+    const state = parsed?.state;
+    const workoutName = state?.workoutName ? String(state.workoutName) : undefined;
+    const currentExerciseName = state?.currentExerciseName ? String(state.currentExerciseName) : undefined;
+    const currentSetIdx = typeof state?.currentSetIdx === 'number' ? state.currentSetIdx : undefined;
+    const totalSets = typeof state?.totalSets === 'number' ? state.totalSets : undefined;
+
+    checkpoints.push({
+      key,
+      identity,
+      savedAtMs,
+      workoutName,
+      currentExerciseName,
+      currentSetIdx,
+      totalSets,
+    });
   }
 
   // Ordina dal più recente al più vecchio
@@ -208,10 +244,16 @@ export const getLatestWorkoutProgressCheckpoint = (userId: string): WorkoutProgr
  */
 export const pruneWorkoutProgressCheckpoints = (userId: string, keepKey: string | null = null) => {
   const checkpoints = getValidWorkoutProgressCheckpoints(userId);
+  let changed = false;
 
   for (const checkpoint of checkpoints) {
     if (keepKey && checkpoint.key === keepKey) continue; // Conserva quello attivo
     safeRemoveItem(checkpoint.key);
+    changed = true;
+  }
+
+  if (changed) {
+    notifyWorkoutProgressChanged();
   }
 };
 
@@ -221,6 +263,7 @@ export const pruneWorkoutProgressCheckpoints = (userId: string, keepKey: string 
  */
 export const clearAllWorkoutProgressCheckpoints = (userId: string) => {
   pruneWorkoutProgressCheckpoints(userId, null);
+  notifyWorkoutProgressChanged();
 };
 
 /**
@@ -230,4 +273,5 @@ export const clearAllWorkoutProgressCheckpoints = (userId: string) => {
 export const clearWorkoutProgressCheckpointByIdentity = (userId: string, identity: WorkoutProgressIdentity) => {
   const storageKey = buildWorkoutProgressStorageKey(userId, identity);
   safeRemoveItem(storageKey);
+  notifyWorkoutProgressChanged();
 };
