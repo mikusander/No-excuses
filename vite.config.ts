@@ -160,10 +160,12 @@ export default defineConfig({
   ],
   server: {
     host: true,
+    allowedHosts: true,
     https: httpsConfig,
   },
   preview: {
     host: true,
+    allowedHosts: true,
     https: httpsConfig,
   },
 })
