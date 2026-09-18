@@ -121,6 +121,9 @@ import {
   scheduleBackgroundRestNotification,
   closeActiveRestNotifications,
   sendRestFinishedNotification,
+  ensureNativeNotificationPermission,
+  addNotificationActionListener,
+  isNativeApp,
 } from '../utils/workoutNotifications';
 import {
   updateRestMediaSession,
@@ -1495,12 +1498,14 @@ const ActiveWorkoutPage: React.FC = () => {
   useEffect(() => {
     void requestScreenWakeLock();
     void initServiceWorker();
-
-
+    if (isNativeApp()) {
+      void ensureNativeNotificationPermission();
+    }
 
     return () => {
       void releaseScreenWakeLock();
       stopRestMediaSession();
+      void closeActiveRestNotifications();
       if (voiceHelpTimeoutRef.current) {
         clearTimeout(voiceHelpTimeoutRef.current);
         voiceHelpTimeoutRef.current = null;
@@ -1508,6 +1513,17 @@ const ActiveWorkoutPage: React.FC = () => {
       clearTimerLongPressState();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const unsub = addNotificationActionListener(() => {
+      if (isResting) {
+        stopRestCountdown(false);
+        finishRestAndNextSet(true);
+      }
+    });
+    return unsub;
+  }, [isResting]);
 
   handleVoiceNextRef.current = () => {
     if (isResting) skipRest();

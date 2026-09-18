@@ -1,66 +1,66 @@
 /**
- * workoutNotifications.ts — Gestione Notifiche.
+ * workoutNotifications.ts — Gestione Notifiche per Sessioni di Allenamento.
  *
  * Le notifiche sono abilitate ESCLUSIVAMENTE sull'app nativa per iPhone (Capacitor / LocalNotifications).
- * Nella versione per il browser, il sistema di notifiche è completamente disattivato.
+ * Nella versione per il browser / PWA, il sistema di notifiche è completamente disattivato.
+ *
+ * Funzionalità:
+ *  - Richiesta permessi nativa al primo avvio di un recupero o apertura workout (zero pulsanti o scritte invasive nell'interfaccia)
+ *  - Schedulazione allarme nativo iOS tramite UNUserNotificationCenter alla scadenza esatta del recupero
+ *  - Suono sveglia 'beep.wav' / default che suona a schermo bloccato, in background o con app chiusa
+ *  - Cancellazione automatica della notifica se l'utente salta, mette in pausa o completa il recupero dentro l'app
  */
 
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, NotificationType } from '@capacitor/haptics';
 
+export const REST_NOTIFICATION_ID = 1001;
+
+/**
+ * Rileva se l'applicazione sta girando all'interno del container nativo iOS.
+ * Restituisce SEMPRE false su browser, desktop o PWA.
+ */
 export const isNativeApp = (): boolean => {
   return typeof window !== 'undefined' && Capacitor.isNativePlatform();
 };
 
-let cachedNativePermission: NotificationPermissionStatus | null = null;
+let cachedNativePermission: 'granted' | 'denied' | 'prompt' | null = null;
 let lastScheduledEndsAtMs = 0;
 let lastScheduledAtMs = 0;
-let isSchedulingPushInProgress = false;
+let isSchedulingInProgress = false;
 
-export const initServiceWorker = async (): Promise<ServiceWorkerRegistration | null> => {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-    return null;
-  }
+/**
+ * Verifica e richiede in modo nativo e silenzioso i permessi di notifica su iOS.
+ * Su iOS mostra il classico popup di sistema "Consenti notifiche" una sola volta.
+ */
+export const ensureNativeNotificationPermission = async (): Promise<boolean> => {
+  if (!isNativeApp()) return false;
+
   try {
-    const reg = await navigator.serviceWorker.ready;
-    return reg;
-  } catch (error) {
-    console.debug('Service Worker ready failed:', error);
-    return null;
+    const status = await LocalNotifications.checkPermissions();
+    if (status.display === 'granted') {
+      cachedNativePermission = 'granted';
+      return true;
+    }
+
+    if (status.display === 'prompt' || status.display === 'prompt-with-rationale') {
+      const req = await LocalNotifications.requestPermissions();
+      const granted = req.display === 'granted';
+      cachedNativePermission = granted ? 'granted' : 'denied';
+      return granted;
+    }
+
+    cachedNativePermission = 'denied';
+    return false;
+  } catch (err) {
+    console.debug('[Capacitor] Errore verifica permessi notifiche:', err);
+    return false;
   }
-};
-
-export type NotificationPermissionStatus =
-  | NotificationPermission
-  | 'unsupported'
-  | 'ios_pwa_required';
-
-export const getNotificationPermission = (): NotificationPermissionStatus => {
-  if (typeof window === 'undefined' || !isNativeApp()) return 'unsupported';
-  return cachedNativePermission || 'granted';
 };
 
 export const isNotificationPermissionGranted = (): boolean => {
-  return isNativeApp() && getNotificationPermission() === 'granted';
-};
-
-export const getOrCreatePushSubscription = async (): Promise<PushSubscription | null> => {
-  return null;
-};
-
-export const requestNotificationPermission = async (): Promise<boolean> => {
-  if (typeof window === 'undefined' || !isNativeApp()) return false;
-
-  try {
-    const result = await LocalNotifications.requestPermissions();
-    const granted = result.display === 'granted';
-    cachedNativePermission = granted ? 'granted' : 'denied';
-    return granted;
-  } catch (err) {
-    console.debug('[Capacitor] Errore richiesta permessi notifiche locali:', err);
-    return false;
-  }
+  return isNativeApp() && cachedNativePermission === 'granted';
 };
 
 export interface RestNotificationPayload {
@@ -68,16 +68,20 @@ export interface RestNotificationPayload {
   nextSetInfo?: string;
 }
 
+/**
+ * Feedback aptico al termine del recupero (eseguito in foreground).
+ */
 export const sendRestFinishedNotification = async ({
   nextExerciseName: _nextExerciseName,
   nextSetInfo: _nextSetInfo,
-}: RestNotificationPayload) => {
+}: RestNotificationPayload): Promise<void> => {
   if (!isNativeApp()) return;
   void Haptics.notification({ type: NotificationType.Success }).catch(() => {});
 };
 
 /**
- * Pianifica la notifica di fine recupero (solo app nativa iOS).
+ * Pianifica la sveglia/notifica di fine recupero hardware (solo ed esclusivamente app nativa iOS).
+ * Suona e compare su schermo bloccato, Dynamic Island o altre app quando il recupero finisce.
  */
 export const scheduleBackgroundRestNotification = async ({
   endsAtMs,
@@ -87,109 +91,116 @@ export const scheduleBackgroundRestNotification = async ({
   endsAtMs: number;
   nextExerciseName: string;
   nextSetInfo?: string;
-}) => {
-  if (!isNativeApp() || !isNotificationPermissionGranted()) return;
+}): Promise<void> => {
+  // Esclusivamente per app nativa iPhone
+  if (!isNativeApp()) return;
 
   const now = Date.now();
+  // Se il target è già scaduto o troppo vicino, non schedulare
+  if (endsAtMs <= now + 1000) return;
+
+  // Evita schedulazioni duplicate ravvicinate per lo stesso intervallo
   if (
-    isSchedulingPushInProgress ||
+    isSchedulingInProgress ||
     (Math.abs(endsAtMs - lastScheduledEndsAtMs) < 2000 && now - lastScheduledAtMs < 3000)
   ) {
     return;
   }
 
-  isSchedulingPushInProgress = true;
+  isSchedulingInProgress = true;
   lastScheduledEndsAtMs = endsAtMs;
   lastScheduledAtMs = now;
 
   try {
-    cancelBackgroundRestNotification();
+    const hasPermission = await ensureNativeNotificationPermission();
+    if (!hasPermission) {
+      console.debug('[Capacitor] Permesso notifiche non concesso dall\'utente.');
+      return;
+    }
+
+    // Cancella eventuale notifica precedente attiva
+    await LocalNotifications.cancel({ notifications: [{ id: REST_NOTIFICATION_ID }] }).catch(() => {});
 
     const title = '⏱️ Recupero Terminato!';
     const body = nextSetInfo
       ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
       : `È ora di iniziare: ${nextExerciseName}`;
 
-    const timerId = `rest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const scheduledDate = new Date(endsAtMs);
 
-    await LocalNotifications.cancel({ notifications: [{ id: 1001 }] });
     await LocalNotifications.schedule({
       notifications: [
         {
-          id: 1001,
+          id: REST_NOTIFICATION_ID,
           title,
           body,
-          schedule: { at: new Date(endsAtMs) },
+          schedule: {
+            at: scheduledDate,
+            allowWhileIdle: true,
+          },
           sound: 'beep.wav',
           extra: {
-            timerId,
             endsAtMs,
+            nextExerciseName,
           },
         },
       ],
     });
+
+    console.debug('[Capacitor] Sveglia di recupero schedulata per le:', scheduledDate.toLocaleTimeString());
   } catch (nativeErr) {
-    console.error('[Capacitor] Errore schedulazione notifica locale nativa:', nativeErr);
+    console.warn('[Capacitor] Errore schedulazione notifica locale nativa:', nativeErr);
   } finally {
-    isSchedulingPushInProgress = false;
+    isSchedulingInProgress = false;
   }
 };
-
-export const cancelBackgroundRestNotification = () => {
-  if (!isNativeApp()) return;
-  void LocalNotifications.cancel({ notifications: [{ id: 1001 }] }).catch(() => {});
-};
-
-export const closeActiveRestNotifications = async () => {
-  if (!isNativeApp()) return;
-  cancelBackgroundRestNotification();
-};
-
-export interface PushTestResult {
-  success: boolean;
-  message: string;
-}
 
 /**
- * Funzione di test per le notifiche (solo app nativa iOS).
+ * Cancella la notifica programmata quando il recupero viene interrotto, saltato o completato in foreground.
  */
-export const testPushNotification = async (delaySeconds = 5): Promise<PushTestResult> => {
-  if (!isNativeApp()) {
-    return {
-      success: false,
-      message: 'Le notifiche sono disponibili esclusivamente sull\'app nativa per iPhone.',
-    };
-  }
+export const cancelBackgroundRestNotification = (): void => {
+  if (!isNativeApp()) return;
+  lastScheduledEndsAtMs = 0;
+  void LocalNotifications.cancel({ notifications: [{ id: REST_NOTIFICATION_ID }] }).catch(() => {});
+};
 
+/**
+ * Pulisce sia la notifica pendente sia le notifiche già consegnate nel notification center.
+ */
+export const closeActiveRestNotifications = async (): Promise<void> => {
+  if (!isNativeApp()) return;
+  lastScheduledEndsAtMs = 0;
   try {
-    const perm = await LocalNotifications.requestPermissions();
-    if (perm.display !== 'granted') {
-      return {
-        success: false,
-        message: '⚠️ Permesso notifiche non concesso nelle impostazioni del tuo iPhone.',
-      };
-    }
-    await LocalNotifications.cancel({ notifications: [{ id: 9999 }] });
-    const testEndsAt = new Date(Date.now() + delaySeconds * 1000);
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: 9999,
-          title: '⏱️ Test Notifica Nativa Riuscito!',
-          body: 'La sveglia hardware iOS funziona a schermo bloccato e 100% offline!',
-          schedule: { at: testEndsAt },
-          sound: 'beep.wav',
-        },
-      ],
-    });
-    return {
-      success: true,
-      message: `🔒 Sveglia nativa iOS programmata tra ${delaySeconds}s! Puoi bloccare lo schermo o uscire dall'app: suonerà all'istante senza internet o server.`,
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      message: `⚠️ Errore notifica locale: ${err.message || 'Errore nativo'}`,
-    };
+    await LocalNotifications.cancel({ notifications: [{ id: REST_NOTIFICATION_ID }] });
+    await LocalNotifications.removeDeliveredNotificationsById({ ids: [REST_NOTIFICATION_ID] });
+  } catch {
+    // ignore
   }
+};
+
+/**
+ * Registra un listener per quando l'utente tocca la notifica di recupero dalla schermata di blocco / banner.
+ */
+export const addNotificationActionListener = (
+  onAction: (notificationId: number) => void
+): (() => void) => {
+  if (!isNativeApp()) return () => {};
+
+  let handle: { remove: () => void } | null = null;
+  LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+    onAction(action.notification.id);
+  }).then((h) => {
+    handle = h;
+  }).catch(() => {});
+
+  return () => {
+    handle?.remove();
+  };
+};
+
+/**
+ * Stub compatibilità per service worker PWA (nessuna operazione).
+ */
+export const initServiceWorker = async (): Promise<ServiceWorkerRegistration | null> => {
+  return null;
 };
