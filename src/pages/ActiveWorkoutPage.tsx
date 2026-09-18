@@ -1328,20 +1328,6 @@ const ActiveWorkoutPage: React.FC = () => {
       ? Math.max(0, Math.min(rawEmomRoundIdx, Math.max(0, (safeExercise.emom_rounds || 1) - 1)))
       : 0;
 
-    const fallbackIsometryTarget = (() => {
-      if (safeExercise.type === 'isometry') return Math.max(0, normalizeDurationSeconds(safeExercise.duration_seconds));
-      if (safeExercise.type === 'superset') {
-        const safeSub = safeExercise.subExercises?.[safeSubIdx];
-        if (safeSub?.type === 'isometry') {
-          return Math.max(0, normalizeDurationSeconds(safeSub.duration_seconds));
-        }
-      }
-      return 0;
-    })();
-
-    const fallbackEmomTarget = safeExercise.type === 'emom'
-      ? Math.max(1, normalizeDurationSeconds(safeExercise.emom_round_duration || 60))
-      : 0;
     const elapsedSinceSaveSeconds = Math.max(0, Math.trunc((Date.now() - savedAtMs) / 1000));
 
     const safeRestRemaining = Math.max(0, normalizeDurationSeconds(state.restRemaining));
@@ -1351,31 +1337,119 @@ const ActiveWorkoutPage: React.FC = () => {
     const effectiveRestRemaining = Boolean(state.restWasRunning)
       ? Math.max(0, effectiveRestRemainingBase - elapsedSinceSaveSeconds)
       : effectiveRestRemainingBase;
+
+    // Rileva se il recupero era in corso ed è scaduto mentre l'app era chiusa
+    const restExpiredWhileClosed = Boolean(state.isResting) && effectiveRestRemaining <= 0;
     const shouldRestoreRest = Boolean(state.isResting) && effectiveRestRemaining > 0;
 
-    const safeIsometryRemainingBase = Math.max(
-      0,
-      normalizeDurationSeconds(
-        state.isometryRemaining > 0
-          ? state.isometryRemaining
-          : fallbackIsometryTarget,
-      ),
-    );
-    const safeIsometryRemaining = Boolean(state.isometryWasRunning)
-      ? Math.max(0, safeIsometryRemainingBase - elapsedSinceSaveSeconds)
-      : safeIsometryRemainingBase;
+    let targetExerciseIdx = safeExerciseIdx;
+    let targetSetIdx = safeSetIdx;
+    let targetSubExerciseIdx = safeSubIdx;
+    let targetPyramidStepIdx = safePyramidStepIdx;
+    let targetEmomRoundIdx = safeEmomRoundIdx;
+    let targetPendingPyramidAdvance = Boolean(state.pendingPyramidAdvance) && safeExercise.type === 'pyramid';
+    let targetPendingExerciseAdvance = Boolean(state.pendingExerciseAdvance);
 
-    const safeEmomRoundRemainingBase = Math.max(
-      0,
-      normalizeDurationSeconds(
-        state.emomRoundRemaining > 0
-          ? state.emomRoundRemaining
-          : fallbackEmomTarget,
-      ),
-    );
-    const safeEmomRoundRemaining = Boolean(state.emomWasRunning)
-      ? Math.max(0, safeEmomRoundRemainingBase - elapsedSinceSaveSeconds)
-      : safeEmomRoundRemainingBase;
+    // Se il timer di recupero è finito durante la chiusura dell'app, avanziamo automaticamente
+    // al prossimo set o al prossimo esercizio esattamente come fa finishRestAndNextSet
+    if (restExpiredWhileClosed) {
+      if (targetPendingExerciseAdvance) {
+        // Transizione al prossimo esercizio completata ad app chiusa
+        targetPendingExerciseAdvance = false;
+        if (safeExerciseIdx < nextWorkout.exercises.length - 1) {
+          targetExerciseIdx = safeExerciseIdx + 1;
+        }
+        targetSetIdx = 0;
+        targetSubExerciseIdx = 0;
+        targetPyramidStepIdx = 0;
+        targetEmomRoundIdx = 0;
+      } else if (safeExercise.type === 'pyramid' && targetPendingPyramidAdvance) {
+        // Passo successivo della piramide
+        targetPendingPyramidAdvance = false;
+        targetPyramidStepIdx = safePyramidStepIdx + 1;
+      } else {
+        // Set successivo dello stesso esercizio
+        targetSetIdx = safeSetIdx + 1;
+        targetSubExerciseIdx = 0;
+        if (safeExercise.type === 'emom') {
+          targetEmomRoundIdx = 0;
+        }
+      }
+    }
+
+    const effectiveExercise = nextWorkout.exercises[targetExerciseIdx] || safeExercise;
+    const effectiveSetIdx = Math.max(0, Math.min(targetSetIdx, Math.max(0, effectiveExercise.sets - 1)));
+    const effectiveSubIdx = (effectiveExercise.type === 'superset' || effectiveExercise.type === 'circuit')
+      ? Math.max(0, Math.min(targetSubExerciseIdx, Math.max(0, (effectiveExercise.subExercises?.length || 1) - 1)))
+      : 0;
+    const effectivePyramidStepIdx = effectiveExercise.type === 'pyramid'
+      ? Math.max(0, Math.min(targetPyramidStepIdx, Math.max(0, (effectiveExercise.pyramid_steps?.length || 1) - 1)))
+      : 0;
+    const effectiveEmomRoundIdx = effectiveExercise.type === 'emom'
+      ? Math.max(0, Math.min(targetEmomRoundIdx, Math.max(0, (effectiveExercise.emom_rounds || 1) - 1)))
+      : 0;
+
+    const effectiveIsometryTarget = getTargetIsometry(effectiveExercise, effectiveExercise.subExercises?.[effectiveSubIdx]);
+    const effectiveFallbackIsometryTarget = (() => {
+      if (effectiveExercise.type === 'isometry') return Math.max(0, normalizeDurationSeconds(effectiveExercise.duration_seconds));
+      if (effectiveExercise.type === 'superset') {
+        const safeSub = effectiveExercise.subExercises?.[effectiveSubIdx];
+        if (safeSub?.type === 'isometry') {
+          return Math.max(0, normalizeDurationSeconds(safeSub.duration_seconds));
+        }
+      }
+      return 0;
+    })();
+
+    const effectiveFallbackEmomTarget = effectiveExercise.type === 'emom'
+      ? Math.max(1, normalizeDurationSeconds(effectiveExercise.emom_round_duration || 60))
+      : 0;
+
+    let finalIsometryRemaining = 0;
+    let finalIsometryActive = false;
+    let finalIsometryEndsAtMs: number | null = null;
+
+    let finalEmomRemaining = 0;
+    let finalEmomActive = false;
+    let finalEmomEndsAtMs: number | null = null;
+
+    if (restExpiredWhileClosed) {
+      finalIsometryRemaining = effectiveIsometryTarget;
+      finalIsometryActive = false;
+      finalIsometryEndsAtMs = null;
+
+      finalEmomRemaining = effectiveFallbackEmomTarget;
+      finalEmomActive = false;
+      finalEmomEndsAtMs = null;
+    } else {
+      const safeIsometryRemainingBase = Math.max(
+        0,
+        normalizeDurationSeconds(
+          state.isometryRemaining > 0
+            ? state.isometryRemaining
+            : effectiveFallbackIsometryTarget,
+        ),
+      );
+      finalIsometryRemaining = Boolean(state.isometryWasRunning)
+        ? Math.max(0, safeIsometryRemainingBase - elapsedSinceSaveSeconds)
+        : safeIsometryRemainingBase;
+      finalIsometryActive = Boolean(state.isometryWasRunning) && finalIsometryRemaining > 0;
+      finalIsometryEndsAtMs = finalIsometryActive ? Date.now() + (finalIsometryRemaining * 1000) : null;
+
+      const safeEmomRoundRemainingBase = Math.max(
+        0,
+        normalizeDurationSeconds(
+          state.emomRoundRemaining > 0
+            ? state.emomRoundRemaining
+            : effectiveFallbackEmomTarget,
+        ),
+      );
+      finalEmomRemaining = Boolean(state.emomWasRunning)
+        ? Math.max(0, safeEmomRoundRemainingBase - elapsedSinceSaveSeconds)
+        : safeEmomRoundRemainingBase;
+      finalEmomActive = Boolean(state.emomWasRunning) && finalEmomRemaining > 0;
+      finalEmomEndsAtMs = finalEmomActive ? Date.now() + (finalEmomRemaining * 1000) : null;
+    }
 
     const safeNotes = Object.entries(state.exerciseNotesByKey || {}).reduce<Record<string, ExerciseNoteEntry>>((acc, [key, value]) => {
       const note = String(value?.note || '').trim();
@@ -1388,34 +1462,37 @@ const ActiveWorkoutPage: React.FC = () => {
       return acc;
     }, {});
 
-    setCurrentExerciseIdx(safeExerciseIdx);
-    setCurrentSetIdx(safeSetIdx);
-    setCurrentSubExerciseIdx(safeSubIdx);
-    setCurrentPyramidStepIdx(safePyramidStepIdx);
-    setCurrentEmomRoundIdx(safeEmomRoundIdx);
-    setPendingPyramidAdvance(Boolean(state.pendingPyramidAdvance) && safeExercise.type === 'pyramid');
-    setPendingExerciseAdvance(Boolean(state.pendingExerciseAdvance));
+    setCurrentExerciseIdx(targetExerciseIdx);
+    setCurrentSetIdx(effectiveSetIdx);
+    setCurrentSubExerciseIdx(effectiveSubIdx);
+    setCurrentPyramidStepIdx(effectivePyramidStepIdx);
+    setCurrentEmomRoundIdx(effectiveEmomRoundIdx);
+    setPendingPyramidAdvance(targetPendingPyramidAdvance);
+    setPendingExerciseAdvance(targetPendingExerciseAdvance);
 
     const resumeRestRunning = shouldRestoreRest && Boolean(state.restWasRunning);
-    const resumeIsometryRunning = Boolean(state.isometryWasRunning) && safeIsometryRemaining > 0;
-    const resumeEmomRunning = Boolean(state.emomWasRunning) && safeEmomRoundRemaining > 0;
-
     wasRestingRef.current = resumeRestRunning;
-    wasIsometryActiveRef.current = resumeIsometryRunning;
-    wasEmomActiveRef.current = resumeEmomRunning;
+    wasIsometryActiveRef.current = finalIsometryActive;
+    wasEmomActiveRef.current = finalEmomActive;
 
     setIsResting(shouldRestoreRest);
     setRestRemaining(shouldRestoreRest ? effectiveRestRemaining : 0);
     setRestInitialDuration(shouldRestoreRest ? effectiveRestInitial : 0);
     setRestEndsAtMs(resumeRestRunning ? Date.now() + (effectiveRestRemaining * 1000) : null);
 
-    setIsometryRemaining(safeIsometryRemaining);
-    setIsometryActive(resumeIsometryRunning);
-    setIsometryEndsAtMs(resumeIsometryRunning ? Date.now() + (safeIsometryRemaining * 1000) : null);
+    setIsometryRemaining(finalIsometryRemaining);
+    setIsometryActive(finalIsometryActive);
+    setIsometryEndsAtMs(finalIsometryEndsAtMs);
 
-    setEmomRoundRemaining(safeEmomRoundRemaining);
-    setEmomActive(resumeEmomRunning);
-    setEmomRoundEndsAtMs(resumeEmomRunning ? Date.now() + (safeEmomRoundRemaining * 1000) : null);
+    setEmomRoundRemaining(finalEmomRemaining);
+    setEmomActive(finalEmomActive);
+    setEmomRoundEndsAtMs(finalEmomEndsAtMs);
+
+    if (restExpiredWhileClosed) {
+      setTimeout(() => {
+        speakCue(buildSetAnnouncementCue(effectiveExercise, effectiveSetIdx, effectivePyramidStepIdx));
+      }, 500);
+    }
 
     if (state.circuitStopwatchElapsed != null) {
       setCircuitStopwatchElapsed(Math.max(0, normalizeDurationSeconds(state.circuitStopwatchElapsed)));
