@@ -192,7 +192,9 @@ const InstagramTabItem = ({ icon, active, ariaLabel, onClick }: InstagramTabItem
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className="relative flex-1 h-full flex items-center justify-center rounded-full cursor-pointer transition-transform duration-150 active:scale-95 group"
+      className={`relative flex-1 h-full flex items-center justify-center rounded-full cursor-pointer transition-all duration-150 active:scale-95 group ${
+        !active ? 'hover:bg-white/[0.08]' : ''
+      }`}
     >
       {/* Bolla a pillola frosted per la tab attiva (stile esatto Instagram) */}
       {active && (
