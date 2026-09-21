@@ -1,21 +1,20 @@
 /**
- * BottomNavigation.tsx — Barra di navigazione inferiore.
+ * BottomNavigation.tsx — Barra di navigazione inferiore stile Apple Liquid Glass.
  *
- * Supporta due modalità visive coerenti con la piattaforma:
- *  1. Native iOS Liquid Glass: Attiva SOLO sull'applicazione nativa per iPhone (Capacitor iOS),
- *     con ottica Liquid Glass ultra-raffinata, rifrazione frosted glass, specular highlight rim,
- *     lente a goccia per la tab attiva ed ergonomia adatta al Safe Area / Home Indicator di iOS.
- *  2. Standard Web/PWA: Design glassmorphism standard per browser desktop e PWA.
+ * Utilizza un'ottica Liquid Glass ultra-raffinata condivisa sia su Web/PWA che sull'app nativa iPhone:
+ *  - Rifrazione frosted glass con backdrop blur elevato e saturazione avanzata
+ *  - Hairline speculare superiore (specular rim light) e rifrazione convessa ad arco
+ *  - Lente interna a goccia (liquid droplet lens) per la voce attiva con bagliore arancione atletico
+ *  - Indicatore micro-dot liquid e tipografia compatta SF Pro
+ *  - Piena compatibilità con le Safe Area di iOS e i margini desktop
  *
  * Props:
  *  - hidden (bool, default false): se true il componente non viene renderizzato,
  *    utile nelle schermate a schermo intero come il workout attivo.
  */
-import { useMemo } from 'react';
 import { Home, Folder, Settings } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { hapticLight } from '../utils/haptics';
-import { isIosNativeApp } from '../utils/platform';
 
 /**
  * Stile CSS-in-JS per l'icona "History" che usa una maschera CSS con immagine custom.
@@ -46,9 +45,6 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Rileva se stiamo girando sull'app nativa iPhone (o preview ?ios_glass=1)
-  const isIosNative = useMemo(() => isIosNativeApp(), []);
-
   /** Verifica se il path corrente corrisponde esattamente al path della voce */
   const isActive = (path: string) => location.pathname === path;
 
@@ -66,111 +62,60 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
     navigate(path);
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 1. MODALITÀ NATIVA IPHONE: LIQUID GLASS TAB BAR
-  // ─────────────────────────────────────────────────────────────────────────────
-  if (isIosNative) {
-    return (
-      <nav
-        aria-label="Navigazione principale iOS"
-        className="fixed left-0 w-full flex justify-center items-center px-3.5 z-50 pointer-events-none transition-all duration-300"
-        style={{
-          bottom: 'max(0.85rem, calc(env(safe-area-inset-bottom, 0px) + 0.35rem))',
-        }}
-      >
-        <div className="w-full max-w-[380px] pointer-events-auto">
-          {/* iOS Liquid Glass Capsule */}
-          <div
-            className="relative w-full rounded-[28px] p-1.5 flex items-center justify-between overflow-hidden"
-            style={{
-              backgroundColor: 'rgba(20, 20, 24, 0.68)',
-              backdropFilter: 'blur(44px) saturate(210%) contrast(104%)',
-              WebkitBackdropFilter: 'blur(44px) saturate(210%) contrast(104%)',
-              borderTop: '1px solid rgba(255, 255, 255, 0.32)',
-              borderLeft: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRight: '1px solid rgba(255, 255, 255, 0.12)',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow:
-                '0 20px 48px -4px rgba(0, 0, 0, 0.8), 0 8px 18px -2px rgba(0, 0, 0, 0.55), inset 0 1px 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.5), inset 0 0 16px 0 rgba(255, 255, 255, 0.03)',
-            }}
-          >
-            {/* Convex Liquid Glass Top Specular Sheen */}
-            <div
-              className="absolute top-0 inset-x-0 h-1/2 pointer-events-none rounded-t-[28px]"
-              style={{
-                background:
-                  'linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.03) 65%, transparent 100%)',
-              }}
-            />
-
-            {/* Tab items */}
-            <IosGlassNavItem
-              icon={<Home size={21} strokeWidth={isHomeActive ? 2.5 : 1.9} />}
-              label="Home"
-              active={isHomeActive}
-              onClick={() => handleNavigate('/', isHomeActive)}
-            />
-            <IosGlassNavItem
-              icon={<Folder size={21} strokeWidth={isGymCardActive ? 2.5 : 1.9} />}
-              label="Schede"
-              active={isGymCardActive}
-              onClick={() => handleNavigate('/gym-card', isGymCardActive)}
-            />
-            <IosGlassNavItem
-              icon={<span className="block w-5 h-5" style={historyIconMaskStyle} />}
-              label="Storico"
-              active={isHistoryActive}
-              onClick={() => handleNavigate('/workout-history', isHistoryActive)}
-            />
-            <IosGlassNavItem
-              icon={<Settings size={21} strokeWidth={isSettingsActive ? 2.5 : 1.9} />}
-              label="Opzioni"
-              active={isSettingsActive}
-              onClick={() => handleNavigate('/settings', isSettingsActive)}
-            />
-          </div>
-        </div>
-      </nav>
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 2. MODALITÀ STANDARD WEB / PWA
-  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <nav
       aria-label="Navigazione principale"
-      className="fixed left-0 w-full flex justify-center items-center px-4 z-50 pointer-events-none transition-all duration-300"
+      className="fixed left-0 w-full flex justify-center items-center px-3.5 z-50 pointer-events-none transition-all duration-300"
       style={{
-        bottom: 'max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))',
+        bottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.45rem))',
       }}
     >
-      {/* Container della Tab Bar stile Apple (Blur & Glassmorphism standard) */}
-      <div className="flex items-center pointer-events-auto">
-        <div className="bg-[#1C1C1E]/85 backdrop-blur-[32px] saturate-[1.8] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.65),inset_0_1px_1px_rgba(255,255,255,0.18)] rounded-full flex items-center p-1.5 space-x-1 relative overflow-hidden">
-          {/* Subtle liquid glow layer inside the bar */}
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-40 pointer-events-none" />
+      <div className="w-full max-w-[385px] pointer-events-auto">
+        {/* Apple Liquid Glass Capsule */}
+        <div
+          className="relative w-full rounded-[28px] p-1.5 flex items-center justify-between overflow-hidden"
+          style={{
+            backgroundColor: 'rgba(20, 20, 24, 0.68)',
+            backdropFilter: 'blur(44px) saturate(210%) contrast(104%)',
+            WebkitBackdropFilter: 'blur(44px) saturate(210%) contrast(104%)',
+            borderTop: '1px solid rgba(255, 255, 255, 0.32)',
+            borderLeft: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRight: '1px solid rgba(255, 255, 255, 0.12)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow:
+              '0 20px 48px -4px rgba(0, 0, 0, 0.8), 0 8px 18px -2px rgba(0, 0, 0, 0.55), inset 0 1px 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.5), inset 0 0 16px 0 rgba(255, 255, 255, 0.03)',
+          }}
+        >
+          {/* Convex Liquid Glass Top Specular Sheen */}
+          <div
+            className="absolute top-0 inset-x-0 h-1/2 pointer-events-none rounded-t-[28px]"
+            style={{
+              background:
+                'linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.03) 65%, transparent 100%)',
+            }}
+          />
 
-          <StandardNavItem
-            icon={<Home size={22} strokeWidth={isHomeActive ? 2.5 : 2} />}
+          {/* Tab items */}
+          <LiquidGlassNavItem
+            icon={<Home size={21} strokeWidth={isHomeActive ? 2.5 : 1.9} />}
             label="Home"
             active={isHomeActive}
             onClick={() => handleNavigate('/', isHomeActive)}
           />
-          <StandardNavItem
-            icon={<Folder size={22} strokeWidth={isGymCardActive ? 2.5 : 2} />}
+          <LiquidGlassNavItem
+            icon={<Folder size={21} strokeWidth={isGymCardActive ? 2.5 : 1.9} />}
             label="Schede"
             active={isGymCardActive}
             onClick={() => handleNavigate('/gym-card', isGymCardActive)}
           />
-          <StandardNavItem
-            icon={<span className="block w-5.5 h-5.5" style={historyIconMaskStyle} />}
+          <LiquidGlassNavItem
+            icon={<span className="block w-5 h-5" style={historyIconMaskStyle} />}
             label="Storico"
             active={isHistoryActive}
             onClick={() => handleNavigate('/workout-history', isHistoryActive)}
           />
-          <StandardNavItem
-            icon={<Settings size={22} strokeWidth={isSettingsActive ? 2.5 : 2} />}
+          <LiquidGlassNavItem
+            icon={<Settings size={21} strokeWidth={isSettingsActive ? 2.5 : 1.9} />}
             label="Opzioni"
             active={isSettingsActive}
             onClick={() => handleNavigate('/settings', isSettingsActive)}
@@ -181,11 +126,7 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPONENTI PULSANTI (ITEM)
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface NavItemProps {
+interface LiquidGlassNavItemProps {
   icon: React.ReactNode;
   label: string;
   active: boolean;
@@ -193,10 +134,10 @@ interface NavItemProps {
 }
 
 /**
- * IosGlassNavItem — Tab item per l'applicazione nativa iPhone con ottica Liquid Glass.
- * Dotato di lente a goccia frosted, specular highlights, glow radiale arancione e micro-dot liquid.
+ * LiquidGlassNavItem — Tab item con ottica Liquid Glass.
+ * Include lente a goccia frosted, specular highlights, glow radiale arancione e micro-dot liquid.
  */
-const IosGlassNavItem = ({ icon, label, active, onClick }: NavItemProps) => {
+const LiquidGlassNavItem = ({ icon, label, active, onClick }: LiquidGlassNavItemProps) => {
   return (
     <button
       type="button"
@@ -237,7 +178,7 @@ const IosGlassNavItem = ({ icon, label, active, onClick }: NavItemProps) => {
         {icon}
       </div>
 
-      {/* Label iOS con tipografia SF Pro compatta */}
+      {/* Label con tipografia SF Pro compatta */}
       <span
         className={`relative z-10 text-[10.5px] tracking-tight transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] mt-0.5 ${
           active
@@ -251,59 +192,6 @@ const IosGlassNavItem = ({ icon, label, active, onClick }: NavItemProps) => {
       {/* Indicatore Liquid Dot inferiore */}
       <div
         className={`absolute bottom-1 w-2.5 h-[2.5px] rounded-full bg-brand-orange transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-[0_0_8px_rgba(255,94,0,0.9)] ${
-          active ? 'opacity-100 scale-100' : 'opacity-0 scale-0'
-        }`}
-      />
-    </button>
-  );
-};
-
-/**
- * StandardNavItem — Tab item per la versione Web / PWA standard.
- */
-const StandardNavItem = ({ icon, label, active, onClick }: NavItemProps) => {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`relative flex flex-col items-center justify-center w-[70px] sm:w-[80px] h-[58px] rounded-full transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] z-10 overflow-hidden cursor-pointer select-none active:scale-95 ${
-        active
-          ? 'bg-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)]'
-          : 'hover:bg-white/5'
-      }`}
-    >
-      {/* Animated Glow Behind Icon — visibile solo quando attivo */}
-      <div
-        className={`absolute inset-0 bg-brand-orange/20 blur-lg transition-all duration-500 ease-out rounded-full pointer-events-none ${
-          active ? 'opacity-100 scale-125' : 'opacity-0 scale-50'
-        }`}
-      />
-
-      {/* Icona */}
-      <div
-        className={`relative z-10 transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-          active
-            ? 'text-brand-orange -translate-y-2 scale-105 drop-shadow-[0_0_10px_rgba(255,94,0,0.6)]'
-            : 'text-brand-grey/60 hover:text-white/90'
-        }`}
-      >
-        {icon}
-      </div>
-
-      {/* Label: compare con slide-up quando la voce è attiva */}
-      <span
-        className={`absolute bottom-1.5 text-[9px] font-extrabold tracking-wide whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-          active
-            ? 'text-brand-orange opacity-100 translate-y-0 drop-shadow-[0_0_8px_rgba(255,94,0,0.4)]'
-            : 'text-brand-grey/40 opacity-0 translate-y-3'
-        }`}
-      >
-        {label}
-      </span>
-
-      {/* Liquid Dot Indicator — pill arancione nella parte inferiore */}
-      <div
-        className={`absolute bottom-0.5 w-4 h-0.5 rounded-full bg-brand-orange transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] shadow-[0_0_8px_rgba(255,94,0,0.9)] ${
           active ? 'opacity-100 scale-100' : 'opacity-0 scale-0'
         }`}
       />
