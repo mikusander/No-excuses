@@ -859,7 +859,7 @@ const GymCardPage: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto space-y-6">
+      <main className="flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto space-y-6 animate-page-enter">
         {loading ? (
           <div className="flex justify-center items-center h-48">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey"></div>

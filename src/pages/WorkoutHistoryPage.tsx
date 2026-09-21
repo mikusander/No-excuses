@@ -223,10 +223,10 @@ const WorkoutHistoryPage: React.FC = () => {
         subtitle={!loading && historyItems.length > 0 ? `${historyItems.length} completati` : undefined}
       />
 
-      <main className="flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto space-y-4">
+      <main className="flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto space-y-4 animate-page-enter">
         {/* Banner Genera Report Periodico in primo piano */}
         {!loading && historyItems.length > 0 && (
-          <div className="bg-gradient-to-br from-[#1C1C1E] via-[#241E1A] to-[#1C1C1E] border border-brand-orange/30 rounded-3xl p-5 shadow-2xl backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="bg-gradient-to-br from-[#1C1C1E] via-[#241E1A] to-[#1C1C1E] border border-brand-orange/30 rounded-3xl p-5 shadow-2xl backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4 animate-sheet-enter">
             <div className="flex items-center gap-3.5 w-full sm:w-auto">
               <div className="p-3 bg-brand-orange/15 border border-brand-orange/30 rounded-2xl text-brand-orange shrink-0 shadow-lg shadow-brand-orange/10">
                 <BarChart3 size={26} />
@@ -262,7 +262,7 @@ const WorkoutHistoryPage: React.FC = () => {
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-brand-orange border-b-2 border-white/10"></div>
           </div>
         ) : historyItems.length === 0 ? (
-          <div className="text-center bg-[#1C1C1E]/60 border border-white/10 rounded-3xl p-8 mt-8">
+          <div className="text-center bg-[#1C1C1E]/60 border border-white/10 rounded-3xl p-8 mt-8 animate-sheet-enter">
             <Dumbbell size={48} className="mx-auto text-brand-grey/40 mb-4" />
             <h2 className="text-xl font-bold text-white mb-2">Nessun allenamento salvato</h2>
             <p className="text-brand-grey/70 text-sm mb-6 max-w-xs mx-auto">Completa una sessione per vederla apparire qui con data, esercizi e note.</p>
@@ -277,8 +277,12 @@ const WorkoutHistoryPage: React.FC = () => {
             </button>
           </div>
         ) : (
-          historyItems.map((item) => (
-            <div key={item.id} className="relative group">
+          historyItems.map((item, idx) => (
+            <div
+              key={item.id}
+              className="relative group animate-card-cascade"
+              style={{ animationDelay: `${Math.min(idx * 50, 350)}ms` }}
+            >
               <button
                 onClick={() => {
                   void hapticLight();

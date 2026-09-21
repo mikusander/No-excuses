@@ -1821,7 +1821,7 @@ const NewTrainPage: React.FC = () => {
         onBack={handleBackFromCreate}
       />
 
-      <main className="flex-1 p-6 flex flex-col max-w-lg mx-auto w-full">
+      <main className="flex-1 p-6 flex flex-col max-w-lg mx-auto w-full animate-sheet-enter">
         {error && (
           <div className="bg-red-500/20 border border-red-500 text-red-100 p-3 rounded-lg mb-4 text-sm text-center">
             {error}
