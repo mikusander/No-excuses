@@ -164,31 +164,35 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
   }, [isIosNative]);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 2. GESTURE: LONG-PRESS & DRAG DELLA BOLLA (Solo App Nativa iOS)
+  // 2. GESTURE: DRAG IMMEDIATO DELLA BOLLA & LONG-PRESS (Solo App Nativa iOS)
   // ─────────────────────────────────────────────────────────────────────────────
   const trackRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragX, setDragX] = useState<number | null>(null);
+  const [dragRatio, setDragRatio] = useState<number | null>(null); // Valore compreso tra 0.0 e 3.0
   const [dragHoverIndex, setDragHoverIndex] = useState<number | null>(null);
 
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isLongPressActiveRef = useRef(false);
+  const isTouchingBubbleRef = useRef(false);
+  const isDraggingRef = useRef(false);
+  const touchStartXRef = useRef(0);
+  const wasDraggingRecentlyRef = useRef(false);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragHoverIndexRef = useRef<number | null>(null);
   dragHoverIndexRef.current = dragHoverIndex;
 
   const updateDragPosition = useCallback((clientX: number) => {
     if (!trackRef.current) return;
     const rect = trackRef.current.getBoundingClientRect();
-    const innerWidth = rect.width - 12; // 6px padding a sinistra e destra (p-1.5)
-    const slotWidth = innerWidth / 4;
+    const slotWidth = rect.width / 4;
+    const touchX = clientX - rect.left;
 
-    // Posiziona il centro della bolla esattamente sotto il dito
-    const relativeX = clientX - (rect.left + 6) - slotWidth / 2;
-    const clampedX = Math.max(0, Math.min(innerWidth - slotWidth, relativeX));
-    setDragX(clampedX);
+    // Allinea il centro della bolla (0.5 * slotWidth) con la posizione X del dito
+    const ratio = (touchX - slotWidth / 2) / slotWidth;
+    // Blocca rigorosamente tra 0.0 (Home) e 3.0 (Opzioni) per non uscire mai dai bordi
+    const clampedRatio = Math.max(0, Math.min(3, ratio));
+    setDragRatio(clampedRatio);
 
     // Calcola l'indice della tab più vicina
-    const nearestIndex = Math.max(0, Math.min(3, Math.round(clampedX / slotWidth)));
+    const nearestIndex = Math.max(0, Math.min(3, Math.round(clampedRatio)));
     if (nearestIndex !== dragHoverIndexRef.current) {
       dragHoverIndexRef.current = nearestIndex;
       setDragHoverIndex(nearestIndex);
@@ -199,64 +203,73 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isIosNative) return;
 
-    // Cancella eventuali timer pendenti
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
     }
 
     if (!trackRef.current) return;
     const rect = trackRef.current.getBoundingClientRect();
-    const innerWidth = rect.width - 12;
-    const slotWidth = innerWidth / 4;
-    const touchX = e.clientX - (rect.left + 6);
+    const slotWidth = rect.width / 4;
+    const touchX = e.clientX - rect.left;
     const touchedSlot = Math.floor(touchX / slotWidth);
 
-    // Il long-press si attiva solo premendo sulla bolla della pagina corrente
+    // Si attiva solo se l'utente tocca la bolla della pagina attualmente attiva
     if (touchedSlot !== activeIndex) {
+      isTouchingBubbleRef.current = false;
       return;
     }
 
+    isTouchingBubbleRef.current = true;
+    isDraggingRef.current = false;
+    touchStartXRef.current = e.clientX;
     const clientX = e.clientX;
     const targetElement = e.currentTarget;
     const pointerId = e.pointerId;
-    isLongPressActiveRef.current = false;
 
-    // Avvia il timer di long-press (220ms)
-    longPressTimerRef.current = setTimeout(() => {
-      isLongPressActiveRef.current = true;
-      setIsDragging(true);
+    // Cattura il puntatore sul track per tracciare il movimento ovunque sullo schermo
+    try {
+      targetElement.setPointerCapture(pointerId);
+    } catch {
+      // Fallback
+    }
 
-      // Cattura il puntatore per tracciamento continuo
-      try {
-        targetElement.setPointerCapture(pointerId);
-      } catch {
-        // Fallback silenzioso
+    // Se l'utente tiene premuto fermo per 180ms senza muoversi, ingrandisce comunque la tab bar
+    holdTimerRef.current = setTimeout(() => {
+      if (isTouchingBubbleRef.current && !isDraggingRef.current) {
+        isDraggingRef.current = true;
+        setIsDragging(true);
+        void hapticMedium();
+        updateDragPosition(clientX);
       }
-
-      void hapticMedium();
-      updateDragPosition(clientX);
-    }, 220);
+    }, 180);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isIosNative) return;
+    if (!isIosNative || !isTouchingBubbleRef.current) return;
 
-    if (isLongPressActiveRef.current) {
-      updateDragPosition(e.clientX);
-    } else if (longPressTimerRef.current) {
-      // Se il dito si sposta prima del timeout, l'utente intendeva scorrere
-      if (Math.abs(e.movementX) > 5 || Math.abs(e.movementY) > 5) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
+    if (!isDraggingRef.current) {
+      // Se l'utente inizia subito a scorrere (anche solo 3px), attiva il drag IMMEDIATAMENTE senza attesa!
+      const dx = Math.abs(e.clientX - touchStartXRef.current);
+      if (dx >= 3) {
+        if (holdTimerRef.current) {
+          clearTimeout(holdTimerRef.current);
+          holdTimerRef.current = null;
+        }
+        isDraggingRef.current = true;
+        setIsDragging(true);
+        void hapticMedium();
+        updateDragPosition(e.clientX);
       }
+    } else {
+      updateDragPosition(e.clientX);
     }
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
     }
 
     try {
@@ -264,13 +277,22 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
     } catch {
-      // Fallback silenzioso
+      // Fallback
     }
 
-    if (isLongPressActiveRef.current) {
-      isLongPressActiveRef.current = false;
+    const wasDragging = isDraggingRef.current;
+    isTouchingBubbleRef.current = false;
+    isDraggingRef.current = false;
+
+    if (wasDragging) {
       setIsDragging(false);
-      setDragX(null);
+      setDragRatio(null);
+
+      // Previene il click sintetico successivo al rilascio del dito
+      wasDraggingRecentlyRef.current = true;
+      setTimeout(() => {
+        wasDraggingRecentlyRef.current = false;
+      }, 100);
 
       const targetIdx = dragHoverIndexRef.current;
       setDragHoverIndex(null);
@@ -285,9 +307,9 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
   };
 
   const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
     }
 
     try {
@@ -295,17 +317,18 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
     } catch {
-      // Fallback silenzioso
+      // Fallback
     }
 
-    isLongPressActiveRef.current = false;
+    isTouchingBubbleRef.current = false;
+    isDraggingRef.current = false;
     setIsDragging(false);
-    setDragX(null);
+    setDragRatio(null);
     setDragHoverIndex(null);
   };
 
   const handleNavigate = (path: string, currentlyActive: boolean, targetIdx: number) => {
-    if (isLongPressActiveRef.current) return;
+    if (isDraggingRef.current || wasDraggingRecentlyRef.current) return;
     if (!currentlyActive) {
       void hapticLight();
     }
@@ -381,8 +404,8 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
               style={{
                 width: 'calc((100% - 12px) / 4)',
                 transform:
-                  isDragging && dragX != null
-                    ? `translateX(${dragX}px)`
+                  isDragging && dragRatio != null
+                    ? `translateX(calc(${dragRatio} * 100%))`
                     : `translateX(calc(${effectiveActiveIndex} * 100%))`,
                 backgroundColor: 'rgba(255, 255, 255, 0.20)',
                 backdropFilter: 'blur(16px)',
