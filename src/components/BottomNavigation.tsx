@@ -1,27 +1,57 @@
 /**
- * BottomNavigation.tsx — Standard Native iOS Tab Bar (Translucent Frosted/Liquid Glass).
+ * BottomNavigation.tsx — Barra di navigazione stile Instagram (Liquid Glass Floating Pill).
  *
- * Implementa fedelmente lo standard ufficiale Apple UITabBar delle applicazioni iOS:
- *  - Ancorata al fondo dello schermo (full-width inset-x-0 bottom-0)
- *  - Materiale di sistema Apple Frosted Glass con backdrop blur e saturazione ottica
- *  - Contenuti della pagina che scorrono e si sfocano in trasparenza dietro la barra
- *  - Hairline separator superiore da 0.5px sottile e nitido stile iOS Retina
- *  - Altezza nativa Apple da 49pt con padding per l'Home Indicator (Safe Area)
- *  - Icona e label centrate con tipografia SF Pro e feedback aptico nativo al tocco
- *  - Tint arancione atletico (#FF5E00) per la voce attiva e grigio di sistema (#8E8E93) per le inattive
+ * Ispirata al design Liquid Glass di Instagram:
+ *  - Capsula fluttuante a pillola (rounded-full) in vetro fumé traslucido (smoked glass)
+ *  - Backdrop blur e saturazione elevata con riflesso speculare sul bordo superiore
+ *  - Zero label testuali (solo icone essenziali, pulite e moderne)
+ *  - Bolla/pillola attiva satinata grigio-chiaro (frosted glass bubble) che avvolge l'icona selezionata
+ *  - Icone piene (solid white) per la tab attiva e outline per le inattive
+ *  - Feedback aptico nativo al tocco (hapticLight)
  *
  * Props:
  *  - hidden (bool, default false): se true il componente non viene renderizzato,
  *    utile nelle schermate a schermo intero come il workout attivo.
  */
-import { Home, Folder, Settings } from 'lucide-react';
+import React from 'react';
+import { Settings } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { hapticLight } from '../utils/haptics';
 
 /**
- * Stile CSS-in-JS per l'icona "History" che usa una maschera CSS con immagine custom.
- * Il colore viene ereditato da `currentColor` così l'icona risponde ai cambi di colore
- * delle classi Tailwind (es. text-brand-orange quando attiva).
+ * Icone Home custom identiche a quelle della barra Instagram:
+ * - FilledHomeIcon: sagoma piena per lo stato attivo (esattamente come nello screenshot)
+ * - OutlineHomeIcon: contorno nitido per lo stato inattivo
+ */
+const FilledHomeIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2.4L2.5 10.4V20C2.5 20.8284 3.17157 21.5 4 21.5H9.5C10.0523 21.5 10.5 21.0523 10.5 20.5V15C10.5 14.1716 11.1716 13.5 12 13.5C12.8284 13.5 13.5 14.1716 13.5 15V20.5C13.5 21.0523 13.9477 21.5 14.5 21.5H20C20.8284 21.5 21.5 20.8284 21.5 20V10.4L12 2.4Z" />
+  </svg>
+);
+
+const OutlineHomeIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 9.5L12 2.5L21 9.5V20C21 20.8284 20.3284 21.5 19.5 21.5H15C14.1716 21.5 13.5 20.8284 13.5 20V15C13.5 14.1716 12.8284 13.5 12 13.5C11.1716 13.5 10.5 14.1716 10.5 15V20C10.5 20.8284 9.82843 21.5 9 21.5H4.5C3.67157 21.5 3 20.8284 3 20V9.5Z" />
+  </svg>
+);
+
+/**
+ * Icone Schede (Folder/Workouts) in versione piena e contorno
+ */
+const FilledFolderIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 6H12L10 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V8C22 6.9 21.1 6 20 6Z" />
+  </svg>
+);
+
+const OutlineFolderIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 6H12L10 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V8C22 6.9 21.1 6 20 6Z" />
+  </svg>
+);
+
+/**
+ * Stile CSS-in-JS per l'icona "History" con maschera CSS
  */
 const historyIconMaskStyle = {
   WebkitMaskImage: "url('/images/icons8-passato-100.png')",
@@ -66,79 +96,127 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
 
   return (
     <nav
-      aria-label="Navigazione principale iOS"
-      className="fixed inset-x-0 bottom-0 z-50 w-full select-none"
+      aria-label="Navigazione principale"
+      className="fixed left-0 w-full flex justify-center items-center px-4 z-50 pointer-events-none select-none transition-all duration-300"
       style={{
-        backgroundColor: 'rgba(18, 18, 20, 0.82)',
-        backdropFilter: 'blur(30px) saturate(190%)',
-        WebkitBackdropFilter: 'blur(30px) saturate(190%)',
-        borderTop: '0.5px solid rgba(255, 255, 255, 0.14)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        bottom: 'max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.6rem))',
       }}
     >
-      <div className="max-w-md mx-auto flex items-center justify-around h-[49px] px-2">
-        <IosTabItem
-          icon={<Home size={23} strokeWidth={isHomeActive ? 2.3 : 1.8} />}
-          label="Home"
-          active={isHomeActive}
-          onClick={() => handleNavigate('/', isHomeActive)}
-        />
-        <IosTabItem
-          icon={<Folder size={23} strokeWidth={isGymCardActive ? 2.3 : 1.8} />}
-          label="Schede"
-          active={isGymCardActive}
-          onClick={() => handleNavigate('/gym-card', isGymCardActive)}
-        />
-        <IosTabItem
-          icon={<span className="block w-[22px] h-[22px]" style={historyIconMaskStyle} />}
-          label="Storico"
-          active={isHistoryActive}
-          onClick={() => handleNavigate('/workout-history', isHistoryActive)}
-        />
-        <IosTabItem
-          icon={<Settings size={23} strokeWidth={isSettingsActive ? 2.3 : 1.8} />}
-          label="Opzioni"
-          active={isSettingsActive}
-          onClick={() => handleNavigate('/settings', isSettingsActive)}
-        />
+      <div className="w-full max-w-[360px] pointer-events-auto">
+        {/* Instagram Liquid Glass Floating Capsule */}
+        <div
+          className="relative w-full h-[58px] rounded-full p-1.5 flex items-center justify-between"
+          style={{
+            backgroundColor: 'rgba(20, 20, 24, 0.82)',
+            backdropFilter: 'blur(36px) saturate(190%) contrast(105%)',
+            WebkitBackdropFilter: 'blur(36px) saturate(190%) contrast(105%)',
+            border: '1px solid rgba(255, 255, 255, 0.14)',
+            boxShadow:
+              '0 18px 40px -4px rgba(0, 0, 0, 0.75), 0 6px 14px -2px rgba(0, 0, 0, 0.5), inset 0 1px 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.4)',
+          }}
+        >
+          {/* Sottile bagliore speculare sul bordo superiore (top rim sheen) */}
+          <div
+            className="absolute top-0 inset-x-8 h-[1px] pointer-events-none"
+            style={{
+              background:
+                'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%)',
+            }}
+          />
+
+          {/* 1. Home */}
+          <InstagramTabItem
+            active={isHomeActive}
+            icon={isHomeActive ? <FilledHomeIcon /> : <OutlineHomeIcon />}
+            ariaLabel="Home"
+            onClick={() => handleNavigate('/', isHomeActive)}
+          />
+
+          {/* 2. Schede */}
+          <InstagramTabItem
+            active={isGymCardActive}
+            icon={isGymCardActive ? <FilledFolderIcon /> : <OutlineFolderIcon />}
+            ariaLabel="Schede"
+            onClick={() => handleNavigate('/gym-card', isGymCardActive)}
+          />
+
+          {/* 3. Storico */}
+          <InstagramTabItem
+            active={isHistoryActive}
+            icon={
+              <span
+                className={`block w-[23px] h-[23px] transition-colors ${
+                  isHistoryActive ? 'bg-white' : 'bg-white/85'
+                }`}
+                style={historyIconMaskStyle}
+              />
+            }
+            ariaLabel="Storico"
+            onClick={() => handleNavigate('/workout-history', isHistoryActive)}
+          />
+
+          {/* 4. Opzioni */}
+          <InstagramTabItem
+            active={isSettingsActive}
+            icon={
+              <Settings
+                size={23}
+                strokeWidth={isSettingsActive ? 2.5 : 2}
+                className={isSettingsActive ? 'text-white fill-white/20' : 'text-white/85'}
+              />
+            }
+            ariaLabel="Opzioni"
+            onClick={() => handleNavigate('/settings', isSettingsActive)}
+          />
+        </div>
       </div>
     </nav>
   );
 };
 
-interface IosTabItemProps {
+interface InstagramTabItemProps {
   icon: React.ReactNode;
-  label: string;
   active: boolean;
+  ariaLabel: string;
   onClick: () => void;
 }
 
 /**
- * IosTabItem — Singola tab in autentico stile Apple UITabBar.
- * Icona centrata con label sottostante, feedback nativo di pressione e sfumatura di colore.
+ * InstagramTabItem — Singolo tab item stile Instagram:
+ * - Se attivo: avvolto da una bolla a pillola satinata grigio chiaro (frosted bubble)
+ * - Se inattivo: icona bianca pulita a contorno su sfondo trasparente
  */
-const IosTabItem = ({ icon, label, active, onClick }: IosTabItemProps) => {
+const InstagramTabItem = ({ icon, active, ariaLabel, onClick }: InstagramTabItemProps) => {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex-1 h-full flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-opacity duration-150 active:opacity-50 ${
-        active ? 'text-brand-orange' : 'text-[#8E8E93] hover:text-[#AEAEB2]'
-      }`}
+      aria-label={ariaLabel}
+      className="relative flex-1 h-full flex items-center justify-center rounded-full cursor-pointer transition-transform duration-150 active:scale-95 group"
     >
-      {/* Icona */}
-      <div className="flex items-center justify-center">
-        {icon}
-      </div>
+      {/* Bolla a pillola frosted per la tab attiva (stile esatto Instagram) */}
+      {active && (
+        <div
+          className="absolute inset-0 rounded-full pointer-events-none transition-all duration-300"
+          style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.20)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.22)',
+            boxShadow:
+              'inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.35), 0 3px 10px rgba(0, 0, 0, 0.3)',
+          }}
+        />
+      )}
 
-      {/* Label compatta con tipografia SF Pro */}
-      <span
-        className={`text-[10px] tracking-tight leading-none ${
-          active ? 'font-semibold' : 'font-medium'
+      {/* Icona */}
+      <div
+        className={`relative z-10 flex items-center justify-center transition-all duration-200 ${
+          active ? 'text-white scale-105 drop-shadow-[0_2px_6px_rgba(0,0,0,0.4)]' : 'text-white/85 group-hover:text-white'
         }`}
       >
-        {label}
-      </span>
+        {icon}
+      </div>
     </button>
   );
 };
