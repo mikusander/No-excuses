@@ -15,6 +15,7 @@ export interface WorkoutFolder {
   createdAt: string;
   updatedAt?: string;
   color?: string; // Colore tema per badge/bordo/icona (es. orange, cyan, emerald, purple, rose, amber)
+  schedeOrder?: string[]; // Array ordinato di schedaId in formato stringa
 }
 
 export interface FolderAssignmentMap {
@@ -534,5 +535,141 @@ export const subscribeToFolderChanges = (callback: () => void): (() => void) => 
   return () => {
     window.removeEventListener(FOLDER_CHANGE_EVENT, handleCustomEvent);
     window.removeEventListener('storage', handleStorage);
+  };
+};
+
+
+/**
+ * Recupera l'elenco ordinato degli ID delle schede all'interno di una cartella.
+ */
+export const getSchedeOrderInFolder = (
+  folderId: string,
+  userId?: string
+): string[] => {
+  const folders = getFolders(userId);
+  const folder = folders.find((f) => f.id === folderId);
+  return folder?.schedeOrder && Array.isArray(folder.schedeOrder)
+    ? [...folder.schedeOrder]
+    : [];
+};
+
+/**
+ * Salva la sequenza ordinata degli ID delle schede per una cartella.
+ */
+export const setSchedeOrderInFolder = (
+  folderId: string,
+  orderedIds: (string | number)[],
+  userId?: string
+): void => {
+  const folders = getFolders(userId);
+  const strIds = orderedIds.map((id) => String(id));
+  const updated = folders.map((f) => {
+    if (f.id === folderId) {
+      return {
+        ...f,
+        schedeOrder: strIds,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return f;
+  });
+  saveFolders(updated, userId);
+};
+
+/**
+ * Sposta una scheda verso l'alto ('up') o verso il basso ('down') nell'ordine della cartella.
+ */
+export const moveSchedaInFolderOrder = (
+  folderId: string,
+  schedaId: string | number,
+  direction: 'up' | 'down',
+  allSchedeInFolderIds: (string | number)[],
+  userId?: string
+): void => {
+  const sId = String(schedaId);
+  const currentOrder = getSchedeOrderInFolder(folderId, userId);
+
+  // Combina l'ordine memorizzato con le schede effettivamente presenti per evitare id mancanti
+  const combined = [...currentOrder];
+  allSchedeInFolderIds.forEach((id) => {
+    const str = String(id);
+    if (!combined.includes(str)) {
+      combined.push(str);
+    }
+  });
+
+  // Mantieni solo gli id validi che sono attualmente nella cartella
+  const validSet = new Set(allSchedeInFolderIds.map((id) => String(id)));
+  const filtered = combined.filter((id) => validSet.has(id));
+
+  const idx = filtered.indexOf(sId);
+  if (idx === -1) return;
+
+  const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (targetIdx < 0 || targetIdx >= filtered.length) return;
+
+  // Scambia gli elementi
+  const temp = filtered[idx];
+  filtered[idx] = filtered[targetIdx];
+  filtered[targetIdx] = temp;
+
+  setSchedeOrderInFolder(folderId, filtered, userId);
+};
+
+/**
+ * Ordina un array di schede secondo l'ordine personalizzato definito per la cartella.
+ */
+export const sortSchedeByFolderOrder = <T extends { id: string | number }>(
+  schede: T[],
+  folderId: string,
+  userId?: string
+): T[] => {
+  if (!schede || schede.length <= 1) return schede;
+  const order = getSchedeOrderInFolder(folderId, userId);
+  if (!order || order.length === 0) return schede;
+
+  const orderMap = new Map<string, number>();
+  order.forEach((id, idx) => {
+    orderMap.set(id, idx);
+  });
+
+  return [...schede].sort((a, b) => {
+    const idxA = orderMap.has(String(a.id)) ? orderMap.get(String(a.id))! : 999999;
+    const idxB = orderMap.has(String(b.id)) ? orderMap.get(String(b.id))! : 999999;
+    return idxA - idxB;
+  });
+};
+
+/**
+ * Calcola la prossima scheda sequenziale all'interno della cartella rispetto all'ultimo workout fatto.
+ * Implementa la rotazione ciclica: se l'ultimo fatto era l'ultimo della cartella, ricomincia dalla scheda #1.
+ */
+export const getNextSchedaInFolder = <T extends { id: string | number; nome?: string }>(
+  folderId: string,
+  currentSchedaId: string | number,
+  allSchedeInFolder: T[],
+  userId?: string
+): { nextScheda: T; currentIndex: number; nextIndex: number; total: number } | null => {
+  if (!allSchedeInFolder || allSchedeInFolder.length === 0) return null;
+
+  const sorted = sortSchedeByFolderOrder(allSchedeInFolder, folderId, userId);
+  const curStr = String(currentSchedaId);
+  const curIdx = sorted.findIndex((s) => String(s.id) === curStr);
+
+  if (curIdx === -1) {
+    return {
+      nextScheda: sorted[0],
+      currentIndex: 0,
+      nextIndex: 0,
+      total: sorted.length,
+    };
+  }
+
+  const nextIdx = (curIdx + 1) % sorted.length;
+  return {
+    nextScheda: sorted[nextIdx],
+    currentIndex: curIdx,
+    nextIndex: nextIdx,
+    total: sorted.length,
   };
 };

@@ -68,6 +68,7 @@ import {
   getFolderAssignments,
   subscribeToFolderChanges,
   syncFoldersWithCloud,
+  sortSchedeByFolderOrder,
   type WorkoutFolder,
   type FolderAssignmentMap,
 } from '../utils/folderManager';
@@ -221,8 +222,9 @@ const SelectWorkoutPage: React.FC = () => {
     if (selectedFolderFilter === 'root') {
       return workouts.filter((w) => !folderAssignments[w.id]);
     }
-    return workouts.filter((w) => folderAssignments[w.id] === selectedFolderFilter);
-  }, [workouts, folderAssignments, selectedFolderFilter]);
+    const inFolder = workouts.filter((w) => folderAssignments[w.id] === selectedFolderFilter);
+    return sortSchedeByFolderOrder(inFolder, selectedFolderFilter, user?.id);
+  }, [workouts, folderAssignments, selectedFolderFilter, user?.id, folders]);
 
   useEffect(() => {
     fetchWorkouts();

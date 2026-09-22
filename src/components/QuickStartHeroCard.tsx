@@ -10,8 +10,18 @@
  */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, RotateCcw, Dumbbell, ArrowRight } from 'lucide-react';
+import { Play, RotateCcw, Dumbbell, ArrowRight, Folder } from 'lucide-react';
 import { hapticMedium } from '../utils/haptics';
+
+export interface LastWorkoutData {
+  id_scheda?: number;
+  nome: string;
+  dataLabel?: string;
+  folderName?: string;
+  folderColor?: string;
+  sequenceLabel?: string;
+  isNextInSequence?: boolean;
+}
 
 interface QuickStartHeroCardProps {
   /** Checkpoint di workout in sospeso (se presente) */
@@ -23,11 +33,7 @@ interface QuickStartHeroCardProps {
     identity: { type: 'scheda' | 'run'; id: number };
   } | null;
   /** Ultima scheda completata o consigliata */
-  lastWorkout?: {
-    id_scheda?: number;
-    nome: string;
-    dataLabel?: string;
-  } | null;
+  lastWorkout?: LastWorkoutData | null;
 }
 
 const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
@@ -78,6 +84,11 @@ const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
               <span className="w-2 h-2 rounded-full bg-brand-orange animate-ping" />
               Workout in sospeso
             </span>
+          ) : lastWorkout?.isNextInSequence ? (
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-[10px] font-black uppercase tracking-wider text-brand-orange shadow-sm">
+              <Folder size={12} className="text-brand-orange" />
+              <span>Prossimo in: {lastWorkout.folderName || 'Cartella'}</span>
+            </span>
           ) : (
             <span className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 border border-white/10 text-[10px] font-bold uppercase tracking-wider text-brand-grey">
               <Dumbbell size={12} className="text-brand-orange" />
@@ -102,6 +113,8 @@ const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
           <p className="text-xs font-medium text-brand-grey/70 line-clamp-1">
             {isResuming
               ? `Esercizio: ${activeCheckpoint?.currentExerciseName || 'In corso'} (Serie ${activeCheckpoint?.currentSetIdx || 1})`
+              : lastWorkout?.sequenceLabel
+              ? lastWorkout.sequenceLabel
               : 'Tocca per avviare la tua scheda con timer e ripetizioni guidate.'}
           </p>
         </div>
@@ -123,7 +136,7 @@ const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
           ) : (
             <>
               <Play size={18} fill="currentColor" />
-              <span>Allenati Subito</span>
+              <span>{lastWorkout?.isNextInSequence ? 'Inizia Prossimo Workout' : 'Allenati Subito'}</span>
               <ArrowRight size={16} className="ml-auto group-hover:translate-x-1 transition-transform" />
             </>
           )}

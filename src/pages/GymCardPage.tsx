@@ -68,9 +68,12 @@ import {
   FolderOpen,
   ArrowLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Check,
 } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
+import { hapticSelection } from '../utils/haptics';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
@@ -82,6 +85,8 @@ import {
   getFolderAssignments,
   assignSchedaToFolder,
   moveSchedeToFolder,
+  sortSchedeByFolderOrder,
+  moveSchedaInFolderOrder,
   subscribeToFolderChanges,
   syncFoldersWithCloud,
   type WorkoutFolder,
@@ -212,8 +217,9 @@ const GymCardPage: React.FC = () => {
   // Schede nella cartella aperta
   const folderWorkouts = useMemo(() => {
     if (!currentFolderId) return [];
-    return workouts.filter((w) => folderAssignments[w.id] === currentFolderId);
-  }, [workouts, folderAssignments, currentFolderId]);
+    const inFolder = workouts.filter((w) => folderAssignments[w.id] === currentFolderId);
+    return sortSchedeByFolderOrder(inFolder, currentFolderId, user?.id);
+  }, [workouts, folderAssignments, currentFolderId, user?.id, folders]);
 
   // Schede senza cartella (livello radice)
   const rootWorkouts = useMemo(() => {
@@ -968,7 +974,7 @@ const GymCardPage: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {folderWorkouts.map((workout) => (
+                {folderWorkouts.map((workout, index) => (
                   <div
                     key={workout.id}
                     className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 shadow-xl relative overflow-hidden cursor-pointer hover:border-brand-orange/40 transition-colors"
@@ -983,6 +989,59 @@ const GymCardPage: React.FC = () => {
                     }}
                   >
                     <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
+                      {/* Stepper Ordine Numerico ▲ / ▼ */}
+                      <div className="flex items-center gap-1 bg-black/60 border border-white/10 rounded-xl px-2 py-1 shadow-sm">
+                        <span className="text-xs font-black text-brand-orange tracking-wider">
+                          #{index + 1}
+                        </span>
+                        <div className="flex items-center ml-1 border-l border-white/10 pl-1">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!currentFolderId) return;
+                              void hapticSelection();
+                              moveSchedaInFolderOrder(
+                                currentFolderId,
+                                workout.id,
+                                'up',
+                                folderWorkouts.map((w) => w.id),
+                                user?.id
+                              );
+                            }}
+                            className={`p-0.5 rounded transition-colors ${
+                              index === 0 ? 'opacity-20 cursor-not-allowed' : 'text-brand-grey hover:text-white active:bg-white/10'
+                            }`}
+                            title="Sposta prima nell'ordine"
+                          >
+                            <ChevronUp size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === folderWorkouts.length - 1}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!currentFolderId) return;
+                              void hapticSelection();
+                              moveSchedaInFolderOrder(
+                                currentFolderId,
+                                workout.id,
+                                'down',
+                                folderWorkouts.map((w) => w.id),
+                                user?.id
+                              );
+                            }}
+                            className={`p-0.5 rounded transition-colors ${
+                              index === folderWorkouts.length - 1 ? 'opacity-20 cursor-not-allowed' : 'text-brand-grey hover:text-white active:bg-white/10'
+                            }`}
+                            title="Sposta dopo nell'ordine"
+                          >
+                            <ChevronDown size={14} />
+                          </button>
+                        </div>
+                      </div>
+
                       <button
                         onClick={(event) => {
                           event.stopPropagation();
