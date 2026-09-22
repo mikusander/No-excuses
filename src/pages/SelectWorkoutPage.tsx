@@ -521,11 +521,17 @@ const SelectWorkoutPage: React.FC = () => {
                       onClick={() => openWorkoutPreview(workout)}
                       className="w-full text-left bg-brand-darkGrey/40 hover:bg-brand-darkGrey border border-brand-grey/20 hover:border-brand-orange/50 transition-all rounded-3xl p-6 shadow-lg group flex items-center justify-between cursor-pointer"
                     >
-                      <div className="flex items-center min-w-0 pr-4">
+                      <div className="flex items-center min-w-0 pr-4 flex-1">
+                        {/* Badge Numero d'Ordine a sinistra quando si filtra per cartella */}
+                        {selectedFolderFilter !== 'all' && selectedFolderFilter !== 'root' && (
+                          <div className="w-8 h-8 rounded-xl bg-brand-orange/15 border border-brand-orange/35 flex items-center justify-center text-brand-orange font-black text-xs shrink-0 mr-3.5 shadow-sm">
+                            #{filteredWorkouts.indexOf(workout) + 1}
+                          </div>
+                        )}
                         <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 group-hover:scale-110 transition-transform shrink-0">
                           <Calendar className="text-brand-orange" size={28} />
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <h2 className="text-xl font-bold text-white leading-tight truncate">{workout.name}</h2>
                           <div className="flex flex-wrap items-center gap-2 mt-1">
                             <p className="text-xs text-brand-grey/60 font-semibold">

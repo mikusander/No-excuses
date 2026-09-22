@@ -47,7 +47,7 @@
  *  - `parseOptionalWeight(raw)` : accetta virgola o punto come separatore decimale,
  *    restituisce null se vuoto o zero (= nessun peso / bodyweight)
  */
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -68,12 +68,10 @@ import {
   FolderOpen,
   ArrowLeft,
   ChevronRight,
-  ChevronUp,
-  ChevronDown,
   Check,
 } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
-import { hapticSelection } from '../utils/haptics';
+import { hapticSelection, hapticMedium, hapticSuccess } from '../utils/haptics';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
@@ -86,7 +84,7 @@ import {
   assignSchedaToFolder,
   moveSchedeToFolder,
   sortSchedeByFolderOrder,
-  moveSchedaInFolderOrder,
+  setSchedeOrderInFolder,
   subscribeToFolderChanges,
   syncFoldersWithCloud,
   type WorkoutFolder,
@@ -234,6 +232,75 @@ const GymCardPage: React.FC = () => {
     if (!currentFolderId) return [];
     return workouts.filter((w) => folderAssignments[w.id] !== currentFolderId);
   }, [workouts, folderAssignments, currentFolderId]);
+
+  // Drag & Drop per il riordino delle schede tramite la barra verticale sinistra
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const isDraggingRef = useRef(false);
+  const dragStartIndexRef = useRef<number | null>(null);
+  const currentDragOverRef = useRef<number | null>(null);
+
+  const handleDragStart = (index: number, e: React.TouchEvent | React.PointerEvent) => {
+    e.stopPropagation();
+    void hapticMedium();
+    isDraggingRef.current = true;
+    dragStartIndexRef.current = index;
+    currentDragOverRef.current = index;
+    setDraggingIndex(index);
+    setDragOverIndex(index);
+
+    const onMove = (moveEvent: TouchEvent | PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      const clientY = 'touches' in moveEvent ? moveEvent.touches[0].clientY : moveEvent.clientY;
+
+      for (let i = 0; i < cardRefs.current.length; i++) {
+        const el = cardRefs.current[i];
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (clientY >= rect.top && clientY <= rect.bottom) {
+            if (currentDragOverRef.current !== i) {
+              currentDragOverRef.current = i;
+              setDragOverIndex(i);
+              void hapticSelection();
+            }
+            break;
+          }
+        }
+      }
+    };
+
+    const onEnd = () => {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+
+      const fromIdx = dragStartIndexRef.current;
+      const toIdx = currentDragOverRef.current;
+
+      if (fromIdx !== null && toIdx !== null && fromIdx !== toIdx && currentFolderId) {
+        void hapticSuccess();
+        const nextList = [...folderWorkouts];
+        const [moved] = nextList.splice(fromIdx, 1);
+        nextList.splice(toIdx, 0, moved);
+        setSchedeOrderInFolder(currentFolderId, nextList.map((w) => w.id), user?.id);
+      }
+
+      dragStartIndexRef.current = null;
+      currentDragOverRef.current = null;
+      setDraggingIndex(null);
+      setDragOverIndex(null);
+
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+    };
+
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+  };
 
   useEffect(() => {
     fetchWorkouts();
@@ -973,139 +1040,130 @@ const GymCardPage: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                {folderWorkouts.map((workout, index) => (
-                  <div
-                    key={workout.id}
-                    className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 shadow-xl relative overflow-hidden cursor-pointer hover:border-brand-orange/40 transition-colors"
-                    onClick={() => openWorkoutModal(workout)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        openWorkoutModal(workout);
-                      }
-                    }}
-                  >
-                    <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
-                      {/* Stepper Ordine Numerico ▲ / ▼ */}
-                      <div className="flex items-center gap-1 bg-black/60 border border-white/10 rounded-xl px-2 py-1 shadow-sm">
-                        <span className="text-xs font-black text-brand-orange tracking-wider">
+              <div className="space-y-3.5">
+                {folderWorkouts.map((workout, index) => {
+                  const isDraggingThis = draggingIndex === index;
+                  const isTargetDrop = dragOverIndex === index && draggingIndex !== null && draggingIndex !== index;
+
+                  return (
+                    <div
+                      key={workout.id}
+                      ref={(el) => { cardRefs.current[index] = el; }}
+                      className={`bg-brand-darkGrey/40 border rounded-3xl p-4 sm:p-5 shadow-xl relative overflow-hidden transition-all duration-200 select-none ${
+                        isDraggingThis
+                          ? 'border-brand-orange shadow-[0_15px_35px_rgba(255,94,0,0.3)] scale-[1.02] z-30 bg-[#1C1C1E]'
+                          : isTargetDrop
+                          ? 'border-brand-orange/60 bg-brand-orange/5'
+                          : 'border-brand-grey/20 hover:border-brand-orange/40'
+                      }`}
+                      onClick={() => {
+                        if (!isDraggingRef.current && draggingIndex === null) {
+                          openWorkoutModal(workout);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openWorkoutModal(workout);
+                        }
+                      }}
+                    >
+                      {/* Bottoni azione compatti in alto a destra - nessun accavallamento */}
+                      <div className="absolute top-4 right-4 flex items-center space-x-1.5 z-10">
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSingleSchedaToAssign(workout);
+                          }}
+                          className="p-1.5 text-brand-grey/50 hover:text-brand-orange transition-colors bg-brand-dark/60 rounded-xl cursor-pointer"
+                          title="Sposta in un'altra cartella o rimuovi"
+                        >
+                          <FolderInput size={18} />
+                        </button>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void duplicateWorkout(workout);
+                          }}
+                          disabled={duplicatingWorkoutId === workout.id}
+                          className="p-1.5 text-brand-grey/50 hover:text-brand-orange transition-colors bg-brand-dark/60 rounded-xl disabled:opacity-50 cursor-pointer"
+                          title="Duplica Scheda"
+                        >
+                          {duplicatingWorkoutId === workout.id ? (
+                            <Loader2 size={18} className="animate-spin text-brand-orange" />
+                          ) : (
+                            <Copy size={18} />
+                          )}
+                        </button>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/edit-train/${workout.id}`);
+                          }}
+                          className="p-1.5 text-brand-grey/50 hover:text-brand-orange transition-colors bg-brand-dark/60 rounded-xl cursor-pointer"
+                          title="Modifica Scheda"
+                        >
+                          <Pencil size={18} />
+                        </button>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void deleteWorkout(workout.id);
+                          }}
+                          className="p-1.5 text-brand-grey/50 hover:text-red-500 transition-colors bg-brand-dark/60 rounded-xl cursor-pointer"
+                          title="Elimina Scheda"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+
+                      {/* Contenitore orizzontale: Riga di Drag + Numero d'Ordine + Dettagli Scheda */}
+                      <div className="flex items-center gap-3 pr-28 py-0.5">
+                        {/* 1. RIGA VERTICALE DI TRASCINAMENTO (Touch Handle a sinistra) */}
+                        <div
+                          onPointerDown={(e) => handleDragStart(index, e)}
+                          onTouchStart={(e) => handleDragStart(index, e)}
+                          className="flex items-center justify-center py-2 px-1.5 -ml-1 cursor-grab active:cursor-grabbing touch-none select-none group/handle shrink-0"
+                          title="Tieni premuto e trascina per cambiare l'ordine"
+                        >
+                          <div
+                            className={`w-1.5 h-12 rounded-full transition-all duration-200 ${
+                              isDraggingThis
+                                ? 'bg-brand-orange shadow-[0_0_12px_rgba(255,94,0,0.9)] scale-y-110'
+                                : 'bg-white/20 group-hover/handle:bg-brand-orange/60 group-active/handle:bg-brand-orange'
+                            }`}
+                          />
+                        </div>
+
+                        {/* 2. NUMERO D'ORDINE (#1, #2, #3...) - SEPARATO A SINISTRA */}
+                        <div className="w-8 h-8 rounded-xl bg-brand-orange/15 border border-brand-orange/35 flex items-center justify-center text-brand-orange font-black text-xs shrink-0 shadow-sm">
                           #{index + 1}
-                        </span>
-                        <div className="flex items-center ml-1 border-l border-white/10 pl-1">
-                          <button
-                            type="button"
-                            disabled={index === 0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!currentFolderId) return;
-                              void hapticSelection();
-                              moveSchedaInFolderOrder(
-                                currentFolderId,
-                                workout.id,
-                                'up',
-                                folderWorkouts.map((w) => w.id),
-                                user?.id
-                              );
-                            }}
-                            className={`p-0.5 rounded transition-colors ${
-                              index === 0 ? 'opacity-20 cursor-not-allowed' : 'text-brand-grey hover:text-white active:bg-white/10'
-                            }`}
-                            title="Sposta prima nell'ordine"
-                          >
-                            <ChevronUp size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={index === folderWorkouts.length - 1}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!currentFolderId) return;
-                              void hapticSelection();
-                              moveSchedaInFolderOrder(
-                                currentFolderId,
-                                workout.id,
-                                'down',
-                                folderWorkouts.map((w) => w.id),
-                                user?.id
-                              );
-                            }}
-                            className={`p-0.5 rounded transition-colors ${
-                              index === folderWorkouts.length - 1 ? 'opacity-20 cursor-not-allowed' : 'text-brand-grey hover:text-white active:bg-white/10'
-                            }`}
-                            title="Sposta dopo nell'ordine"
-                          >
-                            <ChevronDown size={14} />
-                          </button>
+                        </div>
+
+                        {/* 3. ICONA CALENDARIO */}
+                        <div className="bg-brand-orange/20 p-2.5 rounded-2xl shrink-0 hidden sm:flex">
+                          <Calendar className="text-brand-orange" size={24} />
+                        </div>
+
+                        {/* 4. NOME SCHEDA E DATA (In flex-1 con spazio garantito) */}
+                        <div className="flex-1 min-w-0 py-0.5">
+                          <h2 className="text-lg sm:text-xl font-bold text-white leading-snug break-words line-clamp-2">
+                            {workout.name}
+                          </h2>
+                          <p className="text-xs text-brand-grey/60 font-semibold mt-0.5">
+                            {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </p>
                         </div>
                       </div>
 
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSingleSchedaToAssign(workout);
-                        }}
-                        className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
-                        title="Sposta in un'altra cartella o rimuovi"
-                      >
-                        <FolderInput size={20} />
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void duplicateWorkout(workout);
-                        }}
-                        disabled={duplicatingWorkoutId === workout.id}
-                        className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg disabled:opacity-50"
-                        title="Duplicate Workout"
-                      >
-                        {duplicatingWorkoutId === workout.id ? (
-                          <Loader2 size={20} className="animate-spin text-brand-orange" />
-                        ) : (
-                          <Copy size={20} />
-                        )}
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          navigate(`/edit-train/${workout.id}`);
-                        }}
-                        className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
-                        title="Edit Workout"
-                      >
-                        <Pencil size={20} />
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void deleteWorkout(workout.id);
-                        }}
-                        className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg"
-                        title="Delete Workout"
-                      >
-                        <Trash2 size={20} />
-                      </button>
+                      <p className="text-[11px] text-brand-grey/50 font-semibold uppercase tracking-wider mt-2 pl-14">
+                        Tocca per vedere gli esercizi
+                      </p>
                     </div>
-
-                    <div className="flex items-center pr-28 py-1">
-                      <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 shrink-0">
-                        <Calendar className="text-brand-orange" size={28} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
-                        <p className="text-xs text-brand-grey/60 font-semibold mt-1">
-                          {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        </p>
-                      </div>
-                    </div>
-
-                    <p className="text-[11px] text-brand-grey/60 font-bold uppercase tracking-wider mt-3 pl-16">
-                      Tap to view workout details
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
