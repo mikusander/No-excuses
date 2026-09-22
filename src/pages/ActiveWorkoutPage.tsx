@@ -591,49 +591,87 @@ const ActiveWorkoutPage: React.FC = () => {
     return parts.join(', ');
   };
 
-  const getUpcomingRestTargetInfo = useCallback(() => {
-    if (!workout) return { nextExerciseName: 'Next Exercise', nextSetInfo: '' };
+  const getUpcomingRestTargetInfo = useCallback(
+    (overridePendingAdvance?: boolean) => {
+      if (!workout) return { nextExerciseName: 'Prossimo Esercizio', nextSetInfo: '' };
 
-    if (pendingExerciseAdvance) {
-      const nextEx = workout.exercises[currentExerciseIdx + 1];
-      const name = nextEx ? String(nextEx.name || '').trim() || `Exercise ${currentExerciseIdx + 2}` : 'Next Exercise';
-      return { nextExerciseName: name, nextSetInfo: 'New Exercise' };
-    }
+      const currentEx = workout.exercises[currentExerciseIdx];
+      if (!currentEx) return { nextExerciseName: 'Prossimo Esercizio', nextSetInfo: '' };
 
-    const currentEx = workout.exercises[currentExerciseIdx];
-    if (!currentEx) return { nextExerciseName: 'Next Exercise', nextSetInfo: '' };
+      // Controlla se siamo all'ultimo set dell'esercizio corrente
+      const isLastSetOfCurrent =
+        currentEx.type === 'pyramid'
+          ? currentPyramidStepIdx >= (currentEx.pyramid_steps?.length || 1) - 1
+          : currentSetIdx >= (currentEx.sets || 1) - 1;
 
-    if (currentEx.type === 'pyramid' && pendingPyramidAdvance) {
-      const nextStepIdx = currentPyramidStepIdx + 1;
-      const step = currentEx.pyramid_steps?.[nextStepIdx];
-      const reps = step ? (step.reps > 0 ? `${step.reps} reps` : 'MAX reps') : '';
+      // Se stiamo passando al prossimo esercizio (per override esplicito, per pendingExerciseAdvance o perché era l'ultimo set)
+      const isTransitioningToNext =
+        overridePendingAdvance === true ||
+        (overridePendingAdvance !== false && (pendingExerciseAdvance || isLastSetOfCurrent));
+
+      if (isTransitioningToNext) {
+        const nextEx = workout.exercises[currentExerciseIdx + 1];
+        if (!nextEx) return { nextExerciseName: 'Fine Allenamento', nextSetInfo: '' };
+
+        const name = String(nextEx.name || '').trim() || `Esercizio ${currentExerciseIdx + 2}`;
+        const totalSets = nextEx.sets || 1;
+
+        let setInfo = `Set 1 di ${totalSets}`;
+        if (nextEx.type === 'circuit') {
+          setInfo = `Giro 1 di ${totalSets}`;
+        } else if (nextEx.type === 'superset') {
+          setInfo = `Round 1 di ${totalSets}`;
+        } else if (nextEx.type === 'pyramid') {
+          const totalSteps = nextEx.pyramid_steps?.length || 1;
+          const step = nextEx.pyramid_steps?.[0];
+          const reps = step ? (step.reps > 0 ? `${step.reps} reps` : 'MAX reps') : '';
+          setInfo = `Step 1 di ${totalSteps}${reps ? ` • ${reps}` : ''}`;
+        }
+
+        return { nextExerciseName: name, nextSetInfo: setInfo };
+      }
+
+      // Recupero tra step piramidali dello stesso esercizio
+      if (currentEx.type === 'pyramid' && pendingPyramidAdvance) {
+        const nextStepIdx = currentPyramidStepIdx + 1;
+        const totalSteps = currentEx.pyramid_steps?.length || 1;
+        const step = currentEx.pyramid_steps?.[nextStepIdx];
+        const reps = step ? (step.reps > 0 ? `${step.reps} reps` : 'MAX reps') : '';
+        return {
+          nextExerciseName: currentEx.name,
+          nextSetInfo: `Step ${nextStepIdx + 1} di ${totalSteps}${reps ? ` • ${reps}` : ''}`,
+        };
+      }
+
+      // Recupero tra giri di circuito
+      if (currentEx.type === 'circuit') {
+        return {
+          nextExerciseName: currentEx.name,
+          nextSetInfo: `Giro ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
+        };
+      }
+
+      // Recupero tra round di superset
+      if (currentEx.type === 'superset' && currentEx.subExercises) {
+        return {
+          nextExerciseName: currentEx.name,
+          nextSetInfo: `Round ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
+        };
+      }
+
+      // Recupero tra serie standard (reps, isometria, emom)
       return {
         nextExerciseName: currentEx.name,
-        nextSetInfo: `Step ${nextStepIdx + 1}${reps ? ` • ${reps}` : ''}`,
+        nextSetInfo: `Set ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
       };
-    }
+    },
+    [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSetIdx]
+  );
 
-    if (currentEx.type === 'circuit') {
-      return {
-        nextExerciseName: currentEx.name,
-        nextSetInfo: `Giro ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
-      };
-    }
-
-    if (currentEx.type === 'superset' && currentEx.subExercises) {
-      return {
-        nextExerciseName: currentEx.name,
-        nextSetInfo: `Round ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
-      };
-    }
-
-    return {
-      nextExerciseName: currentEx.name,
-      nextSetInfo: `Set ${currentSetIdx + 2} of ${currentEx.sets || 1}`,
-    };
-  }, [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSetIdx]);
-
-  const startRestCountdown = (durationSeconds: number) => {
+  const startRestCountdown = (
+    durationSeconds: number,
+    customUpcoming?: { nextExerciseName: string; nextSetInfo: string }
+  ) => {
     unlockAudio();
     void requestScreenWakeLock();
     const safe = normalizeDurationSeconds(durationSeconds);
@@ -644,7 +682,7 @@ const ActiveWorkoutPage: React.FC = () => {
     setRestEndsAtMs(targetTime);
     setIsResting(true);
 
-    const upcoming = getUpcomingRestTargetInfo();
+    const upcoming = customUpcoming || getUpcomingRestTargetInfo();
     scheduleBackgroundRestNotification({
       endsAtMs: targetTime,
       nextExerciseName: upcoming.nextExerciseName,
@@ -2354,6 +2392,12 @@ const ActiveWorkoutPage: React.FC = () => {
       setRestRemaining((prev) => (prev === nextRemaining ? prev : nextRemaining));
       pipManager.updateRemaining(nextRemaining);
 
+      // Se l'utente è attualmente dentro l'app (in primo piano) e il recupero sta per scadere (<= 1 secondo):
+      // cancella preventivamente la notifica programmata così non scatta il banner di sistema mentre è nell'app
+      if (nextRemaining <= 1 && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        closeActiveRestNotifications();
+      }
+
       if (nextRemaining <= 0) {
         if (lastHandledRestCompletionEndsAtMsRef.current === restEndsAtMs) {
           return;
@@ -2368,6 +2412,9 @@ const ActiveWorkoutPage: React.FC = () => {
         stopRestMediaSession();
         pipManager.closePiP();
         playRestFinishedSound();
+        // Rimuove e cancella qualsiasi notifica di recupero
+        closeActiveRestNotifications();
+
         const upcoming = getUpcomingRestTargetInfo();
         void sendRestFinishedNotification({
           nextExerciseName: upcoming.nextExerciseName,
@@ -3418,7 +3465,8 @@ const ActiveWorkoutPage: React.FC = () => {
     const transitionRestSeconds = Math.max(0, Math.trunc(sourceExercise.transition_rest_seconds || 0));
     if (!isLastExercise && transitionRestSeconds > 0) {
       setPendingExerciseAdvance(true);
-      startRestCountdown(transitionRestSeconds);
+      const upcoming = getUpcomingRestTargetInfo(true);
+      startRestCountdown(transitionRestSeconds, upcoming);
       return;
     }
     handleNextExercise();
@@ -3530,7 +3578,15 @@ const ActiveWorkoutPage: React.FC = () => {
         const stepRest = Math.max(0, currentStep?.rest_seconds || 0);
         if (stepRest > 0) {
           setPendingPyramidAdvance(true);
-          startRestCountdown(stepRest);
+          const nextStepIdx = currentPyramidStepIdx + 1;
+          const totalSteps = steps.length;
+          const step = steps[nextStepIdx];
+          const reps = step ? (step.reps > 0 ? `${step.reps} reps` : 'MAX reps') : '';
+          const upcomingPyramid = {
+            nextExerciseName: currentExercise.name,
+            nextSetInfo: `Step ${nextStepIdx + 1} di ${totalSteps}${reps ? ` • ${reps}` : ''}`,
+          };
+          startRestCountdown(stepRest, upcomingPyramid);
         } else {
           setCurrentPyramidStepIdx(prev => prev + 1);
         }
@@ -3753,7 +3809,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const finishRestAndNextSet = (naturalExpiry = false) => {
-    stopRestCountdown(naturalExpiry);
+    stopRestCountdown(false);
 
     if (pendingExerciseAdvance) {
       setPendingExerciseAdvance(false);

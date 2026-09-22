@@ -199,6 +199,22 @@ export const addNotificationActionListener = (
 };
 
 /**
+ * Se l'app è in primo piano, rimuove immediatamente qualsiasi notifica consegnata
+ * così da evitare che compaia il banner di sistema mentre l'utente è nell'app.
+ */
+if (isNativeApp()) {
+  LocalNotifications.addListener('localNotificationReceived', async (notification) => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      try {
+        await LocalNotifications.removeDeliveredNotificationsById({ ids: [notification.id] });
+      } catch {
+        // ignore
+      }
+    }
+  }).catch(() => {});
+}
+
+/**
  * Stub compatibilità per service worker PWA (nessuna operazione).
  */
 export const initServiceWorker = async (): Promise<ServiceWorkerRegistration | null> => {
