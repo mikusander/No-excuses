@@ -3863,9 +3863,28 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const handleLeaveWorkout = () => {
     freezeForegroundWorkoutTime();
-    persistWorkoutProgress(true);
     stopRestMediaSession();
     void releaseScreenWakeLock();
+
+    // Se l'utente esce quasi subito (< 30s), chiedi se vuole abbandonare o mettere in pausa
+    const elapsedSecs = Math.max(0, getCurrentWorkoutElapsedSeconds());
+    if (elapsedSecs < 30) {
+      const wantToKeep = window.confirm(
+        "Vuoi mettere in pausa l'allenamento per riprenderlo dopo?\n\nPremi OK per metterlo in pausa, oppure Annulla per cancellarlo definitivamente."
+      );
+      if (!wantToKeep) {
+        suppressProgressPersistenceRef.current = true;
+        clearPersistedWorkoutProgress();
+        if (window.history.length > 1) {
+          navigate(-1);
+        } else {
+          navigate('/');
+        }
+        return;
+      }
+    }
+
+    persistWorkoutProgress(true);
     if (window.history.length > 1) {
       navigate(-1);
     } else {
@@ -3895,6 +3914,20 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const completeWorkoutNow = async () => {
+    const elapsedSecs = Math.max(0, getCurrentWorkoutElapsedSeconds());
+    if (elapsedSecs < 30) {
+      const confirmSave = window.confirm(
+        "L'allenamento è iniziato da meno di 30 secondi.\n\nVuoi davvero registrarlo come completato nello storico?\n(Premi Annulla per uscire senza salvare)."
+      );
+      if (!confirmSave) {
+        suppressProgressPersistenceRef.current = true;
+        clearPersistedWorkoutProgress();
+        stopRestMediaSession();
+        void releaseScreenWakeLock();
+        navigate('/');
+        return;
+      }
+    }
     await markWorkoutComplete();
     navigate('/');
   };
