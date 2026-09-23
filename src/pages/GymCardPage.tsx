@@ -47,7 +47,7 @@
  *  - `parseOptionalWeight(raw)` : accetta virgola o punto come separatore decimale,
  *    restituisce null se vuoto o zero (= nessun peso / bodyweight)
  */
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -212,12 +212,63 @@ const GymCardPage: React.FC = () => {
     }
   }, [currentFolderId, currentFolder]);
 
-  // Schede nella cartella aperta
-  const folderWorkouts = useMemo(() => {
+  // Schede nella cartella aperta (calcolate dai dati globali)
+  const baseFolderWorkouts = useMemo(() => {
     if (!currentFolderId) return [];
     const inFolder = workouts.filter((w) => folderAssignments[w.id] === currentFolderId);
     return sortSchedeByFolderOrder(inFolder, currentFolderId, user?.id);
   }, [workouts, folderAssignments, currentFolderId, user?.id, folders]);
+
+  // Stato locale in memoria per il riordino senza salvataggi fastidiosi durante il drag
+  const [localOrderedWorkouts, setLocalOrderedWorkouts] = useState<typeof workouts>([]);
+  const hasOrderChangesRef = useRef(false);
+  const currentFolderIdRef = useRef<string | null>(currentFolderId);
+  const localOrderedWorkoutsRef = useRef<typeof workouts>([]);
+
+  useEffect(() => {
+    currentFolderIdRef.current = currentFolderId;
+  }, [currentFolderId]);
+
+  useEffect(() => {
+    localOrderedWorkoutsRef.current = localOrderedWorkouts;
+  }, [localOrderedWorkouts]);
+
+  // Sincronizza l'elenco locale solo quando si cambia cartella o quando non ci sono modifiche pendenti
+  useEffect(() => {
+    hasOrderChangesRef.current = false;
+    setLocalOrderedWorkouts(baseFolderWorkouts);
+  }, [baseFolderWorkouts, currentFolderId]);
+
+  // Salva l'ordine solo quando si esce dalla cartella
+  const savePendingOrder = useCallback(() => {
+    if (hasOrderChangesRef.current && currentFolderIdRef.current) {
+      const folderId = currentFolderIdRef.current;
+      const orderedIds = localOrderedWorkoutsRef.current.map((w) => w.id);
+      setSchedeOrderInFolder(folderId, orderedIds, user?.id);
+      hasOrderChangesRef.current = false;
+    }
+  }, [user?.id]);
+
+  // Salva alla chiusura o smontaggio del componente o passaggio in background
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        savePendingOrder();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', savePendingOrder);
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', savePendingOrder);
+      savePendingOrder();
+    };
+  }, [currentFolderId, savePendingOrder]);
+
+  const handleExitFolder = useCallback(() => {
+    savePendingOrder();
+    setCurrentFolderId(null);
+  }, [savePendingOrder]);
 
   // Schede senza cartella (livello radice)
   const rootWorkouts = useMemo(() => {
@@ -233,39 +284,79 @@ const GymCardPage: React.FC = () => {
     return workouts.filter((w) => folderAssignments[w.id] !== currentFolderId);
   }, [workouts, folderAssignments, currentFolderId]);
 
-  // Drag & Drop per il riordino delle schede tramite la barra verticale sinistra
+  // Drag & Drop fluido con animazione di slittamento reciproco e calcolo posizioni
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragDeltaY, setDragDeltaY] = useState<number>(0);
+  const [cardHeight, setCardHeight] = useState<number>(100);
+
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const isDraggingRef = useRef(false);
   const dragStartIndexRef = useRef<number | null>(null);
   const currentDragOverRef = useRef<number | null>(null);
+  const startYRef = useRef<number>(0);
+  const itemMidYsRef = useRef<number[]>([]);
+  const itemTopsRef = useRef<number[]>([]);
 
   const handleDragStart = (index: number, e: React.TouchEvent | React.PointerEvent) => {
+    if (isDraggingRef.current) return;
     e.stopPropagation();
     void hapticMedium();
     isDraggingRef.current = true;
     dragStartIndexRef.current = index;
     currentDragOverRef.current = index;
+
+    const startClientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    startYRef.current = startClientY;
+
+    // Cattura le posizioni non trasformate di ogni scheda per calcolare lo slittamento esatto
+    const tops: number[] = [];
+    const mids: number[] = [];
+    cardRefs.current.forEach((el) => {
+      if (el) {
+        tops.push(el.offsetTop);
+        const rect = el.getBoundingClientRect();
+        mids.push(rect.top + rect.height / 2);
+      } else {
+        tops.push(0);
+        mids.push(0);
+      }
+    });
+    itemTopsRef.current = tops;
+    itemMidYsRef.current = mids;
+
+    const currentCardEl = cardRefs.current[index];
+    const measuredHeight = currentCardEl ? currentCardEl.offsetHeight + 14 : 110;
+    setCardHeight(measuredHeight);
+
     setDraggingIndex(index);
     setDragOverIndex(index);
+    setDragDeltaY(0);
 
     const onMove = (moveEvent: TouchEvent | PointerEvent) => {
       if (!isDraggingRef.current) return;
+      if (moveEvent.cancelable) {
+        moveEvent.preventDefault();
+      }
       const clientY = 'touches' in moveEvent ? moveEvent.touches[0].clientY : moveEvent.clientY;
+      const deltaY = clientY - startYRef.current;
+      setDragDeltaY(deltaY);
 
-      for (let i = 0; i < cardRefs.current.length; i++) {
-        const el = cardRefs.current[i];
-        if (el) {
-          const rect = el.getBoundingClientRect();
-          if (clientY >= rect.top && clientY <= rect.bottom) {
-            if (currentDragOverRef.current !== i) {
-              currentDragOverRef.current = i;
-              setDragOverIndex(i);
-              void hapticSelection();
-            }
-            break;
+      const midsArr = itemMidYsRef.current;
+      const n = localOrderedWorkoutsRef.current.length;
+      if (midsArr.length > 0 && n > 1) {
+        let targetIdx = 0;
+        for (let k = 0; k < Math.min(midsArr.length, n) - 1; k++) {
+          const boundary = (midsArr[k] + midsArr[k + 1]) / 2;
+          if (clientY > boundary) {
+            targetIdx = k + 1;
           }
+        }
+        targetIdx = Math.max(0, Math.min(targetIdx, n - 1));
+        if (currentDragOverRef.current !== targetIdx) {
+          currentDragOverRef.current = targetIdx;
+          setDragOverIndex(targetIdx);
+          void hapticSelection();
         }
       }
     };
@@ -277,29 +368,38 @@ const GymCardPage: React.FC = () => {
       const fromIdx = dragStartIndexRef.current;
       const toIdx = currentDragOverRef.current;
 
-      if (fromIdx !== null && toIdx !== null && fromIdx !== toIdx && currentFolderId) {
+      if (fromIdx !== null && toIdx !== null && fromIdx !== toIdx) {
         void hapticSuccess();
-        const nextList = [...folderWorkouts];
-        const [moved] = nextList.splice(fromIdx, 1);
-        nextList.splice(toIdx, 0, moved);
-        setSchedeOrderInFolder(currentFolderId, nextList.map((w) => w.id), user?.id);
+        setLocalOrderedWorkouts((prev) => {
+          const nextList = [...prev];
+          const [moved] = nextList.splice(fromIdx, 1);
+          nextList.splice(toIdx, 0, moved);
+          return nextList;
+        });
+        hasOrderChangesRef.current = true;
+        // Nessun salvataggio immediato: l'ordine viene salvato solo all'uscita dalla cartella!
       }
 
       dragStartIndexRef.current = null;
       currentDragOverRef.current = null;
       setDraggingIndex(null);
       setDragOverIndex(null);
+      setDragDeltaY(0);
 
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('touchcancel', onEnd);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
     };
 
     window.addEventListener('touchmove', onMove, { passive: false });
     window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
   };
 
   useEffect(() => {
@@ -880,7 +980,7 @@ const GymCardPage: React.FC = () => {
         {currentFolder ? (
           <div className="flex items-center gap-2 min-w-0">
             <button
-              onClick={() => setCurrentFolderId(null)}
+              onClick={handleExitFolder}
               className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white hover:text-brand-orange transition-colors shrink-0 cursor-pointer"
               title="Torna a tutte le schede"
             >
@@ -953,7 +1053,7 @@ const GymCardPage: React.FC = () => {
                   </h2>
                 </div>
                 <p className="text-xs text-brand-grey/70 mt-1">
-                  {folderWorkouts.length} {folderWorkouts.length === 1 ? 'scheda all\'interno' : 'schede all\'interno'}
+                  {localOrderedWorkouts.length} {localOrderedWorkouts.length === 1 ? 'scheda all\'interno' : 'schede all\'interno'}
                 </p>
               </div>
 
@@ -1012,7 +1112,7 @@ const GymCardPage: React.FC = () => {
             </div>
 
             {/* Schede nella cartella */}
-            {folderWorkouts.length === 0 ? (
+            {localOrderedWorkouts.length === 0 ? (
               <div className="text-center bg-brand-darkGrey/20 border border-dashed border-white/15 rounded-3xl p-8 mt-4">
                 <FolderOpen size={44} className="mx-auto text-brand-grey/40 mb-3" />
                 <h3 className="text-base font-bold text-white mb-1">Questa cartella è vuota</h3>
@@ -1041,19 +1141,66 @@ const GymCardPage: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-3.5">
-                {folderWorkouts.map((workout, index) => {
+                {localOrderedWorkouts.map((workout, index) => {
                   const isDraggingThis = draggingIndex === index;
-                  const isTargetDrop = dragOverIndex === index && draggingIndex !== null && draggingIndex !== index;
+                  let translateY = 0;
+
+                  if (draggingIndex !== null && dragOverIndex !== null) {
+                    if (isDraggingThis) {
+                      translateY = dragDeltaY;
+                    } else if (draggingIndex < dragOverIndex) {
+                      // Dragging verso il basso: le card intermedie scivolano verso l'alto per prendere il posto precedente
+                      if (index > draggingIndex && index <= dragOverIndex) {
+                        const targetSlot = index - 1;
+                        const tops = itemTopsRef.current;
+                        if (tops[targetSlot] !== undefined && tops[index] !== undefined && tops[index] !== 0) {
+                          translateY = tops[targetSlot] - tops[index];
+                        } else {
+                          translateY = -cardHeight;
+                        }
+                      }
+                    } else if (draggingIndex > dragOverIndex) {
+                      // Dragging verso l'alto: le card intermedie scivolano verso il basso per prendere il posto precedente
+                      if (index >= dragOverIndex && index < draggingIndex) {
+                        const targetSlot = index + 1;
+                        const tops = itemTopsRef.current;
+                        if (tops[targetSlot] !== undefined && tops[index] !== undefined && tops[index] !== 0) {
+                          translateY = tops[targetSlot] - tops[index];
+                        } else {
+                          translateY = cardHeight;
+                        }
+                      }
+                    }
+                  }
+
+                  // Calcolo del numero d'ordine in tempo reale durante lo scorrimento
+                  let displayOrderNum = index + 1;
+                  if (draggingIndex !== null && dragOverIndex !== null) {
+                    if (isDraggingThis) {
+                      displayOrderNum = dragOverIndex + 1;
+                    } else if (draggingIndex < dragOverIndex) {
+                      if (index > draggingIndex && index <= dragOverIndex) {
+                        displayOrderNum = index;
+                      }
+                    } else if (draggingIndex > dragOverIndex) {
+                      if (index >= dragOverIndex && index < draggingIndex) {
+                        displayOrderNum = index + 2;
+                      }
+                    }
+                  }
 
                   return (
                     <div
                       key={workout.id}
                       ref={(el) => { cardRefs.current[index] = el; }}
-                      className={`bg-brand-darkGrey/40 border rounded-3xl p-4 sm:p-5 shadow-xl relative overflow-hidden transition-all duration-200 select-none ${
+                      style={{
+                        transform: translateY !== 0 ? `translateY(${translateY}px)` : undefined,
+                        transition: isDraggingThis ? 'none' : 'transform 0.28s cubic-bezier(0.2, 0, 0, 1)',
+                        zIndex: isDraggingThis ? 40 : 1,
+                      }}
+                      className={`bg-brand-darkGrey/40 border rounded-3xl p-4 sm:p-5 shadow-xl relative overflow-hidden select-none ${
                         isDraggingThis
-                          ? 'border-brand-orange shadow-[0_15px_35px_rgba(255,94,0,0.3)] scale-[1.02] z-30 bg-[#1C1C1E]'
-                          : isTargetDrop
-                          ? 'border-brand-orange/60 bg-brand-orange/5'
+                          ? 'border-brand-orange shadow-[0_20px_45px_rgba(255,94,0,0.35)] scale-[1.02] bg-[#1C1C1E]'
                           : 'border-brand-grey/20 hover:border-brand-orange/40'
                       }`}
                       onClick={() => {
@@ -1137,9 +1284,9 @@ const GymCardPage: React.FC = () => {
                           />
                         </div>
 
-                        {/* 2. NUMERO D'ORDINE (#1, #2, #3...) - SEPARATO A SINISTRA */}
-                        <div className="w-8 h-8 rounded-xl bg-brand-orange/15 border border-brand-orange/35 flex items-center justify-center text-brand-orange font-black text-xs shrink-0 shadow-sm">
-                          #{index + 1}
+                        {/* 2. NUMERO D'ORDINE (#1, #2, #3...) - AGGIORNATO IN TEMPO REALE */}
+                        <div className="w-8 h-8 rounded-xl bg-brand-orange/15 border border-brand-orange/35 flex items-center justify-center text-brand-orange font-black text-xs shrink-0 shadow-sm transition-all">
+                          #{displayOrderNum}
                         </div>
 
                         {/* 3. ICONA CALENDARIO */}
