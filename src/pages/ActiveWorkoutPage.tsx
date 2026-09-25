@@ -4261,15 +4261,15 @@ const ActiveWorkoutPage: React.FC = () => {
           </div>
         </header>
 
-        {/* Central Rest Area (Zero-Scroll Flex Column) */}
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-around py-1">
+        {/* Central Rest Area (Well-Filled & Proportionate) */}
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 sm:gap-4 my-1">
           {/* Circular Countdown Timer */}
           <div className="flex flex-col items-center">
             <div
-              className={`w-44 h-44 sm:w-52 sm:h-52 rounded-full flex flex-col justify-center items-center relative overflow-hidden cursor-pointer select-none transition-all duration-300 ${
+              className={`w-52 h-52 sm:w-60 sm:h-60 rounded-full flex flex-col justify-center items-center relative overflow-hidden cursor-pointer select-none transition-all duration-300 ${
                 restRemaining <= 3 && restRemaining > 0
-                  ? 'border-6 sm:border-8 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_60px_rgba(255,107,0,0.6)] animate-pulse'
-                  : 'border-6 sm:border-8 border-brand-darkGrey shadow-[0_0_40px_rgba(255,107,0,0.12)]'
+                  ? 'border-8 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_70px_rgba(255,107,0,0.6)] animate-pulse'
+                  : 'border-8 border-brand-darkGrey shadow-[0_0_40px_rgba(255,107,0,0.15)] bg-black/40'
               }`}
               onPointerDown={(event) => handleTimerPointerDown(event, resetRestCountdown)}
               onPointerUp={(event) => handleTimerPointerUp(event, handleRestTimerTap)}
@@ -4285,29 +4285,29 @@ const ActiveWorkoutPage: React.FC = () => {
               />
 
               <Timer
-                size={22}
+                size={26}
                 className={`mb-1 transition-transform duration-300 ${
                   restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-110' : 'text-brand-orange'
                 }`}
               />
               <span
-                className={`text-5xl sm:text-6xl font-black z-10 font-mono tracking-tighter transition-all duration-300 leading-none ${
+                className={`text-6xl sm:text-7xl font-black z-10 font-mono tracking-tighter transition-all duration-300 leading-none ${
                   restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-105' : 'text-white'
                 }`}
               >
                 {formatTime(restRemaining)}
               </span>
-              <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] mt-1 z-10">
+              <span className="text-zinc-400 font-bold uppercase tracking-widest text-[10px] mt-1.5 z-10">
                 {restEndsAtMs != null ? 'RECUPERO' : 'IN PAUSA'}
               </span>
             </div>
 
             {/* Stepper buttons & Tap help */}
-            <div className="flex items-center justify-center gap-3 mt-2.5">
+            <div className="flex items-center justify-center gap-3 mt-3">
               <button
                 type="button"
                 onClick={() => adjustRestTime(-15)}
-                className="px-3 py-1 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-mono font-bold text-xs border border-white/10 transition-all"
+                className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 hover:text-white font-mono font-bold text-xs border border-white/10 transition-all"
                 title="-15 secondi"
               >
                 -15s
@@ -4318,7 +4318,7 @@ const ActiveWorkoutPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => adjustRestTime(15)}
-                className="px-3 py-1 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-mono font-bold text-xs border border-white/10 transition-all"
+                className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 hover:text-white font-mono font-bold text-xs border border-white/10 transition-all"
                 title="+15 secondi"
               >
                 +15s
@@ -4330,17 +4330,17 @@ const ActiveWorkoutPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleTogglePiP}
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-brand-orange/30 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-[11px] font-bold transition-all shadow-sm cursor-pointer"
+                className="mt-2.5 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-brand-orange/30 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all shadow-sm cursor-pointer"
                 title="Mostra timer flottante sopra altre app (PiP)"
               >
-                <Layers size={12} />
+                <Layers size={13} />
                 <span>{pipManager.isActive() ? 'Chiudi Overlay PiP' : 'Mini-Timer PiP'}</span>
               </button>
             )}
           </div>
 
-          {/* Next Exercise Preview Card (Compact) */}
-          <div className="w-full max-w-sm bg-brand-darkGrey/60 border border-white/10 rounded-2xl p-2.5 sm:p-3 shadow-lg flex flex-col gap-1">
+          {/* Next Exercise Preview Card (Rich, Beautifully Proportioned) */}
+          <div className="w-full max-w-sm bg-gradient-to-b from-brand-darkGrey/80 to-brand-darkGrey/40 border border-white/10 rounded-2xl p-3.5 sm:p-4 shadow-lg flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-400">
                 {transitionNextExercise
@@ -4357,11 +4357,11 @@ const ActiveWorkoutPage: React.FC = () => {
             </div>
 
             {restUpcomingExecutionEntries.length > 0 && (
-              <div className="space-y-0.5">
+              <div className="space-y-1">
                 {restUpcomingExecutionEntries.slice(0, 2).map((entry, idx) => (
-                  <p key={`${entry.name}-${entry.weightLabel}-${idx}`} className="text-white font-bold text-xs sm:text-sm truncate flex items-center justify-between">
+                  <p key={`${entry.name}-${entry.weightLabel}-${idx}`} className="text-white font-bold text-sm sm:text-base truncate flex items-center justify-between">
                     <span className="truncate">{entry.name}</span>
-                    <span className="text-brand-orange font-mono text-xs ml-2 shrink-0">{entry.weightLabel}</span>
+                    <span className="text-brand-orange font-mono text-xs sm:text-sm ml-2 shrink-0">{entry.weightLabel}</span>
                   </p>
                 ))}
               </div>
@@ -4369,7 +4369,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
             {/* Performance logged summary during rest for MAX exercises */}
             {isMaxPerformance(currentExercise) && (
-              <div className="bg-black/40 border border-brand-orange/30 rounded-xl p-2 mt-0.5 flex items-center justify-between">
+              <div className="bg-black/50 border border-brand-orange/30 rounded-xl p-2.5 mt-1 flex items-center justify-between">
                 <div>
                   <span className="text-[9px] uppercase font-bold text-zinc-400 block">
                     Set {currentSetIdx + 1} (MAX)
@@ -4384,7 +4384,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => openEditSpecificSetModal(currentSetIdx)}
-                  className="px-2.5 py-1 rounded-lg bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-[11px] font-bold transition-all border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
                 >
                   <Pencil size={11} />
                   <span>Modifica</span>
@@ -4539,14 +4539,14 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
       </div>
 
-      {/* MAIN CONTAINER (Touch handlers for swipe navigation preserved) */}
+      {/* MAIN CONTAINER */}
       <main
         className="flex-1 min-h-0 flex flex-col justify-between relative"
         onTouchStart={handleActiveWorkoutTouchStart}
         onTouchEnd={handleActiveWorkoutTouchEnd}
         onTouchCancel={handleActiveWorkoutTouchCancel}
       >
-        {/* ZONE 2: EXERCISE NAV & SEGMENTED SET TRACKER */}
+        {/* ZONE 2: EXERCISE NAV & SEGMENTED SET TRACKER (Cleanly Connected) */}
         <div className="shrink-0 flex flex-col gap-1.5 mb-1">
           <div className="flex items-center justify-between gap-2">
             <button
@@ -4621,50 +4621,41 @@ const ActiveWorkoutPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ZONE 3: CENTRAL FOCUS AREA */}
-        <div className="flex-1 min-h-0 flex flex-col justify-between py-1">
-          {/* Top HUD Chips: Set, Weight, Recovery */}
-          <div className={`w-full max-w-sm mx-auto grid ${isSuperset ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5 shrink-0 mb-1`}>
-            <div className="bg-brand-darkGrey/60 border border-white/10 rounded-xl py-1.5 px-2 text-center">
-              <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">
+        {/* ZONE 3: CENTRAL FOCUS AREA (Unified Dashboard Card That Fills The Screen Elegantly) */}
+        <div className="flex-1 min-h-0 w-full max-w-md mx-auto flex flex-col justify-between my-1 bg-gradient-to-b from-brand-darkGrey/80 to-brand-darkGrey/40 border border-white/10 rounded-3xl p-3.5 sm:p-4 shadow-xl backdrop-blur-sm">
+          {/* Top HUD Chips: Always 3 symmetric chips (Set/Round, Carico, Recupero) - "Stazione" removed! */}
+          <div className="w-full grid grid-cols-3 gap-2 shrink-0 mb-2">
+            <div className="bg-black/40 border border-white/5 rounded-2xl py-2 px-2 text-center">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
                 {isSuperset ? 'Round' : 'Set'}
               </span>
-              <span className="text-brand-orange font-mono font-black text-sm">
-                {currentSetIdx + 1}/{currentExercise.sets || 1}
+              <span className="text-brand-orange font-mono font-black text-sm sm:text-base">
+                {currentSetIdx + 1} / {currentExercise.sets || 1}
               </span>
             </div>
 
-            {isSuperset && (
-              <div className="bg-brand-darkGrey/60 border border-white/10 rounded-xl py-1.5 px-2 text-center">
-                <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Stazione</span>
-                <span className="text-brand-orange font-mono font-black text-sm">
-                  {currentSubExerciseIdx + 1}/{currentExercise.subExercises?.length || 1}
-                </span>
-              </div>
-            )}
-
-            <div className="bg-brand-darkGrey/60 border border-white/10 rounded-xl py-1.5 px-2 text-center">
-              <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
+            <div className="bg-black/40 border border-white/5 rounded-2xl py-2 px-2 text-center">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
               <span className="text-white font-mono font-black text-xs sm:text-sm truncate block" title={currentExecutionWeightLabel}>
                 {currentExecutionWeightLabel || '-'}
               </span>
             </div>
 
-            <div className="bg-brand-darkGrey/60 border border-white/10 rounded-xl py-1.5 px-2 text-center">
-              <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
+            <div className="bg-black/40 border border-white/5 rounded-2xl py-2 px-2 text-center">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
               <span className="text-zinc-300 font-mono font-black text-xs sm:text-sm truncate block" title={nextRecoveryLabel}>
                 {nextRecoveryLabel || '-'}
               </span>
             </div>
           </div>
 
-          {/* DYNAMIC MODE VIEW */}
+          {/* DYNAMIC MODE VIEW (Fills the center of the card) */}
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center">
             {currentExercise.type === 'emom' ? (
-              <div className="text-center w-full max-w-sm flex flex-col items-center justify-between h-full">
+              <div className="text-center w-full flex flex-col items-center justify-between h-full">
                 {/* EMOM Circular Timer */}
                 <div
-                  className={`relative group w-32 h-32 sm:w-36 sm:h-36 mx-auto rounded-full border-[6px] flex flex-col justify-center items-center transition-colors duration-300 shadow-lg cursor-pointer select-none shrink-0 ${
+                  className={`relative group w-36 h-36 sm:w-40 sm:h-40 mx-auto rounded-full border-[7px] flex flex-col justify-center items-center transition-colors duration-300 shadow-lg cursor-pointer select-none shrink-0 ${
                     emomActive ? 'border-brand-orange shadow-[0_0_30px_rgba(179,72,0,0.35)]' : 'border-brand-darkGrey'
                   }`}
                   onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
@@ -4672,65 +4663,65 @@ const ActiveWorkoutPage: React.FC = () => {
                   onPointerCancel={handleTimerPointerAbort}
                   onPointerLeave={handleTimerPointerAbort}
                 >
-                  <span className={`text-4xl sm:text-5xl font-mono tracking-tighter ${emomActive ? 'text-white' : 'text-zinc-400'} transition-colors leading-none`}>
+                  <span className={`text-5xl font-mono tracking-tighter ${emomActive ? 'text-white' : 'text-zinc-400'} transition-colors leading-none`}>
                     {emomRoundRemaining}
                   </span>
-                  <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] mt-1">SEC LEFT</span>
+                  <span className="text-zinc-400 font-bold uppercase tracking-widest text-[10px] mt-1">SEC LEFT</span>
                   <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
-                    {emomActive ? <Pause size={32} className="text-white" /> : <Play size={32} className="text-white" />}
+                    {emomActive ? <Pause size={36} className="text-white" /> : <Play size={36} className="text-white" />}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between w-full px-2 text-[10px] text-zinc-400 uppercase tracking-wider font-semibold my-1">
-                  <span>Round {currentEmomRoundIdx + 1} / {currentExercise.emom_rounds || 1}</span>
+                <div className="flex items-center justify-between w-full px-2 text-[10px] text-zinc-400 uppercase tracking-wider font-semibold my-1.5">
+                  <span>Round {currentEmomRoundIdx + 1} di {currentExercise.emom_rounds || 1}</span>
                   <span>Tocca per {emomActive ? 'pausa' : 'avvio'}</span>
                 </div>
 
                 {/* EMOM Tasks */}
-                <div className="w-full flex-1 min-h-0 max-h-[14vh] sm:max-h-[18vh] overflow-y-auto space-y-1.5 px-1">
+                <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-1.5 px-0.5">
                   {currentExercise.subExercises?.map((sub, idx) => (
-                    <div key={idx} className="bg-brand-darkGrey/40 p-2 sm:p-2.5 rounded-xl border border-white/5 flex justify-between items-center text-xs">
+                    <div key={idx} className="bg-black/30 p-2.5 rounded-xl border border-white/5 flex justify-between items-center text-xs">
                       <span className="text-white font-bold truncate max-w-[65%] text-left">{sub.name}</span>
                       <div className="text-right shrink-0">
-                        <span className="text-brand-orange font-mono font-black block">
+                        <span className="text-brand-orange font-mono font-black text-sm block">
                           {formatEmomTaskMetricLabel(sub)}
                         </span>
-                        <span className="text-[10px] text-zinc-400">{formatWeightLabel(sub.weight_kg)}</span>
+                        <span className="text-[10px] text-zinc-400 font-semibold">{formatWeightLabel(sub.weight_kg)}</span>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
             ) : currentExercise.type === 'pyramid' ? (
-              <div className="text-center w-full max-w-sm flex flex-col items-center justify-center my-auto">
-                <span className="block text-6xl sm:text-7xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_24px_rgba(255,107,0,0.2)]">
+              <div className="text-center w-full flex flex-col items-center justify-center my-auto">
+                <span className="block text-7xl sm:text-8xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_25px_rgba(255,107,0,0.25)]">
                   {formatBigTargetValue(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0)}
                 </span>
-                <span className="text-zinc-400 font-bold uppercase tracking-widest text-xs sm:text-sm mt-1">Reps Target</span>
+                <span className="text-zinc-400 font-black uppercase tracking-[0.2em] text-xs sm:text-sm mt-2">RIPETIZIONI TARGET</span>
 
                 {/* Pyramid Steps Timeline */}
-                <div className="mt-3 w-full bg-brand-darkGrey/40 border border-white/5 rounded-2xl p-2.5">
-                  <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase tracking-wider font-bold mb-1.5 px-1">
+                <div className="mt-4 w-full bg-black/30 border border-white/5 rounded-2xl p-3">
+                  <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase tracking-wider font-bold mb-2 px-1">
                     <span>Step {currentPyramidStepIdx + 1} di {currentExercise.pyramid_steps?.length || 1}</span>
-                    <span className="text-brand-orange">{currentExecutionWeightLabel}</span>
+                    <span className="text-brand-orange font-mono">{currentExecutionWeightLabel}</span>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-2">
                     {currentExercise.pyramid_steps?.map((step, sIdx) => {
                       const isCurrent = sIdx === currentPyramidStepIdx;
                       const isDone = sIdx < currentPyramidStepIdx;
                       return (
                         <div
                           key={sIdx}
-                          className={`flex-1 py-1.5 px-1 rounded-xl text-center border transition-all ${
+                          className={`flex-1 py-2 px-1 rounded-xl text-center border transition-all ${
                             isCurrent
-                              ? 'bg-brand-orange/20 border-brand-orange text-white shadow-sm'
+                              ? 'bg-brand-orange/20 border-brand-orange text-white shadow-sm ring-1 ring-brand-orange/40'
                               : isDone
                                 ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
                                 : 'bg-white/5 border-white/5 text-zinc-500'
                           }`}
                         >
                           <span className="text-[9px] uppercase font-bold block opacity-70">S{sIdx + 1}</span>
-                          <span className="text-xs font-black font-mono">{step.reps}r</span>
+                          <span className="text-xs sm:text-sm font-black font-mono mt-0.5">{step.reps}r</span>
                         </div>
                       );
                     })}
@@ -4738,23 +4729,23 @@ const ActiveWorkoutPage: React.FC = () => {
                 </div>
               </div>
             ) : isCircuit ? (
-              <div className="text-center w-full max-w-md flex flex-col items-center justify-between h-full">
+              <div className="text-center w-full flex flex-col items-center justify-between h-full">
                 {/* Interactive Circuit Stopwatch */}
                 <div
-                  className={`w-full max-w-sm p-3 rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-300 shadow-md cursor-pointer select-none group shrink-0 ${
+                  className={`w-full p-3 sm:p-3.5 rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-300 shadow-md cursor-pointer select-none group shrink-0 ${
                     isCircuitStopwatchRunning
-                      ? 'border-brand-orange bg-brand-orange/10 shadow-[0_0_25px_rgba(179,72,0,0.25)]'
+                      ? 'border-brand-orange bg-brand-orange/15 shadow-[0_0_25px_rgba(179,72,0,0.25)]'
                       : circuitStopwatchElapsed > 0
-                        ? 'border-brand-orange/70 bg-brand-darkGrey/50'
-                        : 'border-white/10 bg-brand-darkGrey/30 hover:border-brand-orange/40'
+                        ? 'border-brand-orange/70 bg-black/40'
+                        : 'border-white/10 bg-black/30 hover:border-brand-orange/40'
                   }`}
                   onPointerDown={(event) => handleTimerPointerDown(event, resetCircuitStopwatch)}
                   onPointerUp={(event) => handleTimerPointerUp(event, toggleCircuitStopwatch)}
                   onPointerCancel={handleTimerPointerAbort}
                   onPointerLeave={handleTimerPointerAbort}
                 >
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
                       isCircuitStopwatchRunning
                         ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/40 animate-pulse'
                         : circuitStopwatchElapsed > 0
@@ -4766,7 +4757,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="text-4xl sm:text-5xl font-black font-mono tracking-tight text-white leading-none my-0.5 drop-shadow-sm">
+                  <div className="text-5xl font-black font-mono tracking-tight text-white leading-none my-1 drop-shadow-sm">
                     {formatTime(circuitStopwatchElapsed)}
                   </div>
 
@@ -4776,23 +4767,23 @@ const ActiveWorkoutPage: React.FC = () => {
                 </div>
 
                 {/* Stations list */}
-                <div className="w-full max-w-sm flex-1 min-h-0 max-h-[14vh] sm:max-h-[18vh] overflow-y-auto space-y-1 px-1 my-1">
+                <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-1.5 px-0.5 my-2">
                   {(currentExercise.subExercises || []).map((sub, idx) => (
                     <div
                       key={`${currentExercise.id}:circuit-station:${idx}`}
-                      className="p-2 px-2.5 rounded-xl border border-white/10 bg-brand-darkGrey/40 flex justify-between items-center text-xs"
+                      className="p-2.5 px-3 rounded-xl border border-white/10 bg-black/30 flex justify-between items-center text-xs"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="w-4 h-4 rounded-full bg-brand-orange/20 text-brand-orange flex items-center justify-center font-bold text-[9px] shrink-0">
+                        <span className="w-5 h-5 rounded-full bg-brand-orange/20 text-brand-orange flex items-center justify-center font-bold text-[10px] shrink-0">
                           {idx + 1}
                         </span>
-                        <span className="truncate font-bold text-white/90">{sub.name}</span>
+                        <span className="truncate font-bold text-white/90 text-sm">{sub.name}</span>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-2">
                         {sub.weight_kg != null && sub.weight_kg > 0 && (
-                          <span className="text-[10px] text-zinc-400 font-semibold">{formatWeightLabel(sub.weight_kg)}</span>
+                          <span className="text-[11px] text-zinc-400 font-semibold">{formatWeightLabel(sub.weight_kg)}</span>
                         )}
-                        <span className="font-mono text-xs text-brand-orange font-black">
+                        <span className="font-mono text-xs sm:text-sm text-brand-orange font-black">
                           {sub.type === 'reps' ? `${sub.reps}r` : `${sub.duration_seconds}s`}
                         </span>
                       </div>
@@ -4801,9 +4792,9 @@ const ActiveWorkoutPage: React.FC = () => {
                 </div>
               </div>
             ) : isSuperset ? (
-              <div className="text-center w-full max-w-md flex flex-col items-center justify-between h-full">
-                {/* Superset Sub-Exercises List (Zero-scroll compact list with full timer support) */}
-                <div className="w-full max-w-sm flex-1 min-h-0 max-h-[22vh] sm:max-h-[26vh] overflow-y-auto space-y-1.5 px-1 my-auto">
+              <div className="text-center w-full flex flex-col items-center justify-between h-full">
+                {/* Superset Sub-Exercises List (Cleanly Filling The Card) */}
+                <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-2 px-0.5 my-auto">
                   {(currentExercise.subExercises || []).map((sub, idx) => {
                     const isIsoSub = sub.type === 'isometry';
                     const isClickableIsoTimer = isIsoSub && sub.duration_seconds > 0;
@@ -4834,12 +4825,12 @@ const ActiveWorkoutPage: React.FC = () => {
                     return (
                       <div
                         key={`${currentExercise.id}:superset:${idx}`}
-                        className={`relative overflow-hidden p-2.5 px-3 rounded-2xl border flex justify-between items-start gap-3 select-none transition-colors ${
+                        className={`relative overflow-hidden p-3 rounded-2xl border flex justify-between items-start gap-3 select-none transition-colors ${
                           isThisTimerActive
-                            ? 'border-brand-orange/60 bg-brand-darkGrey/30 shadow-[0_0_15px_rgba(255,107,0,0.15)]'
+                            ? 'border-brand-orange/70 bg-brand-orange/15 shadow-[0_0_15px_rgba(255,107,0,0.2)]'
                             : isClickableIsoTimer && supersetIsometrySubIdx === idx && fillPercent > 0
-                              ? 'border-brand-orange/40 bg-brand-darkGrey/30'
-                              : 'border-white/10 bg-brand-darkGrey/40'
+                              ? 'border-brand-orange/40 bg-black/40'
+                              : 'border-white/10 bg-black/30'
                         } ${isClickableIsoTimer ? 'cursor-pointer active:scale-[0.98]' : ''}`}
                         {...(isClickableIsoTimer ? {
                           onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerDown(event, handleSubIsoReset),
@@ -4855,22 +4846,22 @@ const ActiveWorkoutPage: React.FC = () => {
                           />
                         )}
                         <div className="text-left min-w-0 relative z-10 flex flex-col justify-center">
-                          <p className="text-white font-bold text-xs sm:text-sm truncate">{idx + 1}. {sub.name || `Exercise ${idx + 1}`}</p>
-                          <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-0.5">
+                          <p className="text-white font-black text-sm sm:text-base truncate">{idx + 1}. {sub.name || `Exercise ${idx + 1}`}</p>
+                          <p className="text-xs text-brand-orange font-black uppercase tracking-wide mt-1">
                             {isClickableIsoTimer && supersetIsometrySubIdx === idx
                               ? `${currentRemaining}s / ${targetDuration}s`
                               : formatSupersetTaskMetricLabel(sub)
                             }
                           </p>
                           {isClickableIsoTimer && (
-                            <p className="text-[8px] text-zinc-400 font-bold uppercase tracking-wider mt-0.5 opacity-80">
+                            <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider mt-1 opacity-80">
                               Tocca per avviare/pausa • Tieni premuto per azzerare
                             </p>
                           )}
                         </div>
                         <div className="text-right shrink-0 relative z-10">
-                          <span className="text-[9px] uppercase tracking-widest text-zinc-400 block font-semibold">Peso</span>
-                          <span className="text-xs text-brand-lightOrange font-mono font-bold block">{formatWeightLabel(sub.weight_kg)}</span>
+                          <span className="text-[10px] uppercase tracking-widest text-zinc-400 block font-semibold">Peso</span>
+                          <span className="text-xs sm:text-sm text-brand-lightOrange font-mono font-bold block">{formatWeightLabel(sub.weight_kg)}</span>
                         </div>
                       </div>
                     );
@@ -4884,33 +4875,33 @@ const ActiveWorkoutPage: React.FC = () => {
             ) : currentExercise.type === 'isometry' ? (
               <div className="text-center w-full max-w-xs relative group select-none my-auto">
                 <div
-                  className={`relative w-36 h-36 sm:w-44 sm:h-44 mx-auto rounded-full border-[8px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${
-                    isometryStopwatchActive || isometryActive ? 'border-brand-orange shadow-[0_0_35px_rgba(255,107,0,0.3)]' : 'border-brand-darkGrey'
+                  className={`relative w-44 h-44 sm:w-52 sm:h-52 mx-auto rounded-full border-[8px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${
+                    isometryStopwatchActive || isometryActive ? 'border-brand-orange shadow-[0_0_35px_rgba(255,107,0,0.3)]' : 'border-brand-darkGrey bg-black/40'
                   }`}
                   onPointerDown={(event) => handleTimerPointerDown(event, resetIsometryCountdown)}
                   onPointerUp={(event) => handleTimerPointerUp(event, handleIsometryTimerTap)}
                   onPointerCancel={handleTimerPointerAbort}
                   onPointerLeave={handleTimerPointerAbort}
                 >
-                  <span className={`text-5xl sm:text-6xl font-mono tracking-tighter ${
+                  <span className={`text-6xl font-mono tracking-tighter ${
                     isometryStopwatchActive || isometryActive ? 'text-brand-orange animate-pulse' : 'text-white'
                   } transition-colors leading-none`}>
                     {isMaxTarget(currentExercise.duration_seconds)
                       ? (isometryElapsedSeconds > 0 ? isometryElapsedSeconds : (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 'MAX'))
                       : isometryRemaining}
                   </span>
-                  <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] mt-1">
+                  <span className="text-zinc-400 font-bold uppercase tracking-widest text-[10px] mt-1.5">
                     {isMaxTarget(currentExercise.duration_seconds) && isometryElapsedSeconds === 0 && !getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)
                       ? 'A SFINIMENTO'
                       : 'SEC'}
                   </span>
 
                   <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
-                    {isometryStopwatchActive || isometryActive ? <Pause size={36} className="text-white" /> : <Play size={36} className="text-white" />}
+                    {isometryStopwatchActive || isometryActive ? <Pause size={40} className="text-white" /> : <Play size={40} className="text-white" />}
                   </div>
                 </div>
 
-                <p className="text-center text-[10px] text-zinc-400 mt-2 uppercase tracking-wider font-semibold">
+                <p className="text-center text-[10px] text-zinc-400 mt-2.5 uppercase tracking-wider font-semibold">
                   {isMaxTarget(currentExercise.duration_seconds)
                     ? 'Tocca per cronometro • Tieni premuto per azzerare'
                     : `Tocca per ${isometryActive ? 'pausa' : 'avvio'} • Tieni premuto per azzerare`}
@@ -4918,47 +4909,47 @@ const ActiveWorkoutPage: React.FC = () => {
 
                 {/* Steppers & Set pills for MAX Isometry */}
                 {isMaxTarget(currentExercise.duration_seconds) && (
-                  <div className="mt-2">
+                  <div className="mt-3">
                     <div className="flex items-center justify-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => adjustCurrentSetPerformance(-5)}
-                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
                       >
                         -5s
                       </button>
                       <button
                         type="button"
                         onClick={() => adjustCurrentSetPerformance(-1)}
-                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
                       >
                         -1s
                       </button>
                       <button
                         type="button"
                         onClick={() => openEditSpecificSetModal(currentSetIdx)}
-                        className="px-2.5 py-1 rounded-lg bg-brand-orange/15 hover:bg-brand-orange/25 active:scale-95 text-brand-orange font-bold text-xs border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 active:scale-95 text-brand-orange font-bold text-xs border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
                       >
-                        <Pencil size={10} />
+                        <Pencil size={11} />
                         <span>Modifica</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => adjustCurrentSetPerformance(1)}
-                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
                       >
                         +1s
                       </button>
                       <button
                         type="button"
                         onClick={() => adjustCurrentSetPerformance(5)}
-                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 hover:text-white font-bold text-xs border border-white/5 cursor-pointer"
                       >
                         +5s
                       </button>
                     </div>
 
-                    <div className="mt-2 grid grid-cols-4 gap-1">
+                    <div className="mt-2.5 grid grid-cols-4 gap-1.5">
                       {Array.from({ length: currentExercise.sets || 1 }, (_, sIdx) => {
                         const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
                         const isCurrent = sIdx === currentSetIdx;
@@ -4968,7 +4959,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             key={sIdx}
                             type="button"
                             onClick={() => openEditSpecificSetModal(sIdx)}
-                            className={`py-1 px-1 rounded-lg border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                            className={`py-1.5 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
                               isCurrent
                                 ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-sm'
                                 : isDone
@@ -4977,7 +4968,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             }`}
                           >
                             <span className="text-[8px] uppercase font-bold opacity-70">Set {sIdx + 1}</span>
-                            <span className="text-[11px] font-black font-mono">
+                            <span className="text-xs font-black font-mono mt-0.5">
                               {logged != null && logged > 0 ? `${logged}s` : isCurrent ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || '-'}` : '-'}
                             </span>
                           </button>
@@ -4989,20 +4980,20 @@ const ActiveWorkoutPage: React.FC = () => {
               </div>
             ) : (
               /* DEFAULT: STANDARD REPS */
-              <div className="text-center w-full max-w-sm flex flex-col items-center justify-center my-auto">
+              <div className="text-center w-full flex flex-col items-center justify-center my-auto">
                 {isMaxTarget(currentExercise.reps) ? (
                   <div className="flex flex-col items-center w-full">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-xs font-black uppercase tracking-wider mb-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-xs font-black uppercase tracking-wider mb-2.5">
                       <Flame size={13} className="animate-pulse" />
                       <span>A Sfinimento (MAX Reps)</span>
                     </div>
 
                     {/* Stepper + Value */}
-                    <div className="flex items-center justify-center gap-2 w-full max-w-xs mb-2">
+                    <div className="flex items-center justify-center gap-2.5 w-full max-w-xs mb-3">
                       <button
                         type="button"
                         onClick={() => adjustCurrentSetPerformance(-5)}
-                        className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                        className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 hover:text-white font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
                         title="-5 reps"
                       >
                         -5
@@ -5010,7 +5001,7 @@ const ActiveWorkoutPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => adjustCurrentSetPerformance(-1)}
-                        className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-lg flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                        className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-xl flex items-center justify-center transition-all border border-white/5 cursor-pointer"
                         title="-1 rep"
                       >
                         -
@@ -5018,16 +5009,16 @@ const ActiveWorkoutPage: React.FC = () => {
 
                       <div
                         onClick={() => openEditSpecificSetModal(currentSetIdx)}
-                        className="flex-1 bg-black/40 border-2 border-brand-orange/50 hover:border-brand-orange rounded-2xl py-2 px-3 flex flex-col items-center justify-center cursor-pointer shadow-[0_0_20px_rgba(255,107,0,0.15)] transition-all group select-none"
+                        className="flex-1 bg-black/50 border-2 border-brand-orange/60 hover:border-brand-orange rounded-3xl py-2 px-3 flex flex-col items-center justify-center cursor-pointer shadow-[0_0_20px_rgba(255,107,0,0.2)] transition-all group select-none"
                         title="Tocca per inserire le reps fatte"
                       >
-                        <span className="text-4xl sm:text-5xl font-mono font-black text-brand-orange leading-tight group-hover:scale-105 transition-transform">
+                        <span className="text-5xl font-mono font-black text-brand-orange leading-tight group-hover:scale-105 transition-transform">
                           {(getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
                             ? getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)
                             : 'MAX'}
                         </span>
-                        <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-0.5">
-                          <Pencil size={9} className="text-brand-orange" />
+                        <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-0.5">
+                          <Pencil size={10} className="text-brand-orange" />
                           Reps Eseguite
                         </span>
                       </div>
@@ -5035,7 +5026,7 @@ const ActiveWorkoutPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => adjustCurrentSetPerformance(1)}
-                        className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-lg flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                        className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-xl flex items-center justify-center transition-all border border-white/5 cursor-pointer"
                         title="+1 rep"
                       >
                         +
@@ -5043,7 +5034,7 @@ const ActiveWorkoutPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => adjustCurrentSetPerformance(5)}
-                        className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-400 hover:text-white font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                        className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 hover:text-white font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
                         title="+5 reps"
                       >
                         +5
@@ -5051,7 +5042,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     </div>
 
                     {/* Summary Set Pills for MAX Reps */}
-                    <div className="w-full max-w-xs grid grid-cols-4 gap-1">
+                    <div className="w-full max-w-xs grid grid-cols-4 gap-1.5">
                       {Array.from({ length: currentExercise.sets || 1 }, (_, sIdx) => {
                         const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
                         const isCurrent = sIdx === currentSetIdx;
@@ -5061,7 +5052,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             key={sIdx}
                             type="button"
                             onClick={() => openEditSpecificSetModal(sIdx)}
-                            className={`py-1 px-1 rounded-lg border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                            className={`py-1.5 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
                               isCurrent
                                 ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-sm'
                                 : isDone
@@ -5070,7 +5061,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             }`}
                           >
                             <span className="text-[8px] uppercase font-bold opacity-70">Set {sIdx + 1}</span>
-                            <span className="text-[11px] font-black font-mono">
+                            <span className="text-xs font-black font-mono mt-0.5">
                               {logged != null && logged > 0 ? `${logged}` : isCurrent ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || '-'}` : '-'}
                             </span>
                           </button>
@@ -5079,11 +5070,13 @@ const ActiveWorkoutPage: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center">
-                    <span className="block text-7xl sm:text-8xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_24px_rgba(255,107,0,0.25)]">
+                  <div className="flex flex-col items-center justify-center py-2">
+                    <span className="block text-8xl sm:text-9xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_35px_rgba(255,107,0,0.35)] tracking-tighter">
                       {formatBigTargetValue(currentExercise.reps)}
                     </span>
-                    <span className="text-zinc-400 font-bold uppercase tracking-widest text-xs sm:text-sm mt-1">Reps Target</span>
+                    <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs sm:text-sm mt-3">
+                      RIPETIZIONI TARGET
+                    </span>
                   </div>
                 )}
               </div>
