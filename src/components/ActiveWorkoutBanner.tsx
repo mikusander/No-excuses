@@ -1,7 +1,7 @@
 /**
  * ActiveWorkoutBanner.tsx — Notifica / Banner fluttuante in-app per workout attivo in background.
  *
- * Mostrato in cima allo schermo su tutte le pagine dell'app (Home, Schede, Storico, Settings, ecc.)
+ * Mostrato in cima allo schermo esclusivamente nella Home Page
  * quando c'è un workout avviato ma lasciato provvisoriamente in background.
  *
  * Funzionalità:
@@ -49,10 +49,8 @@ export const ActiveWorkoutBanner: React.FC = () => {
     return unsubscribe;
   }, [user?.id]);
 
-  // Se l'utente si trova già nella pagina del workout attivo o su /auth, il banner non va mostrato
-  const isInActiveWorkout = location.pathname.startsWith('/active-workout');
-  const isExcludedRoute = isInActiveWorkout || location.pathname === '/auth';
-  if (!checkpoint || isExcludedRoute) {
+  // Mostra il banner ESCLUSIVAMENTE nella Home Page ('/')
+  if (!checkpoint || location.pathname !== '/') {
     return null;
   }
 
