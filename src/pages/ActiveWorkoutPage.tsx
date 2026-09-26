@@ -3886,31 +3886,8 @@ const ActiveWorkoutPage: React.FC = () => {
     freezeForegroundWorkoutTime();
     stopRestMediaSession();
     void releaseScreenWakeLock();
-
-    // Se l'utente esce quasi subito (< 30s), chiedi se vuole abbandonare o mettere in pausa
-    const elapsedSecs = Math.max(0, getCurrentWorkoutElapsedSeconds());
-    if (elapsedSecs < 30) {
-      const wantToKeep = window.confirm(
-        "Vuoi mettere in pausa l'allenamento per riprenderlo dopo?\n\nPremi OK per metterlo in pausa, oppure Annulla per cancellarlo definitivamente."
-      );
-      if (!wantToKeep) {
-        suppressProgressPersistenceRef.current = true;
-        clearPersistedWorkoutProgress();
-        if (window.history.length > 1) {
-          navigate(-1);
-        } else {
-          navigate('/');
-        }
-        return;
-      }
-    }
-
     persistWorkoutProgress(true);
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate('/');
-    }
+    navigate('/');
   };
 
   const markWorkoutComplete = async () => {
