@@ -944,6 +944,8 @@ const NewTrainPage: React.FC = () => {
     setNumberDrafts(prev => {
       const next = { ...prev };
       delete next[`${exId}:${field}`];
+      delete next[`${exId}:duration:min`];
+      delete next[`${exId}:duration:sec`];
       delete next[`${exId}:rest:min`];
       delete next[`${exId}:rest:sec`];
       return next;
@@ -1497,6 +1499,65 @@ const NewTrainPage: React.FC = () => {
 
     const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
     updateExercise(id, 'rest_seconds', next);
+    clearDraftValue(key);
+  };
+
+  const commitDurationPart = (
+    id: string,
+    part: 'min' | 'sec',
+    key: string,
+    currentDurationSeconds: number
+  ) => {
+    if (!hasDraftValue(key)) return;
+
+    const raw = (numberDrafts[key] ?? '').trim();
+    const safeCurrent = Number.isFinite(currentDurationSeconds) ? currentDurationSeconds : 0;
+    const minutes = Math.floor(safeCurrent / 60);
+    const seconds = safeCurrent % 60;
+    const currentPartValue = part === 'min' ? minutes : seconds;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentPartValue;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
+    const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
+    updateExercise(id, 'duration_seconds', next);
+    clearDraftValue(key);
+  };
+
+  const commitSubDurationPart = (
+    exerciseId: string,
+    subIndex: number,
+    part: 'min' | 'sec',
+    key: string,
+    currentDurationSeconds: number
+  ) => {
+    if (!hasDraftValue(key)) return;
+
+    const raw = (numberDrafts[key] ?? '').trim();
+    const safeCurrent = Number.isFinite(currentDurationSeconds) ? currentDurationSeconds : 0;
+    const minutes = Math.floor(safeCurrent / 60);
+    const seconds = safeCurrent % 60;
+    const currentPartValue = part === 'min' ? minutes : seconds;
+
+    if (raw === '') {
+      clearDraftValue(key);
+      return;
+    }
+
+    let parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) parsed = currentPartValue;
+    if (parsed < 0) parsed = 0;
+    if (part === 'sec' && parsed > 59) parsed = 59;
+
+    const next = part === 'min' ? (parsed * 60) + seconds : (minutes * 60) + parsed;
+    updateSubExercise(exerciseId, subIndex, 'duration_seconds', next);
     clearDraftValue(key);
   };
 
@@ -2484,7 +2545,6 @@ const NewTrainPage: React.FC = () => {
                       <div className="space-y-2.5">
                         {ex.subExercises?.map((sub, sIdx) => {
                           const isIso = sub.type === 'isometry';
-                          const subType = isIso ? 'isometry' : 'reps';
 
                           return (
                             <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2.5 relative">
@@ -2549,19 +2609,60 @@ const NewTrainPage: React.FC = () => {
 
                               <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
                                 <div>
-                                  <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
-                                    {!isIso ? 'Reps Target' : 'Durata (secondi)'}
+                                  <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                                    {!isIso ? (
+                                      'Reps Target'
+                                    ) : (
+                                      <>
+                                        <Clock size={10} /> Durata
+                                      </>
+                                    )}
                                   </label>
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${subType}`, !isIso ? sub.reps : sub.duration_seconds, true)}
-                                    onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${subType}`, e.target.value)}
-                                    onBlur={() => commitSubExerciseNumber(ex.id, sIdx, !isIso ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${subType}`, 0, 0)}
-                                    onFocus={onNumberFocus}
-                                    className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-brand-orange outline-none"
-                                    placeholder={!isIso ? 'MAX REPS' : 'MAX TIME'}
-                                  />
+                                  {!isIso ? (
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={getDraftOrValue(`${ex.id}:sub:${sIdx}:reps`, sub.reps, true)}
+                                      onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:reps`, e.target.value)}
+                                      onBlur={() => commitSubExerciseNumber(ex.id, sIdx, 'reps', `${ex.id}:sub:${sIdx}:reps`, 0, 0)}
+                                      onFocus={onNumberFocus}
+                                      className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-brand-orange outline-none"
+                                      placeholder="MAX REPS"
+                                    />
+                                  ) : (
+                                    <div className="flex items-center h-[34px] gap-1">
+                                      <div className="relative flex-1 h-full bg-black/30 border border-white/10 rounded-lg flex items-center">
+                                        <input
+                                          type="number"
+                                          inputMode="numeric"
+                                          min="0"
+                                          value={getDraftOrValue(`${ex.id}:sub:${sIdx}:duration:min`, Math.floor((sub.duration_seconds || 0) / 60))}
+                                          onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:duration:min`, e.target.value)}
+                                          onBlur={() => commitSubDurationPart(ex.id, sIdx, 'min', `${ex.id}:sub:${sIdx}:duration:min`, sub.duration_seconds || 0)}
+                                          onFocus={onNumberFocus}
+                                          placeholder="0"
+                                          className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-sm"
+                                        />
+                                        <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">M</span>
+                                      </div>
+                                      <span className="text-zinc-500 font-bold">:</span>
+                                      <div className="relative flex-1 h-full bg-black/30 border border-white/10 rounded-lg flex items-center">
+                                        <input
+                                          type="number"
+                                          inputMode="numeric"
+                                          min="0"
+                                          max="59"
+                                          value={getDraftOrValue(`${ex.id}:sub:${sIdx}:duration:sec`, (sub.duration_seconds || 0) % 60)}
+                                          onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:duration:sec`, e.target.value)}
+                                          onBlur={() => commitSubDurationPart(ex.id, sIdx, 'sec', `${ex.id}:sub:${sIdx}:duration:sec`, sub.duration_seconds || 0)}
+                                          onFocus={onNumberFocus}
+                                          placeholder="0"
+                                          className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-sm"
+                                        />
+                                        <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">S</span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
 
                                 <div>
@@ -3149,39 +3250,83 @@ const NewTrainPage: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Reps o Secondi */}
+                        {/* Reps o Durata (min:sec) */}
                         <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
-                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
-                            {ex.type === 'reps' ? 'Reps' : 'Secondi'}
-                          </label>
-                          <div className="flex items-center justify-between">
-                            <button
-                              type="button"
-                              onClick={() => adjustExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', ex.type === 'reps' ? -1 : -5)}
-                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
-                              title={ex.type === 'reps' ? '-1 rep' : '-5s'}
-                            >
-                              <Minus size={13} />
-                            </button>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds, true)}
-                              onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
-                              onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, 0, 0)}
-                              onFocus={onNumberFocus}
-                              placeholder={ex.type === 'reps' ? 'MAX' : 'MAX'}
-                              className="w-14 text-center font-bold text-white bg-transparent focus:outline-none text-base placeholder:text-brand-orange/60 placeholder:text-xs"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => adjustExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', ex.type === 'reps' ? 1 : 5)}
-                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
-                              title={ex.type === 'reps' ? '+1 rep' : '+5s'}
-                            >
-                              <Plus size={13} />
-                            </button>
-                          </div>
+                          {ex.type === 'reps' ? (
+                            <>
+                              <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
+                                Reps
+                              </label>
+                              <div className="flex items-center justify-between">
+                                <button
+                                  type="button"
+                                  onClick={() => adjustExerciseNumber(ex.id, 'reps', -1)}
+                                  className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                                  title="-1 rep"
+                                >
+                                  <Minus size={13} />
+                                </button>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={getDraftOrValue(`${ex.id}:reps`, ex.reps, true)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:reps`, e.target.value)}
+                                  onBlur={() => commitExerciseNumber(ex.id, 'reps', `${ex.id}:reps`, 0, 0)}
+                                  onFocus={onNumberFocus}
+                                  placeholder="MAX"
+                                  className="w-14 text-center font-bold text-white bg-transparent focus:outline-none text-base placeholder:text-brand-orange/60 placeholder:text-xs"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => adjustExerciseNumber(ex.id, 'reps', 1)}
+                                  className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                                  title="+1 rep"
+                                >
+                                  <Plus size={13} />
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                  <Clock size={10} /> Durata
+                                </label>
+                              </div>
+                              <div className="flex items-center h-7 gap-1">
+                                <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="0"
+                                    value={getDraftOrValue(`${ex.id}:duration:min`, Math.floor((ex.duration_seconds || 0) / 60))}
+                                    onChange={(e) => setDraftValue(`${ex.id}:duration:min`, e.target.value)}
+                                    onBlur={() => commitDurationPart(ex.id, 'min', `${ex.id}:duration:min`, ex.duration_seconds || 0)}
+                                    onFocus={onNumberFocus}
+                                    placeholder="0"
+                                    className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-sm"
+                                  />
+                                  <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">M</span>
+                                </div>
+                                <span className="text-zinc-500 font-bold">:</span>
+                                <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="0"
+                                    max="59"
+                                    value={getDraftOrValue(`${ex.id}:duration:sec`, (ex.duration_seconds || 0) % 60)}
+                                    onChange={(e) => setDraftValue(`${ex.id}:duration:sec`, e.target.value)}
+                                    onBlur={() => commitDurationPart(ex.id, 'sec', `${ex.id}:duration:sec`, ex.duration_seconds || 0)}
+                                    onFocus={onNumberFocus}
+                                    placeholder="0"
+                                    className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-sm"
+                                  />
+                                  <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">S</span>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
 
                         {/* Peso kg */}
