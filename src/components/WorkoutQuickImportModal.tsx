@@ -21,6 +21,7 @@ import { useWorkoutDictation } from '../hooks/useWorkoutDictation';
 import { parseOcrWorkoutLines, parseSpokenWorkout } from '../utils/workoutTextTokenizer';
 import type { ParsedWorkoutItem } from '../utils/parseExerciseInput';
 import { recordCorrection } from '../utils/userCorrectionsManager';
+import { generateUUID } from '../utils/uuid';
 
 interface WorkoutQuickImportModalProps {
   isOpen: boolean;
@@ -204,7 +205,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
     });
 
     const drafts: ExerciseDraft[] = parsedItems.map(item => {
-      const id = crypto.randomUUID();
+      const id = generateUUID();
 
       if (item.type === 'emom') {
         return {

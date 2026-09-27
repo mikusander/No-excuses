@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { ParsedWorkoutItem } from '../utils/parseExerciseInput';
 import type { UserExerciseHistoryItem } from './useUserExerciseHistory';
+import { generateUUID } from '../utils/uuid';
 
 export type ExerciseType = 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
@@ -67,7 +68,7 @@ export function useWorkoutBuilder(initialExercises: ExerciseDraft[] = []) {
         : DEFAULT_EXERCISE_DURATION;
 
       const newRow: ExerciseDraft = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         type: customType,
         name: '',
         instruction_note: '',
@@ -269,7 +270,7 @@ export function useWorkoutBuilder(initialExercises: ExerciseDraft[] = []) {
       const target = prev[index];
       if (!target) return prev;
       const clone: ExerciseDraft = JSON.parse(JSON.stringify(target));
-      clone.id = crypto.randomUUID();
+      clone.id = generateUUID();
       const next = [...prev];
       next.splice(index + 1, 0, clone);
       return next;

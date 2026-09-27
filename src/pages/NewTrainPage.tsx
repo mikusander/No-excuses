@@ -83,6 +83,8 @@ import {
   getFolderForScheda,
   type WorkoutFolder,
 } from '../utils/folderManager';
+import { generateUUID } from '../utils/uuid';
+import { hapticLight } from '../utils/haptics';
 
 interface ExerciseDraft {
   id: string;
@@ -180,7 +182,7 @@ const normalizeExerciseDraft = (raw: unknown): ExerciseDraft => {
       : 'reps';
 
   const normalized: ExerciseDraft = {
-    id: String(ex.id || crypto.randomUUID()),
+    id: String(ex.id || generateUUID()),
     type,
     name: String(ex.name || ''),
     instruction_note: String(ex.instruction_note || ''),
@@ -575,7 +577,7 @@ const NewTrainPage: React.FC = () => {
         setSelectedFolderId(currentFolder);
         const parsed = parseDbExerciseRows(data.esecuzioni || []).map((ex: any) => ({
           ...ex,
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
           transition_rest_seconds: Number.isFinite(Number(ex.transition_rest_seconds))
             ? Math.max(0, Math.trunc(Number(ex.transition_rest_seconds)))
@@ -602,17 +604,18 @@ const NewTrainPage: React.FC = () => {
    * Aggiunge un nuovo esercizio ereditando sets, reps, rest e duration dall'ultimo esercizio presente.
    */
   const addExercise = () => {
-    const lastEx = exercises[exercises.length - 1];
-    const isLastSpecial = lastEx && (lastEx.type === 'pyramid' || lastEx.type === 'circuit' || lastEx.type === 'emom' || lastEx.type === 'superset');
-    const inheritedSets = !isLastSpecial && lastEx && Number.isFinite(lastEx.sets) && lastEx.sets > 0 ? lastEx.sets : 3;
-    const inheritedReps = !isLastSpecial && lastEx && Number.isFinite(lastEx.reps) && lastEx.reps > 0 ? lastEx.reps : 10;
-    const inheritedRest = !isLastSpecial && lastEx && Number.isFinite(lastEx.rest_seconds) && lastEx.rest_seconds > 0 ? lastEx.rest_seconds : 60;
-    const inheritedDuration = !isLastSpecial && lastEx && Number.isFinite(lastEx.duration_seconds) && lastEx.duration_seconds > 0 ? lastEx.duration_seconds : 30;
+    try {
+      void hapticLight();
+      const lastEx = exercises[exercises.length - 1];
+      const isLastSpecial = lastEx && (lastEx.type === 'pyramid' || lastEx.type === 'circuit' || lastEx.type === 'emom' || lastEx.type === 'superset');
+      const inheritedSets = !isLastSpecial && lastEx && Number.isFinite(lastEx.sets) && lastEx.sets > 0 ? lastEx.sets : 3;
+      const inheritedReps = !isLastSpecial && lastEx && Number.isFinite(lastEx.reps) && lastEx.reps > 0 ? lastEx.reps : 10;
+      const inheritedRest = !isLastSpecial && lastEx && Number.isFinite(lastEx.rest_seconds) && lastEx.rest_seconds > 0 ? lastEx.rest_seconds : 60;
+      const inheritedDuration = !isLastSpecial && lastEx && Number.isFinite(lastEx.duration_seconds) && lastEx.duration_seconds > 0 ? lastEx.duration_seconds : 30;
 
-    setExercises([
-      ...exercises,
-      {
-        id: crypto.randomUUID(),
+      const newId = generateUUID();
+      const newEx: ExerciseDraft = {
+        id: newId,
         type: 'reps',
         name: '',
         instruction_note: '',
@@ -622,8 +625,20 @@ const NewTrainPage: React.FC = () => {
         rest_seconds: inheritedRest,
         transition_rest_seconds: 0,
         weight_kg: null,
-      }
-    ]);
+      };
+
+      setExercises(prev => [...prev, newEx]);
+
+      // Scroll morbido verso il nuovo esercizio appena aggiunto
+      setTimeout(() => {
+        const el = exerciseRefs.current[newId];
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    } catch (err) {
+      console.error('Error adding exercise:', err);
+    }
   };
 
   /**
@@ -962,7 +977,7 @@ const NewTrainPage: React.FC = () => {
 
     const cloned: ExerciseDraft = {
       ...source,
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       subExercises: source.subExercises
         ? source.subExercises.map((sub) => ({ ...sub }))
         : undefined,
@@ -1909,8 +1924,15 @@ const NewTrainPage: React.FC = () => {
           />
 
           {exercises.length === 0 ? (
-            <div className="text-center p-8 bg-brand-darkGrey/20 rounded-3xl border border-dashed border-brand-grey/30">
-              <p className="text-brand-grey/60">No exercises added.</p>
+            <div
+              onClick={addExercise}
+              className="text-center p-8 bg-brand-darkGrey/20 hover:bg-brand-darkGrey/30 active:bg-brand-darkGrey/40 rounded-3xl border border-dashed border-brand-orange/30 cursor-pointer active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2 group select-none touch-manipulation"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-brand-orange/15 border border-brand-orange/30 flex items-center justify-center text-brand-orange group-hover:scale-110 transition-transform">
+                <Plus size={24} />
+              </div>
+              <p className="text-zinc-200 font-bold text-sm">Nessun esercizio presente</p>
+              <p className="text-xs text-brand-grey">Tocca qui o premi il pulsante sotto per inserire un esercizio</p>
             </div>
           ) : (
             exercises.map((ex, index) => (
@@ -2917,11 +2939,12 @@ const NewTrainPage: React.FC = () => {
           )}
 
           <button
+            type="button"
             onClick={addExercise}
-            className="w-full text-brand-orange hover:text-brand-lightOrange flex items-center justify-center text-sm font-bold bg-brand-orange/10 hover:bg-brand-orange/20 px-4 py-3.5 rounded-xl transition-colors border border-brand-orange/20 border-dashed"
+            className="w-full text-brand-orange hover:text-brand-lightOrange active:text-white flex items-center justify-center text-sm font-black bg-brand-orange/10 hover:bg-brand-orange/20 active:bg-brand-orange/30 px-4 py-4 rounded-2xl transition-all border border-brand-orange/30 border-dashed cursor-pointer touch-manipulation select-none active:scale-[0.98] shadow-sm"
           >
-            <Plus size={18} className="mr-1.5" />
-            EXERCISE
+            <Plus size={20} className="mr-2 shrink-0" />
+            <span>AGGIUNGI ESERCIZIO</span>
           </button>
         </div>
 

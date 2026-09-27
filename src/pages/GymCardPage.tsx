@@ -72,6 +72,7 @@ import {
 } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { hapticSelection, hapticMedium, hapticSuccess } from '../utils/haptics';
+import { generateUUID } from '../utils/uuid';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
@@ -474,7 +475,7 @@ const GymCardPage: React.FC = () => {
 
       if (workout.exercises && workout.exercises.length > 0) {
         const exercisesToSave: SaveExercise[] = workout.exercises.map((ex) => ({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           type: ex.type,
           name: ex.name,
           instruction_note: ex.instruction_note,
