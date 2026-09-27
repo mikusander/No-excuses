@@ -269,7 +269,6 @@ const NewTrainPage: React.FC = () => {
   const [numberDrafts, setNumberDrafts] = useState<Record<string, string>>({});
   const [editingTransitionForExerciseId, setEditingTransitionForExerciseId] = useState<string | null>(null);
   const [openTypeMenuExerciseId, setOpenTypeMenuExerciseId] = useState<string | null>(null);
-  const [expandedNotesExerciseIds, setExpandedNotesExerciseIds] = useState<Record<string, boolean>>({});
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [didAutoFocusExercise, setDidAutoFocusExercise] = useState(false);
   const exerciseRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
@@ -901,10 +900,6 @@ const NewTrainPage: React.FC = () => {
       delete next[`${exId}:rest:sec`];
       return next;
     });
-  };
-
-  const toggleExerciseNote = (exId: string) => {
-    setExpandedNotesExerciseIds(prev => ({ ...prev, [exId]: !prev[exId] }));
   };
 
   const applyTransitionPreset = (exId: string, seconds: number) => {
@@ -2676,29 +2671,19 @@ const NewTrainPage: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Note dell'esercizio (collapsible/compatte) */}
-                      <div className="flex items-center justify-between">
-                        <button
-                          type="button"
-                          onClick={() => toggleExerciseNote(ex.id)}
-                          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${ex.instruction_note
-                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                            : 'text-zinc-400 hover:text-white bg-white/5'
-                            }`}
-                        >
-                          <FileText size={12} />
-                          <span>{ex.instruction_note ? 'Modifica Nota' : '+ Aggiungi Nota'}</span>
-                        </button>
-                      </div>
-                      {(expandedNotesExerciseIds[ex.id] || Boolean(ex.instruction_note)) && (
+                      {/* Note dell'intero esercizio (direttamente visibile) */}
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
+                          <FileText size={13} />
+                        </div>
                         <input
                           type="text"
                           value={ex.instruction_note || ''}
                           onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
-                          placeholder="Note esecuzione (es. presa prona, fermo 1 secondo al petto)..."
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:border-purple-400 focus:outline-none transition-colors"
+                          placeholder="Note tecniche o istruzioni per questa piramide (opzionale)..."
+                          className="w-full bg-black/40 border border-white/10 rounded-xl pl-8 pr-3 py-2 text-white text-xs placeholder:text-zinc-500 focus:border-purple-400 focus:outline-none transition-colors"
                         />
-                      )}
+                      </div>
 
                       {/* Step della sequenza piramidale */}
                       <div className="space-y-2 pt-1">
