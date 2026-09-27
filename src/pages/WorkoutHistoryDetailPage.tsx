@@ -420,9 +420,13 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         notesMap.set(key, current);
       } else {
         const key = normalizeNoteKey(parsed.exerciseName);
-        const current = legacyMap.get(key) || [];
-        current.push(parsed.text);
-        legacyMap.set(key, current);
+        if (!key || key === 'scheda' || key === 'generale' || key === 'general' || key === 'workout') {
+          genericNotes.push(parsed.text);
+        } else {
+          const current = legacyMap.get(key) || [];
+          current.push(parsed.text);
+          legacyMap.set(key, current);
+        }
       }
     });
 
