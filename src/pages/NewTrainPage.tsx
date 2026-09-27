@@ -2951,99 +2951,100 @@ const NewTrainPage: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Sub-bar: Type pill (Reps vs Iso), Note toggle, and Auto Count */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                        <div className="flex items-center gap-1.5">
-                          {/* Reps vs Isometria Pill */}
-                          <div className="flex bg-black/60 rounded-lg p-0.5 border border-white/10">
-                            <button
-                              type="button"
-                              onClick={() => updateExercise(ex.id, 'type', 'reps')}
-                              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${
-                                ex.type === 'reps'
-                                  ? 'bg-brand-orange text-black'
-                                  : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              REPS
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateExercise(ex.id, 'type', 'isometry')}
-                              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${
-                                ex.type === 'isometry'
-                                  ? 'bg-brand-orange text-black'
-                                  : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              ISOMETRIA
-                            </button>
-                          </div>
-
-                          {/* Toggle Note Button */}
+                      {/* Sub-bar: Type pill (Reps vs Iso) */}
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
+                        <div className="flex bg-black/60 rounded-xl p-0.5 border border-white/10">
                           <button
                             type="button"
-                            onClick={() => toggleExerciseNote(ex.id)}
-                            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
-                              ex.instruction_note
-                                ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/30'
-                                : 'text-zinc-400 hover:text-white bg-white/5'
+                            onClick={() => updateExercise(ex.id, 'type', 'reps')}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-colors ${
+                              ex.type === 'reps'
+                                ? 'bg-brand-orange text-black font-black'
+                                : 'text-zinc-400 hover:text-white'
                             }`}
                           >
-                            <FileText size={12} />
-                            <span>{ex.instruction_note ? 'Nota' : '+ Nota'}</span>
+                            REPS
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateExercise(ex.id, 'type', 'isometry')}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-colors ${
+                              ex.type === 'isometry'
+                                ? 'bg-brand-orange text-black font-black'
+                                : 'text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            ISOMETRIA
                           </button>
                         </div>
-
-                        {/* Auto Count Toggle (Solo per Reps) */}
-                        {ex.type === 'reps' && (
-                          <div className="flex items-center bg-black/60 rounded-lg p-0.5 border border-white/10 text-[10px]">
-                            <button
-                              type="button"
-                              onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
-                              className={`px-2 py-0.5 rounded font-bold transition-colors ${
-                                !ex.auto_count_type
-                                  ? 'bg-white/10 text-white'
-                                  : 'text-zinc-500 hover:text-zinc-300'
-                              }`}
-                            >
-                              OFF
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
-                              className={`px-2 py-0.5 rounded font-bold transition-colors ${
-                                ex.auto_count_type === 'pushups'
-                                  ? 'bg-brand-orange text-black'
-                                  : 'text-zinc-500 hover:text-zinc-300'
-                              }`}
-                            >
-                              PUSH-UP
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
-                              className={`px-2 py-0.5 rounded font-bold transition-colors ${
-                                ex.auto_count_type === 'pullups'
-                                  ? 'bg-brand-orange text-black'
-                                  : 'text-zinc-500 hover:text-zinc-300'
-                              }`}
-                            >
-                              PULL-UP
-                            </button>
-                          </div>
-                        )}
                       </div>
 
-                      {/* Note dell'esercizio (espansa se presente o cliccata) */}
-                      {(expandedNotesExerciseIds[ex.id] || Boolean(ex.instruction_note)) && (
+                      {/* Note dell'esercizio (direttamente visibile) */}
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
+                          <FileText size={13} />
+                        </div>
                         <input
                           type="text"
                           value={ex.instruction_note || ''}
                           onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
-                          placeholder="Note tecniche (es. presa prona, fermo 1 secondo al petto)..."
-                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white text-xs placeholder:text-zinc-500 focus:border-brand-orange focus:outline-none transition-colors"
+                          placeholder="Note tecniche o istruzioni per questo esercizio (opzionale)..."
+                          className="w-full bg-black/40 border border-white/10 rounded-xl pl-8 pr-3 py-2 text-white text-xs placeholder:text-zinc-500 focus:border-brand-orange focus:outline-none transition-colors"
                         />
+                      </div>
+
+                      {/* Sezione Autocount IA/Sensori con spiegazione chiara (Solo per Reps) */}
+                      {ex.type === 'reps' && (
+                        <div className="bg-black/40 border border-white/5 rounded-xl p-2.5 space-y-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <Sparkles size={13} className={ex.auto_count_type ? 'text-brand-orange' : 'text-zinc-500'} />
+                              <span className="text-xs font-bold text-zinc-200">
+                                Conteggio Automatico (Autocount)
+                              </span>
+                            </div>
+
+                            <div className="flex items-center bg-black/60 rounded-lg p-0.5 border border-white/10 text-[10px] self-start sm:self-auto">
+                              <button
+                                type="button"
+                                onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
+                                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
+                                  !ex.auto_count_type
+                                    ? 'bg-white/10 text-white'
+                                    : 'text-zinc-500 hover:text-zinc-300'
+                                }`}
+                              >
+                                OFF
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
+                                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
+                                  ex.auto_count_type === 'pushups'
+                                    ? 'bg-brand-orange text-black font-black shadow-sm'
+                                    : 'text-zinc-400 hover:text-white'
+                                }`}
+                              >
+                                PUSH-UP
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
+                                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
+                                  ex.auto_count_type === 'pullups'
+                                    ? 'bg-brand-orange text-black font-black shadow-sm'
+                                    : 'text-zinc-400 hover:text-white'
+                                }`}
+                              >
+                                PULL-UP
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className="text-[10px] text-zinc-400 leading-relaxed">
+                            Attiva <strong className="text-zinc-300">PUSH-UP</strong> o <strong className="text-zinc-300">PULL-UP</strong> per abilitare l'autocount: durante l'allenamento il dispositivo conterà automaticamente le ripetizioni senza dover toccare lo schermo.
+                          </p>
+                        </div>
                       )}
 
                       {/* Griglia Metriche 4 Colonne per Esercizio Standard */}
