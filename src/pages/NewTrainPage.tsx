@@ -882,8 +882,8 @@ const NewTrainPage: React.FC = () => {
     });
   };
 
-  /** Regolazione incrementale (+/-) per serie, reps, recupero, emom_rounds */
-  const adjustExerciseNumber = (exId: string, field: 'sets' | 'reps' | 'duration_seconds' | 'rest_seconds' | 'emom_rounds', delta: number) => {
+  /** Regolazione incrementale (+/-) per serie, reps, emom_rounds */
+  const adjustExerciseNumber = (exId: string, field: 'sets' | 'reps' | 'duration_seconds' | 'emom_rounds', delta: number) => {
     setExercises(prev =>
       prev.map(ex => {
         if (ex.id !== exId) return ex;
@@ -3143,22 +3143,6 @@ const NewTrainPage: React.FC = () => {
                             <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
                               <Clock size={10} /> Rest
                             </label>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', -15)}
-                                className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-zinc-400 hover:text-brand-orange transition-colors"
-                              >
-                                -15s
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', 15)}
-                                className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-zinc-400 hover:text-brand-orange transition-colors"
-                              >
-                                +15s
-                              </button>
-                            </div>
                           </div>
                           <div className="flex items-center h-7 gap-1">
                             <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
@@ -3237,22 +3221,6 @@ const NewTrainPage: React.FC = () => {
                           <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
                             <Clock size={10} /> {ex.type === 'circuit' ? 'Rest fine giro' : 'Recupero round'}
                           </label>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', -15)}
-                              className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-zinc-400 hover:text-brand-orange transition-colors"
-                            >
-                              -15s
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', 15)}
-                              className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-zinc-400 hover:text-brand-orange transition-colors"
-                            >
-                              +15s
-                            </button>
-                          </div>
                         </div>
                         <div className="flex items-center h-7 gap-1">
                           <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
@@ -3415,37 +3383,14 @@ const NewTrainPage: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Fine Tuning Min / Sec e Steppers */}
+                        {/* Fine Tuning Min / Sec */}
                         <div className="flex items-center gap-2 pt-1">
                           <div className="flex-1 bg-black/60 border border-white/10 rounded-xl p-2 flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const curr = ex.transition_rest_seconds || 0;
-                                  applyTransitionPreset(ex.id, Math.max(0, curr - 15));
-                                }}
-                                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 active:scale-95 transition-colors"
-                                title="-15s"
-                              >
-                                <Minus size={13} />
-                              </button>
-                              <div className="text-center px-1 min-w-[56px]">
-                                <span className="text-sm font-black text-white block font-mono">
-                                  {formatTransitionRest(ex.transition_rest_seconds)}
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const curr = ex.transition_rest_seconds || 0;
-                                  applyTransitionPreset(ex.id, curr + 15);
-                                }}
-                                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 active:scale-95 transition-colors"
-                                title="+15s"
-                              >
-                                <Plus size={13} />
-                              </button>
+                            <div className="text-left px-2">
+                              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Personalizzato</span>
+                              <span className="text-sm font-black text-white font-mono">
+                                {formatTransitionRest(ex.transition_rest_seconds)}
+                              </span>
                             </div>
 
                             <div className="flex items-center gap-1 border-l border-white/10 pl-2">

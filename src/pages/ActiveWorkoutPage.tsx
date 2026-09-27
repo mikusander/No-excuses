@@ -794,29 +794,6 @@ const ActiveWorkoutPage: React.FC = () => {
     resumeRestCountdown();
   };
 
-  const adjustRestTime = (seconds: number) => {
-    if (restEndsAtMs != null) {
-      const remaining = computeRemainingFromEndsAt(restEndsAtMs);
-      const newDuration = Math.max(1, remaining + seconds);
-      const targetTime = Date.now() + (newDuration * 1000);
-      setRestEndsAtMs(targetTime);
-      setRestRemaining(newDuration);
-      const upcoming = getUpcomingRestTargetInfo();
-      scheduleBackgroundRestNotification({
-        endsAtMs: targetTime,
-        nextExerciseName: upcoming.nextExerciseName,
-        nextSetInfo: upcoming.nextSetInfo,
-      });
-      void pipManager.openRestPiP({
-        totalSeconds: Math.max(restInitialDuration, newDuration),
-        remainingSeconds: newDuration,
-        nextExerciseName: upcoming.nextExerciseName,
-      });
-    } else {
-      setRestRemaining((prev) => Math.max(1, prev + seconds));
-    }
-  };
-
   const startEmomCountdown = (durationSeconds: number) => {
     const safe = Math.max(1, normalizeDurationSeconds(durationSeconds));
     lastHandledEmomCompletionEndsAtMsRef.current = null;
@@ -4358,26 +4335,6 @@ const ActiveWorkoutPage: React.FC = () => {
             <p className="text-xs text-zinc-400 font-bold uppercase tracking-wider text-center mt-3">
               Tocca per {restEndsAtMs != null ? 'mettere in pausa' : 'avviare'} • Tieni premuto per azzerare
             </p>
-
-            {/* Stepper buttons */}
-            <div className="flex items-center justify-center gap-3 mt-2.5">
-              <button
-                type="button"
-                onClick={() => adjustRestTime(-15)}
-                className="px-4 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 hover:text-white font-mono font-bold text-xs border border-white/10 transition-all shadow-sm"
-                title="-15 secondi"
-              >
-                -15s
-              </button>
-              <button
-                type="button"
-                onClick={() => adjustRestTime(15)}
-                className="px-4 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 hover:text-white font-mono font-bold text-xs border border-white/10 transition-all shadow-sm"
-                title="+15 secondi"
-              >
-                +15s
-              </button>
-            </div>
 
             {/* PiP Mini-Timer Button */}
             {pipManager.isSupported() && (

@@ -149,11 +149,6 @@ export const WorkoutExerciseRow: React.FC<WorkoutExerciseRowProps> = ({
     onUpdate(exercise.id, 'duration_seconds', next);
   };
 
-  const adjustRest = (delta: number) => {
-    const next = Math.max(0, (exercise.rest_seconds || 60) + delta);
-    onUpdate(exercise.id, 'rest_seconds', next);
-  };
-
   return (
     <div
       ref={containerRef}
@@ -393,34 +388,17 @@ export const WorkoutExerciseRow: React.FC<WorkoutExerciseRowProps> = ({
             <Clock size={11} className="mr-1 text-brand-orange" />
             Recupero (sec)
           </span>
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => adjustRest(-15)}
-              className="w-8 h-8 rounded-lg bg-white/5 hover:bg-brand-orange/20 hover:text-brand-orange flex items-center justify-center text-white transition-colors"
-              title="-15s"
-            >
-              <Minus size={14} />
-            </button>
+          <div className="flex items-center justify-center">
             <input
               type="number"
               min="0"
-              step="15"
               value={exercise.rest_seconds ?? 90}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
                 onUpdate(exercise.id, 'rest_seconds', Number.isNaN(val) ? 0 : Math.max(0, val));
               }}
-              className="w-12 text-center bg-transparent text-brand-orange font-bold text-lg focus:outline-none"
+              className="w-16 text-center bg-transparent text-brand-orange font-bold text-lg focus:outline-none"
             />
-            <button
-              type="button"
-              onClick={() => adjustRest(15)}
-              className="w-8 h-8 rounded-lg bg-white/5 hover:bg-brand-orange/20 hover:text-brand-orange flex items-center justify-center text-white transition-colors"
-              title="+15s"
-            >
-              <Plus size={14} />
-            </button>
           </div>
         </div>
       </div>
