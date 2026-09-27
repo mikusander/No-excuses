@@ -525,6 +525,53 @@ const NewTrainPage: React.FC = () => {
     };
   }, []);
 
+  // Auto-scroll su selezione/focus di qualsiasi campo per mostrare chiaramente il numero/testo in modifica
+  React.useEffect(() => {
+    let timer1: number | undefined;
+    let timer2: number | undefined;
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target || !(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+        return;
+      }
+
+      // Se è un input numerico, seleziona il testo per renderlo leggibile e pronto alla modifica
+      if (
+        target instanceof HTMLInputElement &&
+        (target.type === 'number' || target.inputMode === 'numeric' || target.inputMode === 'decimal')
+      ) {
+        try {
+          target.select();
+        } catch {
+          // ignore
+        }
+      }
+
+      const scrollIntoViewSafely = () => {
+        if (!target.isConnected) return;
+        target.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'nearest',
+        });
+      };
+
+      // 1. Scroll immediato al frame successivo
+      requestAnimationFrame(scrollIntoViewSafely);
+      // 2. Scroll calibrato per l'apertura della tastiera virtuale su mobile (iOS Capacitor / Safari / Android)
+      timer1 = window.setTimeout(scrollIntoViewSafely, 280);
+      timer2 = window.setTimeout(scrollIntoViewSafely, 480);
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+      if (timer1) window.clearTimeout(timer1);
+      if (timer2) window.clearTimeout(timer2);
+    };
+  }, []);
+
   React.useEffect(() => {
     if (id) {
       loadWorkout(id);
@@ -1192,7 +1239,24 @@ const NewTrainPage: React.FC = () => {
   };
 
   const onNumberFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    e.target.select();
+    const target = e.currentTarget;
+    try {
+      target.select();
+    } catch {
+      // ignore
+    }
+
+    const scrollSafely = () => {
+      if (!target.isConnected) return;
+      target.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      });
+    };
+
+    requestAnimationFrame(scrollSafely);
+    window.setTimeout(scrollSafely, 280);
   };
 
   const setDraftValue = (key: string, value: string) => {
