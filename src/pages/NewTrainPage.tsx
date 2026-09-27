@@ -2072,17 +2072,16 @@ const NewTrainPage: React.FC = () => {
                         onClick={() =>
                           setOpenTypeMenuExerciseId((prev) => (prev === ex.id ? null : ex.id))
                         }
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${
-                          ex.type === 'emom'
-                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25'
-                            : ex.type === 'pyramid'
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${ex.type === 'emom'
+                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25'
+                          : ex.type === 'pyramid'
                             ? 'bg-purple-500/15 border-purple-500/40 text-purple-300 hover:bg-purple-500/25'
                             : ex.type === 'circuit'
-                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25'
-                            : ex.type === 'superset'
-                            ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/25'
-                            : 'bg-brand-orange/15 border-brand-orange/40 text-brand-orange hover:bg-brand-orange/25'
-                        }`}
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25'
+                              : ex.type === 'superset'
+                                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/25'
+                                : 'bg-brand-orange/15 border-brand-orange/40 text-brand-orange hover:bg-brand-orange/25'
+                          }`}
                         title="Cambia tipo esercizio"
                       >
                         {ex.type === 'emom' && <Timer size={13} className="shrink-0" />}
@@ -2096,14 +2095,14 @@ const NewTrainPage: React.FC = () => {
                           {ex.type === 'reps'
                             ? 'Normale'
                             : ex.type === 'isometry'
-                            ? 'Isometria'
-                            : ex.type === 'emom'
-                            ? 'EMOM'
-                            : ex.type === 'pyramid'
-                            ? 'Piramide'
-                            : ex.type === 'circuit'
-                            ? 'Circuito'
-                            : 'Superset'}
+                              ? 'Isometria'
+                              : ex.type === 'emom'
+                                ? 'EMOM'
+                                : ex.type === 'pyramid'
+                                  ? 'Piramide'
+                                  : ex.type === 'circuit'
+                                    ? 'Circuito'
+                                    : 'Superset'}
                         </span>
                         <ChevronDown size={12} className={`transition-transform duration-200 ${openTypeMenuExerciseId === ex.id ? 'rotate-180' : ''}`} />
                       </button>
@@ -2173,11 +2172,10 @@ const NewTrainPage: React.FC = () => {
                                         option.id as 'normal' | 'superset' | 'circuit' | 'emom' | 'pyramid'
                                       )
                                     }
-                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left transition-colors ${
-                                      option.isActive
-                                        ? 'bg-white/10 text-white font-bold'
-                                        : 'hover:bg-white/5 text-zinc-300'
-                                    }`}
+                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left transition-colors ${option.isActive
+                                      ? 'bg-white/10 text-white font-bold'
+                                      : 'hover:bg-white/5 text-zinc-300'
+                                      }`}
                                   >
                                     <div className="flex items-center gap-2">
                                       <div
@@ -2394,15 +2392,13 @@ const NewTrainPage: React.FC = () => {
                       </div>
                     </div>
                   ) : (ex.type === 'superset' || ex.type === 'circuit') ? (
-                    <div className={`space-y-3 p-3.5 rounded-2xl border ${
-                      ex.type === 'circuit'
-                        ? 'bg-emerald-950/20 border-emerald-500/25'
-                        : 'bg-cyan-950/20 border-cyan-500/25'
-                    }`}>
+                    <div className={`space-y-3 p-3.5 rounded-2xl border ${ex.type === 'circuit'
+                      ? 'bg-emerald-950/20 border-emerald-500/25'
+                      : 'bg-cyan-950/20 border-cyan-500/25'
+                      }`}>
                       <div className="flex items-center justify-between px-1">
-                        <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                          ex.type === 'circuit' ? 'text-emerald-400' : 'text-cyan-400'
-                        }`}>
+                        <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${ex.type === 'circuit' ? 'text-emerald-400' : 'text-cyan-400'
+                          }`}>
                           {ex.type === 'circuit' ? <RotateCcw size={14} /> : <Layers size={14} />}
                           {ex.type === 'circuit' ? 'Circuito a Stazioni' : 'Superset Sequenziale'}
                         </span>
@@ -2416,11 +2412,10 @@ const NewTrainPage: React.FC = () => {
                           <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2 relative">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 flex-1">
-                                <span className={`w-6 h-6 rounded-md text-[11px] font-black flex items-center justify-center shrink-0 ${
-                                  ex.type === 'circuit'
-                                    ? 'bg-emerald-500/20 text-emerald-400'
-                                    : 'bg-cyan-500/20 text-cyan-400'
-                                }`}>
+                                <span className={`w-6 h-6 rounded-md text-[11px] font-black flex items-center justify-center shrink-0 ${ex.type === 'circuit'
+                                  ? 'bg-emerald-500/20 text-emerald-400'
+                                  : 'bg-cyan-500/20 text-cyan-400'
+                                  }`}>
                                   {ex.type === 'circuit' ? `${sIdx + 1}` : `A${sIdx + 1}`}
                                 </span>
                                 <input
@@ -2437,22 +2432,20 @@ const NewTrainPage: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
-                                  className={`px-2 py-0.5 text-[10px] font-black rounded ${
-                                    sub.type === 'reps'
-                                      ? 'bg-brand-orange text-black'
-                                      : 'text-zinc-400 hover:text-white'
-                                  }`}
+                                  className={`px-2 py-0.5 text-[10px] font-black rounded ${sub.type === 'reps'
+                                    ? 'bg-brand-orange text-black'
+                                    : 'text-zinc-400 hover:text-white'
+                                    }`}
                                 >
                                   REPS
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
-                                  className={`px-2 py-0.5 text-[10px] font-black rounded ${
-                                    sub.type === 'isometry'
-                                      ? 'bg-brand-orange text-black'
-                                      : 'text-zinc-400 hover:text-white'
-                                  }`}
+                                  className={`px-2 py-0.5 text-[10px] font-black rounded ${sub.type === 'isometry'
+                                    ? 'bg-brand-orange text-black'
+                                    : 'text-zinc-400 hover:text-white'
+                                    }`}
                                 >
                                   ISO
                                 </button>
@@ -2519,11 +2512,10 @@ const NewTrainPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => addSubExercise(ex.id)}
-                          className={`w-full py-2 border border-dashed text-xs font-bold rounded-xl transition-colors flex justify-center items-center gap-1 ${
-                            ex.type === 'circuit'
-                              ? 'bg-emerald-500/10 hover:bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
-                              : 'bg-cyan-500/10 hover:bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
-                          }`}
+                          className={`w-full py-2 border border-dashed text-xs font-bold rounded-xl transition-colors flex justify-center items-center gap-1 ${ex.type === 'circuit'
+                            ? 'bg-emerald-500/10 hover:bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                            : 'bg-cyan-500/10 hover:bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
+                            }`}
                         >
                           <Plus size={14} /> {ex.type === 'circuit' ? 'AGGIUNGI STAZIONE' : 'AGGIUNGI ESERCIZIO AL SUPERSET'}
                         </button>
@@ -2689,11 +2681,10 @@ const NewTrainPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => toggleExerciseNote(ex.id)}
-                          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
-                            ex.instruction_note
-                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                              : 'text-zinc-400 hover:text-white bg-white/5'
-                          }`}
+                          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${ex.instruction_note
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                            : 'text-zinc-400 hover:text-white bg-white/5'
+                            }`}
                         >
                           <FileText size={12} />
                           <span>{ex.instruction_note ? 'Modifica Nota' : '+ Aggiungi Nota'}</span>
@@ -2951,32 +2942,28 @@ const NewTrainPage: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Sub-bar: Type pill (Reps vs Iso) */}
-                      <div className="flex items-center justify-between gap-2 pt-0.5">
-                        <div className="flex bg-black/60 rounded-xl p-0.5 border border-white/10">
-                          <button
-                            type="button"
-                            onClick={() => updateExercise(ex.id, 'type', 'reps')}
-                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-colors ${
-                              ex.type === 'reps'
-                                ? 'bg-brand-orange text-black font-black'
-                                : 'text-zinc-400 hover:text-white'
+                      {/* Modalità Esercizio: Reps vs Isometria (Full Width) */}
+                      <div className="w-full bg-black/60 rounded-xl p-1 border border-white/10 grid grid-cols-2 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateExercise(ex.id, 'type', 'reps')}
+                          className={`w-full py-2 text-xs font-black rounded-lg transition-all text-center ${ex.type === 'reps'
+                            ? 'bg-brand-orange text-black shadow-md'
+                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
                             }`}
-                          >
-                            REPS
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateExercise(ex.id, 'type', 'isometry')}
-                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-colors ${
-                              ex.type === 'isometry'
-                                ? 'bg-brand-orange text-black font-black'
-                                : 'text-zinc-400 hover:text-white'
+                        >
+                          REPS
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateExercise(ex.id, 'type', 'isometry')}
+                          className={`w-full py-2 text-xs font-black rounded-lg transition-all text-center ${ex.type === 'isometry'
+                            ? 'bg-brand-orange text-black shadow-md'
+                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
                             }`}
-                          >
-                            ISOMETRIA
-                          </button>
-                        </div>
+                        >
+                          ISOMETRIA
+                        </button>
                       </div>
 
                       {/* Note dell'esercizio (direttamente visibile) */}
@@ -2993,56 +2980,59 @@ const NewTrainPage: React.FC = () => {
                         />
                       </div>
 
-                      {/* Sezione Autocount IA/Sensori con spiegazione chiara (Solo per Reps) */}
+                      {/* Sezione Autocount IA/Sensori con pulsanti a tutta larghezza (Solo per Reps) */}
                       {ex.type === 'reps' && (
                         <div className="bg-black/40 border border-white/5 rounded-xl p-2.5 space-y-2">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
-                              <Sparkles size={13} className={ex.auto_count_type ? 'text-brand-orange' : 'text-zinc-500'} />
+                              <Sparkles size={13} className={ex.auto_count_type ? 'text-brand-orange' : 'text-zinc-400'} />
                               <span className="text-xs font-bold text-zinc-200">
                                 Conteggio Automatico (Autocount)
                               </span>
                             </div>
+                            {ex.auto_count_type && (
+                              <span className="text-[10px] font-black uppercase tracking-wider text-brand-orange bg-brand-orange/15 px-2 py-0.5 rounded-md border border-brand-orange/30">
+                                Attivo
+                              </span>
+                            )}
+                          </div>
 
-                            <div className="flex items-center bg-black/60 rounded-lg p-0.5 border border-white/10 text-[10px] self-start sm:self-auto">
-                              <button
-                                type="button"
-                                onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
-                                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
-                                  !ex.auto_count_type
-                                    ? 'bg-white/10 text-white'
-                                    : 'text-zinc-500 hover:text-zinc-300'
+                          {/* Pulsanti OFF, PUSH-UP, PULL-UP a tutta larghezza (Grid 3 colonne) */}
+                          <div className="w-full bg-black/60 rounded-xl p-1 border border-white/10 grid grid-cols-3 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
+                              className={`w-full py-2 rounded-lg font-black text-xs transition-all text-center ${!ex.auto_count_type
+                                ? 'bg-white/15 text-white shadow-sm'
+                                : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
                                 }`}
-                              >
-                                OFF
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
-                                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
-                                  ex.auto_count_type === 'pushups'
-                                    ? 'bg-brand-orange text-black font-black shadow-sm'
-                                    : 'text-zinc-400 hover:text-white'
+                            >
+                              OFF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
+                              className={`w-full py-2 rounded-lg font-black text-xs transition-all text-center ${ex.auto_count_type === 'pushups'
+                                ? 'bg-brand-orange text-black font-black shadow-md shadow-brand-orange/20'
+                                : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                 }`}
-                              >
-                                PUSH-UP
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
-                                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
-                                  ex.auto_count_type === 'pullups'
-                                    ? 'bg-brand-orange text-black font-black shadow-sm'
-                                    : 'text-zinc-400 hover:text-white'
+                            >
+                              PUSH-UP
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
+                              className={`w-full py-2 rounded-lg font-black text-xs transition-all text-center ${ex.auto_count_type === 'pullups'
+                                ? 'bg-brand-orange text-black font-black shadow-md shadow-brand-orange/20'
+                                : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                 }`}
-                              >
-                                PULL-UP
-                              </button>
-                            </div>
+                            >
+                              PULL-UP
+                            </button>
                           </div>
 
                           <p className="text-[10px] text-zinc-400 leading-relaxed">
-                            Attiva <strong className="text-zinc-300">PUSH-UP</strong> o <strong className="text-zinc-300">PULL-UP</strong> per abilitare l'autocount: durante l'allenamento il dispositivo conterà automaticamente le ripetizioni senza dover toccare lo schermo.
+                            Attiva <strong className="text-zinc-300">PUSH-UP</strong> o <strong className="text-zinc-300">PULL-UP</strong> per abilitare l'autocount: durante l'allenamento il dispositivo conterà automaticamente le ripetizioni eseguite senza dover toccare lo schermo.
                           </p>
                         </div>
                       )}
@@ -3371,11 +3361,10 @@ const NewTrainPage: React.FC = () => {
                                   key={preset.sec}
                                   type="button"
                                   onClick={() => applyTransitionPreset(ex.id, preset.sec)}
-                                  className={`py-2 rounded-xl text-xs font-black transition-all ${
-                                    isSelected
-                                      ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20 scale-[1.02]'
-                                      : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/5 active:scale-95'
-                                  }`}
+                                  className={`py-2 rounded-xl text-xs font-black transition-all ${isSelected
+                                    ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20 scale-[1.02]'
+                                    : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/5 active:scale-95'
+                                    }`}
                                 >
                                   {preset.label}
                                 </button>
