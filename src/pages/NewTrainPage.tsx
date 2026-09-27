@@ -656,6 +656,7 @@ const NewTrainPage: React.FC = () => {
           subExercises: Array.isArray(ex.subExercises)
             ? ex.subExercises.map((sub: any) => ({
               ...sub,
+              type: sub.type === 'isometry' ? 'isometry' : 'reps',
               instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
             }))
             : ex.subExercises,
@@ -782,7 +783,7 @@ const NewTrainPage: React.FC = () => {
             rest_seconds: parsed.rest_seconds,
             subExercises: (parsed.subExercises || []).map(s => ({
               name: s.name,
-              type: s.type,
+              type: s.type === 'isometry' ? 'isometry' : 'reps',
               reps: s.reps,
               duration_seconds: s.duration_seconds,
               weight_kg: s.weight_kg ?? null,
@@ -800,7 +801,7 @@ const NewTrainPage: React.FC = () => {
             rest_seconds: parsed.rest_seconds,
             subExercises: (parsed.subExercises || []).map(s => ({
               name: s.name,
-              type: s.type,
+              type: s.type === 'isometry' ? 'isometry' : 'reps',
               reps: s.reps,
               duration_seconds: s.duration_seconds,
               weight_kg: s.weight_kg ?? null,
@@ -818,7 +819,7 @@ const NewTrainPage: React.FC = () => {
             rest_seconds: parsed.rest_seconds,
             subExercises: (parsed.subExercises || []).map(s => ({
               name: s.name,
-              type: s.type,
+              type: s.type === 'isometry' ? 'isometry' : 'reps',
               reps: s.reps,
               duration_seconds: s.duration_seconds,
               weight_kg: s.weight_kg ?? null,
@@ -1014,20 +1015,27 @@ const NewTrainPage: React.FC = () => {
   const convertToSuperset = (id: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === id) {
+        const existingSubs = ex.subExercises && ex.subExercises.length > 0
+          ? ex.subExercises.map(sub => ({
+              ...sub,
+              type: (sub.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry',
+            }))
+          : [
+              {
+                name: ex.name,
+                type: (ex.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry',
+                reps: Number.isFinite(ex.reps) && ex.reps > 0 ? ex.reps : 10,
+                duration_seconds: Number.isFinite(ex.duration_seconds) && ex.duration_seconds > 0 ? ex.duration_seconds : 30,
+                weight_kg: ex.weight_kg ?? null,
+                instruction_note: ex.instruction_note || '',
+              },
+              { name: '', type: 'reps' as const, reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
+            ];
+
         return {
           ...ex,
           type: 'superset',
-          subExercises: [
-            {
-              name: ex.name,
-              type: ex.type as 'reps' | 'isometry',
-              reps: ex.reps,
-              duration_seconds: ex.duration_seconds,
-              weight_kg: ex.weight_kg ?? null,
-              instruction_note: ex.instruction_note || '',
-            },
-            { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
-          ]
+          subExercises: existingSubs,
         };
       }
       return ex;
@@ -1037,21 +1045,28 @@ const NewTrainPage: React.FC = () => {
   const convertToCircuit = (id: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === id) {
+        const existingSubs = ex.subExercises && ex.subExercises.length > 0
+          ? ex.subExercises.map(sub => ({
+              ...sub,
+              type: (sub.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry',
+            }))
+          : [
+              {
+                name: ex.name,
+                type: (ex.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry',
+                reps: Number.isFinite(ex.reps) && ex.reps > 0 ? ex.reps : 10,
+                duration_seconds: Number.isFinite(ex.duration_seconds) && ex.duration_seconds > 0 ? ex.duration_seconds : 30,
+                weight_kg: ex.weight_kg ?? null,
+                instruction_note: ex.instruction_note || '',
+              },
+              { name: '', type: 'reps' as const, reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
+            ];
+
         return {
           ...ex,
           type: 'circuit',
           rest_seconds: Math.max(60, ex.rest_seconds || 120),
-          subExercises: [
-            {
-              name: ex.name,
-              type: ex.type as 'reps' | 'isometry',
-              reps: ex.reps,
-              duration_seconds: ex.duration_seconds,
-              weight_kg: ex.weight_kg ?? null,
-              instruction_note: ex.instruction_note || '',
-            },
-            { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
-          ]
+          subExercises: existingSubs,
         };
       }
       return ex;
@@ -2467,106 +2482,117 @@ const NewTrainPage: React.FC = () => {
                       </div>
 
                       <div className="space-y-2.5">
-                        {ex.subExercises?.map((sub, sIdx) => (
-                          <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2 relative">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 flex-1">
-                                <span className={`w-6 h-6 rounded-md text-[11px] font-black flex items-center justify-center shrink-0 ${ex.type === 'circuit'
-                                  ? 'bg-emerald-500/20 text-emerald-400'
-                                  : 'bg-cyan-500/20 text-cyan-400'
-                                  }`}>
-                                  {ex.type === 'circuit' ? `${sIdx + 1}` : `A${sIdx + 1}`}
-                                </span>
-                                <input
-                                  type="text"
-                                  placeholder={ex.type === 'circuit' ? `Nome stazione ${sIdx + 1}` : `Esercizio ${sIdx + 1}`}
-                                  value={sub.name}
-                                  onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                                  className="w-full bg-transparent text-white text-sm font-semibold focus:outline-none placeholder:text-zinc-600"
-                                />
+                        {ex.subExercises?.map((sub, sIdx) => {
+                          const isIso = sub.type === 'isometry';
+                          const subType = isIso ? 'isometry' : 'reps';
+
+                          return (
+                            <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2.5 relative">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-1">
+                                  <span className={`w-6 h-6 rounded-md text-[11px] font-black flex items-center justify-center shrink-0 ${ex.type === 'circuit'
+                                    ? 'bg-emerald-500/20 text-emerald-400'
+                                    : 'bg-cyan-500/20 text-cyan-400'
+                                    }`}>
+                                    {ex.type === 'circuit' ? `${sIdx + 1}` : `A${sIdx + 1}`}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    placeholder={ex.type === 'circuit' ? `Nome stazione ${sIdx + 1}` : `Esercizio ${sIdx + 1}`}
+                                    value={sub.name}
+                                    onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
+                                    className="w-full bg-transparent text-white text-sm font-semibold focus:outline-none placeholder:text-zinc-600"
+                                  />
+                                </div>
+
+                                {ex.subExercises && ex.subExercises.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeSubExercise(ex.id, sIdx)}
+                                    className="text-zinc-500 hover:text-red-400 p-1 transition-colors shrink-0"
+                                    title="Rimuovi"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
                               </div>
 
-                              {/* Reps vs Iso toggle pill */}
-                              <div className="flex bg-black/60 rounded-lg p-0.5 border border-white/10 shrink-0">
+                              {/* Modalità Esercizio: Reps vs Isometria (Full Width) sotto il nome */}
+                              <div className="w-full bg-black/60 rounded-xl p-1 border border-white/10 grid grid-cols-2 gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
-                                  className={`px-2 py-0.5 text-[10px] font-black rounded ${sub.type === 'reps'
-                                    ? 'bg-brand-orange text-black'
-                                    : 'text-zinc-400 hover:text-white'
+                                  onClick={() => {
+                                    void hapticLight();
+                                    updateSubExercise(ex.id, sIdx, 'type', 'reps');
+                                  }}
+                                  className={`w-full py-1.5 text-xs font-black rounded-lg transition-all text-center ${!isIso
+                                    ? 'bg-brand-orange text-black shadow-md'
+                                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                     }`}
                                 >
                                   REPS
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
-                                  className={`px-2 py-0.5 text-[10px] font-black rounded ${sub.type === 'isometry'
-                                    ? 'bg-brand-orange text-black'
-                                    : 'text-zinc-400 hover:text-white'
+                                  onClick={() => {
+                                    void hapticLight();
+                                    updateSubExercise(ex.id, sIdx, 'type', 'isometry');
+                                  }}
+                                  className={`w-full py-1.5 text-xs font-black rounded-lg transition-all text-center ${isIso
+                                    ? 'bg-brand-orange text-black shadow-md'
+                                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                     }`}
                                 >
-                                  ISO
+                                  ISOMETRIA
                                 </button>
                               </div>
 
-                              {ex.subExercises && ex.subExercises.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => removeSubExercise(ex.id, sIdx)}
-                                  className="text-zinc-500 hover:text-red-400 p-1 transition-colors"
-                                  title="Rimuovi"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                            </div>
+                              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+                                <div>
+                                  <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
+                                    {!isIso ? 'Reps Target' : 'Durata (secondi)'}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${subType}`, !isIso ? sub.reps : sub.duration_seconds, true)}
+                                    onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${subType}`, e.target.value)}
+                                    onBlur={() => commitSubExerciseNumber(ex.id, sIdx, !isIso ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${subType}`, 0, 0)}
+                                    onFocus={onNumberFocus}
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-brand-orange outline-none"
+                                    placeholder={!isIso ? 'MAX REPS' : 'MAX TIME'}
+                                  />
+                                </div>
 
-                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
-                              <div>
-                                <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
-                                  {sub.type === 'reps' ? 'Reps Target' : 'Durata (secondi)'}
-                                </label>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
-                                  onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
-                                  onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
-                                  onFocus={onNumberFocus}
-                                  className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-brand-orange outline-none"
-                                  placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                                />
+                                <div>
+                                  <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
+                                    Carico (kg)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                                    onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
+                                    onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                                    onFocus={onNumberFocus}
+                                    placeholder="Corpo libero"
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-brand-orange outline-none placeholder:text-zinc-600 placeholder:text-xs"
+                                  />
+                                </div>
                               </div>
 
                               <div>
-                                <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
-                                  Carico (kg)
-                                </label>
                                 <input
                                   type="text"
-                                  inputMode="decimal"
-                                  value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                                  onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
-                                  onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                                  onFocus={onNumberFocus}
-                                  placeholder="Corpo libero"
-                                  className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-brand-orange outline-none placeholder:text-zinc-600 placeholder:text-xs"
+                                  value={sub.instruction_note || ''}
+                                  onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
+                                  placeholder="Note esecuzione (opzionale)..."
+                                  className="w-full bg-black/20 border border-white/5 rounded-lg px-2.5 py-1 text-xs text-zinc-300 focus:border-brand-orange outline-none placeholder:text-zinc-600 transition-colors"
                                 />
                               </div>
                             </div>
-
-                            <div>
-                              <input
-                                type="text"
-                                value={sub.instruction_note || ''}
-                                onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
-                                placeholder="Note esecuzione (opzionale)..."
-                                className="w-full bg-black/20 border border-white/5 rounded-lg px-2.5 py-1 text-xs text-zinc-300 focus:border-brand-orange outline-none placeholder:text-zinc-600 transition-colors"
-                              />
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
 
                         <button
                           type="button"
