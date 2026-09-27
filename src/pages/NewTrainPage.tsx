@@ -69,7 +69,30 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Save, Trash2, ChevronUp, ChevronDown, Clock, Move, Copy, Minus, Sparkles, History, Check, Camera, Mic, Folder } from 'lucide-react';
+import {
+  Plus,
+  Save,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
+  Clock,
+  Move,
+  Copy,
+  Minus,
+  Sparkles,
+  History,
+  Check,
+  Camera,
+  Mic,
+  Folder,
+  Dumbbell,
+  Layers,
+  RotateCcw,
+  Timer,
+  TrendingUp,
+  FileText,
+  X,
+} from 'lucide-react';
 import AppHeader from '../components/AppHeader';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import WorkoutBulkToolbar from '../components/WorkoutBulkToolbar';
@@ -245,6 +268,8 @@ const NewTrainPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [numberDrafts, setNumberDrafts] = useState<Record<string, string>>({});
   const [editingTransitionForExerciseId, setEditingTransitionForExerciseId] = useState<string | null>(null);
+  const [openTypeMenuExerciseId, setOpenTypeMenuExerciseId] = useState<string | null>(null);
+  const [expandedNotesExerciseIds, setExpandedNotesExerciseIds] = useState<Record<string, boolean>>({});
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [didAutoFocusExercise, setDidAutoFocusExercise] = useState(false);
   const exerciseRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
@@ -857,13 +882,13 @@ const NewTrainPage: React.FC = () => {
     });
   };
 
-  /** Regolazione incrementale (+/-) per serie, reps, recupero */
-  const adjustExerciseNumber = (exId: string, field: 'sets' | 'reps' | 'duration_seconds' | 'rest_seconds', delta: number) => {
+  /** Regolazione incrementale (+/-) per serie, reps, recupero, emom_rounds */
+  const adjustExerciseNumber = (exId: string, field: 'sets' | 'reps' | 'duration_seconds' | 'rest_seconds' | 'emom_rounds', delta: number) => {
     setExercises(prev =>
       prev.map(ex => {
         if (ex.id !== exId) return ex;
         const current = Number(ex[field]) || 0;
-        const minVal = field === 'sets' ? 1 : 0;
+        const minVal = (field === 'sets' || field === 'emom_rounds') ? 1 : 0;
         const next = Math.max(minVal, current + delta);
         return { ...ex, [field]: next };
       })
@@ -876,6 +901,72 @@ const NewTrainPage: React.FC = () => {
       delete next[`${exId}:rest:sec`];
       return next;
     });
+  };
+
+  const toggleExerciseNote = (exId: string) => {
+    setExpandedNotesExerciseIds(prev => ({ ...prev, [exId]: !prev[exId] }));
+  };
+
+  const applyTransitionPreset = (exId: string, seconds: number) => {
+    void hapticLight();
+    updateExercise(exId, 'transition_rest_seconds', seconds);
+    clearDraftValue(`${exId}:transition_rest:min`);
+    clearDraftValue(`${exId}:transition_rest:sec`);
+  };
+
+  const handleTypeChange = (id: string, targetType: 'normal' | 'superset' | 'circuit' | 'emom' | 'pyramid') => {
+    void hapticLight();
+    setOpenTypeMenuExerciseId(null);
+    const ex = exercises.find(e => e.id === id);
+    if (!ex) return;
+
+    if (targetType === 'normal') {
+      if (ex.type === 'reps' || ex.type === 'isometry') return;
+      const firstSub = ex.subExercises?.[0];
+      const baseName = (ex.name || firstSub?.name || '').trim();
+      const baseReps = ex.type === 'pyramid'
+        ? (ex.pyramid_steps?.[0]?.reps || 10)
+        : (firstSub?.reps ?? (ex.reps || 10));
+      const baseDuration = firstSub?.duration_seconds ?? (ex.duration_seconds || 30);
+      const baseWeight = ex.type === 'pyramid'
+        ? (ex.pyramid_steps?.[0]?.weight_kg ?? ex.weight_kg ?? null)
+        : (firstSub?.weight_kg ?? ex.weight_kg ?? null);
+      const baseRest = ex.type === 'pyramid'
+        ? (ex.pyramid_steps?.[0]?.rest_seconds || 60)
+        : (ex.rest_seconds || 60);
+
+      setExercises(prev =>
+        prev.map(item => {
+          if (item.id !== id) return item;
+          return {
+            ...item,
+            type: 'reps',
+            name: baseName,
+            sets: Math.max(1, item.sets || 3),
+            reps: baseReps,
+            duration_seconds: baseDuration,
+            weight_kg: baseWeight,
+            rest_seconds: baseRest,
+            subExercises: undefined,
+            pyramid_steps: undefined,
+            emom_rounds: undefined,
+            emom_round_duration: undefined,
+          };
+        })
+      );
+    } else if (targetType === 'superset') {
+      if (ex.type === 'superset') return;
+      convertToSuperset(id);
+    } else if (targetType === 'circuit') {
+      if (ex.type === 'circuit') return;
+      convertToCircuit(id);
+    } else if (targetType === 'emom') {
+      if (ex.type === 'emom') return;
+      convertToEmom(id);
+    } else if (targetType === 'pyramid') {
+      if (ex.type === 'pyramid') return;
+      convertToPyramid(id);
+    }
   };
 
   const convertToSuperset = (id: string) => {
@@ -1945,273 +2036,510 @@ const NewTrainPage: React.FC = () => {
                     }`}
                 >
 
-                  {/* Header Esercizio: Frecce Ordine, Duplica ed Elimina */}
-                  <div className="flex justify-between items-center bg-black/30 -mx-4 -mt-4 p-3 rounded-t-3xl border-b border-white/5">
-                    <div className="flex space-x-1">
-                      <button
-                        type="button"
-                        onClick={() => moveExercise(index, 'up')}
-                        disabled={index === 0}
-                        className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                        title="Move up"
-                      >
-                        <ChevronUp size={20} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveExercise(index, 'down')}
-                        disabled={index === exercises.length - 1}
-                        className="p-1.5 text-brand-grey hover:text-white hover:bg-white/10 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                        title="Move down"
-                      >
-                        <ChevronDown size={20} />
-                      </button>
+                  {/* Header Esercizio: Frecce Ordine, Selettore Tipo Compatto, Duplica ed Elimina */}
+                  <div className="flex justify-between items-center bg-black/40 -mx-4 -mt-4 p-3 rounded-t-3xl border-b border-white/5">
+                    {/* Left: Move buttons & index */}
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-[11px] font-black text-white/90 bg-white/10 px-2 py-0.5 rounded-md">
+                        #{index + 1}
+                      </span>
+                      <div className="flex space-x-0.5">
+                        <button
+                          type="button"
+                          onClick={() => moveExercise(index, 'up')}
+                          disabled={index === 0}
+                          className="p-1 text-zinc-400 hover:text-white hover:bg-white/10 rounded disabled:opacity-20 transition-colors"
+                          title="Sposta su"
+                        >
+                          <ChevronUp size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveExercise(index, 'down')}
+                          disabled={index === exercises.length - 1}
+                          className="p-1 text-zinc-400 hover:text-white hover:bg-white/10 rounded disabled:opacity-20 transition-colors"
+                          title="Sposta giù"
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-brand-grey/40">EXERCISE {index + 1}</span>
+
+                    {/* Center: Compact Type Selector Button & Dropdown Popover */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenTypeMenuExerciseId((prev) => (prev === ex.id ? null : ex.id))
+                        }
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${
+                          ex.type === 'emom'
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25'
+                            : ex.type === 'pyramid'
+                            ? 'bg-purple-500/15 border-purple-500/40 text-purple-300 hover:bg-purple-500/25'
+                            : ex.type === 'circuit'
+                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25'
+                            : ex.type === 'superset'
+                            ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/25'
+                            : 'bg-brand-orange/15 border-brand-orange/40 text-brand-orange hover:bg-brand-orange/25'
+                        }`}
+                        title="Cambia tipo esercizio"
+                      >
+                        {ex.type === 'emom' && <Timer size={13} className="shrink-0" />}
+                        {ex.type === 'pyramid' && <TrendingUp size={13} className="shrink-0" />}
+                        {ex.type === 'circuit' && <RotateCcw size={13} className="shrink-0" />}
+                        {ex.type === 'superset' && <Layers size={13} className="shrink-0" />}
+                        {(ex.type === 'reps' || ex.type === 'isometry') && (
+                          <Dumbbell size={13} className="shrink-0" />
+                        )}
+                        <span className="capitalize">
+                          {ex.type === 'reps'
+                            ? 'Normale'
+                            : ex.type === 'isometry'
+                            ? 'Isometria'
+                            : ex.type === 'emom'
+                            ? 'EMOM'
+                            : ex.type === 'pyramid'
+                            ? 'Piramide'
+                            : ex.type === 'circuit'
+                            ? 'Circuito'
+                            : 'Superset'}
+                        </span>
+                        <ChevronDown size={12} className={`transition-transform duration-200 ${openTypeMenuExerciseId === ex.id ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {/* Dropdown Popover */}
+                      {openTypeMenuExerciseId === ex.id && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setOpenTypeMenuExerciseId(null)}
+                          />
+                          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-56 bg-[#161618] border border-white/15 rounded-2xl shadow-2xl p-1.5 z-50 divide-y divide-white/5 backdrop-blur-xl animate-scale-in">
+                            <div className="px-2.5 py-1.5 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                              Tipo di Esercizio
+                            </div>
+                            <div className="py-1 space-y-0.5">
+                              {[
+                                {
+                                  id: 'normal',
+                                  label: 'Normale (Reps / Iso)',
+                                  desc: 'Serie x Ripetizioni o Tempo',
+                                  icon: Dumbbell,
+                                  color: 'text-brand-orange',
+                                  isActive: ex.type === 'reps' || ex.type === 'isometry',
+                                },
+                                {
+                                  id: 'emom',
+                                  label: 'EMOM',
+                                  desc: 'Minuti & round con countdown',
+                                  icon: Timer,
+                                  color: 'text-amber-400',
+                                  isActive: ex.type === 'emom',
+                                },
+                                {
+                                  id: 'pyramid',
+                                  label: 'Piramide',
+                                  desc: 'Step incrementali / scalari',
+                                  icon: TrendingUp,
+                                  color: 'text-purple-400',
+                                  isActive: ex.type === 'pyramid',
+                                },
+                                {
+                                  id: 'circuit',
+                                  label: 'Circuito a Tempo',
+                                  desc: 'Stazioni continue + recupero',
+                                  icon: RotateCcw,
+                                  color: 'text-emerald-400',
+                                  isActive: ex.type === 'circuit',
+                                },
+                                {
+                                  id: 'superset',
+                                  label: 'Superset',
+                                  desc: '2 o più esercizi in sequenza',
+                                  icon: Layers,
+                                  color: 'text-cyan-400',
+                                  isActive: ex.type === 'superset',
+                                },
+                              ].map((option) => {
+                                const IconComponent = option.icon;
+                                return (
+                                  <button
+                                    key={option.id}
+                                    type="button"
+                                    onClick={() =>
+                                      handleTypeChange(
+                                        ex.id,
+                                        option.id as 'normal' | 'superset' | 'circuit' | 'emom' | 'pyramid'
+                                      )
+                                    }
+                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left transition-colors ${
+                                      option.isActive
+                                        ? 'bg-white/10 text-white font-bold'
+                                        : 'hover:bg-white/5 text-zinc-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <div
+                                        className={`w-6 h-6 rounded-lg bg-black/40 flex items-center justify-center ${option.color}`}
+                                      >
+                                        <IconComponent size={14} />
+                                      </div>
+                                      <div>
+                                        <div className="text-xs font-semibold">{option.label}</div>
+                                        <div className="text-[10px] text-zinc-400 leading-none">
+                                          {option.desc}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {option.isActive && (
+                                      <Check size={14} className="text-brand-orange" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Right: Duplicate & Delete */}
                     <div className="flex items-center space-x-1">
                       <button
                         type="button"
                         onClick={() => duplicateExercise(index)}
-                        className="p-1.5 text-brand-grey/60 hover:text-brand-orange hover:bg-brand-orange/10 rounded-md transition-colors"
-                        title="Duplicate exercise"
+                        className="p-1.5 text-zinc-400 hover:text-brand-orange hover:bg-brand-orange/10 rounded-md transition-colors"
+                        title="Duplica esercizio"
                       >
-                        <Copy size={18} />
+                        <Copy size={16} />
                       </button>
                       <button
                         type="button"
                         onClick={() => removeExercise(ex.id)}
-                        className="p-1.5 text-brand-grey/60 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
-                        title="Delete exercise"
+                        className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
+                        title="Elimina esercizio"
                       >
-                        <Trash2 size={20} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>
 
-                  {/* Specific UI for SUPERSET vs SINGLE */}
                   {ex.type === 'emom' ? (
-                    <div className="space-y-3 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
-                      <p className="text-xs font-bold text-brand-orange uppercase tracking-wider text-center mb-2 flex flex-col items-center justify-center">
-                        ⏱️ EMOM Circuit
-                      </p>
-                      <div className="grid grid-cols-2 gap-2 mb-4 mt-2">
-                        <div className="flex flex-col">
-                          <label className="text-xs text-brand-grey mb-1">Total Rounds</label>
-                          <input
-                            type="number" inputMode="numeric"
-                            min="1"
-                            value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
-                            onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
-                            onBlur={() => commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1)}
-                            onFocus={onNumberFocus}
-                            className="bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white focus:border-brand-orange outline-none"
-                          />
+                    <div className="space-y-3 bg-black/25 p-3.5 rounded-2xl border border-amber-500/20">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Timer size={14} /> Round EMOM
+                        </span>
+                        <span className="text-[11px] text-zinc-400">
+                          {(ex.emom_rounds || 10) * Math.ceil((ex.emom_round_duration || 60) / 60)} min totali
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
+                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
+                            Giri / Round Totali
+                          </label>
+                          <div className="flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, 'emom_rounds', -1)}
+                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="1"
+                              value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
+                              onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
+                              onBlur={() => commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1)}
+                              onFocus={onNumberFocus}
+                              className="w-14 text-center font-bold text-white bg-transparent focus:outline-none text-base"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, 'emom_rounds', 1)}
+                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                            >
+                              <Plus size={13} />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex flex-col">
-                          <label className="text-xs text-brand-grey mb-1">Round Time</label>
-                          <div className="flex bg-black/40 border border-brand-grey/20 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
-                            <div className="relative flex-1 border-r border-brand-grey/10">
+
+                        <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
+                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
+                            Tempo Singolo Round
+                          </label>
+                          <div className="flex items-center h-7 gap-1">
+                            <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
                               <input
-                                type="number" inputMode="numeric"
+                                type="number"
+                                inputMode="numeric"
                                 min="0"
                                 value={getDraftOrValue(`${ex.id}:emom_round_duration:min`, Math.floor((ex.emom_round_duration || 60) / 60))}
                                 onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:min`, e.target.value)}
                                 onBlur={() => commitEmomRoundDurationPart(ex.id, 'min', `${ex.id}:emom_round_duration:min`, ex.emom_round_duration || 60)}
                                 onFocus={onNumberFocus}
-                                className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                                className="w-full text-center font-bold text-white bg-transparent focus:outline-none text-sm"
                               />
-                              <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                              <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">MIN</span>
                             </div>
-                            <div className="relative flex-1">
+                            <span className="text-zinc-500 font-bold">:</span>
+                            <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
                               <input
-                                type="number" inputMode="numeric"
+                                type="number"
+                                inputMode="numeric"
                                 min="0"
                                 max="59"
                                 value={getDraftOrValue(`${ex.id}:emom_round_duration:sec`, (ex.emom_round_duration || 60) % 60)}
                                 onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:sec`, e.target.value)}
                                 onBlur={() => commitEmomRoundDurationPart(ex.id, 'sec', `${ex.id}:emom_round_duration:sec`, ex.emom_round_duration || 60)}
                                 onFocus={onNumberFocus}
-                                className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                                className="w-full text-center font-bold text-white bg-transparent focus:outline-none text-sm"
                               />
-                              <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                              <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">SEC</span>
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {ex.subExercises?.map((sub, sIdx) => (
-                        <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
-                          <input
-                            type="text"
-                            placeholder={`Exercise Name ${sIdx + 1}`}
-                            value={sub.name}
-                            onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                            className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none"
-                          />
+                      <div className="space-y-2 pt-1">
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block px-1">
+                          Esercizi nel round
+                        </span>
 
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                              {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
-                            </label>
-                            <input
-                              type="text" inputMode="numeric"
-                              value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
-                              onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
-                              onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
-                              onFocus={onNumberFocus}
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
-                              placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                            />
+                        {ex.subExercises?.map((sub, sIdx) => (
+                          <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2 relative">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 flex-1">
+                                <span className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-400 text-[10px] font-black flex items-center justify-center shrink-0">
+                                  {sIdx + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  placeholder={`Nome esercizio ${sIdx + 1}`}
+                                  value={sub.name}
+                                  onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
+                                  className="w-full bg-transparent text-white text-sm font-semibold focus:outline-none placeholder:text-zinc-600"
+                                />
+                              </div>
+                              {ex.subExercises && ex.subExercises.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeSubExercise(ex.id, sIdx)}
+                                  className="text-zinc-500 hover:text-red-400 p-1 transition-colors"
+                                  title="Rimuovi"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+                              <div>
+                                <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
+                                  Target Reps / Sec
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
+                                  onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
+                                  onFocus={onNumberFocus}
+                                  className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-amber-400 outline-none"
+                                  placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
+                                  Carico (kg)
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
+                                  onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                                  onFocus={onNumberFocus}
+                                  placeholder="Corpo libero"
+                                  className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-amber-400 outline-none placeholder:text-zinc-600 placeholder:text-xs"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <input
+                                type="text"
+                                value={sub.instruction_note || ''}
+                                onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
+                                placeholder="Note esecuzione (opzionale)..."
+                                className="w-full bg-black/20 border border-white/5 rounded-lg px-2.5 py-1 text-xs text-zinc-300 focus:border-amber-400 outline-none placeholder:text-zinc-600 transition-colors"
+                              />
+                            </div>
                           </div>
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                              Weight (kg)
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                              onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
-                              onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                              onFocus={onNumberFocus}
-                              placeholder="body Weight"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center focus:border-brand-orange outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                              Exercise Note (optional)
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={sub.instruction_note || ''}
-                              onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
-                              placeholder="E.g. fermo in buca 1 secondo"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm focus:border-brand-orange outline-none resize-none"
-                            />
-                          </div>
-                          {ex.subExercises && ex.subExercises.length > 1 && (
-                            <button
-                              onClick={() => removeSubExercise(ex.id, sIdx)}
-                              className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <button
-                        onClick={() => addSubExercise(ex.id)}
-                        className="w-full mt-2 py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                      >
-                        <Plus size={14} className="mr-1" /> ADD TO EMOM
-                      </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => addSubExercise(ex.id)}
+                          className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/15 border border-dashed border-amber-500/30 text-amber-400 text-xs font-bold rounded-xl transition-colors flex justify-center items-center gap-1"
+                        >
+                          <Plus size={14} /> AGGIUNGI ESERCIZIO AL ROUND
+                        </button>
+                      </div>
                     </div>
                   ) : (ex.type === 'superset' || ex.type === 'circuit') ? (
-                    <div className="space-y-3 p-4 rounded-xl border bg-brand-dark/30 border-brand-orange/20">
-                      <p className="text-xs font-bold uppercase tracking-wider text-center mb-2 flex items-center justify-center text-brand-orange">
-                        {ex.type === 'circuit' ? '⚡ Circuito a Tempo (Stopwatch)' : '🔁 Superset Circuit'}
-                      </p>
-                      {ex.subExercises?.map((sub, sIdx) => (
-                        <div key={sIdx} className="flex flex-col space-y-2 relative pr-8">
-                          <input
-                            type="text"
-                            placeholder={`${ex.type === 'circuit' ? 'Stazione' : 'Exercise Name'} ${sIdx + 1}`}
-                            value={sub.name}
-                            onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                            className="w-full bg-black/40 border border-brand-grey/20 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-brand-orange"
-                          />
-                          <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                            <button
-                              onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
-                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                            >
-                              REPS
-                            </button>
-                            <button
-                              onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
-                              className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                            >
-                              ISOMETRIC
-                            </button>
+                    <div className={`space-y-3 p-3.5 rounded-2xl border ${
+                      ex.type === 'circuit'
+                        ? 'bg-emerald-950/20 border-emerald-500/25'
+                        : 'bg-cyan-950/20 border-cyan-500/25'
+                    }`}>
+                      <div className="flex items-center justify-between px-1">
+                        <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                          ex.type === 'circuit' ? 'text-emerald-400' : 'text-cyan-400'
+                        }`}>
+                          {ex.type === 'circuit' ? <RotateCcw size={14} /> : <Layers size={14} />}
+                          {ex.type === 'circuit' ? 'Circuito a Stazioni' : 'Superset Sequenziale'}
+                        </span>
+                        <span className="text-[11px] text-zinc-400 font-medium">
+                          {ex.subExercises?.length || 0} stazioni
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        {ex.subExercises?.map((sub, sIdx) => (
+                          <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2 relative">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 flex-1">
+                                <span className={`w-6 h-6 rounded-md text-[11px] font-black flex items-center justify-center shrink-0 ${
+                                  ex.type === 'circuit'
+                                    ? 'bg-emerald-500/20 text-emerald-400'
+                                    : 'bg-cyan-500/20 text-cyan-400'
+                                }`}>
+                                  {ex.type === 'circuit' ? `${sIdx + 1}` : `A${sIdx + 1}`}
+                                </span>
+                                <input
+                                  type="text"
+                                  placeholder={ex.type === 'circuit' ? `Nome stazione ${sIdx + 1}` : `Esercizio ${sIdx + 1}`}
+                                  value={sub.name}
+                                  onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
+                                  className="w-full bg-transparent text-white text-sm font-semibold focus:outline-none placeholder:text-zinc-600"
+                                />
+                              </div>
+
+                              {/* Reps vs Iso toggle pill */}
+                              <div className="flex bg-black/60 rounded-lg p-0.5 border border-white/10 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'reps')}
+                                  className={`px-2 py-0.5 text-[10px] font-black rounded ${
+                                    sub.type === 'reps'
+                                      ? 'bg-brand-orange text-black'
+                                      : 'text-zinc-400 hover:text-white'
+                                  }`}
+                                >
+                                  REPS
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateSubExercise(ex.id, sIdx, 'type', 'isometry')}
+                                  className={`px-2 py-0.5 text-[10px] font-black rounded ${
+                                    sub.type === 'isometry'
+                                      ? 'bg-brand-orange text-black'
+                                      : 'text-zinc-400 hover:text-white'
+                                  }`}
+                                >
+                                  ISO
+                                </button>
+                              </div>
+
+                              {ex.subExercises && ex.subExercises.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeSubExercise(ex.id, sIdx)}
+                                  className="text-zinc-500 hover:text-red-400 p-1 transition-colors"
+                                  title="Rimuovi"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+                              <div>
+                                <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
+                                  {sub.type === 'reps' ? 'Reps Target' : 'Durata (secondi)'}
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
+                                  onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
+                                  onFocus={onNumberFocus}
+                                  className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-brand-orange outline-none"
+                                  placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
+                                  Carico (kg)
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
+                                  onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                                  onFocus={onNumberFocus}
+                                  placeholder="Corpo libero"
+                                  className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-brand-orange outline-none placeholder:text-zinc-600 placeholder:text-xs"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <input
+                                type="text"
+                                value={sub.instruction_note || ''}
+                                onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
+                                placeholder="Note esecuzione (opzionale)..."
+                                className="w-full bg-black/20 border border-white/5 rounded-lg px-2.5 py-1 text-xs text-zinc-300 focus:border-brand-orange outline-none placeholder:text-zinc-600 transition-colors"
+                              />
+                            </div>
                           </div>
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                              {sub.type === 'reps' ? 'Reps' : 'Time (sec)'}
-                            </label>
-                            <input
-                              type="text" inputMode="numeric"
-                              value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
-                              onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
-                              onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
-                              onFocus={onNumberFocus}
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center outline-none placeholder:text-xs focus:border-brand-orange placeholder:text-brand-orange/60"
-                              placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                              Weight (kg)
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                              onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
-                              onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                              onFocus={onNumberFocus}
-                              placeholder="body Weight"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-center outline-none focus:border-brand-orange"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                              Exercise Note (optional)
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={sub.instruction_note || ''}
-                              onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
-                              placeholder="E.g. fermo a braccia stese"
-                              className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-2 text-white text-sm outline-none resize-none focus:border-brand-orange"
-                            />
-                          </div>
-                          {ex.subExercises && ex.subExercises.length > 1 && (
-                            <button
-                              onClick={() => removeSubExercise(ex.id, sIdx)}
-                              className="absolute right-0 top-1 text-red-500/50 hover:text-red-500 p-1"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <button
-                        onClick={() => addSubExercise(ex.id)}
-                        className="w-full mt-2 py-2 border border-dashed text-xs font-bold rounded-lg transition-colors flex justify-center items-center border-brand-orange/30 text-brand-orange/70 hover:border-brand-orange/50 hover:text-brand-orange"
-                      >
-                        <Plus size={14} className="mr-1" /> {ex.type === 'circuit' ? 'ADD TO CIRCUIT' : 'ADD TO SUPERSET'}
-                      </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => addSubExercise(ex.id)}
+                          className={`w-full py-2 border border-dashed text-xs font-bold rounded-xl transition-colors flex justify-center items-center gap-1 ${
+                            ex.type === 'circuit'
+                              ? 'bg-emerald-500/10 hover:bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                              : 'bg-cyan-500/10 hover:bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
+                          }`}
+                        >
+                          <Plus size={14} /> {ex.type === 'circuit' ? 'AGGIUNGI STAZIONE' : 'AGGIUNGI ESERCIZIO AL SUPERSET'}
+                        </button>
+                      </div>
                     </div>
                   ) : ex.type === 'pyramid' ? (
-                    <div className="space-y-3.5 bg-brand-dark/30 p-4 rounded-xl border border-brand-orange/20">
-                      <div className="flex items-center justify-between pb-1 border-b border-brand-orange/10">
+                    <div className="space-y-3 bg-purple-950/20 p-3.5 rounded-2xl border border-purple-500/25">
+                      <div className="flex items-center justify-between pb-1 border-b border-purple-500/20">
                         <div className="flex items-center space-x-2">
-                          <p className="text-xs font-bold text-brand-orange uppercase tracking-wider flex items-center">
-                            📐 Piramide
+                          <p className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <TrendingUp size={14} /> Piramidale
                           </p>
-                          <span className="text-[11px] text-brand-grey font-medium">
+                          <span className="text-[11px] text-zinc-400 font-medium">
                             ({ex.pyramid_steps?.length || 0} step)
                           </span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => updateExercise(ex.id, 'type', 'reps')}
-                          className="text-[10px] uppercase font-bold text-brand-grey/60 hover:text-brand-orange transition-colors px-2 py-1 rounded bg-black/30 border border-white/5 hover:border-brand-orange/30"
-                          title="Converti in esercizio standard"
-                        >
-                          Passa a Standard
-                        </button>
                       </div>
 
                       {/* Banner notifica autofill o parse */}
@@ -2227,13 +2555,10 @@ const NewTrainPage: React.FC = () => {
 
                       {/* Nome esercizio Piramidale con Autocomplete e Parser Inline */}
                       <div className="relative">
-                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                          Nome Esercizio
-                        </label>
                         <div className="relative flex items-center">
                           <input
                             type="text"
-                            placeholder="Nome esercizio (es. Panca Piana, Squat... o formula 12-10-8-6 90s)"
+                            placeholder="Nome esercizio (es. Panca Piana, o formula 12-10-8-6 90s)"
                             value={ex.name}
                             onChange={(e) => {
                               const val = e.target.value;
@@ -2299,21 +2624,21 @@ const NewTrainPage: React.FC = () => {
                                 (e.target as HTMLElement).blur();
                               }
                             }}
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors pr-10"
+                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-medium text-sm focus:border-purple-400 focus:outline-none transition-colors pr-10"
                           />
                           {(exerciseSuggestions[ex.id] || []).length > 0 && (
-                            <span className="absolute right-3 text-brand-orange/60 pointer-events-none" title="Suggerimenti disponibili">
+                            <span className="absolute right-3 text-purple-400/70 pointer-events-none" title="Suggerimenti disponibili">
                               <History size={16} />
                             </span>
                           )}
                         </div>
 
-                        {/* Dropdown Suggerimenti Autocomplete dallo Storico Utente */}
+                        {/* Dropdown Suggerimenti Autocomplete */}
                         {(exerciseSuggestions[ex.id] || []).length > 0 && (
-                          <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#181818] border border-brand-orange/30 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-white/5 backdrop-blur-md">
-                            <div className="p-2 bg-black/40 text-[10px] uppercase font-bold text-brand-grey/60 tracking-wider flex items-center">
-                              <History size={11} className="mr-1.5 text-brand-orange" />
-                              Usato nelle tue sessioni precedenti (clicca per compilare)
+                          <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#181818] border border-purple-500/30 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-white/5 backdrop-blur-md">
+                            <div className="p-2 bg-black/40 text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center">
+                              <History size={11} className="mr-1.5 text-purple-400" />
+                              Usato nelle tue sessioni precedenti
                             </div>
                             {(exerciseSuggestions[ex.id] || []).map((item, sIdx) => (
                               <button
@@ -2337,20 +2662,20 @@ const NewTrainPage: React.FC = () => {
                                     });
                                   }, 3500);
                                 }}
-                                className="w-full text-left p-3 hover:bg-brand-orange/15 transition-colors flex items-center justify-between group"
+                                className="w-full text-left p-3 hover:bg-purple-500/15 transition-colors flex items-center justify-between group"
                               >
                                 <div>
-                                  <div className="text-sm font-semibold text-white group-hover:text-brand-orange transition-colors">
+                                  <div className="text-sm font-semibold text-white group-hover:text-purple-400 transition-colors">
                                     {item.name}
                                   </div>
-                                  <div className="text-xs text-brand-grey/70 mt-0.5">
+                                  <div className="text-xs text-zinc-400 mt-0.5">
                                     {item.pyramid_steps && item.pyramid_steps.length > 0
                                       ? `Piramide ${item.pyramid_steps.map(s => s.reps).join('-')} reps`
                                       : `${item.sets} serie × ${item.reps} reps • ${item.rest_seconds}s recupero`}
                                     {item.weight_kg != null ? ` • ${item.weight_kg} kg` : ''}
                                   </div>
                                 </div>
-                                <span className="text-[11px] font-bold text-brand-orange opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                                <span className="text-[11px] font-bold text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
                                   Applica <Check size={12} className="ml-1" />
                                 </span>
                               </button>
@@ -2359,54 +2684,49 @@ const NewTrainPage: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Note dell'esercizio (opzionale) */}
-                      <div>
-                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                          Note esecuzione esercizio (opzionale)
-                        </label>
-                        <textarea
-                          rows={2}
+                      {/* Note dell'esercizio (collapsible/compatte) */}
+                      <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => toggleExerciseNote(ex.id)}
+                          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
+                            ex.instruction_note
+                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                              : 'text-zinc-400 hover:text-white bg-white/5'
+                          }`}
+                        >
+                          <FileText size={12} />
+                          <span>{ex.instruction_note ? 'Modifica Nota' : '+ Aggiungi Nota'}</span>
+                        </button>
+                      </div>
+                      {(expandedNotesExerciseIds[ex.id] || Boolean(ex.instruction_note)) && (
+                        <input
+                          type="text"
                           value={ex.instruction_note || ''}
                           onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
-                          placeholder="E.g. presa prona, fermo 1 secondo al petto, incremento carico ad ogni set"
-                          className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
+                          placeholder="Note esecuzione (es. presa prona, fermo 1 secondo al petto)..."
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:border-purple-400 focus:outline-none transition-colors"
                         />
-                      </div>
+                      )}
 
                       {/* Step della sequenza piramidale */}
-                      <div className="space-y-2.5 pt-1">
-                        <div className="flex items-center justify-between px-1">
-                          <span className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold">
-                            Step della piramide
-                          </span>
-                          <span className="text-[10px] text-brand-grey/50 font-medium">
-                            Imposta reps, kg e recupero al prossimo set
-                          </span>
+                      <div className="space-y-2 pt-1">
+                        <div className="grid grid-cols-12 gap-1.5 px-2 text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                          <span className="col-span-2">Step</span>
+                          <span className="col-span-3 text-center">Reps</span>
+                          <span className="col-span-3 text-center">Kg</span>
+                          <span className="col-span-3 text-center">Rest</span>
+                          <span className="col-span-1"></span>
                         </div>
 
                         {ex.pyramid_steps?.map((step, sIdx) => (
-                          <div key={sIdx} className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2.5 relative pr-9 transition-colors hover:border-brand-orange/20">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-brand-orange font-bold uppercase tracking-wider flex items-center">
-                                Step #{sIdx + 1}
+                          <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-2 space-y-1.5 transition-colors hover:border-purple-500/20">
+                            <div className="grid grid-cols-12 gap-1.5 items-center">
+                              <span className="col-span-2 text-xs font-black text-purple-400 pl-1">
+                                #{sIdx + 1}
                               </span>
-                              {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => removePyramidStep(ex.id, sIdx)}
-                                  className="absolute right-2 top-2.5 text-brand-grey/50 hover:text-red-500 p-1 rounded hover:bg-white/5 transition-colors"
-                                  title="Rimuovi step"
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              )}
-                            </div>
 
-                            <div className="grid grid-cols-3 gap-2">
-                              <div>
-                                <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
-                                  Reps
-                                </label>
+                              <div className="col-span-3">
                                 <input
                                   type="number"
                                   inputMode="numeric"
@@ -2416,14 +2736,11 @@ const NewTrainPage: React.FC = () => {
                                   onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'reps', `${ex.id}:step:${sIdx}:reps`, 10, 1)}
                                   onFocus={onNumberFocus}
                                   placeholder="10"
-                                  className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-2 text-white text-center text-sm focus:border-brand-orange outline-none transition-colors"
+                                  className="w-full bg-black/50 border border-white/10 rounded-lg py-1.5 text-white text-center text-xs font-bold focus:border-purple-400 outline-none"
                                 />
                               </div>
 
-                              <div>
-                                <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
-                                  Kg
-                                </label>
+                              <div className="col-span-3">
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -2432,14 +2749,11 @@ const NewTrainPage: React.FC = () => {
                                   onBlur={() => commitPyramidStepWeight(ex.id, sIdx, `${ex.id}:step:${sIdx}:weight`, step.weight_kg)}
                                   onFocus={onNumberFocus}
                                   placeholder="kg"
-                                  className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-2 text-white text-center text-sm focus:border-brand-orange outline-none transition-colors"
+                                  className="w-full bg-black/50 border border-white/10 rounded-lg py-1.5 text-white text-center text-xs font-bold focus:border-purple-400 outline-none"
                                 />
                               </div>
 
-                              <div>
-                                <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1">
-                                  Rest (sec)
-                                </label>
+                              <div className="col-span-3">
                                 <input
                                   type="number"
                                   inputMode="numeric"
@@ -2448,45 +2762,57 @@ const NewTrainPage: React.FC = () => {
                                   onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:rest`, e.target.value)}
                                   onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'rest_seconds', `${ex.id}:step:${sIdx}:rest`, 60, 0)}
                                   onFocus={onNumberFocus}
-                                  placeholder="60"
-                                  className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-2 py-2 text-white text-center text-sm focus:border-brand-orange outline-none transition-colors"
+                                  placeholder="60s"
+                                  className="w-full bg-black/50 border border-white/10 rounded-lg py-1.5 text-white text-center text-xs font-bold focus:border-purple-400 outline-none"
                                 />
+                              </div>
+
+                              <div className="col-span-1 flex justify-center">
+                                {ex.pyramid_steps && ex.pyramid_steps.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removePyramidStep(ex.id, sIdx)}
+                                    className="text-zinc-500 hover:text-red-400 p-1 transition-colors"
+                                    title="Rimuovi step"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
                               </div>
                             </div>
 
-                            <div>
-                              <input
-                                type="text"
-                                placeholder="Note step (opzionale, es. drop set, scalare peso, spotter)"
-                                value={step.instruction_note || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setExercises(exercises.map(item => {
-                                    if (item.id === ex.id && item.pyramid_steps) {
-                                      const nextSteps = [...item.pyramid_steps];
-                                      nextSteps[sIdx] = { ...nextSteps[sIdx], instruction_note: val };
-                                      return { ...item, pyramid_steps: nextSteps };
-                                    }
-                                    return item;
-                                  }));
-                                }}
-                                className="w-full bg-black/40 border border-brand-grey/10 rounded-lg px-3 py-1.5 text-white text-xs focus:border-brand-orange outline-none placeholder:text-brand-grey/40 transition-colors"
-                              />
-                            </div>
+                            {/* Micro-note per step */}
+                            <input
+                              type="text"
+                              placeholder="Note step (opzionale, es. drop set, scalare peso)..."
+                              value={step.instruction_note || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setExercises(exercises.map(item => {
+                                  if (item.id === ex.id && item.pyramid_steps) {
+                                    const nextSteps = [...item.pyramid_steps];
+                                    nextSteps[sIdx] = { ...nextSteps[sIdx], instruction_note: val };
+                                    return { ...item, pyramid_steps: nextSteps };
+                                  }
+                                  return item;
+                                }));
+                              }}
+                              className="w-full bg-black/30 border border-white/5 rounded-lg px-2 py-1 text-zinc-300 text-[11px] focus:border-purple-400 outline-none placeholder:text-zinc-600 transition-colors"
+                            />
                           </div>
                         ))}
 
                         <button
                           type="button"
                           onClick={() => addPyramidStep(ex.id)}
-                          className="w-full mt-1.5 py-2.5 border border-dashed border-brand-orange/30 text-brand-orange/80 hover:text-brand-orange hover:border-brand-orange/60 text-xs font-bold rounded-xl transition-colors flex justify-center items-center bg-brand-orange/5"
+                          className="w-full py-2 border border-dashed border-purple-500/30 text-purple-300 hover:text-purple-200 hover:border-purple-500/60 text-xs font-bold rounded-xl transition-colors flex justify-center items-center gap-1.5 bg-purple-500/10"
                         >
-                          <Plus size={14} className="mr-1.5" /> AGGIUNGI STEP PIRAMIDE
+                          <Plus size={14} /> AGGIUNGI STEP PIRAMIDE
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <>
+                    <div className="space-y-3">
                       {/* Banner notifica autofill o parse */}
                       {exerciseNotices[ex.id] && (
                         <div className="bg-brand-orange/15 border border-brand-orange/30 text-brand-orange text-xs px-3 py-1.5 rounded-xl flex items-center justify-between animate-fade-in">
@@ -2503,7 +2829,7 @@ const NewTrainPage: React.FC = () => {
                         <div className="relative flex items-center">
                           <input
                             type="text"
-                            placeholder="Nome esercizio (es. spinte brutte 4x8 90s, panca 5x5, squat 12-10-8...)"
+                            placeholder="Nome esercizio (es. Panca Piana 4x8 90s, Squat 100kg...)"
                             value={ex.name}
                             onChange={(e) => {
                               const val = e.target.value;
@@ -2569,7 +2895,7 @@ const NewTrainPage: React.FC = () => {
                                 (e.target as HTMLElement).blur();
                               }
                             }}
-                            className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-3 text-white focus:border-brand-orange focus:outline-none transition-colors pr-10"
+                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-medium text-sm focus:border-brand-orange focus:outline-none transition-colors pr-10"
                           />
                           {(exerciseSuggestions[ex.id] || []).length > 0 && (
                             <span className="absolute right-3 text-brand-orange/60 pointer-events-none" title="Suggerimenti disponibili">
@@ -2581,7 +2907,7 @@ const NewTrainPage: React.FC = () => {
                         {/* Dropdown Suggerimenti Autocomplete dallo Storico Utente */}
                         {(exerciseSuggestions[ex.id] || []).length > 0 && (
                           <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#181818] border border-brand-orange/30 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-white/5 backdrop-blur-md">
-                            <div className="p-2 bg-black/40 text-[10px] uppercase font-bold text-brand-grey/60 tracking-wider flex items-center">
+                            <div className="p-2 bg-black/40 text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center">
                               <History size={11} className="mr-1.5 text-brand-orange" />
                               Usato nelle tue sessioni precedenti (clicca per autofill)
                             </div>
@@ -2611,7 +2937,7 @@ const NewTrainPage: React.FC = () => {
                                   <div className="text-sm font-semibold text-white group-hover:text-brand-orange transition-colors">
                                     {item.name}
                                   </div>
-                                  <div className="text-xs text-brand-grey/70 mt-0.5">
+                                  <div className="text-xs text-zinc-400 mt-0.5">
                                     {item.sets} serie × {item.reps} reps • {item.rest_seconds}s recupero
                                     {item.weight_kg != null ? ` • ${item.weight_kg} kg` : ''}
                                   </div>
@@ -2625,310 +2951,556 @@ const NewTrainPage: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Note dell'esercizio (opzionale) */}
-                      <div>
-                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold block mb-1 ml-1">
-                          Exercise Note (optional)
-                        </label>
-                        <textarea
-                          rows={2}
+                      {/* Sub-bar: Type pill (Reps vs Iso), Note toggle, and Auto Count */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                        <div className="flex items-center gap-1.5">
+                          {/* Reps vs Isometria Pill */}
+                          <div className="flex bg-black/60 rounded-lg p-0.5 border border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => updateExercise(ex.id, 'type', 'reps')}
+                              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${
+                                ex.type === 'reps'
+                                  ? 'bg-brand-orange text-black'
+                                  : 'text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              REPS
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateExercise(ex.id, 'type', 'isometry')}
+                              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${
+                                ex.type === 'isometry'
+                                  ? 'bg-brand-orange text-black'
+                                  : 'text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              ISOMETRIA
+                            </button>
+                          </div>
+
+                          {/* Toggle Note Button */}
+                          <button
+                            type="button"
+                            onClick={() => toggleExerciseNote(ex.id)}
+                            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
+                              ex.instruction_note
+                                ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/30'
+                                : 'text-zinc-400 hover:text-white bg-white/5'
+                            }`}
+                          >
+                            <FileText size={12} />
+                            <span>{ex.instruction_note ? 'Nota' : '+ Nota'}</span>
+                          </button>
+                        </div>
+
+                        {/* Auto Count Toggle (Solo per Reps) */}
+                        {ex.type === 'reps' && (
+                          <div className="flex items-center bg-black/60 rounded-lg p-0.5 border border-white/10 text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
+                              className={`px-2 py-0.5 rounded font-bold transition-colors ${
+                                !ex.auto_count_type
+                                  ? 'bg-white/10 text-white'
+                                  : 'text-zinc-500 hover:text-zinc-300'
+                              }`}
+                            >
+                              OFF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
+                              className={`px-2 py-0.5 rounded font-bold transition-colors ${
+                                ex.auto_count_type === 'pushups'
+                                  ? 'bg-brand-orange text-black'
+                                  : 'text-zinc-500 hover:text-zinc-300'
+                              }`}
+                            >
+                              PUSH-UP
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
+                              className={`px-2 py-0.5 rounded font-bold transition-colors ${
+                                ex.auto_count_type === 'pullups'
+                                  ? 'bg-brand-orange text-black'
+                                  : 'text-zinc-500 hover:text-zinc-300'
+                              }`}
+                            >
+                              PULL-UP
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Note dell'esercizio (espansa se presente o cliccata) */}
+                      {(expandedNotesExerciseIds[ex.id] || Boolean(ex.instruction_note)) && (
+                        <input
+                          type="text"
                           value={ex.instruction_note || ''}
                           onChange={(e) => updateExercise(ex.id, 'instruction_note', e.target.value)}
-                          placeholder="E.g. presa prona, fermo 1 secondo al petto"
-                          className="w-full bg-black/40 border border-brand-grey/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-brand-orange focus:outline-none transition-colors resize-none"
+                          placeholder="Note tecniche (es. presa prona, fermo 1 secondo al petto)..."
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white text-xs placeholder:text-zinc-500 focus:border-brand-orange focus:outline-none transition-colors"
                         />
-                      </div>
+                      )}
 
-                      {/* Reps vs Isometric Selector */}
-                      <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                        <button
-                          onClick={() => updateExercise(ex.id, 'type', 'reps')}
-                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${ex.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                        >
-                          REPS
-                        </button>
-                        <button
-                          onClick={() => updateExercise(ex.id, 'type', 'isometry')}
-                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${ex.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                        >
-                          ISOMETRIC
-                        </button>
-                      </div>
-
-                      {/* Auto Count Toggle (Solo per Reps) */}
-                      {ex.type === 'reps' && (
-                        <div className="flex flex-col space-y-1 bg-black/20 p-2 rounded-xl border border-brand-grey/10">
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1">
-                            Auto Rep Counter (MediaPipe / Accelerometer)
+                      {/* Griglia Metriche 4 Colonne per Esercizio Standard */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                        {/* Serie */}
+                        <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
+                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
+                            Serie
                           </label>
-                          <div className="flex space-x-2">
+                          <div className="flex items-center justify-between">
                             <button
-                              onClick={() => updateExercise(ex.id, 'auto_count_type', null)}
-                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${!ex.auto_count_type ? 'bg-brand-grey/30 text-white' : 'text-brand-grey hover:text-white'}`}
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, 'sets', -1)}
+                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                              title="Diminuisci serie"
                             >
-                              DISABLED
+                              <Minus size={13} />
                             </button>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="1"
+                              value={getDraftOrValue(`${ex.id}:sets`, ex.sets)}
+                              onChange={(e) => setDraftValue(`${ex.id}:sets`, e.target.value)}
+                              onBlur={() => commitExerciseNumber(ex.id, 'sets', `${ex.id}:sets`, 1, 1)}
+                              onFocus={onNumberFocus}
+                              className="w-12 text-center font-bold text-white bg-transparent focus:outline-none text-base"
+                            />
                             <button
-                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pushups')}
-                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pushups' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, 'sets', 1)}
+                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                              title="Aumenta serie"
                             >
-                              PUSH-UPS
-                            </button>
-                            <button
-                              onClick={() => updateExercise(ex.id, 'auto_count_type', 'pullups')}
-                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${ex.auto_count_type === 'pullups' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                            >
-                              PULL-UPS
+                              <Plus size={13} />
                             </button>
                           </div>
                         </div>
-                      )}
-                    </>
+
+                        {/* Reps o Secondi */}
+                        <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
+                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
+                            {ex.type === 'reps' ? 'Reps' : 'Secondi'}
+                          </label>
+                          <div className="flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', ex.type === 'reps' ? -1 : -5)}
+                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                              title={ex.type === 'reps' ? '-1 rep' : '-5s'}
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds, true)}
+                              onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
+                              onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, 0, 0)}
+                              onFocus={onNumberFocus}
+                              placeholder={ex.type === 'reps' ? 'MAX' : 'MAX'}
+                              className="w-14 text-center font-bold text-white bg-transparent focus:outline-none text-base placeholder:text-brand-orange/60 placeholder:text-xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => adjustExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', ex.type === 'reps' ? 1 : 5)}
+                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                              title={ex.type === 'reps' ? '+1 rep' : '+5s'}
+                            >
+                              <Plus size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Peso kg */}
+                        <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
+                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
+                            Carico (kg)
+                          </label>
+                          <div className="flex items-center h-7">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={getWeightDraftOrValue(`${ex.id}:weight`, ex.weight_kg)}
+                              onChange={(e) => setDraftValue(`${ex.id}:weight`, e.target.value)}
+                              onBlur={() => commitExerciseWeight(ex.id, `${ex.id}:weight`, ex.weight_kg)}
+                              onFocus={onNumberFocus}
+                              placeholder="Corpo libero"
+                              className="w-full text-center font-bold text-white bg-transparent focus:outline-none text-base placeholder:text-zinc-600 placeholder:text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Recupero (min:sec) */}
+                        <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                              <Clock size={10} /> Rest
+                            </label>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', -15)}
+                                className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-zinc-400 hover:text-brand-orange transition-colors"
+                              >
+                                -15s
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', 15)}
+                                className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-zinc-400 hover:text-brand-orange transition-colors"
+                              >
+                                +15s
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center h-7 gap-1">
+                            <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min="0"
+                                value={getDraftOrValue(`${ex.id}:rest:min`, Math.floor(ex.rest_seconds / 60))}
+                                onChange={(e) => setDraftValue(`${ex.id}:rest:min`, e.target.value)}
+                                onBlur={() => commitRestPart(ex.id, 'min', `${ex.id}:rest:min`, ex.rest_seconds)}
+                                onFocus={onNumberFocus}
+                                className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-sm"
+                              />
+                              <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">M</span>
+                            </div>
+                            <span className="text-zinc-500 font-bold">:</span>
+                            <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min="0"
+                                max="59"
+                                value={getDraftOrValue(`${ex.id}:rest:sec`, ex.rest_seconds % 60)}
+                                onChange={(e) => setDraftValue(`${ex.id}:rest:sec`, e.target.value)}
+                                onBlur={() => commitRestPart(ex.id, 'sec', `${ex.id}:rest:sec`, ex.rest_seconds)}
+                                onFocus={onNumberFocus}
+                                className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-sm"
+                              />
+                              <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">S</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
 
-                  {/* Dati Generici (Serie e Recupero) */}
-                  {ex.type !== 'pyramid' && (
-                    <div className={`grid ${ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom' ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'} gap-3`}>
-                      <div className="flex flex-col">
-                        <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                          {ex.type === 'circuit' ? 'Giri (Rounds)' : 'Sets'}
+                  {/* Dati Serie e Recupero per Superset / Circuito / EMOM (2 colonne) */}
+                  {ex.type !== 'pyramid' && (ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom') && (
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
+                        <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
+                          {ex.type === 'circuit' ? 'Giri (Rounds)' : 'Serie Totali'}
                         </label>
-                        <div className="flex items-center bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors">
+                        <div className="flex items-center justify-between">
                           <button
                             type="button"
                             onClick={() => adjustExerciseNumber(ex.id, 'sets', -1)}
-                            className="px-2.5 py-3 text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
-                            title="Diminuisci serie"
+                            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                            title="Diminuisci"
                           >
-                            <Minus size={14} />
+                            <Minus size={13} />
                           </button>
                           <input
-                            type="number" inputMode="numeric"
+                            type="number"
+                            inputMode="numeric"
                             min="1"
                             value={getDraftOrValue(`${ex.id}:sets`, ex.sets)}
                             onChange={(e) => setDraftValue(`${ex.id}:sets`, e.target.value)}
                             onBlur={() => commitExerciseNumber(ex.id, 'sets', `${ex.id}:sets`, 1, 1)}
                             onFocus={onNumberFocus}
-                            className="w-full bg-transparent py-3 text-center text-white focus:outline-none"
+                            className="w-12 text-center font-bold text-white bg-transparent focus:outline-none text-base"
                           />
                           <button
                             type="button"
                             onClick={() => adjustExerciseNumber(ex.id, 'sets', 1)}
-                            className="px-2.5 py-3 text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
-                            title="Aumenta serie"
+                            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                            title="Aumenta"
                           >
-                            <Plus size={14} />
+                            <Plus size={13} />
                           </button>
                         </div>
                       </div>
 
-                      {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'emom' && (
-                        <div className="flex flex-col">
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                            {ex.type === 'reps' ? 'Reps' : 'Time (sec)'}
-                          </label>
-                          <div className="flex items-center bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors">
-                            <button
-                              type="button"
-                              onClick={() => adjustExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', ex.type === 'reps' ? -1 : -5)}
-                              className="px-2.5 py-3 text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
-                              title={ex.type === 'reps' ? 'Diminuisci reps' : '-5s'}
-                            >
-                              <Minus size={14} />
-                            </button>
-                            <input
-                              type="text" inputMode="numeric"
-                              value={getDraftOrValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, ex.type === 'reps' ? ex.reps : ex.duration_seconds, true)}
-                              onChange={(e) => setDraftValue(`${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, e.target.value)}
-                              onBlur={() => commitExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:${ex.type === 'reps' ? 'reps' : 'duration_seconds'}`, 0, 0)}
-                              onFocus={onNumberFocus}
-                              placeholder={ex.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                              className="w-full bg-transparent py-3 text-center text-white focus:outline-none placeholder:text-brand-orange/60 placeholder:text-xs"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => adjustExerciseNumber(ex.id, ex.type === 'reps' ? 'reps' : 'duration_seconds', ex.type === 'reps' ? 1 : 5)}
-                              className="px-2.5 py-3 text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
-                              title={ex.type === 'reps' ? 'Aumenta reps' : '+5s'}
-                            >
-                              <Plus size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'emom' && (
-                        <div className="flex flex-col">
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 mb-1">
-                            Weight (kg)
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={getWeightDraftOrValue(`${ex.id}:weight`, ex.weight_kg)}
-                            onChange={(e) => setDraftValue(`${ex.id}:weight`, e.target.value)}
-                            onBlur={() => commitExerciseWeight(ex.id, `${ex.id}:weight`, ex.weight_kg)}
-                            onFocus={onNumberFocus}
-                            placeholder="body Weight"
-                            className="bg-black/40 border border-brand-grey/10 rounded-xl px-2 py-3 text-center text-white focus:border-brand-orange focus:outline-none transition-colors"
-                          />
-                        </div>
-                      )}
-
-                      <div className="flex flex-col relative">
+                      <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
                         <div className="flex items-center justify-between mb-1">
-                          <label className="text-[10px] text-brand-grey/70 uppercase tracking-wider font-bold ml-1 flex items-center">
-                            <Clock size={10} className="mr-1" />
-                            {ex.type === 'circuit' ? 'Rest fine giro' : 'Rest'}
+                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                            <Clock size={10} /> {ex.type === 'circuit' ? 'Rest fine giro' : 'Recupero round'}
                           </label>
-                          <div className="flex items-center space-x-1">
+                          <div className="flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', -15)}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-brand-grey hover:text-brand-orange transition-colors"
-                              title="-15s"
+                              className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-zinc-400 hover:text-brand-orange transition-colors"
                             >
                               -15s
                             </button>
                             <button
                               type="button"
                               onClick={() => adjustExerciseNumber(ex.id, 'rest_seconds', 15)}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-brand-grey hover:text-brand-orange transition-colors"
-                              title="+15s"
+                              className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-brand-orange/20 text-zinc-400 hover:text-brand-orange transition-colors"
                             >
                               +15s
                             </button>
                           </div>
                         </div>
-                        <div className="flex bg-black/40 border border-brand-grey/10 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[46px]">
-                          <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
+                        <div className="flex items-center h-7 gap-1">
+                          <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
                             <input
-                              type="number" inputMode="numeric"
+                              type="number"
+                              inputMode="numeric"
                               min="0"
                               value={getDraftOrValue(`${ex.id}:rest:min`, Math.floor(ex.rest_seconds / 60))}
                               onChange={(e) => setDraftValue(`${ex.id}:rest:min`, e.target.value)}
                               onBlur={() => commitRestPart(ex.id, 'min', `${ex.id}:rest:min`, ex.rest_seconds)}
                               onFocus={onNumberFocus}
-                              className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
+                              className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-sm"
                             />
-                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                            <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">M</span>
                           </div>
-                          <div className="flex flex-col items-center justify-center w-1/2 relative">
+                          <span className="text-zinc-500 font-bold">:</span>
+                          <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
                             <input
-                              type="number" inputMode="numeric"
+                              type="number"
+                              inputMode="numeric"
                               min="0"
                               max="59"
                               value={getDraftOrValue(`${ex.id}:rest:sec`, ex.rest_seconds % 60)}
                               onChange={(e) => setDraftValue(`${ex.id}:rest:sec`, e.target.value)}
                               onBlur={() => commitRestPart(ex.id, 'sec', `${ex.id}:rest:sec`, ex.rest_seconds)}
                               onFocus={onNumberFocus}
-                              className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-lg focus:outline-none"
+                              className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-sm"
                             />
-                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                            <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">S</span>
                           </div>
                         </div>
                       </div>
                     </div>
                   )}
-
-                  {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
-                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <button
-                        onClick={() => convertToSuperset(ex.id)}
-                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                      >
-                        <Plus size={14} className="mr-1" /> SUPERSET
-                      </button>
-                      <button
-                        onClick={() => convertToCircuit(ex.id)}
-                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                      >
-                        <Plus size={14} className="mr-1" /> CIRCUITO
-                      </button>
-                      <button
-                        onClick={() => convertToEmom(ex.id)}
-                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                      >
-                        <Plus size={14} className="mr-1" /> EMOM
-                      </button>
-                      <button
-                        onClick={() => convertToPyramid(ex.id)}
-                        className="py-2 border border-dashed border-brand-orange/30 text-brand-orange/70 text-xs font-bold rounded-lg hover:border-brand-orange/50 hover:text-brand-orange transition-colors flex justify-center items-center"
-                      >
-                        <Plus size={14} className="mr-1" /> PIRAMIDE
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 {index < exercises.length - 1 && (
-                  <div className="relative -mt-1 mb-1 px-1">
-                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-brand-grey/25" />
-
-                    <div className="relative flex justify-center">
-                      <button
-                        onClick={() => setEditingTransitionForExerciseId((prev) => (prev === ex.id ? null : ex.id))}
-                        className="inline-flex items-center gap-2 rounded-full border border-brand-orange/30 bg-brand-dark px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-brand-orange hover:border-brand-orange/60 hover:text-brand-lightOrange transition-colors"
-                      >
-                        <Clock size={12} />
-                        {(ex.transition_rest_seconds || 0) > 0
-                          ? `Rest between exercises: ${formatTransitionRest(ex.transition_rest_seconds)}`
-                          : 'Add rest between exercises'}
-                      </button>
-                    </div>
-
-                    {editingTransitionForExerciseId === ex.id && (
-                      <div className="relative mt-2 bg-brand-darkGrey/30 border border-brand-grey/20 rounded-xl px-3 py-3">
-                        <p className="text-[10px] text-brand-grey/80 uppercase tracking-wider font-bold mb-2">
-                          Recovery between exercise {index + 1} and {index + 2}
-                        </p>
-
-                        <div className="flex bg-black/40 border border-brand-grey/10 rounded-lg overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
-                          <div className="flex flex-col items-center justify-center w-1/2 border-r border-brand-grey/10 relative">
-                            <input
-                              type="number" inputMode="numeric"
-                              min="0"
-                              value={getDraftOrValue(`${ex.id}:transition_rest:min`, Math.floor((ex.transition_rest_seconds || 0) / 60))}
-                              onChange={(e) => setDraftValue(`${ex.id}:transition_rest:min`, e.target.value)}
-                              onBlur={() => commitTransitionRestPart(ex.id, 'min', `${ex.id}:transition_rest:min`, ex.transition_rest_seconds || 0)}
-                              onFocus={onNumberFocus}
-                              className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
-                            />
-                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">MIN</span>
+                  <div className="my-3 px-0.5">
+                    {/* Stato: Pausa Impostata (Visualizzazione Compatta) */}
+                    {(ex.transition_rest_seconds || 0) > 0 && editingTransitionForExerciseId !== ex.id && (
+                      <div className="bg-[#18181A] border border-brand-orange/40 rounded-2xl p-3 shadow-md shadow-brand-orange/5 flex items-center justify-between transition-all">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-brand-orange/15 border border-brand-orange/30 flex items-center justify-center text-brand-orange shrink-0">
+                            <Clock size={18} />
                           </div>
-                          <div className="flex flex-col items-center justify-center w-1/2 relative">
-                            <input
-                              type="number" inputMode="numeric"
-                              min="0"
-                              max="59"
-                              value={getDraftOrValue(`${ex.id}:transition_rest:sec`, (ex.transition_rest_seconds || 0) % 60)}
-                              onChange={(e) => setDraftValue(`${ex.id}:transition_rest:sec`, e.target.value)}
-                              onBlur={() => commitTransitionRestPart(ex.id, 'sec', `${ex.id}:transition_rest:sec`, ex.transition_rest_seconds || 0)}
-                              onFocus={onNumberFocus}
-                              className="w-full h-full bg-transparent pt-3 pb-1 pl-4 text-center text-brand-orange font-bold text-base focus:outline-none"
-                            />
-                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-1.5 font-bold tracking-wider pointer-events-none">SEC</span>
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-brand-orange block">
+                              Recupero tra Es. {index + 1} e {index + 2}
+                            </span>
+                            <p className="text-base font-black text-white tracking-tight">
+                              {formatTransitionRest(ex.transition_rest_seconds)}{' '}
+                              <span className="text-[11px] font-semibold text-zinc-400">min : sec</span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingTransitionForExerciseId(ex.id)}
+                            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-bold text-white transition-all"
+                          >
+                            Modifica
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              applyTransitionPreset(ex.id, 0);
+                              setEditingTransitionForExerciseId(null);
+                            }}
+                            className="p-2 rounded-xl text-zinc-400 hover:text-red-400 hover:bg-red-500/10 active:scale-95 transition-all"
+                            title="Rimuovi recupero"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Stato: Nessuna Pausa Impostata (Tasto Ben Visibile) */}
+                    {!(ex.transition_rest_seconds || 0) && editingTransitionForExerciseId !== ex.id && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingTransitionForExerciseId(ex.id)}
+                        className="w-full group bg-black/40 hover:bg-[#1C1C1E] border border-dashed border-white/20 hover:border-brand-orange/50 active:scale-[0.99] rounded-2xl p-3 flex items-center justify-between transition-all"
+                      >
+                        <div className="flex items-center gap-3 text-left">
+                          <div className="w-8 h-8 rounded-xl bg-white/5 group-hover:bg-brand-orange/15 border border-white/10 group-hover:border-brand-orange/30 flex items-center justify-center text-zinc-400 group-hover:text-brand-orange transition-colors shrink-0">
+                            <Clock size={16} />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-zinc-200 group-hover:text-white transition-colors block">
+                              Pausa tra Esercizio {index + 1} e {index + 2}
+                            </span>
+                            <span className="text-[10px] text-zinc-500 block">
+                              Tocca per impostare il tempo di recupero tra questi due esercizi
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-xs font-black text-brand-orange bg-brand-orange/10 group-hover:bg-brand-orange group-hover:text-black px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 shrink-0">
+                          <Plus size={13} /> Imposta Pausa
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Stato: Modifica / Configurazione Aperta */}
+                    {editingTransitionForExerciseId === ex.id && (
+                      <div className="bg-[#1C1C1E] border border-brand-orange/50 rounded-2xl p-4 shadow-xl transition-all space-y-3.5">
+                        <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-brand-orange/20 text-brand-orange flex items-center justify-center">
+                              <Clock size={15} />
+                            </div>
+                            <div>
+                              <span className="text-xs font-black uppercase tracking-wider text-brand-orange block">
+                                Recupero tra Es. {index + 1} e Es. {index + 2}
+                              </span>
+                              <span className="text-[10px] text-zinc-400">
+                                Scegli un preset rapido o personalizza i secondi
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditingTransitionForExerciseId(null)}
+                            className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+
+                        {/* Presets Rapidi */}
+                        <div>
+                          <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block mb-1.5">
+                            Preset Rapidi
+                          </span>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {[
+                              { label: '30s', sec: 30 },
+                              { label: '1 min', sec: 60 },
+                              { label: '1m 30s', sec: 90 },
+                              { label: '2 min', sec: 120 },
+                              { label: '3 min', sec: 180 },
+                            ].map((preset) => {
+                              const isSelected = (ex.transition_rest_seconds || 0) === preset.sec;
+                              return (
+                                <button
+                                  key={preset.sec}
+                                  type="button"
+                                  onClick={() => applyTransitionPreset(ex.id, preset.sec)}
+                                  className={`py-2 rounded-xl text-xs font-black transition-all ${
+                                    isSelected
+                                      ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20 scale-[1.02]'
+                                      : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/5 active:scale-95'
+                                  }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
-                        <div className="mt-3 flex justify-end gap-2">
-                          <button
-                            onClick={() => {
-                              updateExercise(ex.id, 'transition_rest_seconds', 0);
-                              clearDraftValue(`${ex.id}:transition_rest:min`);
-                              clearDraftValue(`${ex.id}:transition_rest:sec`);
-                              setEditingTransitionForExerciseId(null);
-                            }}
-                            className="px-3 py-1.5 rounded-lg border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-xs font-bold"
-                          >
-                            Remove
-                          </button>
-                          <button
-                            onClick={() => setEditingTransitionForExerciseId(null)}
-                            className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-xs font-black"
-                          >
-                            Done
-                          </button>
+                        {/* Fine Tuning Min / Sec e Steppers */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <div className="flex-1 bg-black/60 border border-white/10 rounded-xl p-2 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const curr = ex.transition_rest_seconds || 0;
+                                  applyTransitionPreset(ex.id, Math.max(0, curr - 15));
+                                }}
+                                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 active:scale-95 transition-colors"
+                                title="-15s"
+                              >
+                                <Minus size={13} />
+                              </button>
+                              <div className="text-center px-1 min-w-[56px]">
+                                <span className="text-sm font-black text-white block font-mono">
+                                  {formatTransitionRest(ex.transition_rest_seconds)}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const curr = ex.transition_rest_seconds || 0;
+                                  applyTransitionPreset(ex.id, curr + 15);
+                                }}
+                                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 active:scale-95 transition-colors"
+                                title="+15s"
+                              >
+                                <Plus size={13} />
+                              </button>
+                            </div>
+
+                            <div className="flex items-center gap-1 border-l border-white/10 pl-2">
+                              <div className="relative w-12 h-7 bg-white/5 rounded-lg flex items-center">
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  min="0"
+                                  value={getDraftOrValue(`${ex.id}:transition_rest:min`, Math.floor((ex.transition_rest_seconds || 0) / 60))}
+                                  onChange={(e) => setDraftValue(`${ex.id}:transition_rest:min`, e.target.value)}
+                                  onBlur={() => commitTransitionRestPart(ex.id, 'min', `${ex.id}:transition_rest:min`, ex.transition_rest_seconds || 0)}
+                                  onFocus={onNumberFocus}
+                                  className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-xs"
+                                />
+                                <span className="text-[8px] text-zinc-500 font-bold pr-1 pointer-events-none">M</span>
+                              </div>
+                              <span className="text-zinc-500 font-bold text-xs">:</span>
+                              <div className="relative w-12 h-7 bg-white/5 rounded-lg flex items-center">
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  min="0"
+                                  max="59"
+                                  value={getDraftOrValue(`${ex.id}:transition_rest:sec`, (ex.transition_rest_seconds || 0) % 60)}
+                                  onChange={(e) => setDraftValue(`${ex.id}:transition_rest:sec`, e.target.value)}
+                                  onBlur={() => commitTransitionRestPart(ex.id, 'sec', `${ex.id}:transition_rest:sec`, ex.transition_rest_seconds || 0)}
+                                  onFocus={onNumberFocus}
+                                  className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-xs"
+                                />
+                                <span className="text-[8px] text-zinc-500 font-bold pr-1 pointer-events-none">S</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-1.5 shrink-0">
+                            {(ex.transition_rest_seconds || 0) > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  applyTransitionPreset(ex.id, 0);
+                                  setEditingTransitionForExerciseId(null);
+                                }}
+                                className="px-3 py-1.5 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 text-xs font-bold transition-colors"
+                              >
+                                Rimuovi
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setEditingTransitionForExerciseId(null)}
+                              className="px-4 py-1.5 rounded-xl bg-brand-orange text-black font-black text-xs hover:bg-brand-lightOrange active:scale-95 transition-all shadow-md"
+                            >
+                              Fatto
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
