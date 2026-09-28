@@ -40,11 +40,18 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellOff, Volume2 } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeader from '../components/AppHeader';
 import { hapticLight, hapticMedium, hapticHeavy } from '../utils/haptics';
 import { supabase } from '../lib/supabase';
+import {
+  areNotificationsEnabled,
+  setNotificationsEnabled,
+  isNativeApp,
+  requestNativeNotificationPermission,
+  checkNativeNotificationPermissionStatus,
+} from '../utils/workoutNotifications';
 import {
   loadCorrectionRules,
   deleteCorrectionRule,
@@ -68,9 +75,72 @@ const SettingsPage: React.FC = () => {
   const [voiceSyncError, setVoiceSyncError] = useState<string | null>(null);
   const [voiceSaving, setVoiceSaving] = useState(false);
 
+  // Notifiche native iOS
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
+  const [notificationNote, setNotificationNote] = useState<string | null>(null);
+  const [notificationsSaving, setNotificationsSaving] = useState(false);
+
   // Regole di correzione apprese dall'Active Feedback Loop
   const [correctionRules, setCorrectionRules] = useState<UserCorrectionRule[]>([]);
   const [showRulesList, setShowRulesList] = useState(false);
+
+  useEffect(() => {
+    // 1. Carica preferenza notifiche da localStorage
+    const localEnabled = areNotificationsEnabled();
+    setNotificationsEnabledState(localEnabled);
+
+    // 2. Se l'utente ha metadati sincronizzati su Supabase, sincronizza
+    if (user?.user_metadata?.native_notifications_enabled !== undefined) {
+      const metaEnabled = Boolean(user.user_metadata.native_notifications_enabled);
+      if (metaEnabled !== localEnabled) {
+        setNotificationsEnabledState(metaEnabled);
+        setNotificationsEnabled(metaEnabled);
+      }
+    }
+
+    // 3. Su app nativa iOS, verifica se i permessi a livello di OS sono stati revocati
+    if (isNativeApp() && localEnabled) {
+      void checkNativeNotificationPermissionStatus().then((status) => {
+        if (status === 'denied') {
+          setNotificationNote('Le notifiche sono disattivate nelle impostazioni di iOS.');
+        }
+      });
+    }
+  }, [user]);
+
+  const handleToggleNotifications = async () => {
+    void hapticLight();
+    const next = !notificationsEnabled;
+    setNotificationsEnabledState(next);
+    setNotificationsEnabled(next);
+    setNotificationsSaving(true);
+    setNotificationNote(null);
+
+    // Se stiamo abilitando e siamo su app nativa iPhone, richiedi/verifica permessi iOS
+    if (next && isNativeApp()) {
+      const granted = await requestNativeNotificationPermission();
+      if (!granted) {
+        setNotificationNote('Permessi non concessi: abilita le notifiche in Impostazioni iOS > No Excuses.');
+      }
+    }
+
+    // Salva nei metadati utente Supabase per sincronizzazione cross-device
+    if (user) {
+      try {
+        await supabase.auth.updateUser({
+          data: {
+            native_notifications_enabled: next,
+          },
+        });
+      } catch (err) {
+        console.debug('[Settings] Errore sync metadati notifiche:', err);
+      } finally {
+        setNotificationsSaving(false);
+      }
+    } else {
+      setNotificationsSaving(false);
+    }
+  };
 
   useEffect(() => {
     setCorrectionRules(loadCorrectionRules(user?.id));
@@ -353,11 +423,23 @@ const SettingsPage: React.FC = () => {
 
         {/* Impostazioni Grouped Card */}
         <div className="w-full space-y-4">
+          {/* Assistente Vocale */}
           <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white font-bold text-sm">Assistente Vocale</p>
-                <p className="text-brand-grey/60 text-xs mt-0.5">Countdown e avvisi vocali durante l'allenamento</p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`p-2.5 rounded-2xl border shrink-0 transition-colors ${
+                    voiceAssistanceEnabled
+                      ? 'bg-brand-orange/15 text-brand-orange border-brand-orange/30'
+                      : 'bg-white/5 text-zinc-500 border-white/10'
+                  }`}
+                >
+                  <Volume2 size={18} />
+                </div>
+                <div>
+                  <p className="text-white font-bold text-sm">Assistente Vocale</p>
+                  <p className="text-brand-grey/60 text-xs mt-0.5">Countdown e avvisi vocali durante l'allenamento</p>
+                </div>
               </div>
               <button
                 onClick={handleToggleVoiceAssistance}
@@ -376,6 +458,54 @@ const SettingsPage: React.FC = () => {
             </div>
             {voiceSyncError && (
               <p className="text-red-400 text-xs mt-2">{voiceSyncError}</p>
+            )}
+          </div>
+
+          {/* Notifiche App iPhone */}
+          <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-xl space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`p-2.5 rounded-2xl border shrink-0 transition-colors ${
+                    notificationsEnabled
+                      ? 'bg-brand-orange/15 text-brand-orange border-brand-orange/30'
+                      : 'bg-white/5 text-zinc-500 border-white/10'
+                  }`}
+                >
+                  {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-white font-bold text-sm">Notifiche iPhone</p>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/25">
+                      iOS Nativo
+                    </span>
+                  </div>
+                  <p className="text-brand-grey/60 text-xs mt-0.5">
+                    Sveglia hardware e avvisi di fine recupero a schermo bloccato sull'app per iPhone
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleToggleNotifications}
+                disabled={notificationsSaving}
+                className={`relative w-12 h-7 rounded-full transition-colors cursor-pointer shrink-0 select-none ${
+                  notificationsEnabled ? 'bg-brand-orange' : 'bg-white/20'
+                }`}
+                aria-label="Abilita o disabilita notifiche iPhone"
+              >
+                <span
+                  className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform shadow-md ${
+                    notificationsEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {notificationNote && (
+              <div className="mt-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-300/90 text-xs">
+                {notificationNote}
+              </div>
             )}
           </div>
 

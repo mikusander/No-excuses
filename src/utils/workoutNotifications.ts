@@ -16,6 +16,27 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, NotificationType } from '@capacitor/haptics';
 
 export const REST_NOTIFICATION_ID = 1001;
+export const NOTIFICATIONS_ENABLED_KEY = 'native_notifications_enabled';
+
+/**
+ * Controlla se le notifiche per l'app nativa iPhone sono abilitate dall'utente (default: true).
+ */
+export const areNotificationsEnabled = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const saved = localStorage.getItem(NOTIFICATIONS_ENABLED_KEY);
+  return saved === null ? true : saved === 'true';
+};
+
+/**
+ * Imposta se le notifiche sono abilitate dall'utente.
+ */
+export const setNotificationsEnabled = (enabled: boolean): void => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(NOTIFICATIONS_ENABLED_KEY, String(enabled));
+  if (!enabled) {
+    cancelBackgroundRestNotification();
+  }
+};
 
 /**
  * Rileva se l'applicazione sta girando all'interno del container nativo iOS.
@@ -31,11 +52,52 @@ let lastScheduledAtMs = 0;
 let isSchedulingInProgress = false;
 
 /**
+ * Verifica lo stato corrente dei permessi a livello iOS senza mostrare prompt all'utente.
+ */
+export const checkNativeNotificationPermissionStatus = async (): Promise<'granted' | 'denied' | 'prompt' | 'unsupported'> => {
+  if (!isNativeApp()) return 'unsupported';
+  try {
+    const status = await LocalNotifications.checkPermissions();
+    if (status.display === 'granted') {
+      cachedNativePermission = 'granted';
+      return 'granted';
+    }
+    if (status.display === 'denied') {
+      cachedNativePermission = 'denied';
+      return 'denied';
+    }
+    return 'prompt';
+  } catch {
+    return 'unsupported';
+  }
+};
+
+/**
+ * Richiede attivamente i permessi di notifica su iOS (usato dal toggle delle impostazioni).
+ */
+export const requestNativeNotificationPermission = async (): Promise<boolean> => {
+  if (!isNativeApp()) return false;
+  try {
+    const status = await LocalNotifications.checkPermissions();
+    if (status.display === 'granted') {
+      cachedNativePermission = 'granted';
+      return true;
+    }
+    const req = await LocalNotifications.requestPermissions();
+    const granted = req.display === 'granted';
+    cachedNativePermission = granted ? 'granted' : 'denied';
+    return granted;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Verifica e richiede in modo nativo e silenzioso i permessi di notifica su iOS.
  * Su iOS mostra il classico popup di sistema "Consenti notifiche" una sola volta.
  */
 export const ensureNativeNotificationPermission = async (): Promise<boolean> => {
-  if (!isNativeApp()) return false;
+  if (!isNativeApp() || !areNotificationsEnabled()) return false;
 
   try {
     const status = await LocalNotifications.checkPermissions();
@@ -92,8 +154,8 @@ export const scheduleBackgroundRestNotification = async ({
   nextExerciseName: string;
   nextSetInfo?: string;
 }): Promise<void> => {
-  // Esclusivamente per app nativa iPhone
-  if (!isNativeApp()) return;
+  // Esclusivamente per app nativa iPhone e se abilitato nelle impostazioni
+  if (!isNativeApp() || !areNotificationsEnabled()) return;
 
   const now = Date.now();
   // Se il target è già scaduto o troppo vicino, non schedulare
