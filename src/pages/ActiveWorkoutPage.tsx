@@ -484,10 +484,10 @@ const ActiveWorkoutPage: React.FC = () => {
     return undefined;
   }, [exerciseNotesByKey]);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
-  const [activeNoteTab, setActiveNoteTab] = useState<'exercise' | 'workout'>('exercise');
   const [noteModalDraft, setNoteModalDraft] = useState('');
-  const [workoutNoteModalDraft, setWorkoutNoteModalDraft] = useState('');
   const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
+  const [isEditingGeneralNoteInOverview, setIsEditingGeneralNoteInOverview] = useState(false);
+  const [overviewGeneralNoteDraft, setOverviewGeneralNoteDraft] = useState('');
   const [isInstructionModalOpen, setIsInstructionModalOpen] = useState(false);
   const [instructionModalContext, setInstructionModalContext] = useState<InstructionModalContext | null>(null);
   const [isWorkoutOverviewModalOpen, setIsWorkoutOverviewModalOpen] = useState(false);
@@ -2156,8 +2156,8 @@ const ActiveWorkoutPage: React.FC = () => {
       setExerciseNotesByKey({});
       setWorkoutGeneralNote('');
       workoutGeneralNoteRef.current = '';
-      setWorkoutNoteModalDraft('');
-      setActiveNoteTab('exercise');
+      setIsEditingGeneralNoteInOverview(false);
+      setOverviewGeneralNoteDraft('');
       setIsNoteModalOpen(false);
       setNoteModalDraft('');
       setNoteModalContext(null);
@@ -3062,23 +3062,16 @@ const ActiveWorkoutPage: React.FC = () => {
     setExerciseEditError(null);
   };
 
-  const openCurrentExerciseNoteModal = (initialTab: 'exercise' | 'workout' = 'exercise') => {
+  const openCurrentExerciseNoteModal = () => {
     const existingExerciseNote = getExerciseNoteEntry(currentExerciseIdx, currentExercise)?.note || '';
     setNoteModalContext(currentExerciseNoteContext);
     setNoteModalDraft(existingExerciseNote);
-    setWorkoutNoteModalDraft(workoutGeneralNoteRef.current || workoutGeneralNote);
-    setActiveNoteTab(initialTab);
     setIsNoteModalOpen(true);
-  };
-
-  const openWorkoutGeneralNoteModal = () => {
-    openCurrentExerciseNoteModal('workout');
   };
 
   const closeCurrentExerciseNoteModal = () => {
     setIsNoteModalOpen(false);
     setNoteModalDraft('');
-    setWorkoutNoteModalDraft('');
     setNoteModalContext(null);
   };
 
@@ -3094,11 +3087,20 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const closeWorkoutOverviewModal = () => {
     setIsWorkoutOverviewModalOpen(false);
+    setIsEditingGeneralNoteInOverview(false);
     if (isWorkoutOverviewAdvancePending) {
       setIsWorkoutOverviewAdvancePending(false);
       setIsResting(false);
       finishRestAndNextSet(true);
     }
+  };
+
+  const handleSaveGeneralNoteInOverview = () => {
+    const trimmed = overviewGeneralNoteDraft.trim();
+    setWorkoutGeneralNote(trimmed);
+    workoutGeneralNoteRef.current = trimmed;
+    setIsEditingGeneralNoteInOverview(false);
+    void hapticLight();
   };
 
   const closeCurrentInstructionModal = () => {
@@ -3135,10 +3137,6 @@ const ActiveWorkoutPage: React.FC = () => {
         return next;
       });
     }
-
-    const trimmedWorkoutNote = workoutNoteModalDraft.trim();
-    setWorkoutGeneralNote(trimmedWorkoutNote);
-    workoutGeneralNoteRef.current = trimmedWorkoutNote;
 
     void hapticLight();
     closeCurrentExerciseNoteModal();
@@ -4233,6 +4231,137 @@ const ActiveWorkoutPage: React.FC = () => {
     restTargetPyramidStepIdx,
   );
 
+  const renderOverviewGeneralNotes = () => {
+    if (isEditingGeneralNoteInOverview) {
+      return (
+        <div className="rounded-2xl border border-brand-orange/40 bg-brand-orange/10 p-4 shadow-sm mb-3">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2 text-brand-orange">
+              <FileText size={16} />
+              <span className="text-xs font-black uppercase tracking-wider">Note Generali Scheda</span>
+            </div>
+          </div>
+          <textarea
+            value={overviewGeneralNoteDraft}
+            onChange={(e) => setOverviewGeneralNoteDraft(e.target.value)}
+            placeholder="Scrivi le note generali riferite all'intera scheda di allenamento..."
+            className="w-full min-h-[110px] bg-black/50 border border-brand-orange/30 rounded-xl px-3 py-2.5 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none mb-3"
+            autoFocus
+          />
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setIsEditingGeneralNoteInOverview(false)}
+              className="px-3 py-1.5 rounded-xl border border-white/10 hover:border-white/20 text-zinc-400 hover:text-white transition-colors text-xs font-bold cursor-pointer"
+            >
+              Annulla
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveGeneralNoteInOverview}
+              className="px-3.5 py-1.5 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-xs font-black active:scale-95 shadow-md cursor-pointer"
+            >
+              Salva Nota
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (workoutGeneralNote.trim()) {
+      return (
+        <div className="rounded-2xl border border-brand-orange/40 bg-brand-orange/10 p-4 shadow-sm mb-3">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2 text-brand-orange">
+              <FileText size={16} />
+              <span className="text-xs font-black uppercase tracking-wider">Note Generali Scheda</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setOverviewGeneralNoteDraft(workoutGeneralNote);
+                setIsEditingGeneralNoteInOverview(true);
+              }}
+              className="text-[11px] font-bold text-brand-orange hover:text-brand-lightOrange transition-colors cursor-pointer"
+            >
+              Modifica
+            </button>
+          </div>
+          <p className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
+            {workoutGeneralNote}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setOverviewGeneralNoteDraft('');
+          setIsEditingGeneralNoteInOverview(true);
+        }}
+        className="w-full mb-3 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] text-zinc-400 hover:text-white hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-all text-xs font-semibold cursor-pointer"
+      >
+        <FileText size={14} className="text-brand-orange" />
+        <span>Aggiungi note per l'intera scheda</span>
+      </button>
+    );
+  };
+
+  const renderExerciseNoteModal = () => {
+    if (!isNoteModalOpen) return null;
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-lg font-bold text-white">Note Esercizio</h3>
+              <p className="text-xs text-brand-grey mt-0.5 truncate max-w-[250px]">
+                {noteModalContext?.name || currentExercise.name || 'Esercizio corrente'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeCurrentExerciseNoteModal}
+              className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              title="Chiudi note"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div>
+            <textarea
+              value={noteModalDraft}
+              onChange={(e) => setNoteModalDraft(e.target.value)}
+              placeholder="Scrivi le considerazioni per questo esercizio..."
+              className="w-full min-h-[150px] bg-black/40 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none"
+              autoFocus
+            />
+          </div>
+
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={closeCurrentExerciseNoteModal}
+              className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold cursor-pointer"
+            >
+              Annulla
+            </button>
+            <button
+              type="button"
+              onClick={saveCurrentExerciseNote}
+              className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black active:scale-95 shadow-md cursor-pointer"
+            >
+              Salva Nota
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ----------------------------------------------------------------------
   // RENDER REST VIEW
   // ----------------------------------------------------------------------
@@ -4271,41 +4400,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
               <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
                 {/* Note Generali della Scheda */}
-                {workoutGeneralNote.trim() ? (
-                  <div className="rounded-2xl border border-brand-orange/40 bg-brand-orange/10 p-4 shadow-sm mb-3">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-2 text-brand-orange">
-                        <FileText size={16} />
-                        <span className="text-xs font-black uppercase tracking-wider">Note Generali Scheda</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          closeWorkoutOverviewModal();
-                          openWorkoutGeneralNoteModal();
-                        }}
-                        className="text-[11px] font-bold text-brand-orange hover:text-brand-lightOrange transition-colors"
-                      >
-                        Modifica
-                      </button>
-                    </div>
-                    <p className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
-                      {workoutGeneralNote}
-                    </p>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      closeWorkoutOverviewModal();
-                      openWorkoutGeneralNoteModal();
-                    }}
-                    className="w-full mb-3 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] text-zinc-400 hover:text-white hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-all text-xs font-semibold"
-                  >
-                    <FileText size={14} className="text-brand-orange" />
-                    <span>Aggiungi note per l'intera scheda</span>
-                  </button>
-                )}
+                {renderOverviewGeneralNotes()}
 
                 {workout.exercises.map((exercise, index) => {
                   const isCurrentExercise = index === currentExerciseIdx;
@@ -4404,6 +4499,9 @@ const ActiveWorkoutPage: React.FC = () => {
             <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">RECUPERO</span>
             <span className="text-zinc-500">•</span>
             <span className="truncate text-zinc-200">{restOverviewExerciseLabel}</span>
+            {hasGeneralWorkoutNote && (
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-orange shrink-0" title="Note generali scheda presenti" />
+            )}
             <ChevronDown size={13} className="text-zinc-400 shrink-0" />
           </button>
 
@@ -4565,16 +4663,16 @@ const ActiveWorkoutPage: React.FC = () => {
         {/* Bottom Action Bar */}
         <div className="shrink-0 h-[58px] sm:h-[66px] flex items-stretch gap-2.5 sm:gap-3">
           <button
-            onClick={() => openCurrentExerciseNoteModal('exercise')}
-            className={`w-[58px] sm:w-[66px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center relative shadow-sm ${
-              hasCurrentWorkoutNote || hasGeneralWorkoutNote
+            onClick={openCurrentExerciseNoteModal}
+            className={`w-[58px] sm:w-[66px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center relative shadow-sm cursor-pointer ${
+              hasCurrentWorkoutNote
                 ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
                 : 'bg-brand-darkGrey/60 border-white/10 text-zinc-400 hover:text-white'
             }`}
-            title="Note esercizio e scheda"
+            title="Note esercizio"
           >
             <FileText size={22} />
-            {(hasCurrentWorkoutNote || hasGeneralWorkoutNote) && (
+            {hasCurrentWorkoutNote && (
               <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full bg-brand-orange ring-2 ring-black" />
             )}
           </button>
@@ -4587,102 +4685,7 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
         </div>
 
-        {isNoteModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-            <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-lg font-bold text-white">Note Allenamento</h3>
-                  <p className="text-xs text-brand-grey mt-0.5 truncate max-w-[250px]">
-                    {activeNoteTab === 'exercise'
-                      ? (noteModalContext?.name || 'Esercizio corrente')
-                      : (workout.name || 'Intera scheda')}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeCurrentExerciseNoteModal}
-                  className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                  title="Chiudi note"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Selettore Tab stile Apple: Esercizio vs Intera Scheda */}
-              <div className="flex bg-black/50 p-1 rounded-2xl border border-white/10 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setActiveNoteTab('exercise')}
-                  className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                    activeNoteTab === 'exercise'
-                      ? 'bg-brand-orange text-black shadow-md font-black'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <span className="truncate">Esercizio</span>
-                  {Boolean(hasCurrentWorkoutNote || (activeNoteTab !== 'exercise' && noteModalDraft.trim())) && (
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeNoteTab === 'exercise' ? 'bg-black' : 'bg-brand-orange'}`} />
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveNoteTab('workout')}
-                  className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                    activeNoteTab === 'workout'
-                      ? 'bg-brand-orange text-black shadow-md font-black'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <span className="truncate">Intera Scheda</span>
-                  {Boolean(workoutGeneralNote.trim() || (activeNoteTab !== 'workout' && workoutNoteModalDraft.trim())) && (
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeNoteTab === 'workout' ? 'bg-black' : 'bg-brand-orange'}`} />
-                  )}
-                </button>
-              </div>
-
-              {activeNoteTab === 'exercise' ? (
-                <div>
-                  <textarea
-                    value={noteModalDraft}
-                    onChange={(e) => setNoteModalDraft(e.target.value)}
-                    placeholder="Scrivi le considerazioni per questo esercizio..."
-                    className="w-full min-h-[150px] bg-black/40 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none"
-                    autoFocus
-                  />
-                </div>
-              ) : (
-                <div>
-                  <textarea
-                    value={workoutNoteModalDraft}
-                    onChange={(e) => setWorkoutNoteModalDraft(e.target.value)}
-                    placeholder="Scrivi le note generali riferite all'intera scheda di allenamento..."
-                    className="w-full min-h-[150px] bg-black/40 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none"
-                    autoFocus
-                  />
-                </div>
-              )}
-
-              <div className="mt-4 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={closeCurrentExerciseNoteModal}
-                  className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold"
-                >
-                  Annulla
-                </button>
-                <button
-                  type="button"
-                  onClick={saveCurrentExerciseNote}
-                  className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black active:scale-95 shadow-md"
-                >
-                  Salva Nota
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {renderExerciseNoteModal()}
       </div>
     );
   }
@@ -4723,6 +4726,9 @@ const ActiveWorkoutPage: React.FC = () => {
             </span>
             <span className="text-zinc-500">•</span>
             <span className="truncate text-zinc-200">{workout.name}</span>
+            {hasGeneralWorkoutNote && (
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-orange shrink-0" title="Note generali scheda presenti" />
+            )}
             <ChevronDown size={13} className="text-zinc-400 shrink-0" />
           </button>
 
@@ -5366,16 +5372,16 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
 
           <button
-            onClick={() => openCurrentExerciseNoteModal('exercise')}
-            className={`w-[58px] sm:w-[66px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center relative shadow-sm ${
-              hasCurrentWorkoutNote || hasGeneralWorkoutNote
+            onClick={openCurrentExerciseNoteModal}
+            className={`w-[58px] sm:w-[66px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center relative shadow-sm cursor-pointer ${
+              hasCurrentWorkoutNote
                 ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
                 : 'bg-brand-darkGrey/60 border-white/10 text-zinc-400 hover:text-white hover:border-white/25'
             }`}
-            title="Note esercizio e scheda"
+            title="Note esercizio"
           >
             <FileText size={22} />
-            {(hasCurrentWorkoutNote || hasGeneralWorkoutNote) && (
+            {hasCurrentWorkoutNote && (
               <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full bg-brand-orange ring-2 ring-black" />
             )}
           </button>
@@ -5418,102 +5424,7 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
       </main>
 
-      {isNoteModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-lg font-bold text-white">Note Allenamento</h3>
-                <p className="text-xs text-brand-grey mt-0.5 truncate max-w-[250px]">
-                  {activeNoteTab === 'exercise'
-                    ? (noteModalContext?.name || 'Esercizio corrente')
-                    : (workout.name || 'Intera scheda')}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={closeCurrentExerciseNoteModal}
-                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                title="Chiudi note"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Selettore Tab stile Apple: Esercizio vs Intera Scheda */}
-            <div className="flex bg-black/50 p-1 rounded-2xl border border-white/10 mb-4">
-              <button
-                type="button"
-                onClick={() => setActiveNoteTab('exercise')}
-                className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  activeNoteTab === 'exercise'
-                    ? 'bg-brand-orange text-black shadow-md font-black'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <span className="truncate">Esercizio</span>
-                {Boolean(hasCurrentWorkoutNote || (activeNoteTab !== 'exercise' && noteModalDraft.trim())) && (
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeNoteTab === 'exercise' ? 'bg-black' : 'bg-brand-orange'}`} />
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveNoteTab('workout')}
-                className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  activeNoteTab === 'workout'
-                    ? 'bg-brand-orange text-black shadow-md font-black'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <span className="truncate">Intera Scheda</span>
-                {Boolean(workoutGeneralNote.trim() || (activeNoteTab !== 'workout' && workoutNoteModalDraft.trim())) && (
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeNoteTab === 'workout' ? 'bg-black' : 'bg-brand-orange'}`} />
-                )}
-              </button>
-            </div>
-
-            {activeNoteTab === 'exercise' ? (
-              <div>
-                <textarea
-                  value={noteModalDraft}
-                  onChange={(e) => setNoteModalDraft(e.target.value)}
-                  placeholder="Scrivi le considerazioni per questo esercizio..."
-                  className="w-full min-h-[150px] bg-black/40 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none"
-                  autoFocus
-                />
-              </div>
-            ) : (
-              <div>
-                <textarea
-                  value={workoutNoteModalDraft}
-                  onChange={(e) => setWorkoutNoteModalDraft(e.target.value)}
-                  placeholder="Scrivi le note generali riferite all'intera scheda di allenamento..."
-                  className="w-full min-h-[150px] bg-black/40 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none"
-                  autoFocus
-                />
-              </div>
-            )}
-
-            <div className="mt-4 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={closeCurrentExerciseNoteModal}
-                className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold"
-              >
-                Annulla
-              </button>
-              <button
-                type="button"
-                onClick={saveCurrentExerciseNote}
-                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black active:scale-95 shadow-md"
-              >
-                Salva Nota
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderExerciseNoteModal()}
 
       {isInstructionModalOpen && instructionModalContext && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
@@ -5585,41 +5496,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
             <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
               {/* Note Generali della Scheda */}
-              {workoutGeneralNote.trim() ? (
-                <div className="rounded-2xl border border-brand-orange/40 bg-brand-orange/10 p-4 shadow-sm mb-3">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2 text-brand-orange">
-                      <FileText size={16} />
-                      <span className="text-xs font-black uppercase tracking-wider">Note Generali Scheda</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        closeWorkoutOverviewModal();
-                        openWorkoutGeneralNoteModal();
-                      }}
-                      className="text-[11px] font-bold text-brand-orange hover:text-brand-lightOrange transition-colors"
-                    >
-                      Modifica
-                    </button>
-                  </div>
-                  <p className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
-                    {workoutGeneralNote}
-                  </p>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeWorkoutOverviewModal();
-                    openWorkoutGeneralNoteModal();
-                  }}
-                  className="w-full mb-3 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] text-zinc-400 hover:text-white hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-all text-xs font-semibold"
-                >
-                  <FileText size={14} className="text-brand-orange" />
-                  <span>Aggiungi note per l'intera scheda</span>
-                </button>
-              )}
+              {renderOverviewGeneralNotes()}
 
               {workout.exercises.map((exercise, index) => {
                 const isCurrentExercise = index === currentExerciseIdx;
