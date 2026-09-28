@@ -19,6 +19,7 @@ import WeeklyConsistencyBar from '../components/WeeklyConsistencyBar';
 import MonthlyConsistencyModal, { type MonthlyWorkoutRun } from '../components/MonthlyConsistencyModal';
 import BentoGrid from '../components/BentoGrid';
 import BottomNavigation from '../components/BottomNavigation';
+import WorkoutPreviewModal from '../components/WorkoutPreviewModal';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import {
@@ -56,6 +57,10 @@ const HomePage: React.FC = () => {
   // Stato per la visualizzazione del calendario mensile fluttuante
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState<boolean>(false);
   const [allRuns, setAllRuns] = useState<MonthlyWorkoutRun[]>([]);
+
+  // Stato per la vista modale di anteprima/modifica parametri con Avvio Rapido
+  const [quickStartModalSchedaId, setQuickStartModalSchedaId] = useState<number | null>(null);
+  const [quickStartModalName, setQuickStartModalName] = useState<string>('');
 
   // Sincronizza lo stato del checkpoint (workout in sospeso)
   const refreshCheckpoint = useCallback(() => {
@@ -246,6 +251,10 @@ const HomePage: React.FC = () => {
         <QuickStartHeroCard
           activeCheckpoint={activeCheckpoint}
           lastWorkout={lastWorkout}
+          onQuickStartScheda={(schedaId, name) => {
+            setQuickStartModalSchedaId(schedaId);
+            setQuickStartModalName(name || '');
+          }}
         />
 
         {/* Striscia Settimanale con anelli Apple Fitness (cliccabile per aprire il calendario) */}
@@ -258,15 +267,24 @@ const HomePage: React.FC = () => {
         <BentoGrid schedeCount={schedeCount} />
       </main>
 
-      {/* 3. Modal Fluttuante Calendario Mensile & Riepiloghi */}
+      {/* 3. Modal Anteprima Scheda Avvio Rapido */}
+      {quickStartModalSchedaId != null && (
+        <WorkoutPreviewModal
+          workoutId={quickStartModalSchedaId}
+          initialWorkoutName={quickStartModalName}
+          onClose={() => setQuickStartModalSchedaId(null)}
+        />
+      )}
+
+      {/* 4. Modal Fluttuante Calendario Mensile & Riepiloghi */}
       <MonthlyConsistencyModal
         isOpen={isCalendarModalOpen}
         onClose={() => setIsCalendarModalOpen(false)}
         runs={allRuns}
       />
 
-      {/* 4. Floating Bottom Navigation */}
-      <BottomNavigation />
+      {/* 5. Floating Bottom Navigation */}
+      <BottomNavigation hidden={quickStartModalSchedaId != null || isCalendarModalOpen} />
     </div>
   );
 };

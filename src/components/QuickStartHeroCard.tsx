@@ -34,11 +34,14 @@ interface QuickStartHeroCardProps {
   } | null;
   /** Ultima scheda completata o consigliata */
   lastWorkout?: LastWorkoutData | null;
+  /** Callback per mostrare l'anteprima modale prima di avviare o riprendere la scheda */
+  onQuickStartScheda?: (schedaId: number, workoutName?: string) => void;
 }
 
 const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
   activeCheckpoint,
   lastWorkout,
+  onQuickStartScheda,
 }) => {
   const navigate = useNavigate();
 
@@ -47,13 +50,21 @@ const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
     if (activeCheckpoint) {
       if (activeCheckpoint.identity.type === 'run') {
         navigate(`/active-workout-history/${activeCheckpoint.identity.id}`);
-      } else {
-        navigate(`/active-workout/${activeCheckpoint.identity.id}`);
+        return;
       }
+      if (onQuickStartScheda) {
+        onQuickStartScheda(activeCheckpoint.identity.id, activeCheckpoint.workoutName);
+        return;
+      }
+      navigate(`/active-workout/${activeCheckpoint.identity.id}`);
       return;
     }
 
     if (lastWorkout?.id_scheda) {
+      if (onQuickStartScheda) {
+        onQuickStartScheda(lastWorkout.id_scheda, lastWorkout.nome);
+        return;
+      }
       navigate(`/active-workout/${lastWorkout.id_scheda}`);
       return;
     }
