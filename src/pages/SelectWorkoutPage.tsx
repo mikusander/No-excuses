@@ -53,15 +53,20 @@
  * vengono eliminati (`clearAllWorkoutProgressCheckpoints`) per evitare che
  * la HomePage proponga di riprendere una sessione ormai superata.
  */
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Calendar, PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Folder } from 'lucide-react';
+import { Dumbbell, Calendar, PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Folder, Flame } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeader from '../components/AppHeader';
 import { useNavigate } from 'react-router-dom';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
-import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
+import {
+  clearAllWorkoutProgressCheckpoints,
+  getValidWorkoutProgressCheckpoints,
+  subscribeToWorkoutProgress,
+  type WorkoutProgressCheckpointMeta,
+} from '../lib/workoutProgressStorage';
 import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
 import {
   getFolders,
@@ -196,6 +201,30 @@ const SelectWorkoutPage: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isSavingAndStarting, setIsSavingAndStarting] = useState(false);
+  const [activeCheckpoints, setActiveCheckpoints] = useState<WorkoutProgressCheckpointMeta[]>([]);
+
+  const refreshCheckpoints = useCallback(() => {
+    if (!user?.id) {
+      setActiveCheckpoints([]);
+      return;
+    }
+    setActiveCheckpoints(getValidWorkoutProgressCheckpoints(user.id));
+  }, [user?.id]);
+
+  useEffect(() => {
+    refreshCheckpoints();
+    const unsub = subscribeToWorkoutProgress(() => {
+      refreshCheckpoints();
+    });
+    return unsub;
+  }, [refreshCheckpoints]);
+
+  const isWorkoutActive = useCallback((schedaIdStr?: string | null) => {
+    if (!schedaIdStr) return false;
+    const numId = Number(schedaIdStr);
+    if (!Number.isFinite(numId)) return false;
+    return activeCheckpoints.some((cp) => cp.identity.type === 'scheda' && cp.identity.id === numId);
+  }, [activeCheckpoints]);
 
   // Folder filtering
   const [folders, setFolders] = useState<WorkoutFolder[]>(() => getFolders(user?.id));
@@ -421,7 +450,13 @@ const SelectWorkoutPage: React.FC = () => {
     try {
       setIsSavingAndStarting(true);
       await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
-      clearSavedWorkoutCheckpoint();
+
+      const isCurrentSchedaActive = isWorkoutActive(selectedWorkoutPreview.id);
+      if (!isCurrentSchedaActive) {
+        // Se si avvia una scheda DIVERSA da quella attualmente in sospeso, puliamo i vecchi checkpoint
+        clearSavedWorkoutCheckpoint();
+      }
+
       navigate(`/active-workout/${selectedWorkoutPreview.id}`);
     } catch (err: any) {
       console.error('Error saving workout before start:', err);
@@ -532,7 +567,15 @@ const SelectWorkoutPage: React.FC = () => {
                           <Calendar className="text-brand-orange" size={28} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <h2 className="text-xl font-bold text-white leading-tight truncate">{workout.name}</h2>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-xl font-bold text-white leading-tight truncate">{workout.name}</h2>
+                            {isWorkoutActive(workout.id) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2 py-0.5 rounded-full shrink-0">
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
+                                In corso
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap items-center gap-2 mt-1">
                             <p className="text-xs text-brand-grey/60 font-semibold">
                               {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -547,7 +590,11 @@ const SelectWorkoutPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="bg-brand-orange/10 group-hover:bg-brand-orange text-brand-orange group-hover:text-black p-3 rounded-full transition-colors shrink-0">
-                        <PlayCircle size={28} />
+                        {isWorkoutActive(workout.id) ? (
+                          <Flame size={28} className="text-brand-orange group-hover:text-black animate-pulse" />
+                        ) : (
+                          <PlayCircle size={28} />
+                        )}
                       </div>
                     </button>
                   );
@@ -569,13 +616,28 @@ const SelectWorkoutPage: React.FC = () => {
           >
             <div className="p-5 border-b border-white/10 flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h3 className="text-2xl font-black text-white leading-tight break-words">
-                  {selectedWorkoutPreview?.name || selectedWorkout.name}
-                </h3>
-                <p className="text-xs text-brand-grey/70 font-semibold mt-1 flex items-center">
-                  <Pencil size={10} className="mr-1 text-brand-orange" />
-                  Tap values to edit before starting
-                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-2xl font-black text-white leading-tight break-words">
+                    {selectedWorkoutPreview?.name || selectedWorkout.name}
+                  </h3>
+                  {isWorkoutActive(selectedWorkoutPreview?.id || selectedWorkout.id) && (
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
+                      In corso
+                    </span>
+                  )}
+                </div>
+                {isWorkoutActive(selectedWorkoutPreview?.id || selectedWorkout.id) ? (
+                  <p className="text-xs text-brand-orange font-bold mt-1 flex items-center gap-1.5">
+                    <Flame size={12} className="shrink-0" />
+                    Allenamento sospeso: puoi modificare i parametri e riprendere senza perdere i tuoi progressi
+                  </p>
+                ) : (
+                  <p className="text-xs text-brand-grey/70 font-semibold mt-1 flex items-center">
+                    <Pencil size={10} className="mr-1 text-brand-orange" />
+                    Tap values to edit before starting
+                  </p>
+                )}
               </div>
 
               <button
@@ -831,7 +893,12 @@ const SelectWorkoutPage: React.FC = () => {
                 {isSavingAndStarting ? (
                   <>
                     <Loader2 size={20} className="mr-2 animate-spin" />
-                    Saving & Starting...
+                    Salvataggio e ripresa in corso...
+                  </>
+                ) : isWorkoutActive(selectedWorkoutPreview?.id || selectedWorkout.id) ? (
+                  <>
+                    <PlayCircle size={20} className="mr-2 fill-current" />
+                    Salva modifiche e Riprendi
                   </>
                 ) : (
                   <>

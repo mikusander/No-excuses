@@ -104,7 +104,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil, ChevronDown } from 'lucide-react';
+import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil, ChevronDown } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis } from '../utils/voice';
 import {
@@ -449,6 +449,40 @@ const ActiveWorkoutPage: React.FC = () => {
   const [workoutGeneralNote, setWorkoutGeneralNote] = useState<string>('');
   const workoutGeneralNoteRef = useRef<string>(workoutGeneralNote);
   workoutGeneralNoteRef.current = workoutGeneralNote;
+
+  const getExerciseNoteEntry = useCallback((exIdx: number, ex?: Exercise): ExerciseNoteEntry | undefined => {
+    if (!ex) return undefined;
+    const notes = exerciseNotesByKeyRef.current || exerciseNotesByKey;
+
+    // 1. Per ID esercizio primario
+    const primaryKey = String(ex.id);
+    if (notes[primaryKey]?.note?.trim()) return notes[primaryKey];
+
+    // 2. Per indice posizionale
+    const idxKey = `idx_${exIdx}`;
+    if (notes[idxKey]?.note?.trim()) return notes[idxKey];
+
+    // 3. Per numero d'ordine
+    const orderKey = `order_${ex.order_index ?? exIdx + 1}`;
+    if (notes[orderKey]?.note?.trim()) return notes[orderKey];
+
+    // 4. Per nome esercizio normalizzato
+    const cleanName = (ex.name || '').trim().toLowerCase();
+    const nameKey = cleanName ? `name_${cleanName}` : '';
+    if (nameKey && notes[nameKey]?.note?.trim()) return notes[nameKey];
+
+    // 5. Ricerca flessibile per prefisso "X. " o inclusione del nome
+    const orderPrefix = `${exIdx + 1}.`;
+    for (const entry of Object.values(notes)) {
+      if (!entry?.note?.trim()) continue;
+      const entryName = (entry.exerciseName || '').trim().toLowerCase();
+      if (entryName.startsWith(orderPrefix) || (cleanName && entryName.includes(cleanName))) {
+        return entry;
+      }
+    }
+
+    return undefined;
+  }, [exerciseNotesByKey]);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [activeNoteTab, setActiveNoteTab] = useState<'exercise' | 'workout'>('exercise');
   const [noteModalDraft, setNoteModalDraft] = useState('');
@@ -977,8 +1011,14 @@ const ActiveWorkoutPage: React.FC = () => {
     const lapsFormatted = allLapTimes.map((lap, i) => `set ${i + 1}: ${formatTime(lap)}`).join(', ');
 
     const noteKey = String(exercise.id);
+    const idxKey = `idx_${_exIdx}`;
+    const cleanName = (exercise.name || '').trim().toLowerCase();
+    const nameKey = cleanName ? `name_${cleanName}` : '';
+    const orderKey = `order_${exercise.order_index ?? _exIdx + 1}`;
+
     setExerciseNotesByKey((prev) => {
-      const existing = prev[noteKey]?.note?.trim() || '';
+      const resolved = getExerciseNoteEntry(_exIdx, exercise);
+      const existing = resolved?.note?.trim() || prev[noteKey]?.note?.trim() || '';
       let mergedNote = lapsFormatted;
       if (existing) {
         const cleanExisting = existing
@@ -995,17 +1035,21 @@ const ActiveWorkoutPage: React.FC = () => {
           mergedNote = lapsFormatted;
         }
       }
+      const entry: ExerciseNoteEntry = {
+        exerciseName: `${_exIdx + 1}. ${exercise.name || 'Circuito'}`,
+        note: mergedNote,
+      };
       const nextNotes = {
         ...prev,
-        [noteKey]: {
-          exerciseName: `${_exIdx + 1}. ${exercise.name || 'Circuito'}`,
-          note: mergedNote,
-        },
+        [noteKey]: entry,
+        [idxKey]: entry,
+        [orderKey]: entry,
+        ...(nameKey ? { [nameKey]: entry } : {}),
       };
       exerciseNotesByKeyRef.current = nextNotes;
       return nextNotes;
     });
-  }, []);
+  }, [getExerciseNoteEntry]);
 
   const resetCurrentTimerFromContext = () => {
     if (isResting) {
@@ -1312,6 +1356,24 @@ const ActiveWorkoutPage: React.FC = () => {
       return acc;
     }, {});
 
+    // Mappatura canonica su ogni esercizio del workout per massima resilienza
+    workout.exercises.forEach((ex, exIdx) => {
+      const entry = getExerciseNoteEntry(exIdx, ex);
+      if (entry?.note?.trim()) {
+        const canonical: ExerciseNoteEntry = {
+          exerciseName: `${exIdx + 1}. ${ex.name}`,
+          note: entry.note.trim(),
+        };
+        safeExerciseNotesByKey[String(ex.id)] = canonical;
+        safeExerciseNotesByKey[`idx_${exIdx}`] = canonical;
+        safeExerciseNotesByKey[`order_${ex.order_index ?? exIdx + 1}`] = canonical;
+        const cleanName = (ex.name || '').trim().toLowerCase();
+        if (cleanName) {
+          safeExerciseNotesByKey[`name_${cleanName}`] = canonical;
+        }
+      }
+    });
+
     const payload: PersistedWorkoutProgressPayload = {
       version: 1,
       savedAtMs: now,
@@ -1387,222 +1449,259 @@ const ActiveWorkoutPage: React.FC = () => {
       return false;
     }
 
-    const state = parsedPayload.state;
-    const safeExerciseIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentExerciseIdx), nextWorkout.exercises.length - 1));
-    const safeExercise = nextWorkout.exercises[safeExerciseIdx];
-    const safeSetIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentSetIdx), Math.max(0, safeExercise.sets - 1)));
+    try {
+      const totalExercises = nextWorkout.exercises.length;
+      if (totalExercises === 0) return false;
 
-    const rawSubIdx = normalizeDurationSeconds(state.currentSubExerciseIdx);
-    const safeSubIdx = (safeExercise.type === 'superset' || safeExercise.type === 'circuit')
-      ? Math.max(0, Math.min(rawSubIdx, Math.max(0, (safeExercise.subExercises?.length || 1) - 1)))
-      : 0;
+      const state = parsedPayload.state;
+      const safeExerciseIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentExerciseIdx), totalExercises - 1));
+      const safeExercise = nextWorkout.exercises[safeExerciseIdx];
+      if (!safeExercise) return false;
 
-    const rawPyramidStepIdx = normalizeDurationSeconds(state.currentPyramidStepIdx);
-    const safePyramidStepIdx = safeExercise.type === 'pyramid'
-      ? Math.max(0, Math.min(rawPyramidStepIdx, Math.max(0, (safeExercise.pyramid_steps?.length || 1) - 1)))
-      : 0;
+      const safeSetIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentSetIdx), Math.max(0, (safeExercise.sets || 1) - 1)));
 
-    const rawEmomRoundIdx = normalizeDurationSeconds(state.currentEmomRoundIdx);
-    const safeEmomRoundIdx = safeExercise.type === 'emom'
-      ? Math.max(0, Math.min(rawEmomRoundIdx, Math.max(0, (safeExercise.emom_rounds || 1) - 1)))
-      : 0;
+      const rawSubIdx = normalizeDurationSeconds(state.currentSubExerciseIdx);
+      const safeSubIdx = (safeExercise.type === 'superset' || safeExercise.type === 'circuit')
+        ? Math.max(0, Math.min(rawSubIdx, Math.max(0, (safeExercise.subExercises?.length || 1) - 1)))
+        : 0;
 
-    const elapsedSinceSaveSeconds = Math.max(0, Math.trunc((Date.now() - savedAtMs) / 1000));
+      const rawPyramidStepIdx = normalizeDurationSeconds(state.currentPyramidStepIdx);
+      const safePyramidStepIdx = safeExercise.type === 'pyramid'
+        ? Math.max(0, Math.min(rawPyramidStepIdx, Math.max(0, (safeExercise.pyramid_steps?.length || 1) - 1)))
+        : 0;
 
-    const safeRestRemaining = Math.max(0, normalizeDurationSeconds(state.restRemaining));
-    const safeRestInitial = Math.max(0, normalizeDurationSeconds(state.restInitialDuration));
-    const effectiveRestInitial = safeRestInitial > 0 ? safeRestInitial : safeRestRemaining;
-    const effectiveRestRemainingBase = safeRestRemaining > 0 ? safeRestRemaining : effectiveRestInitial;
-    const effectiveRestRemaining = Boolean(state.restWasRunning)
-      ? Math.max(0, effectiveRestRemainingBase - elapsedSinceSaveSeconds)
-      : effectiveRestRemainingBase;
+      const rawEmomRoundIdx = normalizeDurationSeconds(state.currentEmomRoundIdx);
+      const safeEmomRoundIdx = safeExercise.type === 'emom'
+        ? Math.max(0, Math.min(rawEmomRoundIdx, Math.max(0, (safeExercise.emom_rounds || 1) - 1)))
+        : 0;
 
-    // Rileva se il recupero era in corso ed è scaduto mentre l'app era chiusa
-    const restExpiredWhileClosed = Boolean(state.isResting) && effectiveRestRemaining <= 0;
-    const shouldRestoreRest = Boolean(state.isResting) && effectiveRestRemaining > 0;
+      const elapsedSinceSaveSeconds = Math.max(0, Math.trunc((Date.now() - savedAtMs) / 1000));
 
-    let targetExerciseIdx = safeExerciseIdx;
-    let targetSetIdx = safeSetIdx;
-    let targetSubExerciseIdx = safeSubIdx;
-    let targetPyramidStepIdx = safePyramidStepIdx;
-    let targetEmomRoundIdx = safeEmomRoundIdx;
-    let targetPendingPyramidAdvance = Boolean(state.pendingPyramidAdvance) && safeExercise.type === 'pyramid';
-    let targetPendingExerciseAdvance = Boolean(state.pendingExerciseAdvance);
+      const safeRestRemaining = Math.max(0, normalizeDurationSeconds(state.restRemaining));
+      const safeRestInitial = Math.max(0, normalizeDurationSeconds(state.restInitialDuration));
+      const effectiveRestInitial = safeRestInitial > 0 ? safeRestInitial : safeRestRemaining;
+      const effectiveRestRemainingBase = safeRestRemaining > 0 ? safeRestRemaining : effectiveRestInitial;
+      const effectiveRestRemaining = Boolean(state.restWasRunning)
+        ? Math.max(0, effectiveRestRemainingBase - elapsedSinceSaveSeconds)
+        : effectiveRestRemainingBase;
 
-    // Se il timer di recupero è finito durante la chiusura dell'app, avanziamo automaticamente
-    // al prossimo set o al prossimo esercizio esattamente come fa finishRestAndNextSet
-    if (restExpiredWhileClosed) {
-      if (targetPendingExerciseAdvance) {
-        // Transizione al prossimo esercizio completata ad app chiusa
-        targetPendingExerciseAdvance = false;
-        if (safeExerciseIdx < nextWorkout.exercises.length - 1) {
-          targetExerciseIdx = safeExerciseIdx + 1;
-        }
-        targetSetIdx = 0;
-        targetSubExerciseIdx = 0;
-        targetPyramidStepIdx = 0;
-        targetEmomRoundIdx = 0;
-      } else if (safeExercise.type === 'pyramid' && targetPendingPyramidAdvance) {
-        // Passo successivo della piramide
-        targetPendingPyramidAdvance = false;
-        targetPyramidStepIdx = safePyramidStepIdx + 1;
-      } else {
-        // Set successivo dello stesso esercizio
-        targetSetIdx = safeSetIdx + 1;
-        targetSubExerciseIdx = 0;
-        if (safeExercise.type === 'emom') {
+      // Rileva se il recupero era in corso ed è scaduto mentre l'app era chiusa
+      const restExpiredWhileClosed = Boolean(state.isResting) && effectiveRestRemaining <= 0;
+      const shouldRestoreRest = Boolean(state.isResting) && effectiveRestRemaining > 0;
+
+      let targetExerciseIdx = safeExerciseIdx;
+      let targetSetIdx = safeSetIdx;
+      let targetSubExerciseIdx = safeSubIdx;
+      let targetPyramidStepIdx = safePyramidStepIdx;
+      let targetEmomRoundIdx = safeEmomRoundIdx;
+      let targetPendingPyramidAdvance = Boolean(state.pendingPyramidAdvance) && safeExercise.type === 'pyramid';
+      let targetPendingExerciseAdvance = Boolean(state.pendingExerciseAdvance);
+
+      // Se il timer di recupero è finito durante la chiusura dell'app, avanziamo automaticamente
+      if (restExpiredWhileClosed) {
+        if (targetPendingExerciseAdvance) {
+          targetPendingExerciseAdvance = false;
+          if (safeExerciseIdx < totalExercises - 1) {
+            targetExerciseIdx = safeExerciseIdx + 1;
+          }
+          targetSetIdx = 0;
+          targetSubExerciseIdx = 0;
+          targetPyramidStepIdx = 0;
           targetEmomRoundIdx = 0;
+        } else if (safeExercise.type === 'pyramid' && targetPendingPyramidAdvance) {
+          targetPendingPyramidAdvance = false;
+          targetPyramidStepIdx = safePyramidStepIdx + 1;
+        } else {
+          targetSetIdx = safeSetIdx + 1;
+          targetSubExerciseIdx = 0;
+          if (safeExercise.type === 'emom') {
+            targetEmomRoundIdx = 0;
+          }
         }
       }
-    }
 
-    const effectiveExercise = nextWorkout.exercises[targetExerciseIdx] || safeExercise;
-    const effectiveSetIdx = Math.max(0, Math.min(targetSetIdx, Math.max(0, effectiveExercise.sets - 1)));
-    const effectiveSubIdx = (effectiveExercise.type === 'superset' || effectiveExercise.type === 'circuit')
-      ? Math.max(0, Math.min(targetSubExerciseIdx, Math.max(0, (effectiveExercise.subExercises?.length || 1) - 1)))
-      : 0;
-    const effectivePyramidStepIdx = effectiveExercise.type === 'pyramid'
-      ? Math.max(0, Math.min(targetPyramidStepIdx, Math.max(0, (effectiveExercise.pyramid_steps?.length || 1) - 1)))
-      : 0;
-    const effectiveEmomRoundIdx = effectiveExercise.type === 'emom'
-      ? Math.max(0, Math.min(targetEmomRoundIdx, Math.max(0, (effectiveExercise.emom_rounds || 1) - 1)))
-      : 0;
+      targetExerciseIdx = Math.max(0, Math.min(targetExerciseIdx, totalExercises - 1));
+      const effectiveExercise = nextWorkout.exercises[targetExerciseIdx] || safeExercise;
+      const effectiveSetIdx = Math.max(0, Math.min(targetSetIdx, Math.max(0, (effectiveExercise.sets || 1) - 1)));
+      const effectiveSubIdx = (effectiveExercise.type === 'superset' || effectiveExercise.type === 'circuit')
+        ? Math.max(0, Math.min(targetSubExerciseIdx, Math.max(0, (effectiveExercise.subExercises?.length || 1) - 1)))
+        : 0;
+      const effectivePyramidStepIdx = effectiveExercise.type === 'pyramid'
+        ? Math.max(0, Math.min(targetPyramidStepIdx, Math.max(0, (effectiveExercise.pyramid_steps?.length || 1) - 1)))
+        : 0;
+      const effectiveEmomRoundIdx = effectiveExercise.type === 'emom'
+        ? Math.max(0, Math.min(targetEmomRoundIdx, Math.max(0, (effectiveExercise.emom_rounds || 1) - 1)))
+        : 0;
 
-    const effectiveIsometryTarget = getTargetIsometry(effectiveExercise, effectiveExercise.subExercises?.[effectiveSubIdx]);
-    const effectiveFallbackIsometryTarget = (() => {
-      if (effectiveExercise.type === 'isometry') return Math.max(0, normalizeDurationSeconds(effectiveExercise.duration_seconds));
-      if (effectiveExercise.type === 'superset') {
-        const safeSub = effectiveExercise.subExercises?.[effectiveSubIdx];
-        if (safeSub?.type === 'isometry') {
-          return Math.max(0, normalizeDurationSeconds(safeSub.duration_seconds));
+      const effectiveIsometryTarget = getTargetIsometry(effectiveExercise, effectiveExercise.subExercises?.[effectiveSubIdx]);
+      const effectiveFallbackIsometryTarget = (() => {
+        if (effectiveExercise.type === 'isometry') return Math.max(0, normalizeDurationSeconds(effectiveExercise.duration_seconds));
+        if (effectiveExercise.type === 'superset') {
+          const safeSub = effectiveExercise.subExercises?.[effectiveSubIdx];
+          if (safeSub?.type === 'isometry') {
+            return Math.max(0, normalizeDurationSeconds(safeSub.duration_seconds));
+          }
         }
+        return 0;
+      })();
+
+      const effectiveFallbackEmomTarget = effectiveExercise.type === 'emom'
+        ? Math.max(1, normalizeDurationSeconds(effectiveExercise.emom_round_duration || 60))
+        : 0;
+
+      let finalIsometryRemaining = 0;
+      let finalIsometryActive = false;
+      let finalIsometryEndsAtMs: number | null = null;
+
+      let finalEmomRemaining = 0;
+      let finalEmomActive = false;
+      let finalEmomEndsAtMs: number | null = null;
+
+      if (restExpiredWhileClosed) {
+        finalIsometryRemaining = effectiveIsometryTarget;
+        finalIsometryActive = false;
+        finalIsometryEndsAtMs = null;
+
+        finalEmomRemaining = effectiveFallbackEmomTarget;
+        finalEmomActive = false;
+        finalEmomEndsAtMs = null;
+      } else {
+        const safeIsometryRemainingBase = Math.max(
+          0,
+          normalizeDurationSeconds(
+            state.isometryRemaining > 0
+              ? state.isometryRemaining
+              : effectiveFallbackIsometryTarget,
+          ),
+        );
+        finalIsometryRemaining = Boolean(state.isometryWasRunning)
+          ? Math.max(0, safeIsometryRemainingBase - elapsedSinceSaveSeconds)
+          : safeIsometryRemainingBase;
+        finalIsometryActive = Boolean(state.isometryWasRunning) && finalIsometryRemaining > 0;
+        finalIsometryEndsAtMs = finalIsometryActive ? Date.now() + (finalIsometryRemaining * 1000) : null;
+
+        const safeEmomRoundRemainingBase = Math.max(
+          0,
+          normalizeDurationSeconds(
+            state.emomRoundRemaining > 0
+              ? state.emomRoundRemaining
+              : effectiveFallbackEmomTarget,
+          ),
+        );
+        finalEmomRemaining = Boolean(state.emomWasRunning)
+          ? Math.max(0, safeEmomRoundRemainingBase - elapsedSinceSaveSeconds)
+          : safeEmomRoundRemainingBase;
+        finalEmomActive = Boolean(state.emomWasRunning) && finalEmomRemaining > 0;
+        finalEmomEndsAtMs = finalEmomActive ? Date.now() + (finalEmomRemaining * 1000) : null;
       }
-      return 0;
-    })();
 
-    const effectiveFallbackEmomTarget = effectiveExercise.type === 'emom'
-      ? Math.max(1, normalizeDurationSeconds(effectiveExercise.emom_round_duration || 60))
-      : 0;
+      // Ricostruzione e rimappatura note
+      const safeNotes: Record<string, ExerciseNoteEntry> = {};
+      const rawNotes = state.exerciseNotesByKey || {};
 
-    let finalIsometryRemaining = 0;
-    let finalIsometryActive = false;
-    let finalIsometryEndsAtMs: number | null = null;
+      Object.entries(rawNotes).forEach(([key, value]) => {
+        const note = String(value?.note || '').trim();
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey || !note) return;
+        safeNotes[normalizedKey] = {
+          exerciseName: String(value?.exerciseName || '').trim() || normalizedKey,
+          note,
+        };
+      });
 
-    let finalEmomRemaining = 0;
-    let finalEmomActive = false;
-    let finalEmomEndsAtMs: number | null = null;
+      // Rimappa su tutti gli esercizi di nextWorkout (anche se gli ID esecuzioni sono stati rigenerati)
+      nextWorkout.exercises.forEach((ex, exIdx) => {
+        const cleanExName = (ex.name || '').trim().toLowerCase();
+        const orderPrefix = `${exIdx + 1}.`;
 
-    if (restExpiredWhileClosed) {
-      finalIsometryRemaining = effectiveIsometryTarget;
-      finalIsometryActive = false;
-      finalIsometryEndsAtMs = null;
+        for (const [k, entry] of Object.entries(rawNotes)) {
+          if (!entry?.note?.trim()) continue;
+          const entryName = (entry.exerciseName || '').trim().toLowerCase();
+          const matchesName = cleanExName && entryName.includes(cleanExName);
+          const matchesOrder = entryName.startsWith(orderPrefix);
+          const matchesIdxKey = k === `idx_${exIdx}` || k === `order_${exIdx + 1}`;
 
-      finalEmomRemaining = effectiveFallbackEmomTarget;
-      finalEmomActive = false;
-      finalEmomEndsAtMs = null;
-    } else {
-      const safeIsometryRemainingBase = Math.max(
-        0,
-        normalizeDurationSeconds(
-          state.isometryRemaining > 0
-            ? state.isometryRemaining
-            : effectiveFallbackIsometryTarget,
-        ),
-      );
-      finalIsometryRemaining = Boolean(state.isometryWasRunning)
-        ? Math.max(0, safeIsometryRemainingBase - elapsedSinceSaveSeconds)
-        : safeIsometryRemainingBase;
-      finalIsometryActive = Boolean(state.isometryWasRunning) && finalIsometryRemaining > 0;
-      finalIsometryEndsAtMs = finalIsometryActive ? Date.now() + (finalIsometryRemaining * 1000) : null;
+          if (matchesName || matchesOrder || matchesIdxKey) {
+            const canonicalEntry: ExerciseNoteEntry = {
+              exerciseName: `${exIdx + 1}. ${ex.name}`,
+              note: entry.note.trim(),
+            };
+            safeNotes[String(ex.id)] = canonicalEntry;
+            safeNotes[`idx_${exIdx}`] = canonicalEntry;
+            safeNotes[`order_${ex.order_index ?? exIdx + 1}`] = canonicalEntry;
+            if (cleanExName) safeNotes[`name_${cleanExName}`] = canonicalEntry;
+            break;
+          }
+        }
+      });
 
-      const safeEmomRoundRemainingBase = Math.max(
-        0,
-        normalizeDurationSeconds(
-          state.emomRoundRemaining > 0
-            ? state.emomRoundRemaining
-            : effectiveFallbackEmomTarget,
-        ),
-      );
-      finalEmomRemaining = Boolean(state.emomWasRunning)
-        ? Math.max(0, safeEmomRoundRemainingBase - elapsedSinceSaveSeconds)
-        : safeEmomRoundRemainingBase;
-      finalEmomActive = Boolean(state.emomWasRunning) && finalEmomRemaining > 0;
-      finalEmomEndsAtMs = finalEmomActive ? Date.now() + (finalEmomRemaining * 1000) : null;
+      setCurrentExerciseIdx(targetExerciseIdx);
+      setCurrentSetIdx(effectiveSetIdx);
+      setCurrentSubExerciseIdx(effectiveSubIdx);
+      setCurrentPyramidStepIdx(effectivePyramidStepIdx);
+      setCurrentEmomRoundIdx(effectiveEmomRoundIdx);
+      setPendingPyramidAdvance(targetPendingPyramidAdvance);
+      setPendingExerciseAdvance(targetPendingExerciseAdvance);
+
+      const resumeRestRunning = shouldRestoreRest && Boolean(state.restWasRunning);
+      wasRestingRef.current = resumeRestRunning;
+      wasIsometryActiveRef.current = finalIsometryActive;
+      wasEmomActiveRef.current = finalEmomActive;
+
+      setIsResting(shouldRestoreRest);
+      setRestRemaining(shouldRestoreRest ? effectiveRestRemaining : 0);
+      setRestInitialDuration(shouldRestoreRest ? effectiveRestInitial : 0);
+      setRestEndsAtMs(resumeRestRunning ? Date.now() + (effectiveRestRemaining * 1000) : null);
+
+      setIsometryRemaining(finalIsometryRemaining);
+      setIsometryActive(finalIsometryActive);
+      setIsometryEndsAtMs(finalIsometryEndsAtMs);
+
+      setEmomRoundRemaining(finalEmomRemaining);
+      setEmomActive(finalEmomActive);
+      setEmomRoundEndsAtMs(finalEmomEndsAtMs);
+
+      if (restExpiredWhileClosed) {
+        setTimeout(() => {
+          speakCue(buildSetAnnouncementCue(effectiveExercise, effectiveSetIdx, effectivePyramidStepIdx));
+        }, 500);
+      }
+
+      if (state.circuitStopwatchElapsed != null) {
+        setCircuitStopwatchElapsed(Math.max(0, normalizeDurationSeconds(state.circuitStopwatchElapsed)));
+      }
+      if (Array.isArray(state.circuitLapTimes)) {
+        setCircuitLapTimes(state.circuitLapTimes.map(n => Math.max(0, normalizeDurationSeconds(n))));
+      }
+
+      if (state.recordedMaxPerformance) {
+        setRecordedMaxPerformance(state.recordedMaxPerformance);
+        recordedMaxPerformanceRef.current = state.recordedMaxPerformance;
+      }
+
+      setExerciseNotesByKey(safeNotes);
+      exerciseNotesByKeyRef.current = safeNotes;
+
+      const safeWorkoutGeneralNote = String(state.workoutGeneralNote || '').trim();
+      setWorkoutGeneralNote(safeWorkoutGeneralNote);
+      workoutGeneralNoteRef.current = safeWorkoutGeneralNote;
+
+      const restoredStartedAt = Number(state.workoutStartedAtMs);
+      workoutStartedAtMsRef.current = Number.isFinite(restoredStartedAt) && restoredStartedAt > 0
+        ? restoredStartedAt
+        : Date.now();
+
+      const restoredElapsed = Number(state.workoutElapsedSeconds);
+      workoutElapsedSecondsRef.current = Number.isFinite(restoredElapsed) && restoredElapsed >= 0
+        ? restoredElapsed
+        : 0;
+      sessionForegroundStartedAtMsRef.current = Date.now();
+
+      return true;
+    } catch (err) {
+      console.error('Error in tryRestorePersistedWorkoutProgress:', err);
+      return false;
     }
-
-    const safeNotes = Object.entries(state.exerciseNotesByKey || {}).reduce<Record<string, ExerciseNoteEntry>>((acc, [key, value]) => {
-      const note = String(value?.note || '').trim();
-      const normalizedKey = String(key || '').trim();
-      if (!normalizedKey || !note) return acc;
-      acc[normalizedKey] = {
-        exerciseName: String(value?.exerciseName || '').trim() || normalizedKey,
-        note,
-      };
-      return acc;
-    }, {});
-
-    setCurrentExerciseIdx(targetExerciseIdx);
-    setCurrentSetIdx(effectiveSetIdx);
-    setCurrentSubExerciseIdx(effectiveSubIdx);
-    setCurrentPyramidStepIdx(effectivePyramidStepIdx);
-    setCurrentEmomRoundIdx(effectiveEmomRoundIdx);
-    setPendingPyramidAdvance(targetPendingPyramidAdvance);
-    setPendingExerciseAdvance(targetPendingExerciseAdvance);
-
-    const resumeRestRunning = shouldRestoreRest && Boolean(state.restWasRunning);
-    wasRestingRef.current = resumeRestRunning;
-    wasIsometryActiveRef.current = finalIsometryActive;
-    wasEmomActiveRef.current = finalEmomActive;
-
-    setIsResting(shouldRestoreRest);
-    setRestRemaining(shouldRestoreRest ? effectiveRestRemaining : 0);
-    setRestInitialDuration(shouldRestoreRest ? effectiveRestInitial : 0);
-    setRestEndsAtMs(resumeRestRunning ? Date.now() + (effectiveRestRemaining * 1000) : null);
-
-    setIsometryRemaining(finalIsometryRemaining);
-    setIsometryActive(finalIsometryActive);
-    setIsometryEndsAtMs(finalIsometryEndsAtMs);
-
-    setEmomRoundRemaining(finalEmomRemaining);
-    setEmomActive(finalEmomActive);
-    setEmomRoundEndsAtMs(finalEmomEndsAtMs);
-
-    if (restExpiredWhileClosed) {
-      setTimeout(() => {
-        speakCue(buildSetAnnouncementCue(effectiveExercise, effectiveSetIdx, effectivePyramidStepIdx));
-      }, 500);
-    }
-
-    if (state.circuitStopwatchElapsed != null) {
-      setCircuitStopwatchElapsed(Math.max(0, normalizeDurationSeconds(state.circuitStopwatchElapsed)));
-    }
-    if (Array.isArray(state.circuitLapTimes)) {
-      setCircuitLapTimes(state.circuitLapTimes.map(n => Math.max(0, normalizeDurationSeconds(n))));
-    }
-
-    if (state.recordedMaxPerformance) {
-      setRecordedMaxPerformance(state.recordedMaxPerformance);
-      recordedMaxPerformanceRef.current = state.recordedMaxPerformance;
-    }
-
-    setExerciseNotesByKey(safeNotes);
-
-    const safeWorkoutGeneralNote = String(state.workoutGeneralNote || '').trim();
-    setWorkoutGeneralNote(safeWorkoutGeneralNote);
-    workoutGeneralNoteRef.current = safeWorkoutGeneralNote;
-
-    const restoredStartedAt = Number(state.workoutStartedAtMs);
-    workoutStartedAtMsRef.current = Number.isFinite(restoredStartedAt) && restoredStartedAt > 0
-      ? restoredStartedAt
-      : Date.now();
-
-    const restoredElapsed = Number(state.workoutElapsedSeconds);
-    workoutElapsedSecondsRef.current = Number.isFinite(restoredElapsed) && restoredElapsed >= 0
-      ? restoredElapsed
-      : 0;
-    sessionForegroundStartedAtMsRef.current = Date.now();
-
-    return true;
   };
 
   persistWorkoutProgressRef.current = persistWorkoutProgress;
@@ -2360,13 +2459,16 @@ const ActiveWorkoutPage: React.FC = () => {
               .map(([sIdx, val]) => `Set ${Number(sIdx) + 1}: ${val}${unit}`);
             if (entries.length > 0) {
               const summaryLine = `A sfinimento: ${entries.join(' · ')}`;
-              const noteKey = `${ex.order_index}_${ex.name.toLowerCase().trim()}`;
-              const existing = currentNotes[noteKey]?.note || '';
+              const existingEntry = getExerciseNoteEntry(exIdx, ex);
+              const existing = existingEntry?.note || '';
               if (!existing.includes('A sfinimento:')) {
-                currentNotes[noteKey] = {
+                const updatedNote = existing ? `${existing} | ${summaryLine}` : summaryLine;
+                const newEntry = {
                   exerciseName: ex.name,
-                  note: existing ? `${existing} | ${summaryLine}` : summaryLine,
+                  note: updatedNote,
                 };
+                currentNotes[String(ex.id)] = newEntry;
+                currentNotes[`idx_${exIdx}`] = newEntry;
               }
             }
           }
@@ -2374,12 +2476,38 @@ const ActiveWorkoutPage: React.FC = () => {
       });
     }
 
-    const rowsToInsert = Object.values(currentNotes)
-      .map((entry) => ({
-        id_workout: workoutRunId,
-        testo: `[${entry.exerciseName}] ${entry.note.trim()}`,
-      }))
-      .filter((row) => row.testo.length > 3);
+    const seenNoteTexts = new Set<string>();
+    const rowsToInsert: { id_workout: number; testo: string }[] = [];
+
+    // 1. Inserisci prima le note abbinate agli esercizi attuali
+    if (workout?.exercises) {
+      workout.exercises.forEach((ex, exIdx) => {
+        const entry = getExerciseNoteEntry(exIdx, ex);
+        if (entry?.note?.trim()) {
+          const fullText = `[${ex.name}] ${entry.note.trim()}`;
+          if (!seenNoteTexts.has(fullText) && fullText.length > 3) {
+            seenNoteTexts.add(fullText);
+            rowsToInsert.push({
+              id_workout: workoutRunId,
+              testo: fullText,
+            });
+          }
+        }
+      });
+    }
+
+    // 2. Inserisci eventuali note orfane o aggiuntive
+    Object.values(currentNotes).forEach((entry) => {
+      if (!entry?.note?.trim()) return;
+      const fullText = `[${entry.exerciseName}] ${entry.note.trim()}`;
+      if (!seenNoteTexts.has(fullText) && fullText.length > 3) {
+        seenNoteTexts.add(fullText);
+        rowsToInsert.push({
+          id_workout: workoutRunId,
+          testo: fullText,
+        });
+      }
+    });
 
     const generalNoteTrimmed = (workoutGeneralNoteRef.current || workoutGeneralNote).trim();
     if (generalNoteTrimmed.length > 0) {
@@ -2738,7 +2866,8 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const currentExerciseNoteContext = getCurrentExerciseNoteContext();
-  const hasCurrentWorkoutNote = Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim());
+  const currentExerciseNoteEntry = getExerciseNoteEntry(currentExerciseIdx, currentExercise);
+  const hasCurrentWorkoutNote = Boolean(currentExerciseNoteEntry?.note?.trim());
   const hasGeneralWorkoutNote = Boolean((workoutGeneralNoteRef.current || workoutGeneralNote).trim());
 
   const getCurrentInstructionContext = (): InstructionModalContext | null => {
@@ -2934,7 +3063,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const openCurrentExerciseNoteModal = (initialTab: 'exercise' | 'workout' = 'exercise') => {
-    const existingExerciseNote = exerciseNotesByKey[currentExerciseNoteContext.key]?.note || '';
+    const existingExerciseNote = getExerciseNoteEntry(currentExerciseIdx, currentExercise)?.note || '';
     setNoteModalContext(currentExerciseNoteContext);
     setNoteModalDraft(existingExerciseNote);
     setWorkoutNoteModalDraft(workoutGeneralNoteRef.current || workoutGeneralNote);
@@ -2982,13 +3111,26 @@ const ActiveWorkoutPage: React.FC = () => {
       const trimmedExerciseNote = noteModalDraft.trim();
       setExerciseNotesByKey((prev) => {
         const next = { ...prev };
+        const primaryKey = noteModalContext.key;
+        const idxKey = `idx_${currentExerciseIdx}`;
+        const orderKey = `order_${currentExercise.order_index ?? currentExerciseIdx + 1}`;
+        const cleanName = (currentExercise.name || '').trim().toLowerCase();
+        const nameKey = cleanName ? `name_${cleanName}` : '';
+
         if (!trimmedExerciseNote) {
-          delete next[noteModalContext.key];
+          delete next[primaryKey];
+          delete next[idxKey];
+          delete next[orderKey];
+          if (nameKey) delete next[nameKey];
         } else {
-          next[noteModalContext.key] = {
+          const entry = {
             exerciseName: noteModalContext.name,
             note: trimmedExerciseNote,
           };
+          next[primaryKey] = entry;
+          next[idxKey] = entry;
+          next[orderKey] = entry;
+          if (nameKey) next[nameKey] = entry;
         }
         return next;
       });
@@ -4109,7 +4251,13 @@ const ActiveWorkoutPage: React.FC = () => {
             <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-white">Workout Overview</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-white">Workout Overview</h3>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
+                      <Clock size={12} />
+                      {formatTime(getCurrentWorkoutElapsedSeconds())}
+                    </span>
+                  </div>
                   <p className="text-xs text-brand-grey mt-1">{workout.name}</p>
                 </div>
                 <button
@@ -4464,7 +4612,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   }`}
                 >
                   <span className="truncate">Esercizio</span>
-                  {Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim() || (activeNoteTab !== 'exercise' && noteModalDraft.trim())) && (
+                  {Boolean(hasCurrentWorkoutNote || (activeNoteTab !== 'exercise' && noteModalDraft.trim())) && (
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeNoteTab === 'exercise' ? 'bg-black' : 'bg-brand-orange'}`} />
                   )}
                 </button>
@@ -5295,7 +5443,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 }`}
               >
                 <span className="truncate">Esercizio</span>
-                {Boolean(exerciseNotesByKey[currentExerciseNoteContext.key]?.note?.trim() || (activeNoteTab !== 'exercise' && noteModalDraft.trim())) && (
+                {Boolean(hasCurrentWorkoutNote || (activeNoteTab !== 'exercise' && noteModalDraft.trim())) && (
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeNoteTab === 'exercise' ? 'bg-black' : 'bg-brand-orange'}`} />
                 )}
               </button>
@@ -5408,7 +5556,13 @@ const ActiveWorkoutPage: React.FC = () => {
           <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-lg font-bold text-white">Workout Overview</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-white">Workout Overview</h3>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
+                    <Clock size={12} />
+                    {formatTime(getCurrentWorkoutElapsedSeconds())}
+                  </span>
+                </div>
                 <p className="text-xs text-brand-grey mt-1">{workout.name}</p>
               </div>
               <button

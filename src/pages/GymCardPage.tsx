@@ -69,6 +69,8 @@ import {
   ArrowLeft,
   ChevronRight,
   Check,
+  Play,
+  Flame,
 } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { hapticSelection, hapticMedium, hapticSuccess } from '../utils/haptics';
@@ -91,6 +93,11 @@ import {
   type WorkoutFolder,
   type FolderAssignmentMap,
 } from '../utils/folderManager';
+import {
+  getValidWorkoutProgressCheckpoints,
+  subscribeToWorkoutProgress,
+  type WorkoutProgressCheckpointMeta,
+} from '../lib/workoutProgressStorage';
 
 interface Exercise {
   id: string;
@@ -161,6 +168,30 @@ const GymCardPage: React.FC = () => {
   const [isQuickEditSaving, setIsQuickEditSaving] = useState(false);
   const [quickEditError, setQuickEditError] = useState<string | null>(null);
   const [duplicatingWorkoutId, setDuplicatingWorkoutId] = useState<string | null>(null);
+  const [activeCheckpoints, setActiveCheckpoints] = useState<WorkoutProgressCheckpointMeta[]>([]);
+
+  const refreshCheckpoints = useCallback(() => {
+    if (!user?.id) {
+      setActiveCheckpoints([]);
+      return;
+    }
+    setActiveCheckpoints(getValidWorkoutProgressCheckpoints(user.id));
+  }, [user?.id]);
+
+  useEffect(() => {
+    refreshCheckpoints();
+    const unsub = subscribeToWorkoutProgress(() => {
+      refreshCheckpoints();
+    });
+    return unsub;
+  }, [refreshCheckpoints]);
+
+  const isWorkoutActive = useCallback((schedaIdStr?: string | null) => {
+    if (!schedaIdStr) return false;
+    const numId = Number(schedaIdStr);
+    if (!Number.isFinite(numId)) return false;
+    return activeCheckpoints.some((cp) => cp.identity.type === 'scheda' && cp.identity.id === numId);
+  }, [activeCheckpoints]);
 
   const location = useLocation();
   const [folders, setFolders] = useState<WorkoutFolder[]>(() => getFolders(user?.id));
@@ -1297,9 +1328,17 @@ const GymCardPage: React.FC = () => {
 
                         {/* 4. NOME SCHEDA E DATA (In flex-1 con spazio garantito) */}
                         <div className="flex-1 min-w-0 py-0.5">
-                          <h2 className="text-lg sm:text-xl font-bold text-white leading-snug break-words line-clamp-2">
-                            {workout.name}
-                          </h2>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-lg sm:text-xl font-bold text-white leading-snug break-words line-clamp-2">
+                              {workout.name}
+                            </h2>
+                            {isWorkoutActive(workout.id) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2 py-0.5 rounded-full shrink-0">
+                                <Flame size={10} className="animate-pulse fill-current" />
+                                In corso
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-brand-grey/60 font-semibold mt-0.5">
                             {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </p>
@@ -1516,7 +1555,15 @@ const GymCardPage: React.FC = () => {
                           <Calendar className="text-brand-orange" size={28} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
+                            {isWorkoutActive(workout.id) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2 py-0.5 rounded-full shrink-0">
+                                <Flame size={10} className="animate-pulse fill-current" />
+                                In corso
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-brand-grey/60 font-semibold mt-1">
                             {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
                           </p>
@@ -1544,33 +1591,57 @@ const GymCardPage: React.FC = () => {
             className="w-full max-w-2xl bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl shadow-2xl max-h-[88vh] overflow-hidden"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="p-5 border-b border-white/10 flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h3 className="text-2xl font-black text-white leading-tight break-words">{selectedWorkout.name}</h3>
-                <p className="text-xs text-brand-grey/70 font-semibold mt-1">
-                  Created on {new Date(selectedWorkout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
-                </p>
+            <div className="p-5 border-b border-white/10 flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-2xl font-black text-white leading-tight break-words">{selectedWorkout.name}</h3>
+                    {isWorkoutActive(selectedWorkout.id) && (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
+                        <Flame size={12} className="animate-pulse fill-current" />
+                        In corso
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-brand-grey/70 font-semibold mt-1">
+                    Created on {new Date(selectedWorkout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    onClick={() => {
+                      void duplicateWorkout(selectedWorkout);
+                      closeWorkoutModal();
+                    }}
+                    className="p-2 rounded-full text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
+                    title="Duplicate Workout"
+                  >
+                    <Copy size={18} />
+                  </button>
+                  <button
+                    onClick={closeWorkoutModal}
+                    className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
+                    title="Close details"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center space-x-1.5">
+              {isWorkoutActive(selectedWorkout.id) && (
                 <button
+                  type="button"
                   onClick={() => {
-                    void duplicateWorkout(selectedWorkout);
-                    closeWorkoutModal();
+                    void hapticMedium();
+                    navigate(`/active-workout/${selectedWorkout.id}`);
                   }}
-                  className="p-2 rounded-full text-brand-grey hover:text-brand-orange hover:bg-white/5 transition-colors"
-                  title="Duplicate Workout"
+                  className="w-full py-3 px-4 rounded-2xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black flex items-center justify-center gap-2 shadow-lg shadow-brand-orange/20 transition-all active:scale-[0.98] cursor-pointer"
                 >
-                  <Copy size={18} />
+                  <Play size={18} className="fill-current" />
+                  <span>Riprendi Allenamento in corso</span>
                 </button>
-                <button
-                  onClick={closeWorkoutModal}
-                  className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                  title="Close details"
-                >
-                  <X size={18} />
-                </button>
-              </div>
+              )}
             </div>
 
             <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(88vh-102px)]">
