@@ -1593,6 +1593,50 @@ const NewTrainPage: React.FC = () => {
     clearDraftValue(key);
   };
 
+  const commitBothTransitionRestParts = (exId: string, currentTransitionRestSeconds: number) => {
+    const minKey = `${exId}:transition_rest:min`;
+    const secKey = `${exId}:transition_rest:sec`;
+    const hasMin = hasDraftValue(minKey);
+    const hasSec = hasDraftValue(secKey);
+
+    if (!hasMin && !hasSec) {
+      setEditingTransitionForExerciseId(null);
+      return;
+    }
+
+    const safeCurrent = Number.isFinite(currentTransitionRestSeconds)
+      ? Math.max(0, Math.trunc(currentTransitionRestSeconds))
+      : 0;
+    let minutes = Math.floor(safeCurrent / 60);
+    let seconds = safeCurrent % 60;
+
+    if (hasMin) {
+      const rawMin = (numberDrafts[minKey] ?? '').trim();
+      if (rawMin !== '') {
+        const parsedMin = parseInt(rawMin, 10);
+        if (Number.isFinite(parsedMin) && parsedMin >= 0) {
+          minutes = parsedMin;
+        }
+      }
+      clearDraftValue(minKey);
+    }
+
+    if (hasSec) {
+      const rawSec = (numberDrafts[secKey] ?? '').trim();
+      if (rawSec !== '') {
+        const parsedSec = parseInt(rawSec, 10);
+        if (Number.isFinite(parsedSec) && parsedSec >= 0) {
+          seconds = Math.min(59, parsedSec);
+        }
+      }
+      clearDraftValue(secKey);
+    }
+
+    const next = (minutes * 60) + seconds;
+    updateExercise(exId, 'transition_rest_seconds', next);
+    setEditingTransitionForExerciseId(null);
+  };
+
   const formatTransitionRest = (totalSeconds?: number) => {
     const safe = Number.isFinite(totalSeconds) ? Math.max(0, Math.trunc(totalSeconds || 0)) : 0;
     const mins = Math.floor(safe / 60);
@@ -3538,7 +3582,7 @@ const NewTrainPage: React.FC = () => {
 
                     {/* Stato: Modifica / Configurazione Aperta */}
                     {editingTransitionForExerciseId === ex.id && (
-                      <div className="bg-[#1C1C1E] border border-brand-orange/50 rounded-2xl p-4 shadow-xl transition-all space-y-3.5">
+                      <div className="bg-[#1C1C1E] border border-brand-orange/50 rounded-2xl p-4 shadow-xl transition-all space-y-4">
                         <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
                           <div className="flex items-center gap-2">
                             <div className="w-7 h-7 rounded-lg bg-brand-orange/20 text-brand-orange flex items-center justify-center">
@@ -3549,113 +3593,91 @@ const NewTrainPage: React.FC = () => {
                                 Recupero tra Es. {index + 1} e Es. {index + 2}
                               </span>
                               <span className="text-[10px] text-zinc-400">
-                                Scegli un preset rapido o personalizza i secondi
+                                Inserisci minuti e secondi di recupero
                               </span>
                             </div>
                           </div>
                           <button
                             type="button"
-                            onClick={() => setEditingTransitionForExerciseId(null)}
+                            onClick={() => commitBothTransitionRestParts(ex.id, ex.transition_rest_seconds || 0)}
                             className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                            title="Chiudi"
                           >
                             <X size={18} />
                           </button>
                         </div>
 
-                        {/* Presets Rapidi */}
-                        <div>
-                          <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block mb-1.5">
-                            Preset Rapidi
-                          </span>
-                          <div className="grid grid-cols-5 gap-1.5">
-                            {[
-                              { label: '30s', sec: 30 },
-                              { label: '1 min', sec: 60 },
-                              { label: '1m 30s', sec: 90 },
-                              { label: '2 min', sec: 120 },
-                              { label: '3 min', sec: 180 },
-                            ].map((preset) => {
-                              const isSelected = (ex.transition_rest_seconds || 0) === preset.sec;
-                              return (
-                                <button
-                                  key={preset.sec}
-                                  type="button"
-                                  onClick={() => applyTransitionPreset(ex.id, preset.sec)}
-                                  className={`py-2 rounded-xl text-xs font-black transition-all ${isSelected
-                                    ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20 scale-[1.02]'
-                                    : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/5 active:scale-95'
-                                    }`}
-                                >
-                                  {preset.label}
-                                </button>
-                              );
-                            })}
+                        {/* Due soli campi di testo: Minuti e Secondi */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Campo Minuti */}
+                          <div className="flex flex-col bg-black/60 border border-white/10 rounded-2xl p-3.5 focus-within:border-brand-orange/60 transition-colors">
+                            <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                              <span>Minuti</span>
+                              <span className="text-[9px] text-zinc-500 lowercase">(min)</span>
+                            </label>
+                            <div className="relative flex items-center">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={getDraftOrValue(`${ex.id}:transition_rest:min`, Math.floor((ex.transition_rest_seconds || 0) / 60))}
+                                onChange={(e) => setDraftValue(`${ex.id}:transition_rest:min`, e.target.value)}
+                                onBlur={() => commitTransitionRestPart(ex.id, 'min', `${ex.id}:transition_rest:min`, ex.transition_rest_seconds || 0)}
+                                onFocus={onNumberFocus}
+                                placeholder="0"
+                                className="w-full text-center font-black text-brand-orange bg-transparent focus:outline-none text-2xl tracking-tight"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Campo Secondi */}
+                          <div className="flex flex-col bg-black/60 border border-white/10 rounded-2xl p-3.5 focus-within:border-brand-orange/60 transition-colors">
+                            <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                              <span>Secondi</span>
+                              <span className="text-[9px] text-zinc-500 lowercase">(0 - 59)</span>
+                            </label>
+                            <div className="relative flex items-center">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={getDraftOrValue(`${ex.id}:transition_rest:sec`, (ex.transition_rest_seconds || 0) % 60)}
+                                onChange={(e) => setDraftValue(`${ex.id}:transition_rest:sec`, e.target.value)}
+                                onBlur={() => commitTransitionRestPart(ex.id, 'sec', `${ex.id}:transition_rest:sec`, ex.transition_rest_seconds || 0)}
+                                onFocus={onNumberFocus}
+                                placeholder="0"
+                                className="w-full text-center font-black text-brand-orange bg-transparent focus:outline-none text-2xl tracking-tight"
+                              />
+                            </div>
                           </div>
                         </div>
 
-                        {/* Fine Tuning Min / Sec */}
-                        <div className="flex items-center gap-2 pt-1">
-                          <div className="flex-1 bg-black/60 border border-white/10 rounded-xl p-2 flex items-center justify-between">
-                            <div className="text-left px-2">
-                              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Personalizzato</span>
-                              <span className="text-sm font-black text-white font-mono">
-                                {formatTransitionRest(ex.transition_rest_seconds)}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-1 border-l border-white/10 pl-2">
-                              <div className="relative w-12 h-7 bg-white/5 rounded-lg flex items-center">
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min="0"
-                                  value={getDraftOrValue(`${ex.id}:transition_rest:min`, Math.floor((ex.transition_rest_seconds || 0) / 60))}
-                                  onChange={(e) => setDraftValue(`${ex.id}:transition_rest:min`, e.target.value)}
-                                  onBlur={() => commitTransitionRestPart(ex.id, 'min', `${ex.id}:transition_rest:min`, ex.transition_rest_seconds || 0)}
-                                  onFocus={onNumberFocus}
-                                  className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-xs"
-                                />
-                                <span className="text-[8px] text-zinc-500 font-bold pr-1 pointer-events-none">M</span>
-                              </div>
-                              <span className="text-zinc-500 font-bold text-xs">:</span>
-                              <div className="relative w-12 h-7 bg-white/5 rounded-lg flex items-center">
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min="0"
-                                  max="59"
-                                  value={getDraftOrValue(`${ex.id}:transition_rest:sec`, (ex.transition_rest_seconds || 0) % 60)}
-                                  onChange={(e) => setDraftValue(`${ex.id}:transition_rest:sec`, e.target.value)}
-                                  onBlur={() => commitTransitionRestPart(ex.id, 'sec', `${ex.id}:transition_rest:sec`, ex.transition_rest_seconds || 0)}
-                                  onFocus={onNumberFocus}
-                                  className="w-full text-center font-bold text-brand-orange bg-transparent focus:outline-none text-xs"
-                                />
-                                <span className="text-[8px] text-zinc-500 font-bold pr-1 pointer-events-none">S</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col gap-1.5 shrink-0">
-                            {(ex.transition_rest_seconds || 0) > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  applyTransitionPreset(ex.id, 0);
-                                  setEditingTransitionForExerciseId(null);
-                                }}
-                                className="px-3 py-1.5 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 text-xs font-bold transition-colors"
-                              >
-                                Rimuovi
-                              </button>
-                            )}
+                        {/* Barra Azioni */}
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                          {(ex.transition_rest_seconds || 0) > 0 ? (
                             <button
                               type="button"
-                              onClick={() => setEditingTransitionForExerciseId(null)}
-                              className="px-4 py-1.5 rounded-xl bg-brand-orange text-black font-black text-xs hover:bg-brand-lightOrange active:scale-95 transition-all shadow-md"
+                              onClick={() => {
+                                applyTransitionPreset(ex.id, 0);
+                                setEditingTransitionForExerciseId(null);
+                              }}
+                              className="px-3.5 py-2 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 text-xs font-bold transition-colors active:scale-95"
                             >
-                              Fatto
+                              Rimuovi recupero
                             </button>
-                          </div>
+                          ) : (
+                            <span className="text-[11px] text-zinc-500 font-medium">
+                              Nessuna pausa impostata
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => commitBothTransitionRestParts(ex.id, ex.transition_rest_seconds || 0)}
+                            className="ml-auto px-5 py-2.5 rounded-xl bg-brand-orange text-black font-black text-xs hover:bg-brand-lightOrange active:scale-95 transition-all shadow-md shadow-brand-orange/20 cursor-pointer"
+                          >
+                            Fatto
+                          </button>
                         </div>
                       </div>
                     )}
