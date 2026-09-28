@@ -4498,58 +4498,67 @@ const ActiveWorkoutPage: React.FC = () => {
             )}
           </div>
 
-          {/* Next Exercise Preview Card (Fills space richly) */}
-          <div className="w-full bg-gradient-to-b from-brand-darkGrey/90 to-brand-darkGrey/40 border border-white/10 rounded-3xl p-4 shadow-xl flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] uppercase font-bold tracking-widest text-zinc-400">
-                {transitionNextExercise
-                  ? `Transizione a Esercizio ${currentExerciseIdx + 2} di ${workout.exercises.length}`
-                  : currentExercise.type === 'pyramid'
-                    ? `Step ${currentPyramidStepIdx + 2} di ${currentExercise.pyramid_steps?.length || 1}`
-                    : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} di ${currentExercise.sets}`}
+          {/* Header prima dell'anteprima: Prossimo set / Prossimo esercizio */}
+          <div className="w-full flex flex-col gap-1.5">
+            <div className="flex items-center justify-between px-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-brand-orange flex items-center gap-1.5">
+                <ArrowRight size={13} className="text-brand-orange" />
+                {transitionNextExercise ? 'Prossimo esercizio' : 'Prossimo set'}
               </span>
-              {restTargetSpecialTypeLabel && (
-                <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange border border-brand-orange/30">
-                  {restTargetSpecialTypeLabel}
+              <div className="flex items-center gap-2">
+                {restTargetSpecialTypeLabel && (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange border border-brand-orange/30">
+                    {restTargetSpecialTypeLabel}
+                  </span>
+                )}
+                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                  {transitionNextExercise
+                    ? `Es. ${currentExerciseIdx + 2} di ${workout.exercises.length}`
+                    : currentExercise.type === 'pyramid'
+                      ? `Step ${currentPyramidStepIdx + 2} di ${currentExercise.pyramid_steps?.length || 1}`
+                      : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} di ${currentExercise.sets}`}
                 </span>
-              )}
+              </div>
             </div>
 
-            {restUpcomingExecutionEntries.length > 0 && (
-              <div className="space-y-1.5">
-                {restUpcomingExecutionEntries.slice(0, 2).map((entry, idx) => (
-                  <div key={`${entry.name}-${entry.weightLabel}-${idx}`} className="flex items-center justify-between">
-                    <span className="text-white font-black text-base truncate">{entry.name}</span>
-                    <span className="text-brand-orange font-mono font-bold text-sm ml-2 shrink-0">{entry.weightLabel}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Performance logged summary during rest for MAX exercises */}
-            {isMaxPerformance(currentExercise) && (
-              <div className="bg-black/50 border border-brand-orange/30 rounded-2xl p-2.5 mt-1 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-zinc-400 block">
-                    Set {currentSetIdx + 1} (A Sfinimento)
-                  </span>
-                  <span className="text-base font-black text-brand-orange font-mono">
-                    {getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) != null &&
-                    (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
-                      ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)} ${getPerformanceUnit(currentExercise) === 'sec' ? 's' : 'reps'}`
-                      : 'MAX'}
-                  </span>
+            {/* Next Target Preview Card */}
+            <div className="w-full bg-gradient-to-b from-brand-darkGrey/90 to-brand-darkGrey/40 border border-white/10 rounded-3xl p-4 shadow-xl flex flex-col gap-2">
+              {restUpcomingExecutionEntries.length > 0 && (
+                <div className="space-y-1.5">
+                  {restUpcomingExecutionEntries.slice(0, 2).map((entry, idx) => (
+                    <div key={`${entry.name}-${entry.weightLabel}-${idx}`} className="flex items-center justify-between">
+                      <span className="text-white font-black text-base truncate">{entry.name}</span>
+                      <span className="text-brand-orange font-mono font-bold text-sm ml-2 shrink-0">{entry.weightLabel}</span>
+                    </div>
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openEditSpecificSetModal(currentSetIdx)}
-                  className="px-3 py-1.5 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
-                >
-                  <Pencil size={12} />
-                  <span>Modifica</span>
-                </button>
-              </div>
-            )}
+              )}
+
+              {/* Performance logged summary during rest for MAX exercises */}
+              {isMaxPerformance(currentExercise) && (
+                <div className="bg-black/50 border border-brand-orange/30 rounded-2xl p-2.5 mt-1 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-zinc-400 block">
+                      Set {currentSetIdx + 1} (A Sfinimento)
+                    </span>
+                    <span className="text-base font-black text-brand-orange font-mono">
+                      {getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) != null &&
+                      (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
+                        ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)} ${getPerformanceUnit(currentExercise) === 'sec' ? 's' : 'reps'}`
+                        : 'MAX'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openEditSpecificSetModal(currentSetIdx)}
+                    className="px-3 py-1.5 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Pencil size={12} />
+                    <span>Modifica</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
