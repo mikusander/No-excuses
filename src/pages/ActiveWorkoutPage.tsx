@@ -138,6 +138,7 @@ import {
   WORKOUT_PROGRESS_MAX_AGE_MS,
   type WorkoutProgressIdentity,
 } from '../lib/workoutProgressStorage';
+import { WorkoutCelebrationModal } from '../components/WorkoutCelebrationModal';
 
 interface Exercise {
   id: string;
@@ -488,6 +489,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
   const [isEditingGeneralNoteInOverview, setIsEditingGeneralNoteInOverview] = useState(false);
   const [overviewGeneralNoteDraft, setOverviewGeneralNoteDraft] = useState('');
+  const [isCelebrationOpen, setIsCelebrationOpen] = useState(false);
   const [isInstructionModalOpen, setIsInstructionModalOpen] = useState(false);
   const [instructionModalContext, setInstructionModalContext] = useState<InstructionModalContext | null>(null);
   const [isWorkoutOverviewModalOpen, setIsWorkoutOverviewModalOpen] = useState(false);
@@ -3697,11 +3699,7 @@ const ActiveWorkoutPage: React.FC = () => {
       if (nextEx.type === 'emom') setEmomRoundRemainingWithSync(nextEx.emom_round_duration || 60);
       else setEmomRoundRemaining(0);
     } else {
-      if (window.confirm("Workout completed! Do you want to return to home?")) {
-        void completeWorkoutNow();
-      } else {
-        void markWorkoutComplete();
-      }
+      void completeWorkoutNow();
     }
   };
 
@@ -4065,6 +4063,11 @@ const ActiveWorkoutPage: React.FC = () => {
     }
   };
 
+  const handleCelebrationComplete = () => {
+    setIsCelebrationOpen(false);
+    navigate('/');
+  };
+
   const completeWorkoutNow = async () => {
     const elapsedSecs = Math.max(0, getCurrentWorkoutElapsedSeconds());
     if (elapsedSecs < 30) {
@@ -4081,7 +4084,7 @@ const ActiveWorkoutPage: React.FC = () => {
       }
     }
     await markWorkoutComplete();
-    navigate('/');
+    setIsCelebrationOpen(true);
   };
 
   const handlePrimaryAction = () => {
@@ -4686,6 +4689,13 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
 
         {renderExerciseNoteModal()}
+        <WorkoutCelebrationModal
+          isOpen={isCelebrationOpen}
+          workoutName={workout?.name}
+          durationSeconds={getCurrentWorkoutElapsedSeconds()}
+          exercisesCompletedCount={workout?.exercises?.length}
+          onComplete={handleCelebrationComplete}
+        />
       </div>
     );
   }
@@ -6146,6 +6156,13 @@ const ActiveWorkoutPage: React.FC = () => {
           </div>
         </div>
       )}
+      <WorkoutCelebrationModal
+        isOpen={isCelebrationOpen}
+        workoutName={workout?.name}
+        durationSeconds={getCurrentWorkoutElapsedSeconds()}
+        exercisesCompletedCount={workout?.exercises?.length}
+        onComplete={handleCelebrationComplete}
+      />
     </div>
   );
 };
