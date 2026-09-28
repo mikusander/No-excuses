@@ -11,15 +11,15 @@ export interface UserCorrectionRule {
   rawInputSignature: string;      // Stringa grezza ripulita (lowercase, spazi collassati, rimozione punteggiatura ai bordi)
   correctedResult: {
     name: string;                 // Nome corretto (es. "Spinte Su Panca Inclinata Con Manubri")
-    modality: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+    modality: 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
     setsOrRounds: number;         // Serie o round corretti
     repsTarget?: string;          // Ripetizioni target corrette
     weightKg?: number | null;     // Carico in kg
-    durationSeconds?: number;     // Durata isometria
+    durationSeconds?: number;     // Durata isometria o cardio
     restSeconds: number;          // Tempo di recupero
     subExercises?: Array<{
       name: string;
-      type: 'reps' | 'isometry';
+      type: 'reps' | 'isometry' | 'cardio';
       reps: number;
       duration_seconds: number;
       weight_kg?: number | null;

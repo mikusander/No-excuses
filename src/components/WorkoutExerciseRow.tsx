@@ -347,12 +347,12 @@ export const WorkoutExerciseRow: React.FC<WorkoutExerciseRowProps> = ({
         {/* Ripetizioni o Tempo */}
         <div className="bg-black/30 border border-brand-grey/15 rounded-xl p-2.5 flex flex-col justify-between">
           <span className="text-[10px] font-bold uppercase tracking-wider text-brand-grey/70 mb-1.5">
-            {exercise.type === 'isometry' ? 'Durata (sec)' : 'Ripetizioni'}
+            {exercise.type === 'isometry' || exercise.type === 'cardio' ? 'Durata (sec)' : 'Ripetizioni'}
           </span>
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={() => (exercise.type === 'isometry' ? adjustDuration(-5) : adjustReps(-1))}
+              onClick={() => ((exercise.type === 'isometry' || exercise.type === 'cardio') ? adjustDuration(-5) : adjustReps(-1))}
               className="w-8 h-8 rounded-lg bg-white/5 hover:bg-brand-orange/20 hover:text-brand-orange flex items-center justify-center text-white transition-colors"
             >
               <Minus size={14} />
@@ -360,11 +360,11 @@ export const WorkoutExerciseRow: React.FC<WorkoutExerciseRowProps> = ({
             <input
               type="number"
               min="0"
-              value={exercise.type === 'isometry' ? (exercise.duration_seconds || 30) : (exercise.reps || 10)}
+              value={(exercise.type === 'isometry' || exercise.type === 'cardio') ? (exercise.duration_seconds || 30) : (exercise.reps || 10)}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
                 const safeVal = Number.isNaN(val) ? 0 : Math.max(0, val);
-                if (exercise.type === 'isometry') {
+                if (exercise.type === 'isometry' || exercise.type === 'cardio') {
                   onUpdate(exercise.id, 'duration_seconds', safeVal);
                 } else {
                   onUpdate(exercise.id, 'reps', safeVal);
@@ -374,7 +374,7 @@ export const WorkoutExerciseRow: React.FC<WorkoutExerciseRowProps> = ({
             />
             <button
               type="button"
-              onClick={() => (exercise.type === 'isometry' ? adjustDuration(5) : adjustReps(1))}
+              onClick={() => ((exercise.type === 'isometry' || exercise.type === 'cardio') ? adjustDuration(5) : adjustReps(1))}
               className="w-8 h-8 rounded-lg bg-white/5 hover:bg-brand-orange/20 hover:text-brand-orange flex items-center justify-center text-white transition-colors"
             >
               <Plus size={14} />

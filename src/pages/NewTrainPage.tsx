@@ -91,6 +91,7 @@ import {
   Timer,
   TrendingUp,
   FileText,
+  Activity,
   X,
 } from 'lucide-react';
 import AppHeader from '../components/AppHeader';
@@ -111,7 +112,7 @@ import { hapticLight } from '../utils/haptics';
 
 interface ExerciseDraft {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
   auto_count_type?: 'pushups' | 'pullups' | null;
@@ -125,7 +126,7 @@ interface ExerciseDraft {
   emom_round_duration?: number;
   subExercises?: {
     name: string;
-    type: 'reps' | 'isometry';
+    type: 'reps' | 'isometry' | 'cardio';
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
@@ -174,13 +175,15 @@ const toSafeWeight = (value: unknown) => {
 
 const normalizeSubExerciseDraft = (raw: unknown): NonNullable<ExerciseDraft['subExercises']>[number] => {
   const sub = (raw || {}) as Record<string, unknown>;
-  const type: 'reps' | 'isometry' = sub.type === 'isometry' ? 'isometry' : 'reps';
+  const subTypeRaw = String(sub.type || 'reps').toLowerCase();
+  const type: 'reps' | 'isometry' | 'cardio' =
+    subTypeRaw === 'cardio' ? 'cardio' : (subTypeRaw === 'isometry' ? 'isometry' : 'reps');
 
   return {
     name: String(sub.name || ''),
     type,
     reps: toSafeInteger(sub.reps, type === 'reps' ? 10 : 0, 0),
-    duration_seconds: toSafeInteger(sub.duration_seconds, type === 'isometry' ? 30 : 0, 0),
+    duration_seconds: toSafeInteger(sub.duration_seconds, (type === 'isometry' || type === 'cardio') ? 30 : 0, 0),
     weight_kg: toSafeWeight(sub.weight_kg),
     instruction_note: String(sub.instruction_note || ''),
   };
@@ -200,7 +203,7 @@ const normalizeExerciseDraft = (raw: unknown): ExerciseDraft => {
   const ex = (raw || {}) as Record<string, unknown>;
   const typeRaw = String(ex.type || 'reps').toLowerCase();
   const type: ExerciseDraft['type'] =
-    typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
+    typeRaw === 'isometry' || typeRaw === 'cardio' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
       ? (typeRaw as ExerciseDraft['type'])
       : 'reps';
 
@@ -959,7 +962,7 @@ const NewTrainPage: React.FC = () => {
     clearDraftValue(`${exId}:transition_rest:sec`);
   };
 
-  const handleTypeChange = (id: string, targetType: 'normal' | 'superset' | 'circuit' | 'emom' | 'pyramid') => {
+  const handleTypeChange = (id: string, targetType: 'normal' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid') => {
     void hapticLight();
     setOpenTypeMenuExerciseId(null);
     const ex = exercises.find(e => e.id === id);
@@ -989,6 +992,37 @@ const NewTrainPage: React.FC = () => {
             name: baseName,
             sets: Math.max(1, item.sets || 3),
             reps: baseReps,
+            duration_seconds: baseDuration,
+            weight_kg: baseWeight,
+            rest_seconds: baseRest,
+            subExercises: undefined,
+            pyramid_steps: undefined,
+            emom_rounds: undefined,
+            emom_round_duration: undefined,
+          };
+        })
+      );
+    } else if (targetType === 'cardio') {
+      if (ex.type === 'cardio') return;
+      const firstSub = ex.subExercises?.[0];
+      const baseName = (ex.name || firstSub?.name || '').trim();
+      const baseDuration = firstSub?.duration_seconds ?? (ex.duration_seconds && ex.duration_seconds > 0 ? ex.duration_seconds : 60);
+      const baseWeight = ex.type === 'pyramid'
+        ? (ex.pyramid_steps?.[0]?.weight_kg ?? ex.weight_kg ?? null)
+        : (firstSub?.weight_kg ?? ex.weight_kg ?? null);
+      const baseRest = ex.type === 'pyramid'
+        ? (ex.pyramid_steps?.[0]?.rest_seconds || 60)
+        : (ex.rest_seconds || 60);
+
+      setExercises(prev =>
+        prev.map(item => {
+          if (item.id !== id) return item;
+          return {
+            ...item,
+            type: 'cardio',
+            name: baseName,
+            sets: Math.max(1, item.sets || 3),
+            reps: 0,
             duration_seconds: baseDuration,
             weight_kg: baseWeight,
             rest_seconds: baseRest,
@@ -2029,11 +2063,20 @@ const NewTrainPage: React.FC = () => {
         }
 
         const idEsercizio = await ensureExerciseDictionaryId(ex.name);
+        const isCardio = ex.type === 'cardio';
         const isIsometry = ex.type === 'isometry';
+        const isDurationBased = isIsometry || isCardio;
 
         let noteToSave = String(ex.instruction_note || '').trim();
+        const metaObj: Record<string, unknown> = {};
         if (ex.auto_count_type) {
-          noteToSave += (noteToSave ? ' ' : '') + `@@@meta:${JSON.stringify({ autoCountType: ex.auto_count_type })}`;
+          metaObj.autoCountType = ex.auto_count_type;
+        }
+        if (isCardio) {
+          metaObj.exerciseType = 'cardio';
+        }
+        if (Object.keys(metaObj).length > 0) {
+          noteToSave += (noteToSave ? ' ' : '') + `@@@meta:${JSON.stringify(metaObj)}`;
         }
 
         rowsToInsert.push({
@@ -2045,9 +2088,9 @@ const NewTrainPage: React.FC = () => {
           rest_tra_esercizi: transitionRestToPersist,
           peso_kg: toDbWeight(ex.weight_kg),
           note_esercizio: noteToSave || null,
-          tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
-          reps: isIsometry ? null : Math.max(0, ex.reps ?? 0),
-          durata_secondi: isIsometry ? Math.max(0, ex.duration_seconds ?? 0) : null,
+          tipo: isDurationBased ? 'ISOMETRIA' : 'REPS',
+          reps: isDurationBased ? null : Math.max(0, ex.reps ?? 0),
+          durata_secondi: isDurationBased ? Math.max(0, ex.duration_seconds ?? 0) : null,
           id_superset: null,
           id_piramide: null,
           stepindex_piramide: null,
@@ -2251,18 +2294,21 @@ const NewTrainPage: React.FC = () => {
                         onClick={() =>
                           setOpenTypeMenuExerciseId((prev) => (prev === ex.id ? null : ex.id))
                         }
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${ex.type === 'emom'
-                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25'
-                          : ex.type === 'pyramid'
-                            ? 'bg-purple-500/15 border-purple-500/40 text-purple-300 hover:bg-purple-500/25'
-                            : ex.type === 'circuit'
-                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25'
-                              : ex.type === 'superset'
-                                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/25'
-                                : 'bg-brand-orange/15 border-brand-orange/40 text-brand-orange hover:bg-brand-orange/25'
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${ex.type === 'cardio'
+                          ? 'bg-rose-500/15 border-rose-500/40 text-rose-400 hover:bg-rose-500/25'
+                          : ex.type === 'emom'
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25'
+                            : ex.type === 'pyramid'
+                              ? 'bg-purple-500/15 border-purple-500/40 text-purple-300 hover:bg-purple-500/25'
+                              : ex.type === 'circuit'
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25'
+                                : ex.type === 'superset'
+                                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/25'
+                                  : 'bg-brand-orange/15 border-brand-orange/40 text-brand-orange hover:bg-brand-orange/25'
                           }`}
                         title="Cambia tipo esercizio"
                       >
+                        {ex.type === 'cardio' && <Activity size={13} className="shrink-0" />}
                         {ex.type === 'emom' && <Timer size={13} className="shrink-0" />}
                         {ex.type === 'pyramid' && <TrendingUp size={13} className="shrink-0" />}
                         {ex.type === 'circuit' && <RotateCcw size={13} className="shrink-0" />}
@@ -2275,13 +2321,15 @@ const NewTrainPage: React.FC = () => {
                             ? 'Normale'
                             : ex.type === 'isometry'
                               ? 'Isometria'
-                              : ex.type === 'emom'
-                                ? 'EMOM'
-                                : ex.type === 'pyramid'
-                                  ? 'Piramide'
-                                  : ex.type === 'circuit'
-                                    ? 'Circuito'
-                                    : 'Superset'}
+                              : ex.type === 'cardio'
+                                ? 'Cardio'
+                                : ex.type === 'emom'
+                                  ? 'EMOM'
+                                  : ex.type === 'pyramid'
+                                    ? 'Piramide'
+                                    : ex.type === 'circuit'
+                                      ? 'Circuito'
+                                      : 'Superset'}
                         </span>
                         <ChevronDown size={12} className={`transition-transform duration-200 ${openTypeMenuExerciseId === ex.id ? 'rotate-180' : ''}`} />
                       </button>
@@ -2306,6 +2354,14 @@ const NewTrainPage: React.FC = () => {
                                   icon: Dumbbell,
                                   color: 'text-brand-orange',
                                   isActive: ex.type === 'reps' || ex.type === 'isometry',
+                                },
+                                {
+                                  id: 'cardio',
+                                  label: 'Cardio',
+                                  desc: 'Corsa, cyclette, corda a tempo',
+                                  icon: Activity,
+                                  color: 'text-rose-400',
+                                  isActive: ex.type === 'cardio',
                                 },
                                 {
                                   id: 'emom',
@@ -2348,7 +2404,7 @@ const NewTrainPage: React.FC = () => {
                                     onClick={() =>
                                       handleTypeChange(
                                         ex.id,
-                                        option.id as 'normal' | 'superset' | 'circuit' | 'emom' | 'pyramid'
+                                        option.id as 'normal' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid'
                                       )
                                     }
                                     className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left transition-colors ${option.isActive
@@ -3163,28 +3219,30 @@ const NewTrainPage: React.FC = () => {
                       </div>
 
                       {/* Modalità Esercizio: Reps vs Isometria (Full Width) */}
-                      <div className="w-full bg-black/60 rounded-xl p-1 border border-white/10 grid grid-cols-2 gap-1">
-                        <button
-                          type="button"
-                          onClick={() => updateExercise(ex.id, 'type', 'reps')}
-                          className={`w-full py-2 text-xs font-black rounded-lg transition-all text-center ${ex.type === 'reps'
-                            ? 'bg-brand-orange text-black shadow-md'
-                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                            }`}
-                        >
-                          REPS
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateExercise(ex.id, 'type', 'isometry')}
-                          className={`w-full py-2 text-xs font-black rounded-lg transition-all text-center ${ex.type === 'isometry'
-                            ? 'bg-brand-orange text-black shadow-md'
-                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                            }`}
-                        >
-                          ISOMETRIA
-                        </button>
-                      </div>
+                      {(ex.type === 'reps' || ex.type === 'isometry') && (
+                        <div className="w-full bg-black/60 rounded-xl p-1 border border-white/10 grid grid-cols-2 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateExercise(ex.id, 'type', 'reps')}
+                            className={`w-full py-2 text-xs font-black rounded-lg transition-all text-center ${ex.type === 'reps'
+                              ? 'bg-brand-orange text-black shadow-md'
+                              : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                              }`}
+                          >
+                            REPS
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateExercise(ex.id, 'type', 'isometry')}
+                            className={`w-full py-2 text-xs font-black rounded-lg transition-all text-center ${ex.type === 'isometry'
+                              ? 'bg-brand-orange text-black shadow-md'
+                              : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                              }`}
+                          >
+                            ISOMETRIA
+                          </button>
+                        </div>
+                      )}
 
                       {/* Note dell'esercizio (direttamente visibile) */}
                       <div className="relative">

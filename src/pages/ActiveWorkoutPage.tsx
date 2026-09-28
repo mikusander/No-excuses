@@ -143,7 +143,7 @@ import { WorkoutCelebrationModal } from '../components/WorkoutCelebrationModal';
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string | null;
   auto_count_type?: 'pushups' | 'pullups' | null;
@@ -163,7 +163,7 @@ interface Exercise {
   completed_sets_reps?: (number | null)[];
   subExercises?: {
     name: string;
-    type: 'reps' | 'isometry';
+    type: 'reps' | 'isometry' | 'cardio';
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
@@ -213,7 +213,7 @@ interface ExerciseEditDraft {
   currentStepWeightKg: string;
   subExerciseDrafts: Array<{
     name: string;
-    type: 'reps' | 'isometry';
+    type: 'reps' | 'isometry' | 'cardio';
     reps: string;
     durationSeconds: string;
     weightKg: string;
@@ -275,14 +275,15 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
       const item = entry as Record<string, unknown>;
       const typeRaw = String(item.type || 'reps').toLowerCase();
       const type: Exercise['type'] =
-        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
+        typeRaw === 'isometry' || typeRaw === 'cardio' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
           ? (typeRaw as Exercise['type'])
           : 'reps';
 
       const subExercises = Array.isArray(item.subExercises)
         ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
-          const subType: 'reps' | 'isometry' =
-            String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
+          const subTypeRaw = String(sub.type || 'reps').toLowerCase();
+          const subType: 'reps' | 'isometry' | 'cardio' =
+            subTypeRaw === 'cardio' ? 'cardio' : (subTypeRaw === 'isometry' ? 'isometry' : 'reps');
           return {
             name: String(sub.name || ''),
             type: subType,
@@ -1540,10 +1541,10 @@ const ActiveWorkoutPage: React.FC = () => {
 
       const effectiveIsometryTarget = getTargetIsometry(effectiveExercise, effectiveExercise.subExercises?.[effectiveSubIdx]);
       const effectiveFallbackIsometryTarget = (() => {
-        if (effectiveExercise.type === 'isometry') return Math.max(0, normalizeDurationSeconds(effectiveExercise.duration_seconds));
+        if (effectiveExercise.type === 'isometry' || effectiveExercise.type === 'cardio') return Math.max(0, normalizeDurationSeconds(effectiveExercise.duration_seconds));
         if (effectiveExercise.type === 'superset') {
           const safeSub = effectiveExercise.subExercises?.[effectiveSubIdx];
-          if (safeSub?.type === 'isometry') {
+          if (safeSub?.type === 'isometry' || safeSub?.type === 'cardio') {
             return Math.max(0, normalizeDurationSeconds(safeSub.duration_seconds));
           }
         }
@@ -2215,9 +2216,9 @@ const ActiveWorkoutPage: React.FC = () => {
         const firstExerciseName = String(firstEx.name || '').trim() || 'Exercise 1';
         speakCue(`first exercise ${firstExerciseName}`);
 
-        if (firstEx.type === 'isometry') {
+        if (firstEx.type === 'isometry' || firstEx.type === 'cardio') {
           setIsometryRemainingWithSync(firstEx.duration_seconds);
-        } else if ((firstEx.type === 'superset' || firstEx.type === 'circuit') && firstEx.subExercises?.[0]?.type === 'isometry') {
+        } else if ((firstEx.type === 'superset' || firstEx.type === 'circuit') && (firstEx.subExercises?.[0]?.type === 'isometry' || firstEx.subExercises?.[0]?.type === 'cardio')) {
           setIsometryRemainingWithSync(firstEx.subExercises[0].duration_seconds);
         } else if (firstEx.type === 'emom') {
           setEmomRoundRemainingWithSync(firstEx.emom_round_duration || 60);
@@ -3259,7 +3260,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
           const nextSubWeight = parseOptionalWeight(draft.weightKg);
           const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'EMOM reps', true) : null;
-          const nextSubDuration = currentSub.type === 'isometry' ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : null;
+          const nextSubDuration = (currentSub.type === 'isometry' || currentSub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : null;
 
           const { error: currentSubUpdateError } = await supabase
             .from('esecuzioni')
@@ -3289,7 +3290,7 @@ const ActiveWorkoutPage: React.FC = () => {
               return {
                 ...sub,
                 reps: sub.type === 'reps' ? parseStrictInt(draft.reps, 'EMOM reps', true) : sub.reps,
-                duration_seconds: sub.type === 'isometry' ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : sub.duration_seconds,
+                duration_seconds: (sub.type === 'isometry' || sub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : sub.duration_seconds,
                 weight_kg: parseOptionalWeight(draft.weightKg),
               };
             }),
@@ -3348,7 +3349,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
           const nextSubWeight = parseOptionalWeight(draft.weightKg);
           const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'Superset reps', true) : null;
-          const nextSubDuration = currentSub.type === 'isometry' ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : null;
+          const nextSubDuration = (currentSub.type === 'isometry' || currentSub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : null;
 
           const { error: currentSubUpdateError } = await supabase
             .from('esecuzioni')
@@ -3374,7 +3375,7 @@ const ActiveWorkoutPage: React.FC = () => {
             return {
               ...sub,
               reps: sub.type === 'reps' ? parseStrictInt(draft.reps, 'Superset reps', true) : sub.reps,
-              duration_seconds: sub.type === 'isometry' ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : sub.duration_seconds,
+              duration_seconds: (sub.type === 'isometry' || sub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : sub.duration_seconds,
               weight_kg: parseOptionalWeight(draft.weightKg),
             };
           });
@@ -3445,7 +3446,7 @@ const ActiveWorkoutPage: React.FC = () => {
           throw new Error(`You are currently at set ${minAllowedSets}. Sets cannot be lower than this value.`);
         }
 
-        const isIso = currentExercise.type === 'isometry';
+        const isIso = currentExercise.type === 'isometry' || currentExercise.type === 'cardio';
         const nextReps = isIso ? currentExercise.reps : parseStrictInt(exerciseEditDraft.reps, 'Reps', true);
         const nextDuration = isIso
           ? parseStrictInt(exerciseEditDraft.durationSeconds, 'Duration', true)
@@ -3494,8 +3495,8 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const getTargetIsometry = (ex: Exercise, subEx: any) => {
-    if ((ex.type === 'superset' || ex.type === 'circuit') && subEx?.type === 'isometry') return subEx.duration_seconds;
-    if (ex.type === 'isometry') return ex.duration_seconds;
+    if ((ex.type === 'superset' || ex.type === 'circuit') && (subEx?.type === 'isometry' || subEx?.type === 'cardio')) return subEx.duration_seconds;
+    if (ex.type === 'isometry' || ex.type === 'cardio') return ex.duration_seconds;
     return 0;
   };
 
@@ -3511,14 +3512,14 @@ const ActiveWorkoutPage: React.FC = () => {
     return isMaxTarget(value) ? 'MAX' : String(toSafeTargetInt(value));
   };
 
-  const formatSupersetTaskMetricLabel = (sub: { type: 'reps' | 'isometry'; reps: number; duration_seconds: number }) => {
+  const formatSupersetTaskMetricLabel = (sub: { type: 'reps' | 'isometry' | 'cardio'; reps: number; duration_seconds: number }) => {
     if (sub.type === 'reps') {
       return isMaxTarget(sub.reps) ? 'MAX reps' : `${toSafeTargetInt(sub.reps)} reps`;
     }
     return isMaxTarget(sub.duration_seconds) ? 'MAX hold' : `${toSafeTargetInt(sub.duration_seconds)}s hold`;
   };
 
-  const formatEmomTaskMetricLabel = (sub: { type: 'reps' | 'isometry'; reps: number; duration_seconds: number }) => {
+  const formatEmomTaskMetricLabel = (sub: { type: 'reps' | 'isometry' | 'cardio'; reps: number; duration_seconds: number }) => {
     if (sub.type === 'reps') {
       return isMaxTarget(sub.reps) ? 'MAX REPS' : `${toSafeTargetInt(sub.reps)} REPS`;
     }
@@ -3558,6 +3559,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (exercise.type === 'emom') return 'EMOM MODE';
     if (exercise.type === 'superset') return 'SUPERSET MODE';
     if (exercise.type === 'pyramid') return 'PYRAMID MODE';
+    if (exercise.type === 'cardio') return 'CARDIO';
     if (exercise.type === 'isometry') return 'ISOMETRY';
     return 'REPS';
   };
@@ -3609,10 +3611,10 @@ const ActiveWorkoutPage: React.FC = () => {
       ];
     }
 
-    if (exercise.type === 'isometry') {
+    if (exercise.type === 'isometry' || exercise.type === 'cardio') {
       return [
         `${exercise.sets || 1} sets`,
-        `${isMaxTarget(exercise.duration_seconds) ? 'MAX' : formatTime(exercise.duration_seconds)} hold`,
+        `${isMaxTarget(exercise.duration_seconds) ? 'MAX' : formatTime(exercise.duration_seconds)}`,
         formatWeightLabel(exercise.weight_kg),
       ];
     }
@@ -3633,14 +3635,18 @@ const ActiveWorkoutPage: React.FC = () => {
           ? 'SUPERSET MODE'
           : currentExercise.type === 'pyramid'
             ? 'PYRAMID MODE'
-            : null;
+            : currentExercise.type === 'cardio'
+              ? 'CARDIO'
+              : null;
   const specialExercisePillClass =
-    currentExercise.type === 'circuit' ||
-    currentExercise.type === 'emom' ||
-    currentExercise.type === 'superset' ||
-    currentExercise.type === 'pyramid'
-      ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
-      : '';
+    currentExercise.type === 'cardio'
+      ? 'border-rose-500/60 bg-rose-500/10 text-rose-400'
+      : currentExercise.type === 'circuit' ||
+        currentExercise.type === 'emom' ||
+        currentExercise.type === 'superset' ||
+        currentExercise.type === 'pyramid'
+        ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
+        : '';
 
   const buildNextExerciseVoiceCue = (nextExercise: Exercise, _nextExerciseIndex: number) => {
     const name = String(nextExercise.name || '').trim();
@@ -3667,7 +3673,7 @@ const ActiveWorkoutPage: React.FC = () => {
         if (firstStep.reps > 0) parts.push(`${firstStep.reps} reps`);
         if (firstStep.weight_kg != null && firstStep.weight_kg > 0) parts.push(`${firstStep.weight_kg} kilos`);
       }
-    } else if (nextExercise.type === 'isometry') {
+    } else if (nextExercise.type === 'isometry' || nextExercise.type === 'cardio') {
       if (nextExercise.duration_seconds > 0) parts.push(`${nextExercise.duration_seconds} seconds`);
       if (nextExercise.weight_kg != null && nextExercise.weight_kg > 0) parts.push(`${nextExercise.weight_kg} kilos`);
     } else {
@@ -3859,14 +3865,14 @@ const ActiveWorkoutPage: React.FC = () => {
       resetCircuitStopwatch();
     }
 
-    if (currentExercise.type === 'isometry') {
+    if (currentExercise.type === 'isometry' || currentExercise.type === 'cardio') {
       setIsometryRemainingWithSync(currentExercise.duration_seconds);
       return;
     }
 
     if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
       const firstSub = currentExercise.subExercises?.[0];
-      setIsometryRemainingWithSync(firstSub?.type === 'isometry' ? firstSub.duration_seconds : 0);
+      setIsometryRemainingWithSync((firstSub?.type === 'isometry' || firstSub?.type === 'cardio') ? firstSub.duration_seconds : 0);
       return;
     }
 
@@ -5167,7 +5173,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   )}
                 </div>
               </div>
-            ) : currentExercise.type === 'isometry' ? (
+            ) : (currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
               <div className="text-center w-full max-w-xs relative group select-none my-auto">
                 <div
                   className={`relative w-48 h-48 sm:w-56 sm:h-56 mx-auto rounded-full border-[8px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${
@@ -5919,7 +5925,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 </div>
               )}
 
-              {(currentExercise.type === 'reps' || currentExercise.type === 'isometry') && (
+              {(currentExercise.type === 'reps' || currentExercise.type === 'isometry' || currentExercise.type === 'cardio') && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Sets
@@ -5942,7 +5948,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     </label>
                   </div>
 
-                  {currentExercise.type === 'isometry' ? (
+                  {(currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
                     <label className="text-sm text-brand-grey">Duration (sec)
                       <input
                         type="number" inputMode="numeric"

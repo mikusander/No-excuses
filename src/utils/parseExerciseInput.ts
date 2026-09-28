@@ -14,11 +14,11 @@
 export * from './parseWorkoutInput.ts';
 import { parseWorkoutInput } from './parseWorkoutInput.ts';
 
-export type ParsedExerciseType = 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+export type ParsedExerciseType = 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
 export interface ParsedSubExercise {
   name: string;
-  type: 'reps' | 'isometry';
+  type: 'reps' | 'isometry' | 'cardio';
   reps: number;
   duration_seconds: number;
   weight_kg?: number | null;
@@ -670,14 +670,14 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90, userId?:
     };
   }
 
-  if (config.modality === 'isometry') {
+  if (config.modality === 'isometry' || config.modality === 'cardio') {
     return {
       matched: true,
-      type: 'isometry',
+      type: config.modality,
       name: config.name,
       sets: config.setsOrRounds,
       reps: 0,
-      duration_seconds: config.durationSeconds || 30,
+      duration_seconds: config.durationSeconds || (config.modality === 'cardio' ? 60 : 30),
       rest_seconds: config.restSeconds,
       rawInput: trimmed,
       confidence: 'high',

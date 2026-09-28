@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Flame } from 'lucide-react';
+import { PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Flame, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
@@ -15,7 +15,7 @@ import { hapticLight, hapticMedium } from '../utils/haptics';
 
 export interface PreviewExercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
   auto_count_type?: 'pushups' | 'pullups' | null;
@@ -31,7 +31,7 @@ export interface PreviewExercise {
   pyramid_steps?: { reps: number; rest_seconds: number; weight_kg?: number | null }[];
   subExercises?: {
     name: string;
-    type: 'reps' | 'isometry';
+    type: 'reps' | 'isometry' | 'cardio';
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
@@ -546,12 +546,14 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                             {ex.name}
                           </span>
                           <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
-                            {ex.type === 'isometry' ? (
+                            {ex.type === 'cardio' ? (
+                              <Activity size={12} className="mr-1 text-rose-400" />
+                            ) : ex.type === 'isometry' ? (
                               <Timer size={12} className="mr-1 text-brand-orange" />
                             ) : (
                               <Repeat size={12} className="mr-1 text-brand-orange" />
                             )}
-                            {ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
+                            {ex.type === 'cardio' ? 'CARDIO' : ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
                           </div>
                         </div>
                       )}
@@ -613,12 +615,12 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                           ex.type !== 'pyramid' &&
                           ex.type !== 'emom' && (
                             <InlineNumberInput
-                              label={ex.type === 'isometry' ? 'Duration (s)' : 'Reps'}
-                              value={ex.type === 'isometry' ? ex.duration_seconds : ex.reps}
+                              label={(ex.type === 'isometry' || ex.type === 'cardio') ? 'Duration (s)' : 'Reps'}
+                              value={(ex.type === 'isometry' || ex.type === 'cardio') ? ex.duration_seconds : ex.reps}
                               onChange={(v) =>
-                                updateExerciseField(i, ex.type === 'isometry' ? 'duration_seconds' : 'reps', v)
+                                updateExerciseField(i, (ex.type === 'isometry' || ex.type === 'cardio') ? 'duration_seconds' : 'reps', v)
                               }
-                              placeholder={ex.type === 'isometry' ? 'MAX' : 'MAX'}
+                              placeholder={(ex.type === 'isometry' || ex.type === 'cardio') ? 'MAX' : 'MAX'}
                             />
                           )}
 

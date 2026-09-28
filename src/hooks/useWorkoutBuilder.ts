@@ -3,7 +3,7 @@ import type { ParsedWorkoutItem } from '../utils/parseExerciseInput';
 import type { UserExerciseHistoryItem } from './useUserExerciseHistory';
 import { generateUUID } from '../utils/uuid';
 
-export type ExerciseType = 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+export type ExerciseType = 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
 export interface ExerciseDraft {
   id: string;
@@ -21,7 +21,7 @@ export interface ExerciseDraft {
   emom_round_duration?: number;
   subExercises?: {
     name: string;
-    type: 'reps' | 'isometry';
+    type: 'reps' | 'isometry' | 'cardio';
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
@@ -223,10 +223,10 @@ export function useWorkoutBuilder(initialExercises: ExerciseDraft[] = []) {
           };
         }
 
-        if (parsed.type === 'isometry') {
+        if (parsed.type === 'isometry' || parsed.type === 'cardio') {
           return {
             ...ex,
-            type: 'isometry',
+            type: parsed.type,
             name: parsed.name,
             sets: parsed.sets,
             reps: 0,

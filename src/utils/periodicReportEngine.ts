@@ -49,7 +49,7 @@ export const isIsometricExercise = (
   durationSeconds?: number,
   reps?: number
 ): boolean => {
-  if (type === 'isometry') return true;
+  if (type === 'isometry' || type === 'cardio') return true;
   if (durationSeconds && durationSeconds > 0 && (!reps || reps <= 1)) return true;
 
   const normalized = (name || '').toLowerCase();
@@ -126,7 +126,7 @@ export const toSnapshotExercises = (raw: unknown): UiExercise[] => {
     .map((item, idx) => {
       const typeRaw = String(item.type || 'reps').toLowerCase();
       const type: UiExercise['type'] =
-        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
+        typeRaw === 'isometry' || typeRaw === 'cardio' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
           ? (typeRaw as UiExercise['type'])
           : 'reps';
 
@@ -134,8 +134,9 @@ export const toSnapshotExercises = (raw: unknown): UiExercise[] => {
         ? (item.subExercises as Array<unknown>)
           .filter((sub): sub is Record<string, unknown> => Boolean(sub && typeof sub === 'object'))
           .map((sub) => {
+            const subTypeRaw = String(sub.type || 'reps').toLowerCase();
             const subType: UiSubExercise['type'] =
-              String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
+              subTypeRaw === 'cardio' ? 'cardio' : (subTypeRaw === 'isometry' ? 'isometry' : 'reps');
             return {
               name: String(sub.name || ''),
               type: subType,

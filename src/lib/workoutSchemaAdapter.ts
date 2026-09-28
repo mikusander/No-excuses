@@ -26,12 +26,12 @@
  *
  * Funzione principale esportata: `parseDbExerciseRows(rows)`
  */
-export type UiExerciseType = 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+export type UiExerciseType = 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
 export interface UiSubExercise {
   id?: string;
   name: string;
-  type: 'reps' | 'isometry';
+  type: 'reps' | 'isometry' | 'cardio';
   reps: number;
   duration_seconds: number;
   weight_kg?: number | null;
@@ -124,11 +124,16 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
     const sets = Math.max(1, toSafeInt(row.set_num, 1));
     const restSeconds = Math.max(0, toSafeInt(row.rest_secondi, 0));
     const transitionRestSeconds = Math.max(0, toSafeInt(row.rest_tra_esercizi, 0));
-    const rowType = String(row.tipo || '').toUpperCase() === 'ISOMETRIA' ? 'isometry' : 'reps';
+    const noteMeta = extractNoteMeta(row.note_esercizio);
+    const isExplicitCardio =
+      String(row.tipo || '').toUpperCase() === 'CARDIO' ||
+      noteMeta.meta?.exerciseType === 'cardio' ||
+      jsonPayload?.type === 'cardio';
+    const isExplicitIso = String(row.tipo || '').toUpperCase() === 'ISOMETRIA';
+    const rowType: UiExerciseType = isExplicitCardio ? 'cardio' : (isExplicitIso ? 'isometry' : 'reps');
 
     if (row.id_superset) {
       const key = `superset:${row.id_superset}`;
-      const noteMeta = extractNoteMeta(row.note_esercizio);
       const isCircuitFromMeta =
         noteMeta.meta?.groupCategory === 'circuit' ||
         String(row?.superset?.tipo_gruppo || row?.tipo_gruppo || '').toLowerCase() === 'circuit' ||

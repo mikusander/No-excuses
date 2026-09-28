@@ -30,7 +30,7 @@ import { supabase } from './supabase';
  */
 export interface SaveExercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
   /** Tipo di esercizio per il conteggio automatico (MediaPipe/accelerometro) */
@@ -47,7 +47,7 @@ export interface SaveExercise {
   /** Sub-esercizi per superset ed EMOM */
   subExercises?: {
     name: string;
-    type: 'reps' | 'isometry';
+    type: 'reps' | 'isometry' | 'cardio';
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
@@ -289,14 +289,23 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
       continue;
     }
 
-    // ── ESERCIZIO SEMPLICE (reps o isometry) ─────────────────────────────────
+    // ── ESERCIZIO SEMPLICE (reps, isometry o cardio) ─────────────────────────
     const idEsercizio = await ensureExerciseDictionaryId(ex.name);
+    const isCardio = ex.type === 'cardio';
     const isIsometry = ex.type === 'isometry';
+    const isDurationBased = isIsometry || isCardio;
 
-    // Serializza i metadati auto_count_type nel campo note come suffisso @@@meta:
+    // Serializza i metadati auto_count_type e cardio nel campo note come suffisso @@@meta:
     let noteToSave = String(ex.instruction_note || '').trim();
+    const metaObj: Record<string, unknown> = {};
     if (ex.auto_count_type) {
-      noteToSave += (noteToSave ? ' ' : '') + `@@@meta:${JSON.stringify({ autoCountType: ex.auto_count_type })}`;
+      metaObj.autoCountType = ex.auto_count_type;
+    }
+    if (isCardio) {
+      metaObj.exerciseType = 'cardio';
+    }
+    if (Object.keys(metaObj).length > 0) {
+      noteToSave += (noteToSave ? ' ' : '') + `@@@meta:${JSON.stringify(metaObj)}`;
     }
 
     rowsToInsert.push({
@@ -308,9 +317,9 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
       rest_tra_esercizi: transitionRestToPersist,
       peso_kg: toDbWeight(ex.weight_kg),
       note_esercizio: noteToSave || null,
-      tipo: isIsometry ? 'ISOMETRIA' : 'REPS',
-      reps: isIsometry ? null : Math.max(0, ex.reps ?? 0),
-      durata_secondi: isIsometry ? Math.max(0, ex.duration_seconds ?? 0) : null,
+      tipo: isDurationBased ? 'ISOMETRIA' : 'REPS',
+      reps: isDurationBased ? null : Math.max(0, ex.reps ?? 0),
+      durata_secondi: isDurationBased ? Math.max(0, ex.duration_seconds ?? 0) : null,
       id_superset: null,
       id_piramide: null,
       stepindex_piramide: null,

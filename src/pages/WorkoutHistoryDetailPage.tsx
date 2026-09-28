@@ -53,7 +53,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X, Flame } from 'lucide-react';
+import { Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X, Flame, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
@@ -172,14 +172,15 @@ const toSnapshotExercises = (raw: unknown): UiExercise[] => {
       const item = entry as Record<string, unknown>;
       const typeRaw = String(item.type || 'reps').toLowerCase();
       const type: UiExercise['type'] =
-        typeRaw === 'isometry' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
+        typeRaw === 'isometry' || typeRaw === 'cardio' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
           ? (typeRaw as UiExercise['type'])
           : 'reps';
 
       const subExercises = Array.isArray(item.subExercises)
         ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
+          const subTypeRaw = String(sub.type || 'reps').toLowerCase();
           const subType: UiSubExercise['type'] =
-            String(sub.type || 'reps').toLowerCase() === 'isometry' ? 'isometry' : 'reps';
+            subTypeRaw === 'cardio' ? 'cardio' : (subTypeRaw === 'isometry' ? 'isometry' : 'reps');
           return {
             name: String(sub.name || ''),
             type: subType,
@@ -640,15 +641,17 @@ const WorkoutHistoryDetailPage: React.FC = () => {
             const typeLabel =
               exercise.type === 'reps'
                 ? 'REPS'
-                : exercise.type === 'isometry'
-                  ? 'ISOMETRIC'
-                  : exercise.type === 'circuit'
-                    ? 'CIRCUITO'
-                    : exercise.type === 'superset'
-                      ? 'SUPERSET'
-                      : exercise.type === 'emom'
-                        ? 'EMOM'
-                        : 'PYRAMID';
+                : exercise.type === 'cardio'
+                  ? 'CARDIO'
+                  : exercise.type === 'isometry'
+                    ? 'ISOMETRIC'
+                    : exercise.type === 'circuit'
+                      ? 'CIRCUITO'
+                      : exercise.type === 'superset'
+                        ? 'SUPERSET'
+                        : exercise.type === 'emom'
+                          ? 'EMOM'
+                          : 'PYRAMID';
 
             const isComplexType =
               exercise.type === 'superset' || exercise.type === 'circuit' || exercise.type === 'emom' || exercise.type === 'pyramid';
@@ -680,7 +683,9 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                     )}
                     {shouldShowTypeBadge && (
                       <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner whitespace-nowrap">
-                        {exercise.type === 'isometry' ? (
+                        {exercise.type === 'cardio' ? (
+                          <Activity size={12} className="mr-1 text-rose-400" />
+                        ) : exercise.type === 'isometry' ? (
                           <Timer size={12} className="mr-1 text-brand-orange" />
                         ) : (
                           <Repeat size={12} className="mr-1 text-brand-orange" />
@@ -761,7 +766,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                     </div>
                   )}
 
-                  {(exercise.type === 'reps' || exercise.type === 'isometry') && (
+                  {(exercise.type === 'reps' || exercise.type === 'isometry' || exercise.type === 'cardio') && (
                     <div className={`grid ${exercise.weight_kg != null ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2 text-xs text-brand-grey font-bold w-full mt-2`}>
                       <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Sets</span>
@@ -770,10 +775,10 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
                       <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                          {exercise.type === 'isometry' ? 'Duration' : 'Reps'}
+                          {(exercise.type === 'isometry' || exercise.type === 'cardio') ? 'Duration' : 'Reps'}
                         </span>
                         <span className="text-sm text-brand-orange">
-                          {exercise.type === 'isometry'
+                          {(exercise.type === 'isometry' || exercise.type === 'cardio')
                             ? formatHistoryDuration(exercise.duration_seconds)
                             : formatHistoryTarget(exercise.reps)}
                         </span>
@@ -800,7 +805,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                     <div className="mt-3 bg-brand-orange/5 border border-brand-orange/20 rounded-xl p-3 w-full">
                       <span className="text-[10px] font-bold text-brand-orange uppercase tracking-wider block mb-1.5 flex items-center gap-1">
                         <Flame size={12} />
-                        {exercise.type === 'isometry' ? 'Tenuta a sfinimento registrata per set:' : 'Reps a sfinimento registrate per set:'}
+                        {(exercise.type === 'isometry' || exercise.type === 'cardio') ? 'Tenuta a sfinimento registrata per set:' : 'Reps a sfinimento registrate per set:'}
                       </span>
                       <div className="flex flex-wrap gap-1.5">
                         {exercise.completed_sets_records.map((val, sIdx) => (
@@ -811,7 +816,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                             <span className="text-zinc-400 text-[10px] font-sans">Set {sIdx + 1}:</span>
                             <span className="text-brand-orange">
                               {val != null && val > 0
-                                ? `${val} ${exercise.type === 'isometry' ? 's' : 'reps'}`
+                                ? `${val} ${(exercise.type === 'isometry' || exercise.type === 'cardio') ? 's' : 'reps'}`
                                 : 'MAX'}
                             </span>
                           </span>

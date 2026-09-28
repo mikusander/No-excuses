@@ -62,6 +62,7 @@ import {
   X,
   Copy,
   Loader2,
+  Activity,
   Folder,
   FolderPlus,
   FolderInput,
@@ -101,7 +102,7 @@ import {
 
 interface Exercise {
   id: string;
-  type: 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+  type: 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
   instruction_note?: string;
   auto_count_type?: 'pushups' | 'pullups' | null;
@@ -117,7 +118,7 @@ interface Exercise {
   pyramid_steps?: { reps: number; rest_seconds: number; weight_kg?: number | null }[];
   subExercises?: {
     name: string;
-    type: 'reps' | 'isometry';
+    type: 'reps' | 'isometry' | 'cardio';
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
@@ -145,7 +146,7 @@ interface ExerciseQuickEditDraft {
   emom_round_duration: string;
   subExercises: {
     name: string;
-    type: 'reps' | 'isometry';
+    type: 'reps' | 'isometry' | 'cardio';
     reps: string;
     duration_seconds: string;
     weight_kg: string;
@@ -664,12 +665,13 @@ const GymCardPage: React.FC = () => {
 
       let updatedExercise: Exercise = currentExercise;
 
-      if (draft.type === 'reps' || draft.type === 'isometry') {
+      if (draft.type === 'reps' || draft.type === 'isometry' || draft.type === 'cardio') {
         const nextSets = parseStrictInt(draft.sets, 'Sets');
         const nextRest = parseStrictInt(draft.rest_seconds, 'Rest', true);
         const nextWeight = parseOptionalWeight(draft.weight_kg);
-        const nextReps = draft.type === 'reps' ? parseStrictInt(draft.reps, 'Reps') : currentExercise.reps;
-        const nextDuration = draft.type === 'isometry' ? parseStrictInt(draft.duration_seconds, 'Duration') : currentExercise.duration_seconds;
+        const isDuration = draft.type === 'isometry' || draft.type === 'cardio';
+        const nextReps = isDuration ? currentExercise.reps : parseStrictInt(draft.reps, 'Reps');
+        const nextDuration = isDuration ? parseStrictInt(draft.duration_seconds, 'Duration') : currentExercise.duration_seconds;
 
         const { error } = await supabase
           .from('esecuzioni')
@@ -677,8 +679,8 @@ const GymCardPage: React.FC = () => {
             set_num: nextSets,
             rest_secondi: nextRest > 0 ? nextRest : null,
             peso_kg: nextWeight,
-            reps: draft.type === 'reps' ? nextReps : null,
-            durata_secondi: draft.type === 'isometry' ? nextDuration : null,
+            reps: isDuration ? null : nextReps,
+            durata_secondi: isDuration ? nextDuration : null,
           })
           .eq('id_scheda', schedaId)
           .eq('id_esecuzione', Number(draft.id));
@@ -1693,8 +1695,8 @@ const GymCardPage: React.FC = () => {
                           {ex.name}
                        </span>
                        <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
-                          {ex.type === 'isometry' ? <Timer size={12} className="mr-1 text-brand-orange"/> : <Repeat size={12} className="mr-1 text-brand-orange"/>}
-                          {ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
+                          {ex.type === 'cardio' ? <Activity size={12} className="mr-1 text-rose-400"/> : ex.type === 'isometry' ? <Timer size={12} className="mr-1 text-brand-orange"/> : <Repeat size={12} className="mr-1 text-brand-orange"/>}
+                          {ex.type === 'cardio' ? 'CARDIO' : ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
                        </div>
                     </div>
                   )}
@@ -1710,9 +1712,9 @@ const GymCardPage: React.FC = () => {
                     {ex.type !== 'superset' && ex.type !== 'circuit' && ex.type !== 'pyramid' && (
                       <div className="flex-1 bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center border border-white/10">
                         <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">
-                          {ex.type === 'isometry' ? 'Duration' : (ex.type === 'emom' ? 'Time/Rnd' : 'Reps')}
+                          {ex.type === 'isometry' || ex.type === 'cardio' ? 'Duration' : (ex.type === 'emom' ? 'Time/Rnd' : 'Reps')}
                         </span>
-                        <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'emom' ? (ex.duration_seconds > 0 ? formatSecs(ex.duration_seconds) : 'MAX TIME') : (ex.reps > 0 ? ex.reps : 'MAX REPS')}</span>
+                        <span className="text-sm text-brand-orange">{ex.type === 'isometry' || ex.type === 'cardio' || ex.type === 'emom' ? (ex.duration_seconds > 0 ? formatSecs(ex.duration_seconds) : 'MAX TIME') : (ex.reps > 0 ? ex.reps : 'MAX REPS')}</span>
                       </div>
                     )}
 
@@ -1767,22 +1769,24 @@ const GymCardPage: React.FC = () => {
             </div>
 
             <div className="p-5 overflow-y-auto max-h-[calc(88vh-154px)] space-y-4">
-              {(exerciseQuickEditDraft.type === 'reps' || exerciseQuickEditDraft.type === 'isometry') && (
+              {(exerciseQuickEditDraft.type === 'reps' || exerciseQuickEditDraft.type === 'isometry' || exerciseQuickEditDraft.type === 'cardio') && (
                 <>
-                  <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                    <button
-                      onClick={() => updateQuickEditExerciseType('reps')}
-                      className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${exerciseQuickEditDraft.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                    >
-                      REPS
-                    </button>
-                    <button
-                      onClick={() => updateQuickEditExerciseType('isometry')}
-                      className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${exerciseQuickEditDraft.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
-                    >
-                      ISOMETRIC
-                    </button>
-                  </div>
+                  {(exerciseQuickEditDraft.type === 'reps' || exerciseQuickEditDraft.type === 'isometry') && (
+                    <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                      <button
+                        onClick={() => updateQuickEditExerciseType('reps')}
+                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${exerciseQuickEditDraft.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                      >
+                        REPS
+                      </button>
+                      <button
+                        onClick={() => updateQuickEditExerciseType('isometry')}
+                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${exerciseQuickEditDraft.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                      >
+                        ISOMETRIC
+                      </button>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Sets

@@ -18,7 +18,7 @@
 
 import { findMatchingCorrection, incrementCorrectionHit } from './userCorrectionsManager.ts';
 
-export type WorkoutModality = 'reps' | 'isometry' | 'superset' | 'circuit' | 'emom' | 'pyramid';
+export type WorkoutModality = 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
 export interface ParsedExerciseConfig {
   modality: WorkoutModality;
@@ -26,11 +26,11 @@ export interface ParsedExerciseConfig {
   setsOrRounds: number;
   repsTarget?: string;           // es. "8", "10-12", "max", "cedimento"
   weightKg?: number | null;      // es. 60, 75.5, 80 (chili / sovraccarico)
-  durationSeconds?: number;      // Per isometria (es. "30s plank" -> 30)
+  durationSeconds?: number;      // Per isometria e cardio (es. "30s plank" -> 30)
   intervalSeconds?: number;      // Per EMOM (default: 60s per round)
   restSeconds: number;           // Tempo di recupero tra serie/round
   pyramidSteps?: { reps: number; restSeconds: number; weightKg?: number | null }[];
-  subExercises?: { name: string; type: 'reps' | 'isometry'; reps: number; duration_seconds: number; weight_kg?: number | null }[];
+  subExercises?: { name: string; type: 'reps' | 'isometry' | 'cardio'; reps: number; duration_seconds: number; weight_kg?: number | null }[];
   rawInput: string;
   learnedRule?: boolean;         // Flag true se ricavato da Short-Circuit Cache (Active Feedback Loop)
 }
@@ -137,6 +137,9 @@ const MODALITY_KEYWORDS: Record<Exclude<WorkoutModality, 'reps'>, string[]> = {
   isometry: [
     'isometria', 'isometrie', 'isometia', 'isometri', 'isometrico', 'isometrica', 'isometrici',
     'isometry', 'isometric', 'isometrics', 'isometic', 'tenuta isometrica'
+  ],
+  cardio: [
+    'cardio', 'corsa', 'running', 'cyclette', 'tapis roulant', 'treadmill', 'corda', 'jump rope', 'vogatore', 'rower', 'ellittica'
   ]
 };
 
@@ -301,6 +304,12 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
       modalityMatchToken = word;
       break;
     }
+    // Check Cardio
+    if (fuzzyMatchWord(word, MODALITY_KEYWORDS.cardio)) {
+      detectedModality = 'cardio';
+      modalityMatchToken = word;
+      break;
+    }
   }
 
   // Se è presente una sequenza piramidale esplicita (es. 12-10-8-6), è piramide anche senza parola chiave
@@ -330,7 +339,8 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
     ...MODALITY_KEYWORDS.emom,
     ...MODALITY_KEYWORDS.circuit,
     ...MODALITY_KEYWORDS.superset,
-    ...MODALITY_KEYWORDS.isometry
+    ...MODALITY_KEYWORDS.isometry,
+    ...MODALITY_KEYWORDS.cardio,
   ];
   for (const syn of allModalitySynonyms) {
     if (syn.length >= 3) {
@@ -491,15 +501,15 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
     }
   }
 
-  // 2.8 ESTRAZIONE DURATA ISOMETRIA (durationSeconds)
-  if (detectedModality === 'isometry') {
+  // 2.8 ESTRAZIONE DURATA ISOMETRIA / CARDIO (durationSeconds)
+  if (detectedModality === 'isometry' || detectedModality === 'cardio') {
     if (durationSeconds === undefined) {
       const isoDurationMatch = workingText.match(/\b(\d+)\s*(?:s|sec|"|'')\b/i);
       if (isoDurationMatch) {
-        durationSeconds = parseInt(isoDurationMatch[1], 10) || 30;
+        durationSeconds = parseInt(isoDurationMatch[1], 10) || (detectedModality === 'cardio' ? 60 : 30);
         workingText = workingText.replace(isoDurationMatch[0], ' ');
       } else {
-        durationSeconds = 30;
+        durationSeconds = detectedModality === 'cardio' ? 60 : 30;
       }
     }
   }
@@ -514,7 +524,7 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
   }
 
   // 2.10 Controlla se c'è un numero isolato in testa o in coda al nome (es. "10 push up" o "push up 10")
-  if (!repsTarget && detectedModality !== 'pyramid' && detectedModality !== 'isometry') {
+  if (!repsTarget && detectedModality !== 'pyramid' && detectedModality !== 'isometry' && detectedModality !== 'cardio') {
     const leadNumMatch = workingText.match(/^\s*(\d+)\s+([a-zA-Z].+)$/);
     if (leadNumMatch) {
       repsTarget = leadNumMatch[1];
@@ -558,6 +568,9 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
         break;
       case 'isometry':
         cleanName = 'Isometria';
+        break;
+      case 'cardio':
+        cleanName = 'Cardio';
         break;
       default:
         cleanName = 'Esercizio';
