@@ -25,23 +25,33 @@ export const getAudioCtx = (): AudioContext => {
   return ctx;
 };
 
+export const isAudioFeedbackEnabled = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem('voice_assistance_enabled') !== 'false';
+};
+
 export const playCountdownBeep = (secondsRemaining?: number) => {
+  if (!isAudioFeedbackEnabled()) return;
   soundManager.playCountdownBeep(secondsRemaining);
 };
 
 export const playRestFinishedSound = () => {
+  if (!isAudioFeedbackEnabled()) return;
   soundManager.playRestFinishedSound();
 };
 
 export const playGoalReachedSound = () => {
+  if (!isAudioFeedbackEnabled()) return;
   soundManager.playGoalReachedSound();
 };
 
 export const testAudio = () => {
+  if (!isAudioFeedbackEnabled()) return;
   soundManager.testAudio();
 };
 
 export const playErrorSound = () => {
+  if (!isAudioFeedbackEnabled()) return;
   try {
     const ctx = soundManager.getContext();
     if (!ctx) return;

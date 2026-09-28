@@ -200,7 +200,7 @@ export const scheduleBackgroundRestNotification = async ({
             at: scheduledDate,
             allowWhileIdle: true,
           },
-          sound: 'beep.wav',
+          sound: typeof window !== 'undefined' && localStorage.getItem('voice_assistance_enabled') === 'false' ? undefined : 'beep.wav',
           extra: {
             endsAtMs,
             nextExerciseName,

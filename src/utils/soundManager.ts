@@ -151,9 +151,18 @@ class SoundManager {
   }
 
   /**
+   * Controlla se il feedback audio/vocale è abilitato nelle impostazioni dell'utente.
+   */
+  public isAudioEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('voice_assistance_enabled') !== 'false';
+  }
+
+  /**
    * Riproduce un beep a una frequenza specifica con inviluppo esponenziale per evitare click.
    */
   public async playBeep(freq: number, durationSeconds: number, volume: number = 0.85) {
+    if (!this.isAudioEnabled()) return;
     try {
       const ctx = this.getContext();
       if (!ctx) return;
@@ -193,6 +202,7 @@ class SoundManager {
    * Pre-avvisi conto alla rovescia (-3s, -2s, -1s): Frequenza ~440 Hz, durata 100ms.
    */
   public playCountdownBeep(secondsRemaining?: number) {
+    if (!this.isAudioEnabled()) return;
     const freq = secondsRemaining === 1 ? 440 : 440;
     void this.playBeep(freq, 0.12, 0.85);
   }
@@ -201,6 +211,7 @@ class SoundManager {
    * Segnale di fine recupero (0s): Frequenza ~880 Hz, durata 400ms.
    */
   public playRestFinishedSound() {
+    if (!this.isAudioEnabled()) return;
     void this.playBeep(880, 0.45, 0.9);
   }
 
@@ -208,6 +219,7 @@ class SoundManager {
    * Suono per il completamento complessivo dell'allenamento.
    */
   public async playGoalReachedSound() {
+    if (!this.isAudioEnabled()) return;
     try {
       const ctx = this.getContext();
       if (!ctx) return;
@@ -244,6 +256,7 @@ class SoundManager {
    * Esegue un test acustico immediato per consentire all'utente di verificare il suono su iPhone.
    */
   public async testAudio() {
+    if (!this.isAudioEnabled()) return;
     await this.unlock();
     await this.playBeep(440, 0.12, 0.9);
     setTimeout(async () => {

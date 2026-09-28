@@ -81,6 +81,7 @@
  * perdita di dati durante la transizione).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isAudioFeedbackEnabled } from '../utils/audio';
 
 type MotionPermissionState = 'unknown' | 'granted' | 'denied' | 'unsupported';
 export type AccelerometerSessionPhase = 'idle' | 'preparing' | 'active' | 'paused';
@@ -204,6 +205,7 @@ const getAudioCtx = (): AudioContext | null => {
 };
 
 const playBeep = async (freq: number, durationMs: number, volume = 0.8) => {
+  if (!isAudioFeedbackEnabled()) return;
   const ctx = getAudioCtx();
   if (!ctx) return;
   try {

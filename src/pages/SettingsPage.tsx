@@ -244,6 +244,7 @@ const SettingsPage: React.FC = () => {
     setVoiceSyncError(null);
     setVoiceAssistanceEnabled(next);
     localStorage.setItem(VOICE_ASSIST_KEY, String(next));
+    window.dispatchEvent(new CustomEvent('voice-assistance-changed', { detail: next }));
     setVoiceSaving(true);
 
     try {
@@ -262,6 +263,7 @@ const SettingsPage: React.FC = () => {
       console.error('Error syncing voice assistance preference:', toggleError);
       setVoiceAssistanceEnabled(previous);
       localStorage.setItem(VOICE_ASSIST_KEY, String(previous));
+      window.dispatchEvent(new CustomEvent('voice-assistance-changed', { detail: previous }));
       setVoiceSyncError('Unable to sync this setting across devices. Please try again.');
     } finally {
       setVoiceSaving(false);
@@ -287,6 +289,7 @@ const SettingsPage: React.FC = () => {
       if (!error && typeof data?.voice_assistant === 'boolean') {
         setVoiceAssistanceEnabled(data.voice_assistant);
         localStorage.setItem(VOICE_ASSIST_KEY, String(data.voice_assistant));
+        window.dispatchEvent(new CustomEvent('voice-assistance-changed', { detail: data.voice_assistant }));
       }
 
       setProfileLoading(false);

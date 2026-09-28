@@ -35,6 +35,7 @@ export let lastUtterance: SpeechSynthesisUtterance | null = null;
  */
 export const warmupSpeechSynthesis = () => {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  if (localStorage.getItem('voice_assistance_enabled') === 'false') return;
   try {
     const synth = window.speechSynthesis;
     synth.cancel();

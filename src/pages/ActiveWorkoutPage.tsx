@@ -112,6 +112,7 @@ import {
   playCountdownBeep,
   playRestFinishedSound,
   unlockAudio,
+  isAudioFeedbackEnabled,
 } from '../utils/audio';
 import { hapticLight } from '../utils/haptics';
 import { pipManager } from '../utils/pipManager';
@@ -922,7 +923,9 @@ const ActiveWorkoutPage: React.FC = () => {
         0,
         currentExerciseForIso.type === 'superset' ? currentSubExerciseIdx : undefined
       );
-      playCountdownBeep(0);
+      if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+        playCountdownBeep(0);
+      }
       return;
     }
 
@@ -1736,16 +1739,39 @@ const ActiveWorkoutPage: React.FC = () => {
 
     void loadVoiceAssistancePreference();
 
+    const syncFromLocalStorage = () => {
+      const saved = localStorage.getItem(VOICE_ASSIST_KEY);
+      if (saved !== null) {
+        setVoiceAssistanceEnabled(saved === 'true');
+      }
+    };
+
     const onStorage = (e: StorageEvent) => {
       if (e.key === VOICE_ASSIST_KEY && e.newValue !== null) {
         setVoiceAssistanceEnabled(e.newValue === 'true');
       }
     };
 
+    const onVoiceChanged = (e: Event) => {
+      const custom = e as CustomEvent<boolean>;
+      if (typeof custom?.detail === 'boolean') {
+        setVoiceAssistanceEnabled(custom.detail);
+      } else {
+        syncFromLocalStorage();
+      }
+    };
+
     window.addEventListener('storage', onStorage);
+    window.addEventListener('voice-assistance-changed', onVoiceChanged);
+    window.addEventListener('focus', syncFromLocalStorage);
+    document.addEventListener('visibilitychange', syncFromLocalStorage);
+
     return () => {
       isUnmounted = true;
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('voice-assistance-changed', onVoiceChanged);
+      window.removeEventListener('focus', syncFromLocalStorage);
+      document.removeEventListener('visibilitychange', syncFromLocalStorage);
     };
   }, [user?.id]);
 
@@ -2563,7 +2589,9 @@ const ActiveWorkoutPage: React.FC = () => {
         setRestEndsAtMs(null);
         stopRestMediaSession();
         pipManager.closePiP();
-        playRestFinishedSound();
+        if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+          playRestFinishedSound();
+        }
         // Rimuove e cancella qualsiasi notifica di recupero
         closeActiveRestNotifications();
 
@@ -2628,7 +2656,9 @@ const ActiveWorkoutPage: React.FC = () => {
     }
     if (lastCountdownRestRef.current === restRemaining) return;
     lastCountdownRestRef.current = restRemaining;
-    playCountdownBeep(restRemaining);
+    if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+      playCountdownBeep(restRemaining);
+    }
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try {
         navigator.vibrate(60);
@@ -2636,7 +2666,7 @@ const ActiveWorkoutPage: React.FC = () => {
         // ignore
       }
     }
-  }, [isResting, restRemaining]);
+  }, [isResting, restRemaining, voiceAssistanceEnabled]);
 
   // Timer logic for EMOM
   useEffect(() => {
@@ -2661,12 +2691,16 @@ const ActiveWorkoutPage: React.FC = () => {
         const ex = workout?.exercises[currentExerciseIdx];
         if (ex && ex.type === 'emom') {
           if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
-            playRestFinishedSound();
+            if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+              playRestFinishedSound();
+            }
             speakCue('next round');
             setCurrentEmomRoundIdx(prev => prev + 1);
             setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
           } else {
-            playRestFinishedSound();
+            if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+              playRestFinishedSound();
+            }
             stopEmomCountdown();
             const isLastSetInEmomExercise = currentSetIdx === ex.sets - 1;
             if (isLastSetInEmomExercise) {
@@ -2696,7 +2730,7 @@ const ActiveWorkoutPage: React.FC = () => {
       document.removeEventListener('visibilitychange', handleWakeSync);
       window.removeEventListener('focus', handleWakeSync);
     };
-  }, [emomActive, emomRoundEndsAtMs, currentSetIdx, currentEmomRoundIdx, workout, currentExerciseIdx]);
+  }, [emomActive, emomRoundEndsAtMs, currentSetIdx, currentEmomRoundIdx, workout, currentExerciseIdx, voiceAssistanceEnabled]);
 
   useEffect(() => {
     if (!emomActive || emomRoundRemaining > 3 || emomRoundRemaining <= 0) {
@@ -2705,9 +2739,11 @@ const ActiveWorkoutPage: React.FC = () => {
     }
     if (lastCountdownEmomRef.current === emomRoundRemaining) return;
     lastCountdownEmomRef.current = emomRoundRemaining;
-    playCountdownBeep(emomRoundRemaining);
-    speakCue(String(emomRoundRemaining));
-  }, [emomActive, emomRoundRemaining]);
+    if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+      playCountdownBeep(emomRoundRemaining);
+      speakCue(String(emomRoundRemaining));
+    }
+  }, [emomActive, emomRoundRemaining, voiceAssistanceEnabled]);
 
   useEffect(() => {
     if (!wasEmomActiveRef.current && emomActive && emomRoundRemaining > 0) {
@@ -2732,7 +2768,9 @@ const ActiveWorkoutPage: React.FC = () => {
         }
         setIsometryEndsAtMs(null);
         setIsometryActive(false);
-        playRestFinishedSound();
+        if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+          playRestFinishedSound();
+        }
       }
     };
 
@@ -2790,9 +2828,11 @@ const ActiveWorkoutPage: React.FC = () => {
     }
     if (lastCountdownIsometryRef.current === isometryRemaining) return;
     lastCountdownIsometryRef.current = isometryRemaining;
-    playCountdownBeep(isometryRemaining);
-    speakCue(String(isometryRemaining));
-  }, [isometryActive, isometryRemaining]);
+    if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+      playCountdownBeep(isometryRemaining);
+      speakCue(String(isometryRemaining));
+    }
+  }, [isometryActive, isometryRemaining, voiceAssistanceEnabled]);
 
   useEffect(() => {
     if (!wasIsometryActiveRef.current && isometryActive && isometryRemaining > 0) {
@@ -4049,7 +4089,9 @@ const ActiveWorkoutPage: React.FC = () => {
 
     clearPersistedWorkoutProgress();
 
-    playGoalReachedSound();
+    if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+      playGoalReachedSound();
+    }
     speakCue('workout complete');
     stopEmomCountdown();
     stopIsometryCountdown();
