@@ -140,6 +140,12 @@ import {
   type WorkoutProgressIdentity,
 } from '../lib/workoutProgressStorage';
 import { WorkoutCelebrationModal } from '../components/WorkoutCelebrationModal';
+import {
+  lockAppToPortrait,
+  unlockAppForWorkout,
+  lockAppToLandscape,
+  useIsLandscape,
+} from '../utils/orientationManager';
 
 interface Exercise {
   id: string;
@@ -345,6 +351,33 @@ const ActiveWorkoutPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Gestione orientamento: l'app ruota in landscape esclusivamente durante il workout
+  const isDeviceLandscape = useIsLandscape();
+  const [manualLandscapeOverride, setManualLandscapeOverride] = useState<boolean | null>(null);
+  const isLandscape = manualLandscapeOverride !== null ? manualLandscapeOverride : isDeviceLandscape;
+
+  useEffect(() => {
+    // Sblocca la rotazione in orizzontale durante il workout attivo
+    void unlockAppForWorkout();
+    return () => {
+      // Blocca rigorosamente in verticale all'uscita dal workout
+      void lockAppToPortrait();
+    };
+  }, []);
+
+  const toggleLandscapeMode = () => {
+    const nextMode = !isLandscape;
+    setManualLandscapeOverride(nextMode);
+    if (nextMode) {
+      void lockAppToLandscape();
+    } else {
+      void lockAppToPortrait();
+      setTimeout(() => {
+        void unlockAppForWorkout();
+      }, 600);
+    }
+  };
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
@@ -4085,6 +4118,7 @@ const ActiveWorkoutPage: React.FC = () => {
     stopRestMediaSession();
     void releaseScreenWakeLock();
     persistWorkoutProgress(true);
+    void lockAppToPortrait();
     navigate('/');
   };
 
@@ -4113,6 +4147,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const handleCelebrationComplete = () => {
     setIsCelebrationOpen(false);
+    void lockAppToPortrait();
     navigate('/');
   };
 
@@ -4127,6 +4162,7 @@ const ActiveWorkoutPage: React.FC = () => {
         clearPersistedWorkoutProgress();
         stopRestMediaSession();
         void releaseScreenWakeLock();
+        void lockAppToPortrait();
         navigate('/');
         return;
       }
@@ -4413,115 +4449,191 @@ const ActiveWorkoutPage: React.FC = () => {
     );
   };
 
-  // ----------------------------------------------------------------------
-  // RENDER REST VIEW
-  // ----------------------------------------------------------------------
-  if (isResting) {
+  const renderWorkoutOverviewModal = () => {
+    if (!isWorkoutOverviewModalOpen) return null;
     return (
-      <div
-        className="h-dvh h-screen max-h-screen bg-brand-dark flex flex-col justify-between overflow-hidden px-3.5 sm:px-5 safe-bottom relative select-none"
-        style={{
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.4rem)',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)',
-        }}
-      >
-        {voiceCommandsHelpBubble}
-        {isWorkoutOverviewModalOpen && (
-          <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-            <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
+      <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold text-white">Workout Overview</h3>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
+                  <Clock size={12} />
+                  {formatTime(getCurrentWorkoutElapsedSeconds())}
+                </span>
+              </div>
+              <p className="text-xs text-brand-grey mt-1">{workout.name}</p>
+            </div>
+            <button
+              onClick={closeWorkoutOverviewModal}
+              className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              title="Chiudi panoramica"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
+            {/* Note Generali della Scheda */}
+            {renderOverviewGeneralNotes()}
+
+            {workout.exercises.map((exercise, index) => {
+              const isCurrentExercise = index === currentExerciseIdx;
+              const exerciseTitle = String(exercise.name || '').trim() || `Exercise ${index + 1}`;
+              const summary = getWorkoutOverviewSummary(exercise);
+
+              return (
+                <div
+                  key={exercise.id}
+                  className={`rounded-2xl border p-4 transition-colors ${isCurrentExercise
+                    ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
+                    : 'border-white/10 bg-black/30'
+                    }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-[0.25em] text-brand-grey/70 font-bold mb-1">
+                        Exercise {index + 1}
+                      </p>
+                      <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
+                      <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
+                        {getWorkoutOverviewDisplayLabel(exercise)}
+                      </p>
+                    </div>
+
+                    <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${isCurrentExercise
+                      ? 'bg-brand-orange text-black'
+                      : 'bg-white/5 text-brand-grey'
+                      }`}>
+                      {isCurrentExercise ? 'You are here' : `#${index + 1}`}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {summary.map((item, summaryIndex) => (
+                      <span
+                        key={`${exercise.id}:summary:${summaryIndex}`}
+                        className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-3 py-1 text-[11px] font-bold text-white/85"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+
+                  {(exercise.type === 'superset' || exercise.type === 'circuit') && exercise.subExercises && exercise.subExercises.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {exercise.subExercises.map((sub, subIndex) => (
+                        <div key={`${exercise.id}:sub:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
+                            <p className="text-[11px] text-brand-orange/90 font-black uppercase tracking-wide mt-1">
+                              {formatSupersetTaskMetricLabel(sub)}
+                            </p>
+                          </div>
+                          <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                            {formatWeightLabel(sub.weight_kg)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {exercise.type === 'emom' && exercise.subExercises && exercise.subExercises.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {exercise.subExercises.map((sub, subIndex) => (
+                        <div key={`${exercise.id}:emom:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
+                            <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
+                              {formatEmomTaskMetricLabel(sub)}
+                            </p>
+                          </div>
+                          <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                            {formatWeightLabel(sub.weight_kg)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {exercise.type === 'pyramid' && exercise.pyramid_steps && exercise.pyramid_steps.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {exercise.pyramid_steps.map((step, stepIndex) => (
+                        <div key={`${exercise.id}:pyramid:${stepIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-white font-bold text-sm truncate">Step {stepIndex + 1}</p>
+                            <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
+                              {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
+                            </p>
+                          </div>
+                          <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                            {formatWeightLabel(step.weight_kg)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-white/10 flex justify-end">
+            <button
+              onClick={closeWorkoutOverviewModal}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors text-xs font-bold cursor-pointer"
+            >
+              Chiudi
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderActiveWorkoutModals = () => {
+    return (
+      <>
+        {renderExerciseNoteModal()}
+
+        {isInstructionModalOpen && instructionModalContext && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-white">Workout Overview</h3>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
-                      <Clock size={12} />
-                      {formatTime(getCurrentWorkoutElapsedSeconds())}
-                    </span>
-                  </div>
-                  <p className="text-xs text-brand-grey mt-1">{workout.name}</p>
+                  <h3 className="text-lg font-bold text-white">Exercise Instructions</h3>
+                  <p className="text-xs text-brand-grey mt-1">{instructionModalContext.exerciseName}</p>
                 </div>
                 <button
-                  onClick={closeWorkoutOverviewModal}
-                  className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                  title="Close overview"
+                  onClick={closeCurrentInstructionModal}
+                  className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                  title="Close instructions"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
-                {/* Note Generali della Scheda */}
-                {renderOverviewGeneralNotes()}
+              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                {instructionModalContext.note && (
+                  <div className="bg-black/40 border border-brand-orange/25 rounded-xl px-4 py-3">
+                    <p className="text-xs uppercase tracking-wider font-bold text-brand-orange/90 mb-2">Primary Note</p>
+                    <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{instructionModalContext.note}</p>
+                  </div>
+                )}
 
-                {workout.exercises.map((exercise, index) => {
-                  const isCurrentExercise = index === currentExerciseIdx;
-                  const exerciseTitle = String(exercise.name || '').trim() || `Exercise ${index + 1}`;
-                  const summary = getWorkoutOverviewSummary(exercise);
-
-                  return (
-                    <div
-                      key={exercise.id}
-                      className={`rounded-2xl border p-4 transition-colors ${isCurrentExercise
-                        ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
-                        : 'border-white/10 bg-black/30'
-                        }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase tracking-[0.25em] text-brand-grey/70 font-bold mb-1">
-                            Exercise {index + 1}
-                          </p>
-                          <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
-                          <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
-                            {getWorkoutOverviewDisplayLabel(exercise)}
-                          </p>
-                        </div>
-
-                        <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${isCurrentExercise
-                          ? 'bg-brand-orange text-black'
-                          : 'bg-white/5 text-brand-grey'
-                          }`}>
-                          {isCurrentExercise ? 'You are here' : `#${index + 1}`}
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {summary.map((item, summaryIndex) => (
-                          <span
-                            key={`${exercise.id}:summary:${summaryIndex}`}
-                            className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-3 py-1 text-[11px] font-bold text-white/85"
-                          >
-                            {item}
-                          </span>
-                        ))}
-                      </div>
-
-                      {exercise.type === 'superset' && exercise.subExercises && exercise.subExercises.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          {exercise.subExercises.map((sub, subIndex) => (
-                            <div key={`${exercise.id}:sub:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                                <p className="text-[11px] text-brand-orange/90 font-black uppercase tracking-wide mt-1">
-                                  {formatSupersetTaskMetricLabel(sub)}
-                                </p>
-                              </div>
-                              <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
-                                {formatWeightLabel(sub.weight_kg)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {instructionModalContext.items.map((item, idx) => (
+                  <div key={`${item.name}-${idx}`} className="bg-black/40 border border-white/10 rounded-xl px-4 py-3">
+                    <p className="text-xs uppercase tracking-wider font-bold text-brand-orange/90 mb-2">{item.name}</p>
+                    <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{item.note}</p>
+                  </div>
+                ))}
               </div>
 
-              <div className="mt-4 pt-4 border-t border-white/10 flex justify-end">
+              <div className="mt-4 flex items-center justify-end">
                 <button
-                  onClick={closeWorkoutOverviewModal}
-                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors text-xs font-bold"
+                  onClick={closeCurrentInstructionModal}
+                  className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black cursor-pointer"
                 >
                   Close
                 </button>
@@ -4530,21 +4642,584 @@ const ActiveWorkoutPage: React.FC = () => {
           </div>
         )}
 
-        {/* Top HUD: Unambiguous Exit Button & Overview */}
-        <header className="flex items-center justify-between shrink-0 h-11 px-0.5 z-10">
+        {renderWorkoutOverviewModal()}
+
+        {isEditExerciseModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="w-full max-w-lg bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Edit Current Exercise</h3>
+                  <p className="text-xs text-brand-grey mt-1">
+                    {currentExercise.name}
+                  </p>
+                </div>
+                <button
+                  onClick={closeEditExerciseModal}
+                  className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                  title="Close exercise editor"
+                  disabled={isSavingExerciseEdit}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                {currentExercise.type === 'emom' && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="text-sm text-brand-grey">Sets
+                        <input
+                          type="number" inputMode="numeric"
+                          min={1}
+                          value={exerciseEditDraft.sets}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                      <label className="text-sm text-brand-grey">Rounds
+                        <input
+                          type="number" inputMode="numeric"
+                          min={1}
+                          value={exerciseEditDraft.emomRounds}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, emomRounds: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col">
+                        <label className="text-sm text-brand-grey">Round Duration</label>
+                        <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
+                          <div className="relative flex-1 border-r border-brand-grey/10">
+                            <input
+                              type="number" inputMode="numeric"
+                              min={0}
+                              value={toDurationParts(exerciseEditDraft.emomRoundDuration).minutes}
+                              onChange={(e) => updateEmomRoundDurationPart('min', e.target.value)}
+                              className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                            />
+                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">MIN</span>
+                          </div>
+                          <div className="relative flex-1">
+                            <input
+                              type="number" inputMode="numeric"
+                              min={0}
+                              max={59}
+                              value={toDurationParts(exerciseEditDraft.emomRoundDuration).seconds}
+                              onChange={(e) => updateEmomRoundDurationPart('sec', e.target.value)}
+                              className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                            />
+                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">SEC</span>
+                          </div>
+                        </div>
+                      </div>
+                      <label className="text-sm text-brand-grey">Rest Between Sets (sec)
+                        <input
+                          type="number" inputMode="numeric"
+                          min={0}
+                          value={exerciseEditDraft.restSeconds}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                      {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
+                        <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">EMOM exercise {index + 1}</p>
+                              <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
+                            </div>
+                            <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">{draft.type === 'isometry' ? 'Isometry' : 'Reps'}</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            {draft.type === 'isometry' ? (
+                              <label className="text-sm text-brand-grey">Duration (sec)
+                                <input
+                                  type="number" inputMode="numeric"
+                                  min={0}
+                                  value={draft.durationSeconds}
+                                  onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                            ) : (
+                              <label className="text-sm text-brand-grey">Reps
+                                <input
+                                  type="number" inputMode="numeric"
+                                  min={0}
+                                  value={draft.reps}
+                                  onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                            )}
+
+                            <label className="text-sm text-brand-grey">Weight (kg)
+                              <input
+                                type="text"
+                                value={draft.weightKg}
+                                onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
+                                placeholder="body weight"
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {(currentExercise.type === 'superset' || currentExercise.type === 'circuit') && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="text-sm text-brand-grey">{currentExercise.type === 'circuit' ? 'Giri (Rounds)' : 'Rounds'}
+                        <input
+                          type="number" inputMode="numeric"
+                          min={1}
+                          value={exerciseEditDraft.sets}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                      <label className="text-sm text-brand-grey">Rest Between Rounds (sec)
+                        <input
+                          type="number" inputMode="numeric"
+                          min={0}
+                          value={exerciseEditDraft.restSeconds}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                      {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
+                        <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">
+                                {currentExercise.type === 'circuit' ? 'Circuit station' : 'Superset exercise'} {index + 1}
+                              </p>
+                              <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
+                            </div>
+                            <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">
+                              {draft.type === 'isometry' ? 'Isometry' : 'Reps'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            {draft.type === 'isometry' ? (
+                              <label className="text-sm text-brand-grey">Duration (sec)
+                                <input
+                                  type="number" inputMode="numeric"
+                                  min={0}
+                                  value={draft.durationSeconds}
+                                  onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                            ) : (
+                              <label className="text-sm text-brand-grey">Reps
+                                <input
+                                  type="number" inputMode="numeric"
+                                  min={0}
+                                  value={draft.reps}
+                                  onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                            )}
+
+                            <label className="text-sm text-brand-grey">Weight (kg)
+                              <input
+                                type="text"
+                                value={draft.weightKg}
+                                onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
+                                placeholder="body weight"
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {currentExercise.type === 'pyramid' && (
+                  <div className="space-y-3">
+                    <div className="space-y-3 pt-2">
+                      {exerciseEditDraft.pyramidStepDrafts.map((draft, index) => (
+                        <div key={`step-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">Step {index + 1}</p>
+                              <h4 className="text-white font-black text-base truncate">Pyramid step {index + 1}</h4>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-3">
+                            <label className="text-sm text-brand-grey">Reps
+                              <input
+                                type="number" inputMode="numeric"
+                                min={0}
+                                value={draft.reps}
+                                onChange={(e) => updatePyramidStepDraft(index, { reps: e.target.value })}
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                            <label className="text-sm text-brand-grey">Rest (sec)
+                              <input
+                                type="number" inputMode="numeric"
+                                min={0}
+                                value={draft.restSeconds}
+                                onChange={(e) => updatePyramidStepDraft(index, { restSeconds: e.target.value })}
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                            <label className="text-sm text-brand-grey">Weight (kg)
+                              <input
+                                type="text"
+                                value={draft.weightKg}
+                                onChange={(e) => updatePyramidStepDraft(index, { weightKg: e.target.value })}
+                                placeholder="body weight"
+                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(currentExercise.type === 'reps' || currentExercise.type === 'isometry' || currentExercise.type === 'cardio') && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="text-sm text-brand-grey">Sets
+                        <input
+                          type="number" inputMode="numeric"
+                          min={1}
+                          value={exerciseEditDraft.sets}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                      <label className="text-sm text-brand-grey">Rest (sec)
+                        <input
+                          type="number" inputMode="numeric"
+                          min={0}
+                          value={exerciseEditDraft.restSeconds}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                    </div>
+
+                    {(currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
+                      <label className="text-sm text-brand-grey">Duration (sec)
+                        <input
+                          type="number" inputMode="numeric"
+                          min={0}
+                          value={exerciseEditDraft.durationSeconds}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, durationSeconds: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                    ) : (
+                      <label className="text-sm text-brand-grey">Reps
+                        <input
+                          type="number" inputMode="numeric"
+                          min={0}
+                          value={exerciseEditDraft.reps}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, reps: e.target.value }))}
+                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        />
+                      </label>
+                    )}
+
+                    <label className="text-sm text-brand-grey">Weight (kg)
+                      <input
+                        type="text"
+                        value={exerciseEditDraft.weightKg}
+                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, weightKg: e.target.value }))}
+                        placeholder="body Weight"
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+
+              {exerciseEditError && (
+                <p className="mt-3 text-sm text-red-300">{exerciseEditError}</p>
+              )}
+
+              <div className="mt-4 flex items-center justify-end gap-3">
+                <button
+                  onClick={closeEditExerciseModal}
+                  disabled={isSavingExerciseEdit}
+                  className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold disabled:opacity-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveCurrentExerciseEdits}
+                  disabled={isSavingExerciseEdit}
+                  className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60 cursor-pointer"
+                >
+                  {isSavingExerciseEdit ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Auto-Count Choice Modal */}
+        {isAutoCountModalOpen && currentExercise && !isSuperset && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md rounded-3xl bg-brand-dark p-6 shadow-2xl border border-white/10">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-black text-white uppercase tracking-wider">Choose Method</h3>
+                <button
+                  onClick={() => setIsAutoCountModalOpen(false)}
+                  className="text-brand-grey hover:text-white transition-colors p-2 cursor-pointer"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <p className="text-brand-grey mb-8 text-sm">
+                How would you like to count your {currentExercise.reps} {currentExercise.name} reps?
+              </p>
+
+              <div className="flex flex-col gap-4">
+                <button
+                  onClick={async () => {
+                    warmupSpeechSynthesis();
+                    if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
+                      try {
+                        await (window as any).DeviceMotionEvent.requestPermission();
+                      } catch (e) {
+                        console.warn('DeviceMotionEvent permission request failed', e);
+                      }
+                    }
+                    persistWorkoutProgress(true);
+                    setIsAutoCountModalOpen(false);
+                    navigate('/reps-count', {
+                      state: {
+                        autoCountExercise: currentExercise.auto_count_type,
+                        targetReps: currentExercise.reps,
+                        returnUrl: location.pathname,
+                        mode: 'video'
+                      }
+                    });
+                  }}
+                  className="w-full bg-brand-darkGrey/60 border border-purple-500/50 rounded-2xl p-4 flex items-center gap-4 hover:bg-purple-500/20 transition-colors group cursor-pointer"
+                >
+                  <div className="bg-purple-500/20 p-3 rounded-xl group-hover:bg-purple-500/40 transition-colors flex-shrink-0">
+                    <Video size={24} className="text-purple-400" />
+                  </div>
+                  <div className="text-left">
+                    <h4 className="text-white font-bold text-lg uppercase tracking-wide">Camera</h4>
+                    <p className="text-brand-grey text-xs mt-1">Place phone down and step back</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={async () => {
+                    warmupSpeechSynthesis();
+                    if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
+                      try {
+                        await (window as any).DeviceMotionEvent.requestPermission();
+                      } catch (e) {
+                        console.warn('DeviceMotionEvent permission request failed', e);
+                      }
+                    }
+                    persistWorkoutProgress(true);
+                    setIsAutoCountModalOpen(false);
+                    navigate('/reps-count', {
+                      state: {
+                        autoCountExercise: currentExercise.auto_count_type,
+                        targetReps: currentExercise.reps,
+                        returnUrl: location.pathname,
+                        mode: 'accelerometer'
+                      }
+                    });
+                  }}
+                  className="w-full bg-brand-darkGrey/60 border border-brand-orange/50 rounded-2xl p-4 flex items-center gap-4 hover:bg-brand-orange/20 transition-colors group cursor-pointer"
+                >
+                  <div className="bg-brand-orange/20 p-3 rounded-xl group-hover:bg-brand-orange/40 transition-colors flex-shrink-0">
+                    <Smartphone size={24} className="text-brand-orange" />
+                  </div>
+                  <div className="text-left">
+                    <h4 className="text-white font-bold text-lg uppercase tracking-wide">Accelerometer</h4>
+                    <p className="text-brand-grey text-xs mt-1">Keep phone in your pocket</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal per Prompt / Modifica Performance Set a Sfinimento */}
+        {isMaxPromptModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-brand-orange/40 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-brand-orange/20 text-brand-orange">
+                    <Flame size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white uppercase tracking-wider">
+                      Set {targetEditingSetIdx + 1} · A Sfinimento
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      {currentExercise.name}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMaxPromptModalOpen(false)}
+                  className="text-zinc-400 hover:text-white p-1 cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <p className="text-xs text-zinc-300 text-center">
+                Inserisci {getPerformanceUnit(currentExercise) === 'sec' ? 'i secondi di tenuta' : 'le ripetizioni'} eseguiti in questo set:
+              </p>
+
+              <div className="flex items-center justify-center gap-2 py-2">
+                <button
+                  type="button"
+                  onClick={() => setModalPerformanceValue((prev) => Math.max(0, prev - 5))}
+                  className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                >
+                  -5
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalPerformanceValue((prev) => Math.max(0, prev - 1))}
+                  className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-lg flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                >
+                  -1
+                </button>
+
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={modalPerformanceValue > 0 ? modalPerformanceValue : ''}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setModalPerformanceValue(Number.isFinite(val) && val >= 0 ? Math.trunc(val) : 0);
+                  }}
+                  placeholder="0"
+                  autoFocus
+                  className="w-24 h-14 bg-black/60 border-2 border-brand-orange rounded-2xl text-center text-3xl font-mono font-black text-brand-orange focus:outline-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setModalPerformanceValue((prev) => prev + 1)}
+                  className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-lg flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                >
+                  +1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalPerformanceValue((prev) => prev + 5)}
+                  className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                >
+                  +5
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoggedPerformanceForSet(currentExerciseIdx, currentExercise, targetEditingSetIdx, modalPerformanceValue);
+                    setIsMaxPromptModalOpen(false);
+                    if (targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current) {
+                      isPendingSetAdvanceRef.current = false;
+                      completeSet();
+                    }
+                  }}
+                  className="w-full py-3.5 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-sm uppercase tracking-wider transition-colors shadow-lg shadow-brand-orange/20 cursor-pointer"
+                >
+                  {targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current
+                    ? 'Salva e Continua'
+                    : 'Salva'}
+                </button>
+                {targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      isPendingSetAdvanceRef.current = false;
+                      setIsMaxPromptModalOpen(false);
+                      completeSet();
+                    }}
+                    className="text-xs text-zinc-400 hover:text-zinc-200 py-1 transition-colors cursor-pointer"
+                  >
+                    Salta / Lascia MAX
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <WorkoutCelebrationModal
+          isOpen={isCelebrationOpen}
+          workoutName={workout?.name}
+          durationSeconds={getCurrentWorkoutElapsedSeconds()}
+          exercisesCompletedCount={workout?.exercises?.length}
+          onComplete={handleCelebrationComplete}
+        />
+      </>
+    );
+  };
+
+  const renderLandscapeRestView = () => {
+    return (
+      <div
+        className="h-dvh h-screen max-h-screen bg-brand-dark flex flex-col justify-between overflow-hidden px-4 select-none relative"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.25rem)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.25rem)',
+          paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 0.75rem)',
+          paddingRight: 'calc(env(safe-area-inset-right, 0px) + 0.75rem)',
+        }}
+      >
+        {voiceCommandsHelpBubble}
+
+        {/* Top HUD Bar */}
+        <header className="flex items-center justify-between shrink-0 h-10 px-1 z-10">
           <button
             onClick={handleLeaveWorkout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-zinc-300 hover:text-white border border-white/10 text-xs font-bold transition-all active:scale-95 shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-zinc-300 hover:text-white border border-white/10 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
             title="Esci dal workout"
           >
-            <X size={15} className="text-zinc-400" />
+            <X size={14} className="text-zinc-400" />
             <span>Esci</span>
           </button>
 
           <button
             type="button"
             onClick={openWorkoutOverviewModal}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[230px] shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[280px] shadow-sm cursor-pointer"
             title="Open workout overview"
           >
             <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">RECUPERO</span>
@@ -4556,34 +5231,958 @@ const ActiveWorkoutPage: React.FC = () => {
             <ChevronDown size={13} className="text-zinc-400 shrink-0" />
           </button>
 
-          <div className="relative">
-            {voiceStatus === 'success' && (
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-              </span>
-            )}
-            {voiceStatus === 'error' && (
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-              </span>
-            )}
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleVoiceButtonClick}
-              className={`p-2 rounded-full transition-all duration-300 ${
-                isVoiceEnabled
-                  ? voiceStatus === 'success'
-                    ? 'bg-green-500 text-white scale-105'
-                    : voiceStatus === 'error'
-                      ? 'bg-red-500 text-white animate-pulse'
-                      : 'bg-brand-orange text-black'
-                  : 'text-white/50 hover:text-white bg-brand-darkGrey/40'
-              }`}
-              title="Voice Assistant"
+              type="button"
+              onClick={toggleLandscapeMode}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange border border-brand-orange/30 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+              title="Torna in visualizzazione verticale"
             >
-              {isVoiceEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+              <Smartphone size={14} />
+              <span>Verticale</span>
             </button>
+
+            <div className="relative">
+              {voiceStatus === 'success' && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                </span>
+              )}
+              {voiceStatus === 'error' && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                </span>
+              )}
+              <button
+                onClick={handleVoiceButtonClick}
+                className={`p-2 rounded-full transition-all duration-300 cursor-pointer ${
+                  isVoiceEnabled
+                    ? voiceStatus === 'success'
+                      ? 'bg-green-500 text-white scale-105'
+                      : voiceStatus === 'error'
+                        ? 'bg-red-500 text-white animate-pulse'
+                        : 'bg-brand-orange text-black'
+                    : 'text-white/50 hover:text-white bg-brand-darkGrey/40'
+                }`}
+                title="Voice Assistant"
+              >
+                {isVoiceEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* 2-Column Grid Body */}
+        <div className="flex-1 min-h-0 grid grid-cols-12 gap-4 items-center my-1">
+          {/* Left Column: Timer & Controls (5 cols) */}
+          <div className="col-span-5 flex flex-col items-center justify-center h-full">
+            <div
+              className={`w-40 h-40 sm:w-44 sm:h-44 rounded-full flex flex-col justify-center items-center relative overflow-hidden cursor-pointer select-none transition-all duration-300 ${
+                restRemaining <= 3 && restRemaining > 0
+                  ? 'border-[6px] border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_50px_rgba(255,107,0,0.6)] animate-pulse'
+                  : 'border-[6px] border-brand-darkGrey shadow-[0_0_30px_rgba(255,107,0,0.15)] bg-black/40'
+              }`}
+              onPointerDown={(event) => handleTimerPointerDown(event, resetRestCountdown)}
+              onPointerUp={(event) => handleTimerPointerUp(event, handleRestTimerTap)}
+              onPointerCancel={handleTimerPointerAbort}
+              onPointerLeave={handleTimerPointerAbort}
+            >
+              <div
+                className="absolute bottom-0 left-0 right-0 bg-brand-orange/20 transition-all duration-1000 ease-linear pointer-events-none"
+                style={{
+                  height: `${(restRemaining / Math.max(1, restInitialDuration || currentExercise.rest_seconds || 1)) * 100}%`,
+                }}
+              />
+              <Timer
+                size={22}
+                className={`mb-0.5 transition-transform duration-300 ${
+                  restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-110' : 'text-brand-orange'
+                }`}
+              />
+              <span
+                className={`text-5xl sm:text-6xl font-black z-10 font-mono tracking-tighter transition-all duration-300 leading-none ${
+                  restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-105' : 'text-white'
+                }`}
+              >
+                {formatTime(restRemaining)}
+              </span>
+              <span className="text-zinc-400 font-bold uppercase tracking-widest text-[10px] mt-1 z-10">
+                {restEndsAtMs != null ? 'RECUPERO' : 'IN PAUSA'}
+              </span>
+            </div>
+
+            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-2">
+              Tocca per {restEndsAtMs != null ? 'pausa' : 'avvio'} • Tieni premuto per azzerare
+            </p>
+
+            {pipManager.isSupported() && (
+              <button
+                type="button"
+                onClick={handleTogglePiP}
+                className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-brand-orange/30 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-[11px] font-bold transition-all shadow-sm cursor-pointer"
+                title="Mostra timer flottante sopra altre app (PiP)"
+              >
+                <Layers size={12} />
+                <span>{pipManager.isActive() ? 'Chiudi PiP' : 'Mini-Timer PiP'}</span>
+              </button>
+            )}
+          </div>
+
+          {/* Right Column: Next Exercise Preview & Actions (7 cols) */}
+          <div className="col-span-7 flex flex-col justify-between h-full py-1">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-black uppercase tracking-wider text-brand-orange flex items-center gap-1.5">
+                  <ArrowRight size={13} className="text-brand-orange" />
+                  {transitionNextExercise ? 'Prossimo esercizio' : 'Prossimo set'}
+                </span>
+                <div className="flex items-center gap-2">
+                  {restTargetSpecialTypeLabel && (
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/20 text-brand-orange border border-brand-orange/30">
+                      {restTargetSpecialTypeLabel}
+                    </span>
+                  )}
+                  <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                    {transitionNextExercise
+                      ? `Es. ${currentExerciseIdx + 2} di ${workout.exercises.length}`
+                      : currentExercise.type === 'pyramid'
+                        ? `Step ${currentPyramidStepIdx + 2} di ${currentExercise.pyramid_steps?.length || 1}`
+                        : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} di ${currentExercise.sets}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Next Target Preview Card */}
+              <div className="w-full bg-gradient-to-b from-brand-darkGrey/90 to-brand-darkGrey/40 border border-white/10 rounded-2xl p-3 shadow-xl flex flex-col gap-2">
+                {restUpcomingExecutionEntries.length > 0 && (
+                  <div className="space-y-1">
+                    {restUpcomingExecutionEntries.slice(0, 3).map((entry, idx) => (
+                      <div key={`${entry.name}-${entry.weightLabel}-${idx}`} className="flex items-center justify-between text-sm">
+                        <span className="text-white font-black truncate">{entry.name}</span>
+                        <span className="text-brand-orange font-mono font-bold text-xs ml-2 shrink-0">{entry.weightLabel}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Performance logged summary during rest for MAX exercises */}
+                {isMaxPerformance(currentExercise) && (
+                  <div className="bg-black/50 border border-brand-orange/30 rounded-xl p-2 flex items-center justify-between">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-zinc-400 block">
+                        Set {currentSetIdx + 1} (A Sfinimento)
+                      </span>
+                      <span className="text-sm font-black text-brand-orange font-mono">
+                        {getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) != null &&
+                        (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
+                          ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)} ${getPerformanceUnit(currentExercise) === 'sec' ? 's' : 'reps'}`
+                          : 'MAX'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openEditSpecificSetModal(currentSetIdx)}
+                      className="px-2.5 py-1 rounded-lg bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Pencil size={11} />
+                      <span>Modifica</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Action Bar */}
+            <div className="h-12 flex items-stretch gap-2.5 mt-2">
+              <button
+                onClick={openCurrentExerciseNoteModal}
+                className={`w-12 rounded-xl border transition-all active:scale-95 flex items-center justify-center relative shadow-sm cursor-pointer ${
+                  hasCurrentWorkoutNote
+                    ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
+                    : 'bg-brand-darkGrey/60 border-white/10 text-zinc-400 hover:text-white'
+                }`}
+                title="Note esercizio"
+              >
+                <FileText size={18} />
+                {hasCurrentWorkoutNote && (
+                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-brand-orange ring-2 ring-black" />
+                )}
+              </button>
+
+              <button
+                onClick={skipRest}
+                className="flex-1 bg-white/10 hover:bg-white/20 active:scale-95 text-white rounded-xl font-black text-sm sm:text-base flex items-center justify-center transition-all border border-white/10 shadow-lg cursor-pointer"
+              >
+                <SkipForward size={18} className="mr-2" /> SALTA RECUPERO
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {renderWorkoutOverviewModal()}
+        {renderExerciseNoteModal()}
+        <WorkoutCelebrationModal
+          isOpen={isCelebrationOpen}
+          workoutName={workout?.name}
+          durationSeconds={getCurrentWorkoutElapsedSeconds()}
+          exercisesCompletedCount={workout?.exercises?.length}
+          onComplete={handleCelebrationComplete}
+        />
+      </div>
+    );
+  };
+
+  const renderLandscapeWorkoutView = () => {
+    return (
+      <div
+        className="h-dvh h-screen max-h-screen bg-brand-dark flex flex-col justify-between overflow-hidden select-none relative"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.25rem)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.25rem)',
+          paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 0.75rem)',
+          paddingRight: 'calc(env(safe-area-inset-right, 0px) + 0.75rem)',
+        }}
+      >
+        {voiceCommandsHelpBubble}
+
+        {/* Top HUD Bar */}
+        <div className="shrink-0 flex flex-col">
+          <header className="flex items-center justify-between h-9 px-1 z-10 relative">
+            <button
+              onClick={handleLeaveWorkout}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/15 text-zinc-300 hover:text-white border border-white/10 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+              title="Esci dall'allenamento"
+            >
+              <X size={14} className="text-zinc-400" />
+              <span>Esci</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openWorkoutOverviewModal}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[280px] shadow-sm cursor-pointer"
+              title="Panoramica allenamento"
+            >
+              <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">
+                {currentExerciseIdx + 1}/{workout.exercises.length}
+              </span>
+              <span className="text-zinc-500">•</span>
+              <span className="truncate text-zinc-200">{workout.name}</span>
+              {hasGeneralWorkoutNote && (
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-orange shrink-0" title="Note generali scheda presenti" />
+              )}
+              <ChevronDown size={13} className="text-zinc-400 shrink-0" />
+            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleLandscapeMode}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange border border-brand-orange/30 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+                title="Torna in visualizzazione verticale"
+              >
+                <Smartphone size={14} />
+                <span>Verticale</span>
+              </button>
+
+              <div className="relative">
+                {voiceStatus === 'success' && (
+                  <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                  </span>
+                )}
+                {voiceStatus === 'error' && (
+                  <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                  </span>
+                )}
+                <button
+                  onClick={handleVoiceButtonClick}
+                  className={`p-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                    isVoiceEnabled
+                      ? voiceStatus === 'success'
+                        ? 'bg-green-500 text-white scale-105'
+                        : voiceStatus === 'error'
+                          ? 'bg-red-500 text-white animate-pulse'
+                          : 'bg-brand-orange text-black'
+                      : 'text-white/50 hover:text-white bg-brand-darkGrey/40'
+                  }`}
+                  title="Assistente vocale"
+                >
+                  {isVoiceEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Slim Progress Bar */}
+          <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden mt-0.5 mb-1">
+            <div
+              className="bg-brand-orange h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(255,107,0,0.5)]"
+              style={{ width: `${((currentExerciseIdx + 1) / workout.exercises.length) * 100}%` }}
+            />
+          </div>
+        </div>
+
+        {/* 2-Column Grid Layout for Workout */}
+        <div className="flex-1 min-h-0 grid grid-cols-12 gap-3 sm:gap-4 my-1">
+          {/* Left Column (5 cols): Nav, Segmented dots, Chips, History, Tools */}
+          <div className="col-span-5 flex flex-col justify-between bg-black/40 border border-white/10 rounded-2xl p-2.5 sm:p-3 min-h-0">
+            {/* Top: Nav + Badges */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-1.5">
+                <button
+                  onClick={handleArrowPrevExercise}
+                  disabled={currentExerciseIdx === 0}
+                  className="w-8 h-8 sm:w-9 sm:h-9 bg-brand-darkGrey/80 rounded-xl text-zinc-300 hover:text-white disabled:opacity-20 disabled:hover:text-zinc-500 transition-all active:scale-95 shrink-0 border border-white/10 flex items-center justify-center shadow-md cursor-pointer"
+                  title="Esercizio precedente"
+                >
+                  <ArrowPrev size={16} />
+                </button>
+
+                <div className="flex-1 min-w-0 flex flex-col items-center text-center">
+                  <span className="text-[9px] uppercase font-bold tracking-[0.2em] text-brand-orange">
+                    Es. {currentExerciseIdx + 1} di {workout.exercises.length}
+                  </span>
+                  <h2 className="text-sm sm:text-base font-black text-white leading-tight truncate max-w-[170px] sm:max-w-[210px] drop-shadow-sm mt-0.5">
+                    {currentExercise.name}
+                  </h2>
+
+                  <div className="flex items-center gap-1 mt-1 flex-wrap justify-center">
+                    {specialExerciseLabel && (
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${specialExercisePillClass}`}>
+                        {specialExerciseLabel}
+                      </span>
+                    )}
+                    {hasCurrentInstructionNote && (
+                      <button
+                        onClick={openCurrentInstructionModal}
+                        className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-brand-orange hover:text-white text-[9px] font-bold transition-colors cursor-pointer"
+                        title="Istruzioni Esercizio"
+                      >
+                        <Info size={10} />
+                        <span>Info</span>
+                      </button>
+                    )}
+                    {!isSuperset && currentExercise.auto_count_type && (
+                      <button
+                        onClick={() => setIsAutoCountModalOpen(true)}
+                        className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:text-white text-[9px] font-bold transition-colors cursor-pointer"
+                        title="Auto-count con fotocamera"
+                      >
+                        <Video size={10} />
+                        <span>AI Count</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleArrowNextExercise}
+                  className="w-8 h-8 sm:w-9 sm:h-9 bg-brand-darkGrey/80 rounded-xl text-zinc-300 hover:text-white transition-all active:scale-95 shrink-0 border border-white/10 flex items-center justify-center shadow-md cursor-pointer"
+                  title="Prossimo esercizio"
+                >
+                  <ArrowRight size={16} />
+                </button>
+              </div>
+
+              {/* Segmented Set Tracker */}
+              <div className="flex justify-center items-center gap-1 px-1">
+                {Array.from({ length: currentExercise.sets || 1 }).map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setCurrentSetIdx(i)}
+                    className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
+                      i < currentSetIdx
+                        ? 'bg-emerald-500/80 flex-1 max-w-10'
+                        : i === currentSetIdx
+                          ? 'bg-brand-orange flex-1 max-w-12 shadow-[0_0_10px_rgba(255,107,0,0.6)] ring-1 ring-brand-orange'
+                          : 'bg-white/15 flex-1 max-w-10 hover:bg-white/25'
+                    }`}
+                    title={`Set ${i + 1}`}
+                  />
+                ))}
+              </div>
+
+              {/* 3-Column HUD Chips */}
+              <div className="w-full grid grid-cols-3 gap-1.5 shrink-0">
+                <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                    {isSuperset ? 'Round' : 'Set'}
+                  </span>
+                  <span className="text-brand-orange font-mono font-black text-sm">
+                    {currentSetIdx + 1}/{currentExercise.sets || 1}
+                  </span>
+                </div>
+
+                <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
+                  <span className="text-white font-mono font-black text-xs truncate block" title={currentExecutionWeightLabel}>
+                    {currentExecutionWeightLabel || '-'}
+                  </span>
+                </div>
+
+                <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
+                  <span className="text-zinc-300 font-mono font-black text-xs truncate block" title={nextRecoveryLabel}>
+                    {nextRecoveryLabel || '-'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Middle: Set History summary pills for MAX performance or Pyramid steps */}
+            {isMaxPerformance(currentExercise) ? (
+              <div className="my-1 overflow-x-auto">
+                <div className="flex gap-1 justify-center">
+                  {Array.from({ length: currentExercise.sets || 1 }, (_, sIdx) => {
+                    const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
+                    const isCurrent = sIdx === currentSetIdx;
+                    const isDone = logged != null && logged > 0;
+                    return (
+                      <button
+                        key={sIdx}
+                        type="button"
+                        onClick={() => openEditSpecificSetModal(sIdx)}
+                        className={`py-1 px-1.5 rounded-lg border text-center transition-all flex flex-col items-center justify-center cursor-pointer min-w-[42px] ${
+                          isCurrent
+                            ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-sm'
+                            : isDone
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                              : 'bg-white/5 border-white/5 text-zinc-500'
+                        }`}
+                      >
+                        <span className="text-[7px] uppercase font-bold opacity-70">S{sIdx + 1}</span>
+                        <span className="text-[11px] font-black font-mono mt-0.5">
+                          {logged != null && logged > 0
+                            ? `${logged}${getPerformanceUnit(currentExercise) === 'sec' ? 's' : ''}`
+                            : isCurrent
+                              ? (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || '-')
+                              : '-'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : currentExercise.type === 'pyramid' && currentExercise.pyramid_steps ? (
+              <div className="my-1 overflow-x-auto">
+                <div className="flex gap-1 justify-center">
+                  {currentExercise.pyramid_steps.map((step, sIdx) => {
+                    const isCurrent = sIdx === currentPyramidStepIdx;
+                    const isDone = sIdx < currentPyramidStepIdx;
+                    return (
+                      <div
+                        key={sIdx}
+                        className={`py-1 px-1.5 rounded-lg border text-center transition-all min-w-[38px] ${
+                          isCurrent
+                            ? 'bg-brand-orange/20 border-brand-orange text-white shadow-sm ring-1 ring-brand-orange/50'
+                            : isDone
+                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                              : 'bg-white/5 border-white/5 text-zinc-500'
+                        }`}
+                      >
+                        <span className="text-[7px] uppercase font-bold block opacity-70">S{sIdx + 1}</span>
+                        <span className="text-[11px] font-black font-mono mt-0.5">{step.reps}r</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Bottom Tools Row */}
+            <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
+              <button
+                onClick={openEditExerciseModal}
+                disabled={!canPersistExerciseEdits}
+                className="flex-1 py-1.5 rounded-xl border bg-brand-darkGrey/60 border-white/10 text-zinc-300 hover:text-white hover:border-white/25 transition-all active:scale-95 flex items-center justify-center gap-1 text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed shadow-sm cursor-pointer"
+                title={canPersistExerciseEdits ? 'Modifica esercizio al volo' : 'Modifica non disponibile per questa scheda'}
+              >
+                <SlidersHorizontal size={13} />
+                <span>Modifica</span>
+              </button>
+
+              <button
+                onClick={openCurrentExerciseNoteModal}
+                className={`flex-1 py-1.5 rounded-xl border transition-all active:scale-95 flex items-center justify-center gap-1 text-xs font-bold relative shadow-sm cursor-pointer ${
+                  hasCurrentWorkoutNote
+                    ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
+                    : 'bg-brand-darkGrey/60 border-white/10 text-zinc-300 hover:text-white hover:border-white/25'
+                }`}
+                title="Note esercizio"
+              >
+                <FileText size={13} />
+                <span>Note</span>
+                {hasCurrentWorkoutNote && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-orange" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Right Column (7 cols): Dynamic Interactive Exercise Card + Big CTA */}
+          <div className="col-span-7 flex flex-col justify-between bg-gradient-to-b from-brand-darkGrey/90 via-brand-darkGrey/60 to-brand-darkGrey/40 border border-white/10 rounded-2xl p-2.5 sm:p-3 shadow-2xl backdrop-blur-sm min-h-0">
+            {/* Dynamic Content Center */}
+            <div className="flex-1 min-h-0 flex flex-col items-center justify-center">
+              {currentExercise.type === 'emom' ? (
+                <div className="text-center w-full flex items-center justify-around h-full gap-3">
+                  {/* EMOM Circular Timer */}
+                  <div className="flex flex-col items-center shrink-0">
+                    <div
+                      className={`relative group w-28 h-28 sm:w-32 sm:h-32 rounded-full border-[6px] flex flex-col justify-center items-center transition-colors duration-300 shadow-lg cursor-pointer select-none ${
+                        emomActive ? 'border-brand-orange shadow-[0_0_25px_rgba(179,72,0,0.35)]' : 'border-brand-darkGrey bg-black/40'
+                      }`}
+                      onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
+                      onPointerUp={(event) => handleTimerPointerUp(event, handleEmomTimerTap)}
+                      onPointerCancel={handleTimerPointerAbort}
+                      onPointerLeave={handleTimerPointerAbort}
+                    >
+                      <span className={`text-4xl sm:text-5xl font-mono tracking-tighter ${emomActive ? 'text-white' : 'text-zinc-400'} transition-colors leading-none`}>
+                        {emomRoundRemaining}
+                      </span>
+                      <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] mt-0.5">SEC LEFT</span>
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none">
+                        {emomActive ? <Pause size={28} className="text-white" /> : <Play size={28} className="text-white" />}
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-1">
+                      {emomActive ? 'Tocca per pausa' : 'Tocca per avvio'}
+                    </p>
+                  </div>
+
+                  {/* EMOM Tasks List */}
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 max-h-36">
+                    {currentExercise.subExercises?.map((sub, idx) => (
+                      <div key={idx} className="bg-black/40 p-2 rounded-xl border border-white/5 flex justify-between items-center text-xs">
+                        <span className="text-white font-bold truncate max-w-[65%] text-left text-xs">{sub.name}</span>
+                        <div className="text-right shrink-0">
+                          <span className="text-brand-orange font-mono font-black text-xs block">
+                            {formatEmomTaskMetricLabel(sub)}
+                          </span>
+                          <span className="text-[9px] text-zinc-400 font-semibold">{formatWeightLabel(sub.weight_kg)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : currentExercise.type === 'pyramid' ? (
+                <div className="text-center w-full flex flex-col items-center justify-center my-auto">
+                  <span className="block text-6xl sm:text-7xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_25px_rgba(255,107,0,0.3)] tracking-tight">
+                    {formatBigTargetValue(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0)}
+                  </span>
+                  <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs mt-1.5">RIPETIZIONI TARGET</span>
+                  {nextRecoveryLabel && (
+                    <p className="text-[11px] text-zinc-400 uppercase tracking-wider font-bold text-center mt-2">
+                      Prossimo Recupero: <span className="text-brand-orange font-mono">{nextRecoveryLabel}</span>
+                    </p>
+                  )}
+                </div>
+              ) : isCircuit ? (
+                <div className="text-center w-full flex items-center justify-around h-full gap-3">
+                  {/* Circuit Stopwatch */}
+                  <div
+                    className={`w-36 sm:w-44 p-2.5 rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-300 shadow-md cursor-pointer select-none shrink-0 ${
+                      isCircuitStopwatchRunning
+                        ? 'border-brand-orange bg-brand-orange/15 shadow-[0_0_20px_rgba(179,72,0,0.25)]'
+                        : circuitStopwatchElapsed > 0
+                          ? 'border-brand-orange/70 bg-black/40'
+                          : 'border-white/10 bg-black/30'
+                    }`}
+                    onPointerDown={(event) => handleTimerPointerDown(event, resetCircuitStopwatch)}
+                    onPointerUp={(event) => handleTimerPointerUp(event, toggleCircuitStopwatch)}
+                    onPointerCancel={handleTimerPointerAbort}
+                    onPointerLeave={handleTimerPointerAbort}
+                  >
+                    <span className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-white leading-none my-0.5">
+                      {formatTime(circuitStopwatchElapsed)}
+                    </span>
+                    <p className="text-[9px] text-zinc-400 uppercase tracking-widest font-semibold mt-1">
+                      {isCircuitStopwatchRunning ? 'Tocca per stop' : 'Tocca per avvio'}
+                    </p>
+                  </div>
+
+                  {/* Stations List */}
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 max-h-36">
+                    {(currentExercise.subExercises || []).map((sub, idx) => (
+                      <div
+                        key={`${currentExercise.id}:circuit-station:${idx}`}
+                        className="p-1.5 px-2 rounded-xl border border-white/10 bg-black/40 flex justify-between items-center text-xs"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="w-4 h-4 rounded-full bg-brand-orange/20 text-brand-orange flex items-center justify-center font-bold text-[9px] shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="truncate font-bold text-white/90 text-xs">{sub.name}</span>
+                        </div>
+                        <span className="font-mono text-xs text-brand-orange font-black ml-2 shrink-0">
+                          {sub.type === 'reps' ? `${sub.reps}r` : `${sub.duration_seconds}s`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : isSuperset ? (
+                <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-1.5 px-1 my-auto max-h-36">
+                  {(currentExercise.subExercises || []).map((sub, idx) => {
+                    const isIsoSub = sub.type === 'isometry';
+                    const isClickableIsoTimer = isIsoSub && sub.duration_seconds > 0;
+                    const isThisTimerActive = isClickableIsoTimer && isometryActive && supersetIsometrySubIdx === idx;
+                    const targetDuration = isClickableIsoTimer ? Math.max(1, sub.duration_seconds || 1) : 1;
+                    const currentRemaining = isThisTimerActive || (isClickableIsoTimer && supersetIsometrySubIdx === idx) ? isometryRemaining : targetDuration;
+                    const fillPercent = isClickableIsoTimer && supersetIsometrySubIdx === idx ? Math.max(0, Math.min(100, ((targetDuration - currentRemaining) / targetDuration) * 100)) : 0;
+
+                    const handleSubIsoTap = () => {
+                      if (!isClickableIsoTimer) return;
+                      if (isThisTimerActive) {
+                        pauseIsometryCountdown();
+                        return;
+                      }
+                      if (isometryActive) stopIsometryCountdown();
+                      setSupersetIsometrySubIdx(idx);
+                      const duration = (supersetIsometrySubIdx === idx && isometryRemaining > 0) ? isometryRemaining : targetDuration;
+                      startIsometryCountdown(duration);
+                    };
+
+                    const handleSubIsoReset = () => {
+                      if (!isClickableIsoTimer) return;
+                      stopIsometryCountdown();
+                      setSupersetIsometrySubIdx(idx);
+                      setIsometryRemaining(targetDuration);
+                    };
+
+                    return (
+                      <div
+                        key={`${currentExercise.id}:superset:${idx}`}
+                        className={`relative overflow-hidden p-2.5 rounded-xl border flex justify-between items-center gap-2 select-none transition-colors ${
+                          isThisTimerActive
+                            ? 'border-brand-orange/70 bg-brand-orange/15 shadow-[0_0_15px_rgba(255,107,0,0.2)]'
+                            : isClickableIsoTimer && supersetIsometrySubIdx === idx && fillPercent > 0
+                              ? 'border-brand-orange/40 bg-black/40'
+                              : 'border-white/10 bg-black/30'
+                        } ${isClickableIsoTimer ? 'cursor-pointer active:scale-[0.98]' : ''}`}
+                        {...(isClickableIsoTimer ? {
+                          onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerDown(event, handleSubIsoReset),
+                          onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerUp(event, handleSubIsoTap),
+                          onPointerCancel: handleTimerPointerAbort,
+                          onPointerLeave: handleTimerPointerAbort,
+                        } : {})}
+                      >
+                        {isClickableIsoTimer && fillPercent > 0 && (
+                          <div
+                            className="absolute inset-0 bg-brand-orange/20 transition-[width] duration-300 ease-linear pointer-events-none rounded-xl"
+                            style={{ width: `${fillPercent}%` }}
+                          />
+                        )}
+                        <div className="text-left min-w-0 relative z-10">
+                          <p className="text-white font-black text-xs truncate">{idx + 1}. {sub.name || `Exercise ${idx + 1}`}</p>
+                          <p className="text-[10px] text-brand-orange font-black uppercase tracking-wide">
+                            {isClickableIsoTimer && supersetIsometrySubIdx === idx
+                              ? `${currentRemaining}s / ${targetDuration}s`
+                              : formatSupersetTaskMetricLabel(sub)
+                            }
+                          </p>
+                        </div>
+                        <span className="text-xs text-brand-lightOrange font-mono font-bold shrink-0 relative z-10">
+                          {formatWeightLabel(sub.weight_kg)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
+                <div className="text-center w-full flex items-center justify-around h-full gap-4">
+                  {/* Circular Timer / Stopwatch */}
+                  <div className="flex flex-col items-center shrink-0">
+                    <div
+                      className={`relative w-28 h-28 sm:w-32 sm:h-32 rounded-full border-[6px] flex flex-col justify-center items-center transition-colors duration-300 shadow-xl cursor-pointer ${
+                        isometryStopwatchActive || isometryActive ? 'border-brand-orange shadow-[0_0_25px_rgba(255,107,0,0.3)]' : 'border-brand-darkGrey bg-black/40'
+                      }`}
+                      onPointerDown={(event) => handleTimerPointerDown(event, resetIsometryCountdown)}
+                      onPointerUp={(event) => handleTimerPointerUp(event, handleIsometryTimerTap)}
+                      onPointerCancel={handleTimerPointerAbort}
+                      onPointerLeave={handleTimerPointerAbort}
+                    >
+                      <span className={`text-4xl sm:text-5xl font-mono tracking-tighter ${
+                        isometryStopwatchActive || isometryActive ? 'text-brand-orange animate-pulse' : 'text-white'
+                      } transition-colors leading-none`}>
+                        {isMaxTarget(currentExercise.duration_seconds)
+                          ? (isometryElapsedSeconds > 0 ? isometryElapsedSeconds : (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 'MAX'))
+                          : isometryRemaining}
+                      </span>
+                      <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] mt-0.5">
+                        {isMaxTarget(currentExercise.duration_seconds) && isometryElapsedSeconds === 0 && !getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)
+                          ? 'A SFINIMENTO'
+                          : 'SEC'}
+                      </span>
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 rounded-full transition-opacity pointer-events-none">
+                        {isometryStopwatchActive || isometryActive ? <Pause size={30} className="text-white" /> : <Play size={30} className="text-white" />}
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-1">
+                      {isMaxTarget(currentExercise.duration_seconds) ? 'Tocca per cronometro' : 'Tocca per avvio/pausa'}
+                    </p>
+                  </div>
+
+                  {/* Steppers if MAX Isometry */}
+                  {isMaxTarget(currentExercise.duration_seconds) && (
+                    <div className="flex flex-col items-center gap-1.5">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400">Regola Durata</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => adjustCurrentSetPerformance(-5)}
+                          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 font-bold text-xs border border-white/5 cursor-pointer"
+                        >
+                          -5s
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => adjustCurrentSetPerformance(-1)}
+                          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 font-bold text-xs border border-white/5 cursor-pointer"
+                        >
+                          -1s
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditSpecificSetModal(currentSetIdx)}
+                          className="px-2.5 py-1 rounded-lg bg-brand-orange/15 hover:bg-brand-orange/25 active:scale-95 text-brand-orange font-bold text-xs border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Pencil size={10} />
+                          <span>Modifica</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => adjustCurrentSetPerformance(1)}
+                          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 font-bold text-xs border border-white/5 cursor-pointer"
+                        >
+                          +1s
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => adjustCurrentSetPerformance(5)}
+                          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 font-bold text-xs border border-white/5 cursor-pointer"
+                        >
+                          +5s
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : isMaxTarget(currentExercise.reps) ? (
+                /* MAX REPS */
+                <div className="flex flex-col items-center justify-center my-auto w-full">
+                  <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-[10px] font-black uppercase tracking-wider mb-1.5">
+                    <Flame size={11} className="animate-pulse" />
+                    <span>A Sfinimento (MAX Reps)</span>
+                  </div>
+
+                  {/* Stepper + Value */}
+                  <div className="flex items-center justify-center gap-2 w-full max-w-xs">
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(-5)}
+                      className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                    >
+                      -5
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(-1)}
+                      className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-base flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                    >
+                      -1
+                    </button>
+
+                    <div
+                      onClick={() => openEditSpecificSetModal(currentSetIdx)}
+                      className="px-4 py-1.5 bg-black/50 border-2 border-brand-orange/60 hover:border-brand-orange rounded-2xl flex flex-col items-center justify-center cursor-pointer shadow-[0_0_15px_rgba(255,107,0,0.2)] transition-all group select-none min-w-[90px]"
+                      title="Tocca per inserire le reps fatte"
+                    >
+                      <span className="text-3xl font-mono font-black text-brand-orange leading-tight">
+                        {(getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
+                          ? getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)
+                          : 'MAX'}
+                      </span>
+                      <span className="text-[8px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-0.5 mt-0.5">
+                        <Pencil size={8} className="text-brand-orange" />
+                        Reps
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(1)}
+                      className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-base flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                    >
+                      +1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustCurrentSetPerformance(5)}
+                      className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
+                    >
+                      +5
+                    </button>
+                  </div>
+                  <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-1">
+                    Tocca il valore per modificare
+                  </p>
+                </div>
+              ) : (
+                /* DEFAULT: STANDARD REPS */
+                <div className="flex flex-col items-center justify-center my-auto">
+                  <span className="block text-6xl sm:text-7xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_30px_rgba(255,107,0,0.35)] tracking-tighter">
+                    {formatBigTargetValue(currentExercise.reps)}
+                  </span>
+                  <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs mt-1.5">
+                    RIPETIZIONI TARGET
+                  </span>
+                  {nextRecoveryLabel && (
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold text-center mt-1.5">
+                      Prossimo Recupero: <span className="text-brand-orange font-mono">{nextRecoveryLabel}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom CTA Action Button */}
+            <div className="h-11 sm:h-12 flex items-stretch mt-1">
+              <button
+                onClick={handlePrimaryAction}
+                className={`w-full rounded-xl font-black text-sm sm:text-base flex items-center justify-center transition-all active:scale-95 shadow-xl cursor-pointer ${
+                  isFinalCompletionAction
+                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-emerald-500/20'
+                    : 'bg-brand-orange hover:bg-brand-lightOrange text-black shadow-brand-orange/20'
+                }`}
+              >
+                {isFinalCompletionAction ? (
+                  <>
+                    <CheckCircle2 size={18} className="mr-1.5" strokeWidth={2.5} />
+                    TERMINA ALLENAMENTO
+                  </>
+                ) : isEmom && !isLastEmomRound ? (
+                  <>PROSSIMO ROUND <ArrowRight size={16} className="ml-1.5" /></>
+                ) : isEmom && isLastEmomRound ? (
+                  <>COMPLETA SERIE</>
+                ) : isPyramid && !isLastPyramidStep ? (
+                  <>PROSSIMO STEP <ArrowRight size={16} className="ml-1.5" /></>
+                ) : isCircuit ? (
+                  isLastSet
+                    ? <>COMPLETA CIRCUITO <ArrowRight size={16} className="ml-1.5" /></>
+                    : <>FINE SET & RECUPERO <ArrowRight size={16} className="ml-1.5" /></>
+                ) : isSuperset ? (
+                  isLastSet
+                    ? <>PROSSIMO ESERCIZIO <ArrowRight size={16} className="ml-1.5" /></>
+                    : currentExercise.rest_seconds > 0
+                      ? <>FINE ROUND & RECUPERO <ArrowRight size={16} className="ml-1.5" /></>
+                      : <>PROSSIMO ROUND <ArrowRight size={16} className="ml-1.5" /></>
+                ) : isLastSet ? (
+                  <>PROSSIMO ESERCIZIO <ArrowRight size={16} className="ml-1.5" /></>
+                ) : (
+                  <>COMPLETA SERIE</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {renderActiveWorkoutModals()}
+      </div>
+    );
+  };
+
+  // ----------------------------------------------------------------------
+  // RENDER REST VIEW
+  // ----------------------------------------------------------------------
+  if (isResting) {
+    if (isLandscape) {
+      return renderLandscapeRestView();
+    }
+
+    return (
+      <div
+        className="h-dvh h-screen max-h-screen bg-brand-dark flex flex-col justify-between overflow-hidden px-3.5 sm:px-5 safe-bottom relative select-none"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.4rem)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)',
+        }}
+      >
+        {voiceCommandsHelpBubble}
+        {renderWorkoutOverviewModal()}
+
+        {/* Top HUD: Unambiguous Exit Button & Overview */}
+        <header className="flex items-center justify-between shrink-0 h-11 px-0.5 z-10">
+          <button
+            onClick={handleLeaveWorkout}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-zinc-300 hover:text-white border border-white/10 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+            title="Esci dal workout"
+          >
+            <X size={15} className="text-zinc-400" />
+            <span>Esci</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openWorkoutOverviewModal}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[210px] shadow-sm cursor-pointer"
+            title="Open workout overview"
+          >
+            <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">RECUPERO</span>
+            <span className="text-zinc-500">•</span>
+            <span className="truncate text-zinc-200">{restOverviewExerciseLabel}</span>
+            {hasGeneralWorkoutNote && (
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-orange shrink-0" title="Note generali scheda presenti" />
+            )}
+            <ChevronDown size={13} className="text-zinc-400 shrink-0" />
+          </button>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={toggleLandscapeMode}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10 text-[11px] font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+              title="Attiva visualizzazione orizzontale"
+            >
+              <Smartphone className="rotate-90" size={13} />
+              <span className="hidden sm:inline">Orizzontale</span>
+            </button>
+
+            <div className="relative">
+              {voiceStatus === 'success' && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                </span>
+              )}
+              {voiceStatus === 'error' && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                </span>
+              )}
+              <button
+                onClick={handleVoiceButtonClick}
+                className={`p-2 rounded-full transition-all duration-300 cursor-pointer ${
+                  isVoiceEnabled
+                    ? voiceStatus === 'success'
+                      ? 'bg-green-500 text-white scale-105'
+                      : voiceStatus === 'error'
+                        ? 'bg-red-500 text-white animate-pulse'
+                        : 'bg-brand-orange text-black'
+                    : 'text-white/50 hover:text-white bg-brand-darkGrey/40'
+                }`}
+                title="Voice Assistant"
+              >
+                {isVoiceEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+              </button>
+            </div>
           </div>
         </header>
 
@@ -4751,6 +6350,10 @@ const ActiveWorkoutPage: React.FC = () => {
   // ----------------------------------------------------------------------
   // RENDER ACTIVE EXERCISE VIEW
   // ----------------------------------------------------------------------
+  if (isLandscape) {
+    return renderLandscapeWorkoutView();
+  }
+
   return (
     <div
       className="h-dvh h-screen max-h-screen bg-brand-dark flex flex-col justify-between overflow-hidden px-3.5 sm:px-5 safe-bottom select-none relative"
@@ -4766,7 +6369,7 @@ const ActiveWorkoutPage: React.FC = () => {
         <header className="flex items-center justify-between h-11 px-0.5 z-10 relative">
           <button
             onClick={handleLeaveWorkout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-zinc-300 hover:text-white border border-white/10 text-xs font-bold transition-all active:scale-95 shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-zinc-300 hover:text-white border border-white/10 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
             title="Esci dall'allenamento"
           >
             <X size={15} className="text-zinc-400" />
@@ -4776,7 +6379,7 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             type="button"
             onClick={openWorkoutOverviewModal}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[220px] shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[200px] shadow-sm cursor-pointer"
             title="Panoramica allenamento"
           >
             <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">
@@ -4790,34 +6393,46 @@ const ActiveWorkoutPage: React.FC = () => {
             <ChevronDown size={13} className="text-zinc-400 shrink-0" />
           </button>
 
-          <div className="relative">
-            {voiceStatus === 'success' && (
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-              </span>
-            )}
-            {voiceStatus === 'error' && (
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-              </span>
-            )}
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={handleVoiceButtonClick}
-              className={`p-2 rounded-full transition-all duration-300 ${
-                isVoiceEnabled
-                  ? voiceStatus === 'success'
-                    ? 'bg-green-500 text-white scale-105'
-                    : voiceStatus === 'error'
-                      ? 'bg-red-500 text-white animate-pulse'
-                      : 'bg-brand-orange text-black'
-                  : 'text-white/50 hover:text-white bg-brand-darkGrey/40'
-              }`}
-              title="Assistente vocale"
+              type="button"
+              onClick={toggleLandscapeMode}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10 text-[11px] font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+              title="Attiva visualizzazione orizzontale"
             >
-              {isVoiceEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+              <Smartphone className="rotate-90" size={13} />
+              <span className="hidden sm:inline">Orizzontale</span>
             </button>
+
+            <div className="relative">
+              {voiceStatus === 'success' && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                </span>
+              )}
+              {voiceStatus === 'error' && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                </span>
+              )}
+              <button
+                onClick={handleVoiceButtonClick}
+                className={`p-2 rounded-full transition-all duration-300 cursor-pointer ${
+                  isVoiceEnabled
+                    ? voiceStatus === 'success'
+                      ? 'bg-green-500 text-white scale-105'
+                      : voiceStatus === 'error'
+                        ? 'bg-red-500 text-white animate-pulse'
+                        : 'bg-brand-orange text-black'
+                    : 'text-white/50 hover:text-white bg-brand-darkGrey/40'
+                }`}
+                title="Assistente vocale"
+              >
+                {isVoiceEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+              </button>
+            </div>
           </div>
         </header>
 
@@ -5482,735 +7097,7 @@ const ActiveWorkoutPage: React.FC = () => {
         </div>
       </main>
 
-      {renderExerciseNoteModal()}
-
-      {isInstructionModalOpen && instructionModalContext && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-white">Exercise Instructions</h3>
-                <p className="text-xs text-brand-grey mt-1">{instructionModalContext.exerciseName}</p>
-              </div>
-              <button
-                onClick={closeCurrentInstructionModal}
-                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                title="Close instructions"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
-              {instructionModalContext.note && (
-                <div className="bg-black/40 border border-brand-orange/25 rounded-xl px-4 py-3">
-                  <p className="text-xs uppercase tracking-wider font-bold text-brand-orange/90 mb-2">Primary Note</p>
-                  <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{instructionModalContext.note}</p>
-                </div>
-              )}
-
-              {instructionModalContext.items.map((item, idx) => (
-                <div key={`${item.name}-${idx}`} className="bg-black/40 border border-white/10 rounded-xl px-4 py-3">
-                  <p className="text-xs uppercase tracking-wider font-bold text-brand-orange/90 mb-2">{item.name}</p>
-                  <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{item.note}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 flex items-center justify-end">
-              <button
-                onClick={closeCurrentInstructionModal}
-                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isWorkoutOverviewModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-bold text-white">Workout Overview</h3>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
-                    <Clock size={12} />
-                    {formatTime(getCurrentWorkoutElapsedSeconds())}
-                  </span>
-                </div>
-                <p className="text-xs text-brand-grey mt-1">{workout.name}</p>
-              </div>
-              <button
-                onClick={closeWorkoutOverviewModal}
-                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                title="Close overview"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
-              {/* Note Generali della Scheda */}
-              {renderOverviewGeneralNotes()}
-
-              {workout.exercises.map((exercise, index) => {
-                const isCurrentExercise = index === currentExerciseIdx;
-                const exerciseTitle = String(exercise.name || '').trim() || `Exercise ${index + 1}`;
-                const summary = getWorkoutOverviewSummary(exercise);
-
-                return (
-                  <div
-                    key={exercise.id}
-                    className={`rounded-2xl border p-4 transition-colors ${isCurrentExercise
-                      ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
-                      : 'border-white/10 bg-black/30'
-                      }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[10px] uppercase tracking-[0.25em] text-brand-grey/70 font-bold mb-1">
-                          Exercise {index + 1}
-                        </p>
-                        <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
-                        <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
-                          {getWorkoutOverviewDisplayLabel(exercise)}
-                        </p>
-                      </div>
-
-                      <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${isCurrentExercise
-                        ? 'bg-brand-orange text-black'
-                        : 'bg-white/5 text-brand-grey'
-                        }`}>
-                        {isCurrentExercise ? 'You are here' : `#${index + 1}`}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {summary.map((item, summaryIndex) => (
-                        <span
-                          key={`${exercise.id}:summary:${summaryIndex}`}
-                          className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-3 py-1 text-[11px] font-bold text-white/85"
-                        >
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-
-                    {(exercise.type === 'superset' || exercise.type === 'circuit') && exercise.subExercises && exercise.subExercises.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        {exercise.subExercises.map((sub, subIndex) => (
-                          <div key={`${exercise.id}:sub:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                              <p className="text-[11px] font-black uppercase tracking-wide mt-1 text-brand-orange/90">
-                                {formatSupersetTaskMetricLabel(sub)}
-                              </p>
-                            </div>
-                            <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
-                              {formatWeightLabel(sub.weight_kg)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {exercise.type === 'emom' && exercise.subExercises && exercise.subExercises.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        {exercise.subExercises.map((sub, subIndex) => (
-                          <div key={`${exercise.id}:emom:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                              <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
-                                {formatEmomTaskMetricLabel(sub)}
-                              </p>
-                            </div>
-                            <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
-                              {formatWeightLabel(sub.weight_kg)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {exercise.type === 'pyramid' && exercise.pyramid_steps && exercise.pyramid_steps.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        {exercise.pyramid_steps.map((step, stepIndex) => (
-                          <div key={`${exercise.id}:pyramid:${stepIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-white font-bold text-sm truncate">Step {stepIndex + 1}</p>
-                              <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
-                                {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
-                              </p>
-                            </div>
-                            <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
-                              {formatWeightLabel(step.weight_kg)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-4 flex items-center justify-end">
-              <button
-                onClick={closeWorkoutOverviewModal}
-                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isEditExerciseModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="w-full max-w-lg bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-white">Edit Current Exercise</h3>
-                <p className="text-xs text-brand-grey mt-1">
-                  {currentExercise.name}
-                </p>
-              </div>
-              <button
-                onClick={closeEditExerciseModal}
-                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                title="Close exercise editor"
-                disabled={isSavingExerciseEdit}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-              {currentExercise.type === 'emom' && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-brand-grey">Sets
-                      <input
-                        type="number" inputMode="numeric"
-                        min={1}
-                        value={exerciseEditDraft.sets}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                    <label className="text-sm text-brand-grey">Rounds
-                      <input
-                        type="number" inputMode="numeric"
-                        min={1}
-                        value={exerciseEditDraft.emomRounds}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, emomRounds: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col">
-                      <label className="text-sm text-brand-grey">Round Duration</label>
-                      <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
-                        <div className="relative flex-1 border-r border-brand-grey/10">
-                          <input
-                            type="number" inputMode="numeric"
-                            min={0}
-                            value={toDurationParts(exerciseEditDraft.emomRoundDuration).minutes}
-                            onChange={(e) => updateEmomRoundDurationPart('min', e.target.value)}
-                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
-                          />
-                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">MIN</span>
-                        </div>
-                        <div className="relative flex-1">
-                          <input
-                            type="number" inputMode="numeric"
-                            min={0}
-                            max={59}
-                            value={toDurationParts(exerciseEditDraft.emomRoundDuration).seconds}
-                            onChange={(e) => updateEmomRoundDurationPart('sec', e.target.value)}
-                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
-                          />
-                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">SEC</span>
-                        </div>
-                      </div>
-                    </div>
-                    <label className="text-sm text-brand-grey">Rest Between Sets (sec)
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.restSeconds}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="space-y-3 pt-2">
-                    {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
-                      <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">EMOM exercise {index + 1}</p>
-                            <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
-                          </div>
-                          <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">{draft.type === 'isometry' ? 'Isometry' : 'Reps'}</span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          {draft.type === 'isometry' ? (
-                            <label className="text-sm text-brand-grey">Duration (sec)
-                              <input
-                                type="number" inputMode="numeric"
-                                min={0}
-                                value={draft.durationSeconds}
-                                onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                          ) : (
-                            <label className="text-sm text-brand-grey">Reps
-                              <input
-                                type="number" inputMode="numeric"
-                                min={0}
-                                value={draft.reps}
-                                onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                          )}
-
-                          <label className="text-sm text-brand-grey">Weight (kg)
-                            <input
-                              type="text"
-                              value={draft.weightKg}
-                              onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
-                              placeholder="body weight"
-                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {(currentExercise.type === 'superset' || currentExercise.type === 'circuit') && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-brand-grey">{currentExercise.type === 'circuit' ? 'Giri (Rounds)' : 'Rounds'}
-                      <input
-                        type="number" inputMode="numeric"
-                        min={1}
-                        value={exerciseEditDraft.sets}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                    <label className="text-sm text-brand-grey">Rest Between Rounds (sec)
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.restSeconds}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="space-y-3 pt-2">
-                    {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
-                      <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">
-                              {currentExercise.type === 'circuit' ? 'Circuit station' : 'Superset exercise'} {index + 1}
-                            </p>
-                            <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
-                          </div>
-                          <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">
-                            {draft.type === 'isometry' ? 'Isometry' : 'Reps'}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          {draft.type === 'isometry' ? (
-                            <label className="text-sm text-brand-grey">Duration (sec)
-                              <input
-                                type="number" inputMode="numeric"
-                                min={0}
-                                value={draft.durationSeconds}
-                                onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                          ) : (
-                            <label className="text-sm text-brand-grey">Reps
-                              <input
-                                type="number" inputMode="numeric"
-                                min={0}
-                                value={draft.reps}
-                                onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                          )}
-
-                          <label className="text-sm text-brand-grey">Weight (kg)
-                            <input
-                              type="text"
-                              value={draft.weightKg}
-                              onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
-                              placeholder="body weight"
-                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {currentExercise.type === 'pyramid' && (
-                <div className="space-y-3">
-                  <div className="space-y-3 pt-2">
-                    {exerciseEditDraft.pyramidStepDrafts.map((draft, index) => (
-                      <div key={`step-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">Step {index + 1}</p>
-                            <h4 className="text-white font-black text-base truncate">Pyramid step {index + 1}</h4>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-3">
-                          <label className="text-sm text-brand-grey">Reps
-                            <input
-                              type="number" inputMode="numeric"
-                              min={0}
-                              value={draft.reps}
-                              onChange={(e) => updatePyramidStepDraft(index, { reps: e.target.value })}
-                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                            />
-                          </label>
-                          <label className="text-sm text-brand-grey">Rest (sec)
-                            <input
-                              type="number" inputMode="numeric"
-                              min={0}
-                              value={draft.restSeconds}
-                              onChange={(e) => updatePyramidStepDraft(index, { restSeconds: e.target.value })}
-                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                            />
-                          </label>
-                          <label className="text-sm text-brand-grey">Weight (kg)
-                            <input
-                              type="text"
-                              value={draft.weightKg}
-                              onChange={(e) => updatePyramidStepDraft(index, { weightKg: e.target.value })}
-                              placeholder="body weight"
-                              className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(currentExercise.type === 'reps' || currentExercise.type === 'isometry' || currentExercise.type === 'cardio') && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-brand-grey">Sets
-                      <input
-                        type="number" inputMode="numeric"
-                        min={1}
-                        value={exerciseEditDraft.sets}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                    <label className="text-sm text-brand-grey">Rest (sec)
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.restSeconds}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  </div>
-
-                  {(currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
-                    <label className="text-sm text-brand-grey">Duration (sec)
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.durationSeconds}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, durationSeconds: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  ) : (
-                    <label className="text-sm text-brand-grey">Reps
-                      <input
-                        type="number" inputMode="numeric"
-                        min={0}
-                        value={exerciseEditDraft.reps}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, reps: e.target.value }))}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  )}
-
-                  <label className="text-sm text-brand-grey">Weight (kg)
-                    <input
-                      type="text"
-                      value={exerciseEditDraft.weightKg}
-                      onChange={(e) => setExerciseEditDraft((d) => ({ ...d, weightKg: e.target.value }))}
-                      placeholder="body Weight"
-                      className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                    />
-                  </label>
-                </>
-              )}
-            </div>
-
-            {exerciseEditError && (
-              <p className="mt-3 text-sm text-red-300">{exerciseEditError}</p>
-            )}
-
-            <div className="mt-4 flex items-center justify-end gap-3">
-              <button
-                onClick={closeEditExerciseModal}
-                disabled={isSavingExerciseEdit}
-                className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveCurrentExerciseEdits}
-                disabled={isSavingExerciseEdit}
-                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60"
-              >
-                {isSavingExerciseEdit ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Auto-Count Choice Modal */}
-      {isAutoCountModalOpen && currentExercise && !isSuperset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-3xl bg-brand-dark p-6 shadow-2xl border border-white/10">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-black text-white uppercase tracking-wider">Choose Method</h3>
-              <button
-                onClick={() => setIsAutoCountModalOpen(false)}
-                className="text-brand-grey hover:text-white transition-colors p-2"
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            <p className="text-brand-grey mb-8 text-sm">
-              How would you like to count your {currentExercise.reps} {currentExercise.name} reps?
-            </p>
-
-            <div className="flex flex-col gap-4">
-              <button
-                onClick={async () => {
-                  warmupSpeechSynthesis();
-                  if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
-                    try {
-                      await (window as any).DeviceMotionEvent.requestPermission();
-                    } catch (e) {
-                      console.warn('DeviceMotionEvent permission request failed', e);
-                    }
-                  }
-                  persistWorkoutProgress(true);
-                  setIsAutoCountModalOpen(false);
-                  navigate('/reps-count', {
-                    state: {
-                      autoCountExercise: currentExercise.auto_count_type,
-                      targetReps: currentExercise.reps,
-                      returnUrl: location.pathname,
-                      mode: 'video'
-                    }
-                  });
-                }}
-                className="w-full bg-brand-darkGrey/60 border border-purple-500/50 rounded-2xl p-4 flex items-center gap-4 hover:bg-purple-500/20 transition-colors group"
-              >
-                <div className="bg-purple-500/20 p-3 rounded-xl group-hover:bg-purple-500/40 transition-colors flex-shrink-0">
-                  <Video size={24} className="text-purple-400" />
-                </div>
-                <div className="text-left">
-                  <h4 className="text-white font-bold text-lg uppercase tracking-wide">Camera</h4>
-                  <p className="text-brand-grey text-xs mt-1">Place phone down and step back</p>
-                </div>
-              </button>
-
-              <button
-                onClick={async () => {
-                  warmupSpeechSynthesis();
-                  if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
-                    try {
-                      await (window as any).DeviceMotionEvent.requestPermission();
-                    } catch (e) {
-                      console.warn('DeviceMotionEvent permission request failed', e);
-                    }
-                  }
-                  persistWorkoutProgress(true);
-                  setIsAutoCountModalOpen(false);
-                  navigate('/reps-count', {
-                    state: {
-                      autoCountExercise: currentExercise.auto_count_type,
-                      targetReps: currentExercise.reps,
-                      returnUrl: location.pathname,
-                      mode: 'accelerometer'
-                    }
-                  });
-                }}
-                className="w-full bg-brand-darkGrey/60 border border-brand-orange/50 rounded-2xl p-4 flex items-center gap-4 hover:bg-brand-orange/20 transition-colors group"
-              >
-                <div className="bg-brand-orange/20 p-3 rounded-xl group-hover:bg-brand-orange/40 transition-colors flex-shrink-0">
-                  <Smartphone size={24} className="text-brand-orange" />
-                </div>
-                <div className="text-left">
-                  <h4 className="text-white font-bold text-lg uppercase tracking-wide">Accelerometer</h4>
-                  <p className="text-brand-grey text-xs mt-1">Keep phone in your pocket</p>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal per Prompt / Modifica Performance Set a Sfinimento */}
-      {isMaxPromptModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-brand-orange/40 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-brand-orange/20 text-brand-orange">
-                  <Flame size={18} />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-white uppercase tracking-wider">
-                    Set {targetEditingSetIdx + 1} · A Sfinimento
-                  </h3>
-                  <p className="text-xs text-zinc-400">
-                    {currentExercise.name}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsMaxPromptModalOpen(false)}
-                className="text-zinc-400 hover:text-white p-1 cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <p className="text-xs text-zinc-300 text-center">
-              Inserisci {getPerformanceUnit(currentExercise) === 'sec' ? 'i secondi di tenuta' : 'le ripetizioni'} eseguiti in questo set:
-            </p>
-
-            <div className="flex items-center justify-center gap-2 py-2">
-              <button
-                type="button"
-                onClick={() => setModalPerformanceValue((prev) => Math.max(0, prev - 5))}
-                className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
-              >
-                -5
-              </button>
-              <button
-                type="button"
-                onClick={() => setModalPerformanceValue((prev) => Math.max(0, prev - 1))}
-                className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-lg flex items-center justify-center transition-all border border-white/5 cursor-pointer"
-              >
-                -1
-              </button>
-
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={modalPerformanceValue > 0 ? modalPerformanceValue : ''}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setModalPerformanceValue(Number.isFinite(val) && val >= 0 ? Math.trunc(val) : 0);
-                }}
-                placeholder="0"
-                autoFocus
-                className="w-24 h-14 bg-black/60 border-2 border-brand-orange rounded-2xl text-center text-3xl font-mono font-black text-brand-orange focus:outline-none"
-              />
-
-              <button
-                type="button"
-                onClick={() => setModalPerformanceValue((prev) => prev + 1)}
-                className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-lg flex items-center justify-center transition-all border border-white/5 cursor-pointer"
-              >
-                +1
-              </button>
-              <button
-                type="button"
-                onClick={() => setModalPerformanceValue((prev) => prev + 5)}
-                className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
-              >
-                +5
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setLoggedPerformanceForSet(currentExerciseIdx, currentExercise, targetEditingSetIdx, modalPerformanceValue);
-                  setIsMaxPromptModalOpen(false);
-                  if (targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current) {
-                    isPendingSetAdvanceRef.current = false;
-                    completeSet();
-                  }
-                }}
-                className="w-full py-3.5 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-sm uppercase tracking-wider transition-colors shadow-lg shadow-brand-orange/20 cursor-pointer"
-              >
-                {targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current
-                  ? 'Salva e Continua'
-                  : 'Salva'}
-              </button>
-              {targetEditingSetIdx === currentSetIdx && isPendingSetAdvanceRef.current && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    isPendingSetAdvanceRef.current = false;
-                    setIsMaxPromptModalOpen(false);
-                    completeSet();
-                  }}
-                  className="text-xs text-zinc-400 hover:text-zinc-200 py-1 transition-colors cursor-pointer"
-                >
-                  Salta / Lascia MAX
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      <WorkoutCelebrationModal
-        isOpen={isCelebrationOpen}
-        workoutName={workout?.name}
-        durationSeconds={getCurrentWorkoutElapsedSeconds()}
-        exercisesCompletedCount={workout?.exercises?.length}
-        onComplete={handleCelebrationComplete}
-      />
+      {renderActiveWorkoutModals()}
     </div>
   );
 };

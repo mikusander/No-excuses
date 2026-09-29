@@ -25,6 +25,7 @@
  * `ResetPasswordModal` viene montato in overlay globale quando l'utente atterra
  * sull'app tramite link email di recupero password (evento PASSWORD_RECOVERY).
  */
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import RepCounterPage from './pages/RepCounterPage';
@@ -41,6 +42,8 @@ import { useAuth } from './context/AuthContext';
 import ResetPasswordModal from './components/ResetPasswordModal';
 import ActiveWorkoutBanner from './components/ActiveWorkoutBanner';
 import { supabaseConfigError } from './lib/supabase';
+import { lockAppToPortrait, useIsLandscape } from './utils/orientationManager';
+import { Smartphone } from 'lucide-react';
 
 /**
  * ProtectedRoute — Wrapper per le rotte che richiedono autenticazione.
@@ -65,6 +68,42 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+/**
+ * OrientationWatcher — Assicura che fuori dalla schermata di workout attivo (/active-workout)
+ * l'app sia rigorosamente bloccata in modalità verticale (portrait).
+ * Su browser web mobile (Safari), mostra una guida non invasiva se il telefono è ruotato fuori dal workout.
+ */
+const OrientationWatcher = () => {
+  const location = useLocation();
+  const isLandscape = useIsLandscape();
+  const isWorkoutRoute = location.pathname.startsWith('/active-workout');
+
+  useEffect(() => {
+    if (!isWorkoutRoute) {
+      lockAppToPortrait();
+    }
+  }, [location.pathname, isWorkoutRoute]);
+
+  // Se l'utente è fuori dal workout su dispositivo mobile orientato orizzontalmente (altezza < 520px)
+  const isMobileLandscapeOutsideWorkout = !isWorkoutRoute && isLandscape && typeof window !== 'undefined' && window.innerHeight < 520;
+
+  if (isMobileLandscapeOutsideWorkout) {
+    return (
+      <div className="fixed inset-0 z-[999] bg-brand-dark/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center select-none">
+        <div className="w-16 h-16 rounded-3xl bg-brand-darkGrey/80 border border-brand-orange/30 flex items-center justify-center text-brand-orange mb-4 shadow-xl animate-pulse">
+          <Smartphone size={32} className="rotate-90 animate-bounce" />
+        </div>
+        <h2 className="text-xl font-black text-white mb-2">Ruota lo Smartphone in Verticale</h2>
+        <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
+          La navigazione di No Excuses è ottimizzata per la modalità verticale. La modalità orizzontale si attiva automaticamente durante il workout.
+        </p>
+      </div>
+    );
+  }
+
+  return null;
+};
+
 function App() {
   const { isPasswordRecovery } = useAuth();
 
@@ -87,6 +126,7 @@ function App() {
       {/* Modal globale per il reset password — visibile solo dopo click su link email di recupero */}
       {isPasswordRecovery && <ResetPasswordModal />}
       <Router>
+        <OrientationWatcher />
         <ActiveWorkoutBanner />
         <Routes>
         {/* Public Routes */}

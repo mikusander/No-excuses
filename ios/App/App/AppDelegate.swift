@@ -5,6 +5,13 @@ import Capacitor
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    
+    // Default orientation is strictly portrait throughout the app
+    static var orientationLock: UIInterfaceOrientationMask = .portrait
+
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        return AppDelegate.orientationLock
+    }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
@@ -40,5 +47,71 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                                           sessionRole: connectingSceneSession.role)
         config.delegateClass = SceneDelegate.self
         return config
+    }
+}
+
+/**
+ * AppOrientationPlugin — Bridge nativo Capacitor per controllare l'orientamento dello schermo.
+ * Permette di sbloccare la rotazione in orizzontale durante il workout e bloccarla
+ * rigorosamente in verticale in tutte le altre sezioni dell'app.
+ */
+@objc(AppOrientationPlugin)
+public class AppOrientationPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "AppOrientationPlugin"
+    public let jsName = "AppOrientationPlugin"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "lockPortrait", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "unlockForWorkout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lockLandscape", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc func lockPortrait(_ call: CAPPluginCall) {
+        AppDelegate.orientationLock = .portrait
+        DispatchQueue.main.async {
+            if #available(iOS 16.0, *) {
+                if let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+                    let geometryPreferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .portrait)
+                    windowScene.requestGeometryUpdate(geometryPreferences) { _ in }
+                }
+                UIViewController.attemptRotationToDeviceOrientation()
+            } else {
+                UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
+                UIViewController.attemptRotationToDeviceOrientation()
+            }
+            call.resolve(["mode": "portrait"])
+        }
+    }
+
+    @objc func unlockForWorkout(_ call: CAPPluginCall) {
+        AppDelegate.orientationLock = [.portrait, .landscapeLeft, .landscapeRight]
+        DispatchQueue.main.async {
+            if #available(iOS 16.0, *) {
+                if let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+                    let geometryPreferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: [.portrait, .landscapeLeft, .landscapeRight])
+                    windowScene.requestGeometryUpdate(geometryPreferences) { _ in }
+                }
+                UIViewController.attemptRotationToDeviceOrientation()
+            } else {
+                UIViewController.attemptRotationToDeviceOrientation()
+            }
+            call.resolve(["mode": "unlocked"])
+        }
+    }
+
+    @objc func lockLandscape(_ call: CAPPluginCall) {
+        AppDelegate.orientationLock = [.landscapeLeft, .landscapeRight]
+        DispatchQueue.main.async {
+            if #available(iOS 16.0, *) {
+                if let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+                    let geometryPreferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .landscapeRight)
+                    windowScene.requestGeometryUpdate(geometryPreferences) { _ in }
+                }
+                UIViewController.attemptRotationToDeviceOrientation()
+            } else {
+                UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+                UIViewController.attemptRotationToDeviceOrientation()
+            }
+            call.resolve(["mode": "landscape"])
+        }
     }
 }
