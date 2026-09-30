@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Flame, Activity } from 'lucide-react';
+import { PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Flame, Activity, Save, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
@@ -145,6 +145,8 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
   const [editableExercises, setEditableExercises] = useState<PreviewExercise[]>([]);
   const [latestExerciseNotes, setLatestExerciseNotes] = useState<Record<string, string>>({});
   const [isSavingAndStarting, setIsSavingAndStarting] = useState(false);
+  const [isSavingOnly, setIsSavingOnly] = useState(false);
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [activeCheckpoints, setActiveCheckpoints] = useState<WorkoutProgressCheckpointMeta[]>([]);
 
   const initialExercisesJsonRef = useRef<string>('');
@@ -332,8 +334,47 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
     });
   };
 
+  const handleSaveOnly = async () => {
+    if (!workoutPreview || isSavingOnly || isSavingAndStarting) return;
+    const schedaId = Number(workoutPreview.id);
+    if (!Number.isFinite(schedaId)) return;
+
+    try {
+      setIsSavingOnly(true);
+      setPreviewError(null);
+      void hapticMedium();
+
+      await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
+      initialExercisesJsonRef.current = JSON.stringify(editableExercises);
+      setSaveSuccessMessage('Modifiche salvate con successo!');
+      setTimeout(() => setSaveSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Error saving workout changes:', err);
+      setPreviewError(err?.message || 'Errore durante il salvataggio.');
+    } finally {
+      setIsSavingOnly(false);
+    }
+  };
+
+  const handleClose = async () => {
+    void hapticLight();
+    const hasChanged = JSON.stringify(editableExercises) !== initialExercisesJsonRef.current;
+    if (hasChanged && workoutPreview) {
+      const schedaId = Number(workoutPreview.id);
+      if (Number.isFinite(schedaId)) {
+        try {
+          await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
+          initialExercisesJsonRef.current = JSON.stringify(editableExercises);
+        } catch (err) {
+          console.error('Error auto-saving workout edits on close:', err);
+        }
+      }
+    }
+    onClose();
+  };
+
   const handleSaveAndStart = async () => {
-    if (!workoutPreview || isSavingAndStarting) return;
+    if (!workoutPreview || isSavingAndStarting || isSavingOnly) return;
     const schedaId = Number(workoutPreview.id);
     if (!Number.isFinite(schedaId)) return;
 
@@ -344,6 +385,7 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
       const hasChanged = JSON.stringify(editableExercises) !== initialExercisesJsonRef.current;
       if (hasChanged) {
         await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
+        initialExercisesJsonRef.current = JSON.stringify(editableExercises);
       }
 
       const currentCheckpoints = user?.id ? getValidWorkoutProgressCheckpoints(user.id) : [];
@@ -371,7 +413,7 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-5 animate-in fade-in duration-200"
-      onClick={onClose}
+      onClick={() => void handleClose()}
     >
       <div
         className="w-full max-w-2xl bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl shadow-2xl max-h-[88vh] overflow-hidden flex flex-col"
@@ -405,10 +447,7 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
           </div>
 
           <button
-            onClick={() => {
-              void hapticLight();
-              onClose();
-            }}
+            onClick={() => void handleClose()}
             className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors shrink-0"
             title="Chiudi anteprima"
           >
@@ -430,6 +469,13 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                 </div>
               )}
 
+              {saveSuccessMessage && (
+                <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-semibold text-emerald-300 flex items-center gap-2">
+                  <Check size={16} className="text-emerald-400 shrink-0" />
+                  <span>{saveSuccessMessage}</span>
+                </div>
+              )}
+
               <div className="space-y-4">
                 {editableExercises.map((ex, i) => {
                   const showInlineWeightNearName =
@@ -441,238 +487,261 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                   const latestNote = latestExerciseNotes[noteKey] || latestExerciseNotes[noteLegacyKey];
 
                   return (
-                    <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
-                      {ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom' || ex.type === 'pyramid' ? (
-                        <div className="mb-3">
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <span className="font-bold text-lg text-white drop-shadow-md flex items-center min-w-0">
-                              <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                              <Repeat size={16} className="mr-1 shrink-0 text-brand-orange" />
-                              <span className="truncate">{ex.name}</span>
-                            </span>
-                            {ex.type === 'circuit' && (
-                              <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                                CIRCUITO
+                    <React.Fragment key={ex.id || i}>
+                      <div className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
+                        {ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom' || ex.type === 'pyramid' ? (
+                          <div className="mb-3">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <span className="font-bold text-lg text-white drop-shadow-md flex items-center min-w-0">
+                                <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
+                                <Repeat size={16} className="mr-1 shrink-0 text-brand-orange" />
+                                <span className="truncate">{ex.name}</span>
                               </span>
-                            )}
-                            {ex.type === 'superset' && (
-                              <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                                SUPERSET
-                              </span>
-                            )}
-                            {ex.type === 'emom' && (
-                              <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                                EMOM
-                              </span>
-                            )}
-                            {ex.type === 'pyramid' && (
-                              <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                                PYRAMID
-                              </span>
-                            )}
-                          </div>
+                              {ex.type === 'circuit' && (
+                                <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                  CIRCUITO
+                                </span>
+                              )}
+                              {ex.type === 'superset' && (
+                                <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                  SUPERSET
+                                </span>
+                              )}
+                              {ex.type === 'emom' && (
+                                <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                  EMOM
+                                </span>
+                              )}
+                              {ex.type === 'pyramid' && (
+                                <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                  PYRAMID
+                                </span>
+                              )}
+                            </div>
 
-                          <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-2 mt-1">
-                            {ex.type === 'pyramid'
-                              ? ex.pyramid_steps?.map((step, sIdx) => (
-                                  <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
-                                    <p className="text-xs font-bold text-brand-grey uppercase">Step {sIdx + 1}</p>
-                                    <div className="grid grid-cols-3 gap-2">
-                                      <InlineNumberInput
-                                        label="Reps"
-                                        value={step.reps}
-                                        onChange={(v) => updatePyramidStepField(i, sIdx, 'reps', v)}
-                                        placeholder="MAX"
-                                      />
-                                      <InlineNumberInput
-                                        label="Rest (s)"
-                                        value={step.rest_seconds}
-                                        onChange={(v) => updatePyramidStepField(i, sIdx, 'rest_seconds', v)}
-                                      />
-                                      <InlineNumberInput
-                                        label="Kg"
-                                        value={0}
-                                        onChange={() => {}}
-                                        isWeight
-                                        weightValue={step.weight_kg}
-                                        onWeightChange={(v) => updatePyramidStepField(i, sIdx, 'weight_kg', v)}
-                                      />
-                                    </div>
-                                  </div>
-                                ))
-                              : ex.subExercises?.map((sub, sIdx) => {
-                                  const subNoteKey = `${i}_${normalizeNoteKey(sub.name)}`;
-                                  const subNoteLegacyKey = `legacy_${normalizeNoteKey(sub.name)}`;
-                                  const subNote = latestExerciseNotes[subNoteKey] || latestExerciseNotes[subNoteLegacyKey];
-
-                                  return (
+                            <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-2 mt-1">
+                              {ex.type === 'pyramid'
+                                ? ex.pyramid_steps?.map((step, sIdx) => (
                                     <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
-                                      <p className="text-xs font-bold text-white">{sub.name}</p>
-                                      <div className="grid grid-cols-2 gap-2">
-                                        {sub.type === 'reps' ? (
-                                          <InlineNumberInput
-                                            label="Reps"
-                                            value={sub.reps}
-                                            onChange={(v) => updateSubExerciseField(i, sIdx, 'reps', v)}
-                                            placeholder="MAX"
-                                          />
-                                        ) : (
-                                          <InlineNumberInput
-                                            label="Time (s)"
-                                            value={sub.duration_seconds}
-                                            onChange={(v) => updateSubExerciseField(i, sIdx, 'duration_seconds', v)}
-                                          />
-                                        )}
+                                      <p className="text-xs font-bold text-brand-grey uppercase">Step {sIdx + 1}</p>
+                                      <div className="grid grid-cols-3 gap-2">
+                                        <InlineNumberInput
+                                          label="Reps"
+                                          value={step.reps}
+                                          onChange={(v) => updatePyramidStepField(i, sIdx, 'reps', v)}
+                                          placeholder="MAX"
+                                        />
+                                        <InlineNumberInput
+                                          label="Rest (s)"
+                                          value={step.rest_seconds}
+                                          onChange={(v) => updatePyramidStepField(i, sIdx, 'rest_seconds', v)}
+                                        />
                                         <InlineNumberInput
                                           label="Kg"
                                           value={0}
                                           onChange={() => {}}
                                           isWeight
-                                          weightValue={sub.weight_kg}
-                                          onWeightChange={(v) => updateSubExerciseField(i, sIdx, 'weight_kg', v)}
+                                          weightValue={step.weight_kg}
+                                          onWeightChange={(v) => updatePyramidStepField(i, sIdx, 'weight_kg', v)}
                                         />
                                       </div>
-                                      {subNote && (
-                                        <div className="text-xs text-brand-grey italic pl-2 border-l border-brand-orange/30">
-                                          "{subNote}"
-                                        </div>
-                                      )}
                                     </div>
-                                  );
-                                })}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="font-bold text-lg text-white truncate max-w-[70%] drop-shadow-md flex items-center">
-                            <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                            {ex.name}
-                          </span>
-                          <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
-                            {ex.type === 'cardio' ? (
-                              <Activity size={12} className="mr-1 text-rose-400" />
-                            ) : ex.type === 'isometry' ? (
-                              <Timer size={12} className="mr-1 text-brand-orange" />
-                            ) : (
-                              <Repeat size={12} className="mr-1 text-brand-orange" />
-                            )}
-                            {ex.type === 'cardio' ? 'CARDIO' : ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
-                          </div>
-                        </div>
-                      )}
+                                  ))
+                                : ex.subExercises?.map((sub, sIdx) => {
+                                    const subNoteKey = `${i}_${normalizeNoteKey(sub.name)}`;
+                                    const subNoteLegacyKey = `legacy_${normalizeNoteKey(sub.name)}`;
+                                    const subNote = latestExerciseNotes[subNoteKey] || latestExerciseNotes[subNoteLegacyKey];
 
-                      <div
-                        className={`grid ${
-                          ex.type === 'pyramid'
-                            ? 'grid-cols-1'
-                            : ex.type === 'superset' || ex.type === 'circuit'
-                            ? 'grid-cols-2'
-                            : ex.type === 'emom'
-                            ? 'grid-cols-2 sm:grid-cols-4'
-                            : showInlineWeightNearName
-                            ? 'grid-cols-2 min-[450px]:grid-cols-3'
-                            : 'grid-cols-2 min-[450px]:grid-cols-4'
-                        } gap-2 text-xs text-brand-grey font-bold w-full mt-2`}
-                      >
-                        {ex.type === 'pyramid' ? (
-                          <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                            <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Steps</span>
-                            <span className="text-sm text-white">{ex.pyramid_steps?.length || 0}</span>
+                                    return (
+                                      <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
+                                        <p className="text-xs font-bold text-white">{sub.name}</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          {sub.type === 'reps' ? (
+                                            <InlineNumberInput
+                                              label="Reps"
+                                              value={sub.reps}
+                                              onChange={(v) => updateSubExerciseField(i, sIdx, 'reps', v)}
+                                              placeholder="MAX"
+                                            />
+                                          ) : (
+                                            <InlineNumberInput
+                                              label="Time (s)"
+                                              value={sub.duration_seconds}
+                                              onChange={(v) => updateSubExerciseField(i, sIdx, 'duration_seconds', v)}
+                                            />
+                                          )}
+                                          <InlineNumberInput
+                                            label="Kg"
+                                            value={0}
+                                            onChange={() => {}}
+                                            isWeight
+                                            weightValue={sub.weight_kg}
+                                            onWeightChange={(v) => updateSubExerciseField(i, sIdx, 'weight_kg', v)}
+                                          />
+                                        </div>
+                                        {subNote && (
+                                          <div className="text-xs text-brand-grey italic pl-2 border-l border-brand-orange/30">
+                                            "{subNote}"
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                            </div>
                           </div>
                         ) : (
-                          <InlineNumberInput
-                            label={
-                              ex.type === 'circuit'
-                                ? 'Giri'
-                                : ex.type === 'superset'
-                                ? 'Round'
-                                : ex.type === 'emom'
-                                ? 'Sets'
-                                : 'Sets'
-                            }
-                            value={ex.sets}
-                            onChange={(v) => updateExerciseField(i, 'sets', Math.max(1, v))}
-                          />
-                        )}
-
-                        {ex.type === 'emom' && (
-                          <>
-                            <InlineNumberInput
-                              label="Rounds"
-                              value={ex.emom_rounds || 1}
-                              onChange={(v) => updateExerciseField(i, 'emom_rounds', Math.max(1, v))}
-                            />
-                            <InlineNumberInput
-                              label="Time/Rnd (s)"
-                              value={ex.emom_round_duration || ex.duration_seconds}
-                              onChange={(v) => {
-                                updateExerciseField(i, 'emom_round_duration', Math.max(1, v));
-                                updateExerciseField(i, 'duration_seconds', Math.max(1, v));
-                              }}
-                            />
-                          </>
-                        )}
-
-                        {ex.type !== 'superset' &&
-                          ex.type !== 'circuit' &&
-                          ex.type !== 'pyramid' &&
-                          ex.type !== 'emom' && (
-                            <InlineNumberInput
-                              label={(ex.type === 'isometry' || ex.type === 'cardio') ? 'Duration (s)' : 'Reps'}
-                              value={(ex.type === 'isometry' || ex.type === 'cardio') ? ex.duration_seconds : ex.reps}
-                              onChange={(v) =>
-                                updateExerciseField(i, (ex.type === 'isometry' || ex.type === 'cardio') ? 'duration_seconds' : 'reps', v)
-                              }
-                              placeholder={(ex.type === 'isometry' || ex.type === 'cardio') ? 'MAX' : 'MAX'}
-                            />
-                          )}
-
-                        {ex.type !== 'pyramid' && (
-                          <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-2 rounded-lg text-center flex flex-col justify-center">
-                            <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
-                              <Clock size={9} className="mr-1" /> Rest (s)
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-bold text-lg text-white truncate max-w-[70%] drop-shadow-md flex items-center">
+                              <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
+                              {ex.name}
                             </span>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              value={ex.rest_seconds > 0 ? String(ex.rest_seconds) : ''}
-                              onChange={(e) =>
-                                updateExerciseField(i, 'rest_seconds', parseNumericInput(e.target.value, 0))
-                              }
-                              placeholder="0"
-                              className="w-full bg-transparent text-sm text-brand-lightOrange text-center outline-none font-bold"
-                            />
+                            <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
+                              {ex.type === 'cardio' ? (
+                                <Activity size={12} className="mr-1 text-rose-400" />
+                              ) : ex.type === 'isometry' ? (
+                                <Timer size={12} className="mr-1 text-brand-orange" />
+                              ) : (
+                                <Repeat size={12} className="mr-1 text-brand-orange" />
+                              )}
+                              {ex.type === 'cardio' ? 'CARDIO' : ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
+                            </div>
                           </div>
                         )}
 
-                        {!showInlineWeightNearName &&
-                          ex.type !== 'superset' &&
-                          ex.type !== 'circuit' &&
-                          ex.type !== 'emom' &&
-                          ex.type !== 'pyramid' && (
+                        <div
+                          className={`grid ${
+                            ex.type === 'pyramid'
+                              ? 'grid-cols-1'
+                              : ex.type === 'superset' || ex.type === 'circuit'
+                              ? 'grid-cols-2'
+                              : ex.type === 'emom'
+                              ? 'grid-cols-2 sm:grid-cols-4'
+                              : showInlineWeightNearName
+                              ? 'grid-cols-2 min-[450px]:grid-cols-3'
+                              : 'grid-cols-2 min-[450px]:grid-cols-4'
+                          } gap-2 text-xs text-brand-grey font-bold w-full mt-2`}
+                        >
+                          {ex.type === 'pyramid' ? (
+                            <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                              <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Steps</span>
+                              <span className="text-sm text-white">{ex.pyramid_steps?.length || 0}</span>
+                            </div>
+                          ) : (
                             <InlineNumberInput
-                              label="Kg"
-                              value={0}
-                              onChange={() => {}}
-                              isWeight
-                              weightValue={ex.weight_kg}
-                              onWeightChange={(v) => updateExerciseField(i, 'weight_kg', v)}
+                              label={
+                                ex.type === 'circuit'
+                                  ? 'Giri'
+                                  : ex.type === 'superset'
+                                  ? 'Round'
+                                  : ex.type === 'emom'
+                                  ? 'Sets'
+                                  : 'Sets'
+                              }
+                              value={ex.sets}
+                              onChange={(v) => updateExerciseField(i, 'sets', Math.max(1, v))}
                             />
                           )}
+
+                          {ex.type === 'emom' && (
+                            <>
+                              <InlineNumberInput
+                                label="Rounds"
+                                value={ex.emom_rounds || 1}
+                                onChange={(v) => updateExerciseField(i, 'emom_rounds', Math.max(1, v))}
+                              />
+                              <InlineNumberInput
+                                label="Time/Rnd (s)"
+                                value={ex.emom_round_duration || ex.duration_seconds}
+                                onChange={(v) => {
+                                  updateExerciseField(i, 'emom_round_duration', Math.max(1, v));
+                                  updateExerciseField(i, 'duration_seconds', Math.max(1, v));
+                                }}
+                              />
+                            </>
+                          )}
+
+                          {ex.type !== 'superset' &&
+                            ex.type !== 'circuit' &&
+                            ex.type !== 'pyramid' &&
+                            ex.type !== 'emom' && (
+                              <InlineNumberInput
+                                label={(ex.type === 'isometry' || ex.type === 'cardio') ? 'Duration (s)' : 'Reps'}
+                                value={(ex.type === 'isometry' || ex.type === 'cardio') ? ex.duration_seconds : ex.reps}
+                                onChange={(v) =>
+                                  updateExerciseField(i, (ex.type === 'isometry' || ex.type === 'cardio') ? 'duration_seconds' : 'reps', v)
+                                }
+                                placeholder={(ex.type === 'isometry' || ex.type === 'cardio') ? 'MAX' : 'MAX'}
+                              />
+                            )}
+
+                          {ex.type !== 'pyramid' && (
+                            <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-2 rounded-lg text-center flex flex-col justify-center">
+                              <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
+                                <Clock size={9} className="mr-1" /> Rest (s)
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={ex.rest_seconds > 0 ? String(ex.rest_seconds) : ''}
+                                onChange={(e) =>
+                                  updateExerciseField(i, 'rest_seconds', parseNumericInput(e.target.value, 0))
+                                }
+                                placeholder="0"
+                                className="w-full bg-transparent text-sm text-brand-lightOrange text-center outline-none font-bold"
+                              />
+                            </div>
+                          )}
+
+                          {!showInlineWeightNearName &&
+                            ex.type !== 'superset' &&
+                            ex.type !== 'circuit' &&
+                            ex.type !== 'emom' &&
+                            ex.type !== 'pyramid' && (
+                              <InlineNumberInput
+                                label="Kg"
+                                value={0}
+                                onChange={() => {}}
+                                isWeight
+                                weightValue={ex.weight_kg}
+                                onWeightChange={(v) => updateExerciseField(i, 'weight_kg', v)}
+                              />
+                            )}
+                        </div>
+
+                        {latestNote && (
+                          <div className="mt-4 px-4 py-3 bg-black/40 rounded-xl border border-white/5 relative">
+                            <div className="absolute -top-2 left-4 bg-brand-dark px-2">
+                              <span className="text-[9px] uppercase tracking-widest font-bold text-brand-grey/80 flex items-center gap-1">
+                                <Pencil size={10} />
+                                Last time you wrote
+                              </span>
+                            </div>
+                            <span className="text-sm text-brand-grey italic">"{latestNote}"</span>
+                          </div>
+                        )}
                       </div>
 
-                      {latestNote && (
-                        <div className="mt-4 px-4 py-3 bg-black/40 rounded-xl border border-white/5 relative">
-                          <div className="absolute -top-2 left-4 bg-brand-dark px-2">
-                            <span className="text-[9px] uppercase tracking-widest font-bold text-brand-grey/80 flex items-center gap-1">
-                              <Pencil size={10} />
-                              Last time you wrote
-                            </span>
+                      {/* Transition Rest Timer between exercises */}
+                      {i < editableExercises.length - 1 && (
+                        <div className="my-2.5 flex items-center justify-center">
+                          <div className="inline-flex items-center gap-2 bg-[#252528] hover:bg-[#2C2C30] border border-white/10 hover:border-brand-orange/40 px-3.5 py-1.5 rounded-full transition-all text-xs shadow-sm">
+                            <Clock size={12} className="text-brand-orange shrink-0" />
+                            <span className="text-[11px] font-semibold text-zinc-300">Pausa tra esercizi:</span>
+                            <div className="flex items-center gap-1 bg-black/50 border border-white/10 rounded-lg px-2 py-0.5">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={ex.transition_rest_seconds && ex.transition_rest_seconds > 0 ? String(ex.transition_rest_seconds) : ''}
+                                onChange={(e) => updateExerciseField(i, 'transition_rest_seconds', parseNumericInput(e.target.value, 0))}
+                                placeholder="0"
+                                className="w-10 bg-transparent text-center text-xs font-black text-brand-orange outline-none"
+                              />
+                              <span className="text-[10px] text-zinc-400 font-bold">s</span>
+                            </div>
                           </div>
-                          <span className="text-sm text-brand-grey italic">"{latestNote}"</span>
                         </div>
                       )}
-                    </div>
+                    </React.Fragment>
                   );
                 })}
 
@@ -687,25 +756,43 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
         </div>
 
         {/* Footer CTA */}
-        <div className="p-5 border-t border-white/10 shrink-0">
+        <div className="p-4 sm:p-5 border-t border-white/10 shrink-0 flex items-center gap-3">
           <button
-            onClick={() => void handleSaveAndStart()}
-            disabled={editableExercises.length === 0 || previewLoading || isSavingAndStarting}
-            className="w-full bg-brand-orange hover:bg-brand-lightOrange text-black font-black py-4 px-5 rounded-full flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer shadow-lg shadow-brand-orange/20 active:scale-[0.98]"
+            onClick={() => void handleSaveOnly()}
+            disabled={editableExercises.length === 0 || previewLoading || isSavingOnly || isSavingAndStarting}
+            className="flex-1 bg-white/10 hover:bg-white/15 text-white font-bold py-3.5 px-4 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98] border border-white/10 text-sm"
           >
-            {isSavingAndStarting ? (
+            {isSavingOnly ? (
               <>
-                <Loader2 size={20} className="mr-2 animate-spin" />
-                {isActive ? 'Salvataggio e ripresa in corso...' : 'Salvataggio e avvio in corso...'}
-              </>
-            ) : isActive ? (
-              <>
-                <PlayCircle size={20} className="mr-2 fill-current" />
-                Salva modifiche e Riprendi
+                <Loader2 size={16} className="mr-2 animate-spin text-brand-orange" />
+                Salvataggio...
               </>
             ) : (
               <>
-                <PlayCircle size={20} className="mr-2" />
+                <Save size={16} className="mr-2 text-brand-orange" />
+                Salva
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={() => void handleSaveAndStart()}
+            disabled={editableExercises.length === 0 || previewLoading || isSavingAndStarting || isSavingOnly}
+            className="flex-[2] bg-brand-orange hover:bg-brand-lightOrange text-black font-black py-3.5 px-5 rounded-full flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer shadow-lg shadow-brand-orange/20 active:scale-[0.98] text-sm"
+          >
+            {isSavingAndStarting ? (
+              <>
+                <Loader2 size={18} className="mr-2 animate-spin" />
+                {isActive ? 'Salvataggio e ripresa...' : 'Avvio in corso...'}
+              </>
+            ) : isActive ? (
+              <>
+                <PlayCircle size={18} className="mr-2 fill-current" />
+                Riprendi Workout
+              </>
+            ) : (
+              <>
+                <PlayCircle size={18} className="mr-2" />
                 Start Workout
               </>
             )}

@@ -345,6 +345,23 @@ const formatTime = (secs: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+const normalizeDurationSeconds = (value: unknown): number => {
+  const normalized = Math.trunc(Number(value));
+  if (!Number.isFinite(normalized) || normalized < 0) return 0;
+  return normalized;
+};
+
+const getTargetIsometry = (ex?: Exercise | null, subEx?: any): number => {
+  if (!ex) return 0;
+  if ((ex.type === 'superset' || ex.type === 'circuit') && (subEx?.type === 'isometry' || subEx?.type === 'cardio')) {
+    return Math.max(0, normalizeDurationSeconds(subEx.duration_seconds));
+  }
+  if (ex.type === 'isometry' || ex.type === 'cardio') {
+    return Math.max(0, normalizeDurationSeconds(ex.duration_seconds));
+  }
+  return 0;
+};
+
 const ActiveWorkoutPage: React.FC = () => {
   const VOICE_ASSIST_KEY = 'voice_assistance_enabled';
   const { id, workoutRunId } = useParams<{ id?: string; workoutRunId?: string }>();
@@ -610,12 +627,6 @@ const ActiveWorkoutPage: React.FC = () => {
     utterance.rate = 1;
     utterance.pitch = 1;
     synth.speak(utterance);
-  };
-
-  const normalizeDurationSeconds = (value: number) => {
-    const normalized = Math.trunc(Number(value));
-    if (!Number.isFinite(normalized) || normalized < 0) return 0;
-    return normalized;
   };
 
   const computeRemainingFromEndsAt = (endsAtMs: number | null) => {
@@ -1291,7 +1302,13 @@ const ActiveWorkoutPage: React.FC = () => {
     subIdx?: number
   ): number | undefined => {
     const key = getPerformanceKey(exIdx, exercise, subIdx);
-    return recordedMaxPerformanceRef.current[key]?.[setIdx];
+    const cleanName = (exercise.name || '').trim().toLowerCase();
+    const subSuffix = subIdx != null ? `_sub_${subIdx}` : '';
+    return (
+      recordedMaxPerformanceRef.current[key]?.[setIdx] ??
+      recordedMaxPerformanceRef.current[`idx_${exIdx}${subSuffix}`]?.[setIdx] ??
+      (cleanName ? recordedMaxPerformanceRef.current[`name_${cleanName}${subSuffix}`]?.[setIdx] : undefined)
+    );
   };
 
   const setLoggedPerformanceForSet = (
@@ -1302,15 +1319,28 @@ const ActiveWorkoutPage: React.FC = () => {
     subIdx?: number
   ) => {
     const key = getPerformanceKey(exIdx, exercise, subIdx);
+    const cleanName = (exercise.name || '').trim().toLowerCase();
+    const subSuffix = subIdx != null ? `_sub_${subIdx}` : '';
     const safeVal = Math.max(0, Math.trunc(value));
+
     setRecordedMaxPerformance((prev) => {
-      const next = {
+      const next: Record<string, Record<number, number>> = {
         ...prev,
         [key]: {
           ...(prev[key] || {}),
           [setIdx]: safeVal,
         },
+        [`idx_${exIdx}${subSuffix}`]: {
+          ...(prev[`idx_${exIdx}${subSuffix}`] || {}),
+          [setIdx]: safeVal,
+        },
       };
+      if (cleanName) {
+        next[`name_${cleanName}${subSuffix}`] = {
+          ...(prev[`name_${cleanName}${subSuffix}`] || {}),
+          [setIdx]: safeVal,
+        };
+      }
       recordedMaxPerformanceRef.current = next;
       return next;
     });
@@ -1413,6 +1443,20 @@ const ActiveWorkoutPage: React.FC = () => {
       }
     });
 
+    // Mappatura canonica anche delle performance MAX su ogni esercizio del workout
+    const activeRecordedMax: Record<string, Record<number, number>> = { ...recordedMaxPerformanceRef.current };
+    workout.exercises.forEach((ex, exIdx) => {
+      const canonicalKey = getPerformanceKey(exIdx, ex);
+      const perfData = activeRecordedMax[canonicalKey];
+      if (perfData && Object.keys(perfData).length > 0) {
+        activeRecordedMax[`idx_${exIdx}`] = perfData;
+        const cleanName = (ex.name || '').trim().toLowerCase();
+        if (cleanName) {
+          activeRecordedMax[`name_${cleanName}`] = perfData;
+        }
+      }
+    });
+
     const payload: PersistedWorkoutProgressPayload = {
       version: 1,
       savedAtMs: now,
@@ -1446,7 +1490,7 @@ const ActiveWorkoutPage: React.FC = () => {
         workoutName: workout.name,
         currentExerciseName: safeExercise?.name,
         totalSets: safeExercise?.sets,
-        recordedMaxPerformance: recordedMaxPerformanceRef.current,
+        recordedMaxPerformance: activeRecordedMax,
       },
     };
 
@@ -1493,8 +1537,21 @@ const ActiveWorkoutPage: React.FC = () => {
       if (totalExercises === 0) return false;
 
       const state = parsedPayload.state;
-      const safeExerciseIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentExerciseIdx), totalExercises - 1));
-      const safeExercise = nextWorkout.exercises[safeExerciseIdx];
+      let safeExerciseIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentExerciseIdx), totalExercises - 1));
+      let safeExercise = nextWorkout.exercises[safeExerciseIdx];
+
+      // Se il nome salvato differisce da quello all'indice salvato (es. inserito un nuovo esercizio prima o cambiata sequenza),
+      // cerchiamo la corrispondenza per nome nel nuovo workout per riprendere dal punto esatto
+      const savedExName = String(state.currentExerciseName || '').trim().toLowerCase();
+      if (savedExName && safeExercise && safeExercise.name.trim().toLowerCase() !== savedExName) {
+        const matchedIdx = nextWorkout.exercises.findIndex(
+          (ex) => ex.name.trim().toLowerCase() === savedExName
+        );
+        if (matchedIdx !== -1) {
+          safeExerciseIdx = matchedIdx;
+          safeExercise = nextWorkout.exercises[matchedIdx];
+        }
+      }
       if (!safeExercise) return false;
 
       const safeSetIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentSetIdx), Math.max(0, (safeExercise.sets || 1) - 1)));
@@ -1714,8 +1771,25 @@ const ActiveWorkoutPage: React.FC = () => {
       }
 
       if (state.recordedMaxPerformance) {
-        setRecordedMaxPerformance(state.recordedMaxPerformance);
-        recordedMaxPerformanceRef.current = state.recordedMaxPerformance;
+        const restoredMaxPerformance: Record<string, Record<number, number>> = { ...state.recordedMaxPerformance };
+        // Rimappa sui nuovi ID degli esercizi di nextWorkout (anche se gli ID esecuzioni sono stati rigenerati dal database)
+        nextWorkout.exercises.forEach((ex, exIdx) => {
+          const cleanName = (ex.name || '').trim().toLowerCase();
+          const existingData =
+            restoredMaxPerformance[String(ex.id)] ||
+            restoredMaxPerformance[`idx_${exIdx}`] ||
+            (cleanName ? restoredMaxPerformance[`name_${cleanName}`] : undefined);
+
+          if (existingData) {
+            restoredMaxPerformance[String(ex.id)] = existingData;
+            restoredMaxPerformance[`idx_${exIdx}`] = existingData;
+            if (cleanName) {
+              restoredMaxPerformance[`name_${cleanName}`] = existingData;
+            }
+          }
+        });
+        setRecordedMaxPerformance(restoredMaxPerformance);
+        recordedMaxPerformanceRef.current = restoredMaxPerformance;
       }
 
       setExerciseNotesByKey(safeNotes);
@@ -3526,12 +3600,6 @@ const ActiveWorkoutPage: React.FC = () => {
     } finally {
       setIsSavingExerciseEdit(false);
     }
-  };
-
-  const getTargetIsometry = (ex: Exercise, subEx: any) => {
-    if ((ex.type === 'superset' || ex.type === 'circuit') && (subEx?.type === 'isometry' || subEx?.type === 'cardio')) return subEx.duration_seconds;
-    if (ex.type === 'isometry' || ex.type === 'cardio') return ex.duration_seconds;
-    return 0;
   };
 
   const toSafeTargetInt = (value: unknown) => {

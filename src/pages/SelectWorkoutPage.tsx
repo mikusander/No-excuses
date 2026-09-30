@@ -175,11 +175,6 @@ const SelectWorkoutPage: React.FC = () => {
 
   const openWorkoutPreview = (workout: Workout) => {
     void hapticLight();
-    if (isWorkoutActive(workout.id)) {
-      void hapticMedium();
-      navigate(`/active-workout/${workout.id}`);
-      return;
-    }
     setSelectedWorkout(workout);
   };
 
@@ -307,7 +302,17 @@ const SelectWorkoutPage: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="bg-brand-orange/10 group-hover:bg-brand-orange text-brand-orange group-hover:text-black p-3 rounded-full transition-colors shrink-0">
+                      <div
+                        onClick={(e) => {
+                          if (isWorkoutActive(workout.id)) {
+                            e.stopPropagation();
+                            void hapticMedium();
+                            navigate(`/active-workout/${workout.id}`);
+                          }
+                        }}
+                        className="bg-brand-orange/10 group-hover:bg-brand-orange text-brand-orange group-hover:text-black p-3 rounded-full transition-colors shrink-0"
+                        title={isWorkoutActive(workout.id) ? "Riprendi subito l'allenamento" : "Dettagli allenamento"}
+                      >
                         {isWorkoutActive(workout.id) ? (
                           <Flame size={28} className="text-brand-orange group-hover:text-black animate-pulse" />
                         ) : (

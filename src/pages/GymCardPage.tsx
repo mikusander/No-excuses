@@ -141,6 +141,7 @@ interface ExerciseQuickEditDraft {
   reps: string;
   duration_seconds: string;
   rest_seconds: string;
+  transition_rest_seconds: string;
   weight_kg: string;
   emom_rounds: string;
   emom_round_duration: string;
@@ -602,6 +603,7 @@ const GymCardPage: React.FC = () => {
       reps: String(targetExercise.reps || 1),
       duration_seconds: String(targetExercise.duration_seconds || 1),
       rest_seconds: String(targetExercise.rest_seconds || 0),
+      transition_rest_seconds: String(targetExercise.transition_rest_seconds || 0),
       weight_kg: formatWeightDraft(targetExercise.weight_kg),
       emom_rounds: String(targetExercise.emom_rounds || 1),
       emom_round_duration: String(targetExercise.emom_round_duration || targetExercise.duration_seconds || 60),
@@ -663,6 +665,7 @@ const GymCardPage: React.FC = () => {
         throw new Error('Selected exercise not found.');
       }
 
+      const nextTransitionRest = parseStrictInt(draft.transition_rest_seconds || '0', 'Pausa tra esercizi', true);
       let updatedExercise: Exercise = currentExercise;
 
       if (draft.type === 'reps' || draft.type === 'isometry' || draft.type === 'cardio') {
@@ -678,6 +681,7 @@ const GymCardPage: React.FC = () => {
           .update({
             set_num: nextSets,
             rest_secondi: nextRest > 0 ? nextRest : null,
+            rest_tra_esercizi: nextTransitionRest > 0 ? nextTransitionRest : null,
             peso_kg: nextWeight,
             reps: isDuration ? null : nextReps,
             durata_secondi: isDuration ? nextDuration : null,
@@ -691,6 +695,7 @@ const GymCardPage: React.FC = () => {
           type: draft.type,
           sets: nextSets,
           rest_seconds: nextRest,
+          transition_rest_seconds: nextTransitionRest,
           weight_kg: nextWeight,
           reps: nextReps,
           duration_seconds: nextDuration,
@@ -717,6 +722,7 @@ const GymCardPage: React.FC = () => {
           .update({
             set_num: nextRounds,
             rest_secondi: nextRest > 0 ? nextRest : null,
+            rest_tra_esercizi: nextTransitionRest > 0 ? nextTransitionRest : null,
           })
           .eq('id_scheda', schedaId)
           .eq('id_superset', Number(draft.id));
@@ -751,6 +757,7 @@ const GymCardPage: React.FC = () => {
           ...currentExercise,
           sets: nextRounds,
           rest_seconds: nextRest,
+          transition_rest_seconds: nextTransitionRest,
           subExercises: normalizedSubs.map((sub) => ({
             name: sub.name,
             type: sub.type,
@@ -786,6 +793,7 @@ const GymCardPage: React.FC = () => {
           .update({
             set_num: nextSets,
             rest_secondi: nextRest > 0 ? nextRest : null,
+            rest_tra_esercizi: nextTransitionRest > 0 ? nextTransitionRest : null,
           })
           .eq('id_scheda', schedaId)
           .eq('id_emom', Number(draft.id));
@@ -820,6 +828,7 @@ const GymCardPage: React.FC = () => {
           ...currentExercise,
           sets: nextSets,
           rest_seconds: nextRest,
+          transition_rest_seconds: nextTransitionRest,
           emom_rounds: nextRounds,
           emom_round_duration: nextRoundDuration,
           duration_seconds: nextRoundDuration,
@@ -853,8 +862,18 @@ const GymCardPage: React.FC = () => {
           if (stepUpdateError) throw stepUpdateError;
         }
 
+        const { error: pyramidRestError } = await supabase
+          .from('esecuzioni')
+          .update({
+            rest_tra_esercizi: nextTransitionRest > 0 ? nextTransitionRest : null,
+          })
+          .eq('id_scheda', schedaId)
+          .eq('id_piramide', Number(draft.id));
+        if (pyramidRestError) throw pyramidRestError;
+
         updatedExercise = {
           ...currentExercise,
+          transition_rest_seconds: nextTransitionRest,
           pyramid_steps: normalizedSteps,
         };
       }
@@ -1652,7 +1671,8 @@ const GymCardPage: React.FC = () => {
                   (ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom') && (ex.subExercises?.length || 0) > 1;
 
                 return (
-                <div key={ex.id || i} className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
+                <React.Fragment key={ex.id || i}>
+                  <div className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <span className="text-[10px] uppercase tracking-wider font-bold text-brand-grey/60">
                       Exercise {i + 1}
@@ -1733,7 +1753,17 @@ const GymCardPage: React.FC = () => {
                     )}
                   </div>
                 </div>
-              )})}
+
+                {i < selectedWorkout.exercises.length - 1 && ex.transition_rest_seconds && ex.transition_rest_seconds > 0 ? (
+                  <div className="my-1.5 flex items-center justify-center">
+                    <div className="inline-flex items-center gap-1.5 bg-[#1C1C1E] border border-brand-orange/30 px-3 py-1 rounded-full text-[11px] text-zinc-300 font-semibold shadow-sm">
+                      <Clock size={11} className="text-brand-orange" />
+                      <span>Pausa tra esercizi: <strong className="text-brand-orange">{formatSecs(ex.transition_rest_seconds)}</strong></span>
+                    </div>
+                  </div>
+                ) : null}
+              </React.Fragment>
+            )})}
 
               {(!selectedWorkout.exercises || selectedWorkout.exercises.length === 0) && (
                 <p className="text-sm text-brand-grey/50 italic text-center py-4 bg-black/20 rounded-2xl">No exercises in this workout.</p>
@@ -2146,6 +2176,27 @@ const GymCardPage: React.FC = () => {
                       </label>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {editingExerciseIndex != null && selectedWorkout && editingExerciseIndex < selectedWorkout.exercises.length - 1 && (
+                <div className="flex flex-col bg-black/40 border border-brand-grey/20 rounded-xl p-3.5 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={14} className="text-brand-orange" />
+                    <span className="text-xs font-bold text-white">Pausa tra questo esercizio e il successivo</span>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={exerciseQuickEditDraft.transition_rest_seconds}
+                      onChange={(e) => updateQuickEditField('transition_rest_seconds', e.target.value)}
+                      placeholder="0"
+                      className="w-24 bg-black/60 border border-brand-grey/30 rounded-lg px-3 py-1.5 text-white font-bold text-center focus:border-brand-orange outline-none text-sm"
+                    />
+                    <span className="text-xs text-brand-grey font-semibold">secondi (0 = nessuna pausa)</span>
+                  </div>
                 </div>
               )}
 
