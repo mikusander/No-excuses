@@ -439,11 +439,22 @@ const WorkoutHistoryDetailPage: React.FC = () => {
     const specificNotes = notesGrouped.notesMap.get(key);
     if (specificNotes && specificNotes.length > 0) return specificNotes;
     
-    return notesGrouped.legacyMap.get(normalizeNoteKey(name)) || [];
+    const countWithName = exercises.filter(
+      (ex) => normalizeNoteKey(ex.name) === normalizeNoteKey(name)
+    ).length;
+    if (countWithName <= 1) {
+      return notesGrouped.legacyMap.get(normalizeNoteKey(name)) || [];
+    }
+    return [];
   };
 
   const getNoteTextsForExercise = (exerciseName: string, sourceNotes: string[], index: number) => {
     const targetKey = normalizeNoteKey(exerciseName);
+    const countWithName = exercises.filter(
+      (ex) => normalizeNoteKey(ex.name) === targetKey
+    ).length;
+    const isUnique = countWithName <= 1;
+
     return sourceNotes
       .map((rawNote) => parseTaggedNote(rawNote))
       .filter((parsed): parsed is { orderIndex: number | null; exerciseName: string; text: string } => {
@@ -452,7 +463,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         if (parsed.orderIndex !== null) {
           return parsed.orderIndex === index && normalizeNoteKey(parsed.exerciseName) === targetKey;
         } else {
-          return normalizeNoteKey(parsed.exerciseName) === targetKey;
+          return isUnique && normalizeNoteKey(parsed.exerciseName) === targetKey;
         }
       })
       .map((parsed) => parsed.text);

@@ -507,11 +507,11 @@ const ActiveWorkoutPage: React.FC = () => {
     if (!ex) return undefined;
     const notes = exerciseNotesByKeyRef.current || exerciseNotesByKey;
 
-    // 1. Per ID esercizio primario
+    // 1. Per ID esercizio primario (univoco per singola esecuzione)
     const primaryKey = String(ex.id);
     if (notes[primaryKey]?.note?.trim()) return notes[primaryKey];
 
-    // 2. Per indice posizionale
+    // 2. Per indice posizionale (univoco per la posizione nella scheda)
     const idxKey = `idx_${exIdx}`;
     if (notes[idxKey]?.note?.trim()) return notes[idxKey];
 
@@ -519,23 +519,41 @@ const ActiveWorkoutPage: React.FC = () => {
     const orderKey = `order_${ex.order_index ?? exIdx + 1}`;
     if (notes[orderKey]?.note?.trim()) return notes[orderKey];
 
-    // 4. Per nome esercizio normalizzato
-    const cleanName = (ex.name || '').trim().toLowerCase();
-    const nameKey = cleanName ? `name_${cleanName}` : '';
-    if (nameKey && notes[nameKey]?.note?.trim()) return notes[nameKey];
-
-    // 5. Ricerca flessibile per prefisso "X. " o inclusione del nome
+    // 4. Ricerca per prefisso d'ordine "X. " nel nome memorizzato (es. "1. Plank" vs "4. Plank")
     const orderPrefix = `${exIdx + 1}.`;
-    for (const entry of Object.values(notes)) {
+    for (const [k, entry] of Object.entries(notes)) {
       if (!entry?.note?.trim()) continue;
+      if (k.startsWith('idx_') && k !== idxKey) continue;
+      if (k.startsWith('order_') && k !== orderKey) continue;
       const entryName = (entry.exerciseName || '').trim().toLowerCase();
-      if (entryName.startsWith(orderPrefix) || (cleanName && entryName.includes(cleanName))) {
+      if (entryName.startsWith(orderPrefix)) {
         return entry;
       }
     }
 
+    // 5. Fallback per nome SOLO se il nome dell'esercizio è strettamente UNIVOCO nella scheda
+    const cleanName = (ex.name || '').trim().toLowerCase();
+    if (cleanName && workout?.exercises) {
+      const countWithName = workout.exercises.filter(
+        (item) => (item.name || '').trim().toLowerCase() === cleanName
+      ).length;
+      if (countWithName === 1) {
+        const nameKey = `name_${cleanName}`;
+        if (notes[nameKey]?.note?.trim()) return notes[nameKey];
+        for (const [k, entry] of Object.entries(notes)) {
+          if (!entry?.note?.trim()) continue;
+          if (k.startsWith('idx_') && k !== idxKey) continue;
+          if (k.startsWith('order_') && k !== orderKey) continue;
+          const entryName = (entry.exerciseName || '').trim().toLowerCase();
+          if (entryName.includes(cleanName)) {
+            return entry;
+          }
+        }
+      }
+    }
+
     return undefined;
-  }, [exerciseNotesByKey]);
+  }, [exerciseNotesByKey, workout?.exercises]);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [noteModalDraft, setNoteModalDraft] = useState('');
   const [noteModalContext, setNoteModalContext] = useState<NoteModalContext | null>(null);
@@ -1066,6 +1084,11 @@ const ActiveWorkoutPage: React.FC = () => {
     const nameKey = cleanName ? `name_${cleanName}` : '';
     const orderKey = `order_${exercise.order_index ?? _exIdx + 1}`;
 
+    const countWithName = cleanName && workout?.exercises
+      ? workout.exercises.filter((item) => (item.name || '').trim().toLowerCase() === cleanName).length
+      : 0;
+    const isNameUnique = countWithName === 1;
+
     setExerciseNotesByKey((prev) => {
       const resolved = getExerciseNoteEntry(_exIdx, exercise);
       const existing = resolved?.note?.trim() || prev[noteKey]?.note?.trim() || '';
@@ -1094,12 +1117,16 @@ const ActiveWorkoutPage: React.FC = () => {
         [noteKey]: entry,
         [idxKey]: entry,
         [orderKey]: entry,
-        ...(nameKey ? { [nameKey]: entry } : {}),
       };
+      if (isNameUnique && nameKey) {
+        nextNotes[nameKey] = entry;
+      } else if (nameKey) {
+        delete nextNotes[nameKey];
+      }
       exerciseNotesByKeyRef.current = nextNotes;
       return nextNotes;
     });
-  }, [getExerciseNoteEntry]);
+  }, [getExerciseNoteEntry, workout?.exercises]);
 
   const resetCurrentTimerFromContext = () => {
     if (isResting) {
@@ -1304,10 +1331,15 @@ const ActiveWorkoutPage: React.FC = () => {
     const key = getPerformanceKey(exIdx, exercise, subIdx);
     const cleanName = (exercise.name || '').trim().toLowerCase();
     const subSuffix = subIdx != null ? `_sub_${subIdx}` : '';
+    const isNameUnique = Boolean(
+      cleanName &&
+      workout?.exercises &&
+      workout.exercises.filter((item) => (item.name || '').trim().toLowerCase() === cleanName).length === 1
+    );
     return (
       recordedMaxPerformanceRef.current[key]?.[setIdx] ??
       recordedMaxPerformanceRef.current[`idx_${exIdx}${subSuffix}`]?.[setIdx] ??
-      (cleanName ? recordedMaxPerformanceRef.current[`name_${cleanName}${subSuffix}`]?.[setIdx] : undefined)
+      (isNameUnique ? recordedMaxPerformanceRef.current[`name_${cleanName}${subSuffix}`]?.[setIdx] : undefined)
     );
   };
 
@@ -1336,10 +1368,18 @@ const ActiveWorkoutPage: React.FC = () => {
         },
       };
       if (cleanName) {
-        next[`name_${cleanName}${subSuffix}`] = {
-          ...(prev[`name_${cleanName}${subSuffix}`] || {}),
-          [setIdx]: safeVal,
-        };
+        const isNameUnique = Boolean(
+          workout?.exercises &&
+          workout.exercises.filter((item) => (item.name || '').trim().toLowerCase() === cleanName).length === 1
+        );
+        if (isNameUnique) {
+          next[`name_${cleanName}${subSuffix}`] = {
+            ...(prev[`name_${cleanName}${subSuffix}`] || {}),
+            [setIdx]: safeVal,
+          };
+        } else {
+          delete next[`name_${cleanName}${subSuffix}`];
+        }
       }
       recordedMaxPerformanceRef.current = next;
       return next;
@@ -1438,7 +1478,14 @@ const ActiveWorkoutPage: React.FC = () => {
         safeExerciseNotesByKey[`order_${ex.order_index ?? exIdx + 1}`] = canonical;
         const cleanName = (ex.name || '').trim().toLowerCase();
         if (cleanName) {
-          safeExerciseNotesByKey[`name_${cleanName}`] = canonical;
+          const countWithName = workout.exercises.filter(
+            (item) => (item.name || '').trim().toLowerCase() === cleanName
+          ).length;
+          if (countWithName === 1) {
+            safeExerciseNotesByKey[`name_${cleanName}`] = canonical;
+          } else {
+            delete safeExerciseNotesByKey[`name_${cleanName}`];
+          }
         }
       }
     });
@@ -1452,7 +1499,14 @@ const ActiveWorkoutPage: React.FC = () => {
         activeRecordedMax[`idx_${exIdx}`] = perfData;
         const cleanName = (ex.name || '').trim().toLowerCase();
         if (cleanName) {
-          activeRecordedMax[`name_${cleanName}`] = perfData;
+          const countWithName = workout.exercises.filter(
+            (item) => (item.name || '').trim().toLowerCase() === cleanName
+          ).length;
+          if (countWithName === 1) {
+            activeRecordedMax[`name_${cleanName}`] = perfData;
+          } else {
+            delete activeRecordedMax[`name_${cleanName}`];
+          }
         }
       }
     });
@@ -1709,24 +1763,67 @@ const ActiveWorkoutPage: React.FC = () => {
       nextWorkout.exercises.forEach((ex, exIdx) => {
         const cleanExName = (ex.name || '').trim().toLowerCase();
         const orderPrefix = `${exIdx + 1}.`;
+        const countWithName = cleanExName
+          ? nextWorkout.exercises.filter((item) => (item.name || '').trim().toLowerCase() === cleanExName).length
+          : 0;
+        const isNameUnique = countWithName === 1;
 
-        for (const [k, entry] of Object.entries(rawNotes)) {
-          if (!entry?.note?.trim()) continue;
-          const entryName = (entry.exerciseName || '').trim().toLowerCase();
-          const matchesName = cleanExName && entryName.includes(cleanExName);
-          const matchesOrder = entryName.startsWith(orderPrefix);
-          const matchesIdxKey = k === `idx_${exIdx}` || k === `order_${exIdx + 1}`;
+        let foundEntry: ExerciseNoteEntry | undefined = undefined;
 
-          if (matchesName || matchesOrder || matchesIdxKey) {
-            const canonicalEntry: ExerciseNoteEntry = {
-              exerciseName: `${exIdx + 1}. ${ex.name}`,
-              note: entry.note.trim(),
-            };
-            safeNotes[String(ex.id)] = canonicalEntry;
-            safeNotes[`idx_${exIdx}`] = canonicalEntry;
-            safeNotes[`order_${ex.order_index ?? exIdx + 1}`] = canonicalEntry;
-            if (cleanExName) safeNotes[`name_${cleanExName}`] = canonicalEntry;
-            break;
+        // 1. Per ID esatto
+        if (rawNotes[String(ex.id)]?.note?.trim()) {
+          foundEntry = rawNotes[String(ex.id)];
+        }
+        // 2. Per chiave indice o ordine
+        else if (rawNotes[`idx_${exIdx}`]?.note?.trim()) {
+          foundEntry = rawNotes[`idx_${exIdx}`];
+        } else if (rawNotes[`order_${ex.order_index ?? exIdx + 1}`]?.note?.trim()) {
+          foundEntry = rawNotes[`order_${ex.order_index ?? exIdx + 1}`];
+        }
+        // 3. Per prefisso d'ordine nel nome (es. "1. Plank")
+        else {
+          for (const [k, entry] of Object.entries(rawNotes)) {
+            if (!entry?.note?.trim()) continue;
+            if (k.startsWith('idx_') && k !== `idx_${exIdx}`) continue;
+            if (k.startsWith('order_') && k !== `order_${ex.order_index ?? exIdx + 1}`) continue;
+            const entryName = (entry.exerciseName || '').trim().toLowerCase();
+            if (entryName.startsWith(orderPrefix)) {
+              foundEntry = entry;
+              break;
+            }
+          }
+        }
+
+        // 4. Fallback per nome SOLO se il nome dell'esercizio è strettamente univoco nella scheda
+        if (!foundEntry && isNameUnique && cleanExName) {
+          if (rawNotes[`name_${cleanExName}`]?.note?.trim()) {
+            foundEntry = rawNotes[`name_${cleanExName}`];
+          } else {
+            for (const [k, entry] of Object.entries(rawNotes)) {
+              if (!entry?.note?.trim()) continue;
+              if (k.startsWith('idx_') && k !== `idx_${exIdx}`) continue;
+              if (k.startsWith('order_') && k !== `order_${ex.order_index ?? exIdx + 1}`) continue;
+              const entryName = (entry.exerciseName || '').trim().toLowerCase();
+              if (entryName.includes(cleanExName)) {
+                foundEntry = entry;
+                break;
+              }
+            }
+          }
+        }
+
+        if (foundEntry?.note?.trim()) {
+          const canonicalEntry: ExerciseNoteEntry = {
+            exerciseName: `${exIdx + 1}. ${ex.name}`,
+            note: foundEntry.note.trim(),
+          };
+          safeNotes[String(ex.id)] = canonicalEntry;
+          safeNotes[`idx_${exIdx}`] = canonicalEntry;
+          safeNotes[`order_${ex.order_index ?? exIdx + 1}`] = canonicalEntry;
+          if (isNameUnique && cleanExName) {
+            safeNotes[`name_${cleanExName}`] = canonicalEntry;
+          } else if (cleanExName) {
+            delete safeNotes[`name_${cleanExName}`];
           }
         }
       });
@@ -1775,16 +1872,23 @@ const ActiveWorkoutPage: React.FC = () => {
         // Rimappa sui nuovi ID degli esercizi di nextWorkout (anche se gli ID esecuzioni sono stati rigenerati dal database)
         nextWorkout.exercises.forEach((ex, exIdx) => {
           const cleanName = (ex.name || '').trim().toLowerCase();
+          const countWithName = cleanName
+            ? nextWorkout.exercises.filter((item) => (item.name || '').trim().toLowerCase() === cleanName).length
+            : 0;
+          const isNameUnique = countWithName === 1;
+
           const existingData =
             restoredMaxPerformance[String(ex.id)] ||
             restoredMaxPerformance[`idx_${exIdx}`] ||
-            (cleanName ? restoredMaxPerformance[`name_${cleanName}`] : undefined);
+            (isNameUnique && cleanName ? restoredMaxPerformance[`name_${cleanName}`] : undefined);
 
           if (existingData) {
             restoredMaxPerformance[String(ex.id)] = existingData;
             restoredMaxPerformance[`idx_${exIdx}`] = existingData;
-            if (cleanName) {
+            if (isNameUnique && cleanName) {
               restoredMaxPerformance[`name_${cleanName}`] = existingData;
+            } else if (cleanName) {
+              delete restoredMaxPerformance[`name_${cleanName}`];
             }
           }
         });
@@ -2600,11 +2704,12 @@ const ActiveWorkoutPage: React.FC = () => {
               if (!existing.includes('A sfinimento:')) {
                 const updatedNote = existing ? `${existing} | ${summaryLine}` : summaryLine;
                 const newEntry = {
-                  exerciseName: ex.name,
+                  exerciseName: `${exIdx + 1}. ${ex.name}`,
                   note: updatedNote,
                 };
                 currentNotes[String(ex.id)] = newEntry;
                 currentNotes[`idx_${exIdx}`] = newEntry;
+                currentNotes[`order_${ex.order_index ?? exIdx + 1}`] = newEntry;
               }
             }
           }
@@ -2615,14 +2720,16 @@ const ActiveWorkoutPage: React.FC = () => {
     const seenNoteTexts = new Set<string>();
     const rowsToInsert: { id_workout: number; testo: string }[] = [];
 
-    // 1. Inserisci prima le note abbinate agli esercizi attuali
+    // 1. Inserisci prima le note abbinate agli esercizi attuali con indice d'ordine per evitare collisioni di nome
     if (workout?.exercises) {
       workout.exercises.forEach((ex, exIdx) => {
         const entry = getExerciseNoteEntry(exIdx, ex);
         if (entry?.note?.trim()) {
-          const fullText = `[${ex.name}] ${entry.note.trim()}`;
+          const fullText = `[${exIdx + 1}. ${ex.name}] ${entry.note.trim()}`;
+          const legacyText = `[${ex.name}] ${entry.note.trim()}`;
           if (!seenNoteTexts.has(fullText) && fullText.length > 3) {
             seenNoteTexts.add(fullText);
+            seenNoteTexts.add(legacyText);
             rowsToInsert.push({
               id_workout: workoutRunId,
               testo: fullText,
@@ -3269,6 +3376,11 @@ const ActiveWorkoutPage: React.FC = () => {
         const cleanName = (currentExercise.name || '').trim().toLowerCase();
         const nameKey = cleanName ? `name_${cleanName}` : '';
 
+        const countWithName = cleanName && workout?.exercises
+          ? workout.exercises.filter((item) => (item.name || '').trim().toLowerCase() === cleanName).length
+          : 0;
+        const isNameUnique = countWithName === 1;
+
         if (!trimmedExerciseNote) {
           delete next[primaryKey];
           delete next[idxKey];
@@ -3276,13 +3388,17 @@ const ActiveWorkoutPage: React.FC = () => {
           if (nameKey) delete next[nameKey];
         } else {
           const entry = {
-            exerciseName: noteModalContext.name,
+            exerciseName: `${currentExerciseIdx + 1}. ${currentExercise.name || noteModalContext.name}`,
             note: trimmedExerciseNote,
           };
           next[primaryKey] = entry;
           next[idxKey] = entry;
           next[orderKey] = entry;
-          if (nameKey) next[nameKey] = entry;
+          if (isNameUnique && nameKey) {
+            next[nameKey] = entry;
+          } else if (nameKey) {
+            delete next[nameKey];
+          }
         }
         exerciseNotesByKeyRef.current = next;
         return next;

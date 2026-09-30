@@ -482,9 +482,11 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                     (ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom') &&
                     (ex.subExercises?.length || 0) > 1;
 
-                  const noteKey = `${i}_${normalizeNoteKey(ex.name)}`;
-                  const noteLegacyKey = `legacy_${normalizeNoteKey(ex.name)}`;
-                  const latestNote = latestExerciseNotes[noteKey] || latestExerciseNotes[noteLegacyKey];
+                  const cleanName = normalizeNoteKey(ex.name);
+                  const isNameUnique = editableExercises.filter(item => normalizeNoteKey(item.name) === cleanName).length === 1;
+                  const noteKey = `${i}_${cleanName}`;
+                  const noteLegacyKey = `legacy_${cleanName}`;
+                  const latestNote = latestExerciseNotes[noteKey] || (isNameUnique ? latestExerciseNotes[noteLegacyKey] : undefined);
 
                   return (
                     <React.Fragment key={ex.id || i}>
@@ -548,9 +550,12 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                                     </div>
                                   ))
                                 : ex.subExercises?.map((sub, sIdx) => {
-                                    const subNoteKey = `${i}_${normalizeNoteKey(sub.name)}`;
-                                    const subNoteLegacyKey = `legacy_${normalizeNoteKey(sub.name)}`;
-                                    const subNote = latestExerciseNotes[subNoteKey] || latestExerciseNotes[subNoteLegacyKey];
+                                    const cleanSubName = normalizeNoteKey(sub.name);
+                                    const allSubNames = (ex.subExercises || []).map((s) => normalizeNoteKey(s.name));
+                                    const isSubNameUnique = allSubNames.filter((name) => name === cleanSubName).length === 1;
+                                    const subNoteKey = `${i}_${cleanSubName}`;
+                                    const subNoteLegacyKey = `legacy_${cleanSubName}`;
+                                    const subNote = latestExerciseNotes[subNoteKey] || (isSubNameUnique ? latestExerciseNotes[subNoteLegacyKey] : undefined);
 
                                     return (
                                       <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
