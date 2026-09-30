@@ -74,7 +74,7 @@ import {
   type WorkoutFolder,
   type FolderAssignmentMap,
 } from '../utils/folderManager';
-import { hapticLight } from '../utils/haptics';
+import { hapticLight, hapticMedium } from '../utils/haptics';
 import WorkoutPreviewModal from '../components/WorkoutPreviewModal';
 
 interface Workout {
@@ -175,6 +175,11 @@ const SelectWorkoutPage: React.FC = () => {
 
   const openWorkoutPreview = (workout: Workout) => {
     void hapticLight();
+    if (isWorkoutActive(workout.id)) {
+      void hapticMedium();
+      navigate(`/active-workout/${workout.id}`);
+      return;
+    }
     setSelectedWorkout(workout);
   };
 

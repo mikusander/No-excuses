@@ -1383,8 +1383,8 @@ const ActiveWorkoutPage: React.FC = () => {
     const safeCurrentEmomRoundIdx = safeExercise.type === 'emom'
       ? Math.max(0, Math.min(currentEmomRoundIdx, Math.max(0, (safeExercise.emom_rounds || 1) - 1)))
       : 0;
-
-    const safeExerciseNotesByKey = Object.entries(exerciseNotesByKey).reduce<Record<string, ExerciseNoteEntry>>((acc, [key, value]) => {
+    const activeNotes = exerciseNotesByKeyRef.current || exerciseNotesByKey;
+    const safeExerciseNotesByKey = Object.entries(activeNotes).reduce<Record<string, ExerciseNoteEntry>>((acc, [key, value]) => {
       const normalizedKey = String(key || '').trim();
       const note = String(value?.note || '').trim();
       if (!normalizedKey || !note) return acc;
@@ -3210,6 +3210,7 @@ const ActiveWorkoutPage: React.FC = () => {
           next[orderKey] = entry;
           if (nameKey) next[nameKey] = entry;
         }
+        exerciseNotesByKeyRef.current = next;
         return next;
       });
     }

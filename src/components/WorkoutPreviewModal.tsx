@@ -346,7 +346,10 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
         await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
       }
 
-      const isCurrentSchedaActive = isWorkoutActive(workoutPreview.id);
+      const currentCheckpoints = user?.id ? getValidWorkoutProgressCheckpoints(user.id) : [];
+      const isCurrentSchedaActive = currentCheckpoints.some(
+        (cp) => cp.identity.type === 'scheda' && cp.identity.id === schedaId
+      );
       if (!isCurrentSchedaActive && user?.id) {
         clearAllWorkoutProgressCheckpoints(user.id);
       }

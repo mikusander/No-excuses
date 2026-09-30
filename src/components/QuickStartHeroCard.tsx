@@ -52,10 +52,6 @@ const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
         navigate(`/active-workout-history/${activeCheckpoint.identity.id}`);
         return;
       }
-      if (onQuickStartScheda) {
-        onQuickStartScheda(activeCheckpoint.identity.id, activeCheckpoint.workoutName);
-        return;
-      }
       navigate(`/active-workout/${activeCheckpoint.identity.id}`);
       return;
     }
