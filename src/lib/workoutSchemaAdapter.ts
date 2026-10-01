@@ -134,9 +134,11 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
 
     if (row.id_superset) {
       const key = `superset:${row.id_superset}`;
+      const supersetRecord = Array.isArray(row.superset) ? row.superset[0] : row.superset;
+      const supersetSets = Math.max(1, toSafeInt(supersetRecord?.round_totali, sets));
       const isCircuitFromMeta =
         noteMeta.meta?.groupCategory === 'circuit' ||
-        String(row?.superset?.tipo_gruppo || row?.tipo_gruppo || '').toLowerCase() === 'circuit' ||
+        String(supersetRecord?.tipo_gruppo || row?.tipo_gruppo || '').toLowerCase() === 'circuit' ||
         (jsonPayload && (jsonPayload.group_category === 'circuit' || jsonPayload.type === 'circuit'));
 
       if (!grouped.has(key)) {
@@ -148,7 +150,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             group_category: isCircuitFromMeta ? 'circuit' : 'superset',
             tracking_mode: isCircuitFromMeta ? 'stopwatch' : 'reps_load',
             name: isCircuitFromMeta ? 'Circuito' : 'Superset',
-            sets: Math.max(1, toSafeInt(row?.superset?.round_totali, sets)),
+            sets: supersetSets,
             reps: 0,
             duration_seconds: 0,
             rest_seconds: restSeconds,
@@ -164,6 +166,9 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         });
       }
       const g = grouped.get(key)!;
+      if (supersetRecord?.round_totali) {
+        g.ex.sets = Math.max(g.ex.sets || 1, toSafeInt(supersetRecord.round_totali, 1));
+      }
       if (isCircuitFromMeta) {
         g.ex.type = 'circuit';
         g.ex.group_category = 'circuit';
@@ -216,6 +221,10 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
 
     if (row.id_emom) {
       const key = `emom:${row.id_emom}`;
+      const emomRecord = Array.isArray(row.emom) ? row.emom[0] : row.emom;
+      const totalRounds = Math.max(1, toSafeInt(emomRecord?.round_totali, sets));
+      const roundDuration = Math.max(1, toSafeInt(emomRecord?.durata_round_secondi, 60));
+
       if (!grouped.has(key)) {
         grouped.set(key, {
           ex: {
@@ -224,13 +233,13 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             name: 'EMOM Circuit',
             sets,
             reps: 0,
-            duration_seconds: Math.max(1, toSafeInt(row?.emom?.durata_round_secondi, 60)),
+            duration_seconds: roundDuration,
             rest_seconds: restSeconds,
             transition_rest_seconds: transitionRestSeconds,
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
-            emom_rounds: Math.max(1, toSafeInt(row?.emom?.round_totali, 1)),
-            emom_round_duration: Math.max(1, toSafeInt(row?.emom?.durata_round_secondi, 60)),
+            emom_rounds: totalRounds,
+            emom_round_duration: roundDuration,
             subExercises: [],
             instruction_note: toOptionalNote(row.note_esercizio),
           },
@@ -240,6 +249,13 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         });
       }
       const g = grouped.get(key)!;
+      if (emomRecord?.round_totali) {
+        g.ex.emom_rounds = Math.max(g.ex.emom_rounds || 1, toSafeInt(emomRecord.round_totali, 1));
+      }
+      if (emomRecord?.durata_round_secondi) {
+        g.ex.emom_round_duration = Math.max(g.ex.emom_round_duration || 60, toSafeInt(emomRecord.durata_round_secondi, 60));
+        g.ex.duration_seconds = g.ex.emom_round_duration;
+      }
       g.order = Math.min(g.order, orderIndex);
       g.ex.order_index = g.order;
       g.ex.transition_rest_seconds = Math.max(0, Math.max(g.ex.transition_rest_seconds || 0, transitionRestSeconds));

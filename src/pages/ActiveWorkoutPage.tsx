@@ -327,9 +327,14 @@ const toSnapshotExercises = (raw: unknown): Exercise[] => {
           ? undefined
           : Math.max(0, Math.trunc(toSafeSnapshotNumber(item.total_circuit_duration_seconds, 0))),
         order_index: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.order_index, idx))),
-        emom_rounds: item.emom_rounds == null ? undefined : Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_rounds, 1))),
+        emom_rounds:
+          item.emom_rounds != null && toSafeSnapshotNumber(item.emom_rounds, 0) > 0
+            ? Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_rounds, 1)))
+            : (type === 'emom' && item.sets ? Math.max(1, Math.trunc(toSafeSnapshotNumber(item.sets, 1))) : undefined),
         emom_round_duration:
-          item.emom_round_duration == null ? undefined : Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_round_duration, 1))),
+          item.emom_round_duration == null
+            ? (type === 'emom' ? 60 : undefined)
+            : Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_round_duration, 1))),
         pyramid_steps: pyramidSteps,
         subExercises,
       } satisfies Exercise;
@@ -342,6 +347,14 @@ const formatTime = (secs: number) => {
   const m = Math.floor(normalized / 60);
   const s = normalized % 60;
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+const getEffectiveEmomRounds = (ex?: Exercise | null): number => {
+  if (!ex) return 1;
+  const rawRounds = ex.emom_rounds != null && ex.emom_rounds > 0
+    ? ex.emom_rounds
+    : (ex.sets != null && ex.sets > 0 ? ex.sets : 1);
+  return Math.max(1, rawRounds);
 };
 
 const normalizeDurationSeconds = (value: unknown): number => {
@@ -691,7 +704,9 @@ const ActiveWorkoutPage: React.FC = () => {
       const isLastSetOfCurrent =
         currentEx.type === 'pyramid'
           ? currentPyramidStepIdx >= (currentEx.pyramid_steps?.length || 1) - 1
-          : currentSetIdx >= (currentEx.sets || 1) - 1;
+          : currentEx.type === 'emom'
+            ? currentEmomRoundIdx >= getEffectiveEmomRounds(currentEx) - 1
+            : currentSetIdx >= (currentEx.sets || 1) - 1;
 
       // Se stiamo passando al prossimo esercizio (per override esplicito, per pendingExerciseAdvance o perché era l'ultimo set)
       const isTransitioningToNext =
@@ -710,6 +725,9 @@ const ActiveWorkoutPage: React.FC = () => {
           setInfo = `Giro 1 di ${totalSets}`;
         } else if (nextEx.type === 'superset') {
           setInfo = `Round 1 di ${totalSets}`;
+        } else if (nextEx.type === 'emom') {
+          const totalRounds = getEffectiveEmomRounds(nextEx);
+          setInfo = `Round 1 di ${totalRounds}`;
         } else if (nextEx.type === 'pyramid') {
           const totalSteps = nextEx.pyramid_steps?.length || 1;
           const step = nextEx.pyramid_steps?.[0];
@@ -748,13 +766,22 @@ const ActiveWorkoutPage: React.FC = () => {
         };
       }
 
-      // Recupero tra serie standard (reps, isometria, emom)
+      // Recupero tra round di EMOM
+      if (currentEx.type === 'emom') {
+        const totalRounds = getEffectiveEmomRounds(currentEx);
+        return {
+          nextExerciseName: currentEx.name,
+          nextSetInfo: `Round ${currentEmomRoundIdx + 2} di ${totalRounds}`,
+        };
+      }
+
+      // Recupero tra serie standard (reps, isometria)
       return {
         nextExerciseName: currentEx.name,
         nextSetInfo: `Set ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
       };
     },
-    [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSetIdx]
+    [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSetIdx, currentEmomRoundIdx]
   );
 
   const startRestCountdown = (
@@ -1435,7 +1462,7 @@ const ActiveWorkoutPage: React.FC = () => {
       ? Math.max(0, Math.min(currentPyramidStepIdx, Math.max(0, (safeExercise.pyramid_steps?.length || 1) - 1)))
       : 0;
     const safeCurrentEmomRoundIdx = safeExercise.type === 'emom'
-      ? Math.max(0, Math.min(currentEmomRoundIdx, Math.max(0, (safeExercise.emom_rounds || 1) - 1)))
+      ? Math.max(0, Math.min(currentEmomRoundIdx, Math.max(0, getEffectiveEmomRounds(safeExercise) - 1)))
       : 0;
     const activeNotes = exerciseNotesByKeyRef.current || exerciseNotesByKey;
     const safeExerciseNotesByKey = Object.entries(activeNotes).reduce<Record<string, ExerciseNoteEntry>>((acc, [key, value]) => {
@@ -1606,7 +1633,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
       const rawEmomRoundIdx = normalizeDurationSeconds(state.currentEmomRoundIdx);
       const safeEmomRoundIdx = safeExercise.type === 'emom'
-        ? Math.max(0, Math.min(rawEmomRoundIdx, Math.max(0, (safeExercise.emom_rounds || 1) - 1)))
+        ? Math.max(0, Math.min(rawEmomRoundIdx, Math.max(0, getEffectiveEmomRounds(safeExercise) - 1)))
         : 0;
 
       const elapsedSinceSaveSeconds = Math.max(0, Math.trunc((Date.now() - savedAtMs) / 1000));
@@ -1664,7 +1691,7 @@ const ActiveWorkoutPage: React.FC = () => {
         ? Math.max(0, Math.min(targetPyramidStepIdx, Math.max(0, (effectiveExercise.pyramid_steps?.length || 1) - 1)))
         : 0;
       const effectiveEmomRoundIdx = effectiveExercise.type === 'emom'
-        ? Math.max(0, Math.min(targetEmomRoundIdx, Math.max(0, (effectiveExercise.emom_rounds || 1) - 1)))
+        ? Math.max(0, Math.min(targetEmomRoundIdx, Math.max(0, getEffectiveEmomRounds(effectiveExercise) - 1)))
         : 0;
 
       const effectiveIsometryTarget = getTargetIsometry(effectiveExercise, effectiveExercise.subExercises?.[effectiveSubIdx]);
@@ -2018,7 +2045,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isResting) skipRest();
     else if (workout?.exercises[currentExerciseIdx]?.type === 'emom') {
       const ex = workout.exercises[currentExerciseIdx];
-      if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
+      if (currentEmomRoundIdx < getEffectiveEmomRounds(ex) - 1) {
         speakCue('next round');
         setCurrentEmomRoundIdx(prev => prev + 1);
         setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
@@ -2883,7 +2910,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
         const ex = workout?.exercises[currentExerciseIdx];
         if (ex && ex.type === 'emom') {
-          if (currentEmomRoundIdx < (ex.emom_rounds || 1) - 1) {
+          if (currentEmomRoundIdx < getEffectiveEmomRounds(ex) - 1) {
             if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
               playRestFinishedSound();
             }
@@ -3066,7 +3093,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const isLastExercise = currentExerciseIdx === workout.exercises.length - 1;
   const isLastSet = currentSetIdx === currentExercise.sets - 1;
   const isEmom = currentExercise.type === 'emom';
-  const isLastEmomRound = currentEmomRoundIdx === (currentExercise.emom_rounds || 1) - 1;
+  const effectiveEmomRounds = getEffectiveEmomRounds(currentExercise);
+  const isLastEmomRound = currentEmomRoundIdx === effectiveEmomRounds - 1;
   const totalEmomRoundDuration = Math.max(1, currentExercise.emom_round_duration || 60);
   const emomRoundProgressRatio = Math.max(0, Math.min(1, emomRoundRemaining / totalEmomRoundDuration));
   const isPyramid = currentExercise.type === 'pyramid';
@@ -3278,7 +3306,7 @@ const ActiveWorkoutPage: React.FC = () => {
       reps: formatTargetDraft(currentExercise.reps),
       durationSeconds: formatTargetDraft(currentExercise.duration_seconds),
       weightKg: formatWeightDraft(currentExercise.weight_kg),
-      emomRounds: String(currentExercise.emom_rounds || 1),
+      emomRounds: String(effectiveEmomRounds),
       emomRoundDuration: String(currentExercise.emom_round_duration || 60),
       currentSubReps: formatTargetDraft(currentSub?.reps),
       currentSubDuration: formatTargetDraft(currentSub?.duration_seconds),
@@ -3788,7 +3816,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (exercise.type === 'emom') {
       return [
         `${exercise.sets || 1} sets`,
-        `${exercise.emom_rounds || 1} rounds`,
+        `${getEffectiveEmomRounds(exercise)} rounds`,
         `${formatTime(exercise.emom_round_duration || 60)} per round`,
       ];
     }
@@ -3972,7 +4000,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const completeSet = () => {
     if (currentExercise.type === 'emom') {
       // Skipping round manually via button
-      if (currentEmomRoundIdx < (currentExercise.emom_rounds || 1) - 1) {
+      if (currentEmomRoundIdx < effectiveEmomRounds - 1) {
         speakCue('next round');
         setCurrentEmomRoundIdx(prev => prev + 1);
         setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
@@ -4081,7 +4109,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isResting || isNoteModalOpen || isInstructionModalOpen || isEditExerciseModalOpen) return;
 
     if (currentExercise.type === 'emom') {
-      const rounds = Math.max(1, currentExercise.emom_rounds || 1);
+      const rounds = effectiveEmomRounds;
       if (currentEmomRoundIdx >= rounds - 1) return;
       stopEmomCountdown();
       setCurrentEmomRoundIdx((prev) => Math.min(rounds - 1, prev + 1));
@@ -5504,7 +5532,9 @@ const ActiveWorkoutPage: React.FC = () => {
                       ? `Es. ${currentExerciseIdx + 2} di ${workout.exercises.length}`
                       : currentExercise.type === 'pyramid'
                         ? `Step ${currentPyramidStepIdx + 2} di ${currentExercise.pyramid_steps?.length || 1}`
-                        : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} di ${currentExercise.sets}`}
+                        : currentExercise.type === 'emom'
+                          ? `Round ${currentEmomRoundIdx + 2} di ${effectiveEmomRounds}`
+                          : `${isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'} ${currentSetIdx + 2} di ${currentExercise.sets}`}
                   </span>
                 </div>
               </div>
@@ -5735,51 +5765,84 @@ const ActiveWorkoutPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Segmented Set Tracker */}
+              {/* Segmented Set/Round Tracker */}
               <div className="flex justify-center items-center gap-1 px-1">
-                {Array.from({ length: currentExercise.sets || 1 }).map((_, i) => (
+                {Array.from({ length: isEmom ? effectiveEmomRounds : (currentExercise.sets || 1) }).map((_, i) => (
                   <button
                     key={i}
                     type="button"
-                    onClick={() => setCurrentSetIdx(i)}
+                    onClick={() => isEmom ? setCurrentEmomRoundIdx(i) : setCurrentSetIdx(i)}
                     className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
-                      i < currentSetIdx
+                      (isEmom ? i < currentEmomRoundIdx : i < currentSetIdx)
                         ? 'bg-emerald-500/80 flex-1 max-w-10'
-                        : i === currentSetIdx
+                        : (isEmom ? i === currentEmomRoundIdx : i === currentSetIdx)
                           ? 'bg-brand-orange flex-1 max-w-12 shadow-[0_0_10px_rgba(255,107,0,0.6)] ring-1 ring-brand-orange'
                           : 'bg-white/15 flex-1 max-w-10 hover:bg-white/25'
                     }`}
-                    title={`Set ${i + 1}`}
+                    title={isEmom ? `Round ${i + 1}` : `Set ${i + 1}`}
                   />
                 ))}
               </div>
 
               {/* 3-Column HUD Chips */}
               <div className="w-full grid grid-cols-3 gap-1.5 shrink-0">
-                <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
-                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                    {isEmom || isSuperset ? 'Round' : 'Set'}
-                  </span>
-                  <span className="text-brand-orange font-mono font-black text-sm">
-                    {isEmom
-                      ? `${currentEmomRoundIdx + 1}/${currentExercise.emom_rounds || 1}`
-                      : `${currentSetIdx + 1}/${currentExercise.sets || 1}`}
-                  </span>
-                </div>
+                {isEmom ? (
+                  <>
+                    <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                      <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                        {currentExercise.sets > 1 ? 'Set' : 'Round'}
+                      </span>
+                      <span className="text-brand-orange font-mono font-black text-sm">
+                        {currentExercise.sets > 1
+                          ? `${currentSetIdx + 1}/${currentExercise.sets}`
+                          : `${currentEmomRoundIdx + 1}/${effectiveEmomRounds}`}
+                      </span>
+                    </div>
 
-                <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
-                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
-                  <span className="text-white font-mono font-black text-xs truncate block" title={currentExecutionWeightLabel}>
-                    {currentExecutionWeightLabel || '-'}
-                  </span>
-                </div>
+                    <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                      <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                        {currentExercise.sets > 1 ? 'Round' : 'Round Totali'}
+                      </span>
+                      <span className="text-white font-mono font-black text-xs truncate block">
+                        {currentExercise.sets > 1
+                          ? `${currentEmomRoundIdx + 1}/${effectiveEmomRounds}`
+                          : `${effectiveEmomRounds} rnd`}
+                      </span>
+                    </div>
 
-                <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
-                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
-                  <span className="text-zinc-300 font-mono font-black text-xs truncate block" title={nextRecoveryLabel}>
-                    {nextRecoveryLabel || '-'}
-                  </span>
-                </div>
+                    <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                      <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Durata Round</span>
+                      <span className="text-zinc-300 font-mono font-black text-xs truncate block">
+                        {currentExercise.emom_round_duration || 60}s
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                      <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                        {isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'}
+                      </span>
+                      <span className="text-brand-orange font-mono font-black text-sm">
+                        {`${currentSetIdx + 1}/${currentExercise.sets || 1}`}
+                      </span>
+                    </div>
+
+                    <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                      <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
+                      <span className="text-white font-mono font-black text-xs truncate block" title={currentExecutionWeightLabel}>
+                        {currentExecutionWeightLabel || '-'}
+                      </span>
+                    </div>
+
+                    <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
+                      <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
+                      <span className="text-zinc-300 font-mono font-black text-xs truncate block" title={nextRecoveryLabel}>
+                        {nextRecoveryLabel || '-'}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -5837,6 +5900,35 @@ const ActiveWorkoutPage: React.FC = () => {
                         <span className="text-[7px] uppercase font-bold block opacity-70">S{sIdx + 1}</span>
                         <span className="text-[11px] font-black font-mono mt-0.5">{step.reps}r</span>
                       </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : isEmom ? (
+              <div className="my-1 overflow-x-auto">
+                <div className="flex gap-1 justify-center">
+                  {Array.from({ length: effectiveEmomRounds }, (_, rIdx) => {
+                    const isCurrent = rIdx === currentEmomRoundIdx;
+                    const isDone = rIdx < currentEmomRoundIdx;
+                    return (
+                      <button
+                        key={rIdx}
+                        type="button"
+                        onClick={() => setCurrentEmomRoundIdx(rIdx)}
+                        className={`py-1 px-1.5 rounded-lg border text-center transition-all flex flex-col items-center justify-center cursor-pointer min-w-[38px] ${
+                          isCurrent
+                            ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-sm'
+                            : isDone
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                              : 'bg-white/5 border-white/5 text-zinc-500 hover:border-white/20'
+                        }`}
+                        title={`Vai al round ${rIdx + 1}`}
+                      >
+                        <span className="text-[7px] uppercase font-bold opacity-70">R{rIdx + 1}</span>
+                        <span className="text-[11px] font-black font-mono mt-0.5">
+                          {isDone ? '✓' : isCurrent ? `${emomRoundRemaining}s` : `${currentExercise.emom_round_duration || 60}s`}
+                        </span>
+                      </button>
                     );
                   })}
                 </div>
@@ -6494,7 +6586,9 @@ const ActiveWorkoutPage: React.FC = () => {
                     ? `Es. ${currentExerciseIdx + 2} di ${workout.exercises.length}`
                     : currentExercise.type === 'pyramid'
                       ? `Step ${currentPyramidStepIdx + 2} di ${currentExercise.pyramid_steps?.length || 1}`
-                      : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} di ${currentExercise.sets}`}
+                      : currentExercise.type === 'emom'
+                        ? `Round ${currentEmomRoundIdx + 2} di ${effectiveEmomRounds}`
+                        : `${isSuperset ? 'Round' : 'Set'} ${currentSetIdx + 2} di ${currentExercise.sets}`}
                 </span>
               </div>
             </div>
@@ -6733,7 +6827,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
           {/* Segmented Set Tracker */}
           <div className="flex justify-center items-center gap-1.5 px-1">
-            {Array.from({ length: isEmom ? (currentExercise.emom_rounds || 1) : (currentExercise.sets || 1) }).map((_, i) => (
+            {Array.from({ length: isEmom ? effectiveEmomRounds : (currentExercise.sets || 1) }).map((_, i) => (
               <button
                 key={i}
                 type="button"
@@ -6753,32 +6847,65 @@ const ActiveWorkoutPage: React.FC = () => {
 
         {/* ZONE 3: CENTRAL FOCUS AREA (Rich, Screen-Filling Dashboard Card) */}
         <div className="flex-1 min-h-0 w-full max-w-lg mx-auto flex flex-col justify-between my-1 bg-gradient-to-b from-brand-darkGrey/90 via-brand-darkGrey/60 to-brand-darkGrey/40 border border-white/10 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-sm">
-          {/* Top HUD Chips: Clean 3-Column Grid (Set/Round, Carico, Recupero) - Stazione removed */}
+          {/* Top HUD Chips: Clean 3-Column Grid */}
           <div className="w-full grid grid-cols-3 gap-2.5 shrink-0 mb-2">
-            <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-              <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                {isEmom || isSuperset ? 'Round' : 'Set'}
-              </span>
-              <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
-                {isEmom
-                  ? `${currentEmomRoundIdx + 1} / ${currentExercise.emom_rounds || 1}`
-                  : `${currentSetIdx + 1} / ${currentExercise.sets || 1}`}
-              </span>
-            </div>
+            {isEmom ? (
+              <>
+                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                    {currentExercise.sets && currentExercise.sets > 1 ? 'Set' : 'Round'}
+                  </span>
+                  <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
+                    {currentExercise.sets && currentExercise.sets > 1
+                      ? `${currentSetIdx + 1} / ${currentExercise.sets}`
+                      : `${currentEmomRoundIdx + 1} / ${effectiveEmomRounds}`}
+                  </span>
+                </div>
 
-            <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-              <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
-              <span className="text-white font-mono font-black text-sm sm:text-base truncate block" title={currentExecutionWeightLabel}>
-                {currentExecutionWeightLabel || '-'}
-              </span>
-            </div>
+                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                    {currentExercise.sets && currentExercise.sets > 1 ? 'Round' : 'Round Totali'}
+                  </span>
+                  <span className="text-white font-mono font-black text-sm sm:text-base truncate block">
+                    {currentExercise.sets && currentExercise.sets > 1
+                      ? `${currentEmomRoundIdx + 1} / ${effectiveEmomRounds}`
+                      : `${effectiveEmomRounds} rnd`}
+                  </span>
+                </div>
 
-            <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-              <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
-              <span className="text-zinc-300 font-mono font-black text-sm sm:text-base truncate block" title={nextRecoveryLabel}>
-                {nextRecoveryLabel || '-'}
-              </span>
-            </div>
+                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Durata Round</span>
+                  <span className="text-zinc-300 font-mono font-black text-sm sm:text-base truncate block">
+                    {currentExercise.emom_round_duration || 60}s
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                    {isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'}
+                  </span>
+                  <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
+                    {`${currentSetIdx + 1} / ${currentExercise.sets || 1}`}
+                  </span>
+                </div>
+
+                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
+                  <span className="text-white font-mono font-black text-sm sm:text-base truncate block" title={currentExecutionWeightLabel}>
+                    {currentExecutionWeightLabel || '-'}
+                  </span>
+                </div>
+
+                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
+                  <span className="text-zinc-300 font-mono font-black text-sm sm:text-base truncate block" title={nextRecoveryLabel}>
+                    {nextRecoveryLabel || '-'}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* DYNAMIC MODE VIEW (Fills the center of the card richly) */}
@@ -6833,7 +6960,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
                         {/* Round Indicator Badge inside dial */}
                         <span className={`${hasEmomTasks ? 'text-[10px] sm:text-xs' : 'text-xs sm:text-sm'} font-black uppercase tracking-[0.2em] text-brand-orange/90 mb-1 z-10 drop-shadow-sm`}>
-                          ROUND {currentEmomRoundIdx + 1} DI {currentExercise.emom_rounds || 1}
+                          ROUND {currentEmomRoundIdx + 1} DI {effectiveEmomRounds}
                         </span>
 
                         {/* Big Countdown Number */}
@@ -6866,16 +6993,16 @@ const ActiveWorkoutPage: React.FC = () => {
                       </div>
 
                       {/* Interactive Round Timeline when no sub-exercises */}
-                      {!hasEmomTasks && (currentExercise.emom_rounds || 1) > 1 && (
+                      {!hasEmomTasks && effectiveEmomRounds > 1 && (
                         <div className="w-full mt-3 px-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 px-0.5">
                             <span>Progressione Round</span>
                             <span className="text-brand-orange font-mono font-black">
-                              {Math.round(((currentEmomRoundIdx + 1) / (currentExercise.emom_rounds || 1)) * 100)}%
+                              {Math.round(((currentEmomRoundIdx + 1) / effectiveEmomRounds) * 100)}%
                             </span>
                           </div>
                           <div className="flex gap-1.5 overflow-x-auto py-1">
-                            {Array.from({ length: currentExercise.emom_rounds || 1 }).map((_, rIdx) => {
+                            {Array.from({ length: effectiveEmomRounds }).map((_, rIdx) => {
                               const isCurrent = rIdx === currentEmomRoundIdx;
                               const isDone = rIdx < currentEmomRoundIdx;
                               return (
