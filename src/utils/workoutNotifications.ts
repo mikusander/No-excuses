@@ -49,6 +49,8 @@ export const isNativeApp = (): boolean => {
 let cachedNativePermission: 'granted' | 'denied' | 'prompt' | null = null;
 let lastScheduledEndsAtMs = 0;
 let lastScheduledAtMs = 0;
+let lastNotificationDeliveredAtMs = 0;
+let lastDeliveredRestTargetEndsAtMs = 0;
 let isSchedulingInProgress = false;
 
 /**
@@ -98,6 +100,7 @@ export const requestNativeNotificationPermission = async (): Promise<boolean> =>
  */
 export const ensureNativeNotificationPermission = async (): Promise<boolean> => {
   if (!isNativeApp() || !areNotificationsEnabled()) return false;
+  if (cachedNativePermission === 'granted') return true;
 
   try {
     const status = await LocalNotifications.checkPermissions();
@@ -128,17 +131,64 @@ export const isNotificationPermissionGranted = (): boolean => {
 export interface RestNotificationPayload {
   nextExerciseName: string;
   nextSetInfo?: string;
+  endsAtMs?: number | null;
 }
 
 /**
- * Feedback aptico al termine del recupero (eseguito in foreground).
+ * Invia la notifica di completamento recupero in modo istantaneo
+ * (usato allo scattare esatto di 00:00 sia in primo piano che allo sblocco).
  */
 export const sendRestFinishedNotification = async ({
-  nextExerciseName: _nextExerciseName,
-  nextSetInfo: _nextSetInfo,
+  nextExerciseName,
+  nextSetInfo,
+  endsAtMs,
 }: RestNotificationPayload): Promise<void> => {
-  if (!isNativeApp()) return;
+  if (!isNativeApp() || !areNotificationsEnabled()) return;
+
+  // Feedback aptico immediato
   void Haptics.notification({ type: NotificationType.Success }).catch(() => {});
+
+  const now = Date.now();
+  // Evita doppi allarmi sonori se la notifica programmata in background è già scattata (entro 1500ms)
+  if (
+    endsAtMs &&
+    lastDeliveredRestTargetEndsAtMs === endsAtMs &&
+    now - lastNotificationDeliveredAtMs < 1500
+  ) {
+    return;
+  }
+
+  lastDeliveredRestTargetEndsAtMs = endsAtMs || now;
+  lastNotificationDeliveredAtMs = now;
+
+  try {
+    const hasPermission = await ensureNativeNotificationPermission();
+    if (!hasPermission) return;
+
+    const title = '⏱️ Recupero Terminato!';
+    const body = nextSetInfo
+      ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
+      : `È ora di iniziare: ${nextExerciseName}`;
+
+    // Consegna immediata (senza oggetto 'schedule' iOS UNUserNotificationCenter consegna all'istante a latenza zero)
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: REST_NOTIFICATION_ID,
+          title,
+          body,
+          sound: typeof window !== 'undefined' && localStorage.getItem('voice_assistance_enabled') === 'false' ? undefined : 'beep.wav',
+          extra: {
+            endsAtMs: endsAtMs || now,
+            nextExerciseName,
+            deliveredAt: now,
+          },
+        },
+      ],
+    });
+  } catch (err) {
+    console.debug('[Capacitor] Errore invio notifica immediata fine recupero:', err);
+  }
 };
 
 /**
@@ -158,13 +208,13 @@ export const scheduleBackgroundRestNotification = async ({
   if (!isNativeApp() || !areNotificationsEnabled()) return;
 
   const now = Date.now();
-  // Se il target è già scaduto o troppo vicino, non schedulare
-  if (endsAtMs <= now + 1000) return;
+  // Se il target è già scaduto o troppo vicino, non schedulare via background
+  if (endsAtMs <= now + 500) return;
 
-  // Evita schedulazioni duplicate ravvicinate per lo stesso intervallo
+  // Evita schedulazioni duplicate identiche per lo stesso intervallo
   if (
     isSchedulingInProgress ||
-    (Math.abs(endsAtMs - lastScheduledEndsAtMs) < 2000 && now - lastScheduledAtMs < 3000)
+    (lastScheduledEndsAtMs === endsAtMs && now - lastScheduledAtMs < 1500)
   ) {
     return;
   }
@@ -180,15 +230,16 @@ export const scheduleBackgroundRestNotification = async ({
       return;
     }
 
-    // Cancella eventuale notifica precedente attiva
-    await LocalNotifications.cancel({ notifications: [{ id: REST_NOTIFICATION_ID }] }).catch(() => {});
-
     const title = '⏱️ Recupero Terminato!';
     const body = nextSetInfo
       ? `Prossimo: ${nextExerciseName} (${nextSetInfo})`
       : `È ora di iniziare: ${nextExerciseName}`;
 
-    const scheduledDate = new Date(endsAtMs);
+    // Compensazione della latenza del kernel iOS (UNUserNotificationCenter timer coalescing):
+    // Su iOS a schermo bloccato / in background le notifiche locali possono subire un ritardo di 1-2 secondi.
+    // Anticipando di 1000ms la sveglia nativa programmata, il suono e il banner arrivano esattamente allo scadere di 00:00.
+    const triggerMs = Math.max(Date.now() + 400, endsAtMs - 1000);
+    const scheduledDate = new Date(triggerMs);
 
     await LocalNotifications.schedule({
       notifications: [
@@ -261,16 +312,15 @@ export const addNotificationActionListener = (
 };
 
 /**
- * Se l'app è in primo piano, rimuove immediatamente qualsiasi notifica consegnata
- * così da evitare che compaia il banner di sistema mentre l'utente è nell'app.
+ * Listener per tracciare la consegna effettiva della notifica di recupero da parte del sistema iOS.
  */
 if (isNativeApp()) {
-  LocalNotifications.addListener('localNotificationReceived', async (notification) => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      try {
-        await LocalNotifications.removeDeliveredNotificationsById({ ids: [notification.id] });
-      } catch {
-        // ignore
+  LocalNotifications.addListener('localNotificationReceived', (notification) => {
+    if (notification.id === REST_NOTIFICATION_ID) {
+      lastNotificationDeliveredAtMs = Date.now();
+      const extraEndsAt = (notification.extra as { endsAtMs?: number } | undefined)?.endsAtMs;
+      if (extraEndsAt) {
+        lastDeliveredRestTargetEndsAtMs = extraEndsAt;
       }
     }
   }).catch(() => {});

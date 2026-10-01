@@ -2785,12 +2785,6 @@ const ActiveWorkoutPage: React.FC = () => {
       setRestRemaining((prev) => (prev === nextRemaining ? prev : nextRemaining));
       pipManager.updateRemaining(nextRemaining);
 
-      // Se l'utente è attualmente dentro l'app (in primo piano) e il recupero sta per scadere (<= 1 secondo):
-      // cancella preventivamente la notifica programmata così non scatta il banner di sistema mentre è nell'app
-      if (nextRemaining <= 1 && typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        closeActiveRestNotifications();
-      }
-
       if (nextRemaining <= 0) {
         if (lastHandledRestCompletionEndsAtMsRef.current === restEndsAtMs) {
           return;
@@ -2801,19 +2795,19 @@ const ActiveWorkoutPage: React.FC = () => {
           clearInterval(intervalId);
           intervalId = null;
         }
+        const expiredRestEndsAtMs = restEndsAtMs;
         setRestEndsAtMs(null);
         stopRestMediaSession();
         pipManager.closePiP();
         if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
           playRestFinishedSound();
         }
-        // Rimuove e cancella qualsiasi notifica di recupero
-        closeActiveRestNotifications();
 
         const upcoming = getUpcomingRestTargetInfo();
         void sendRestFinishedNotification({
           nextExerciseName: upcoming.nextExerciseName,
           nextSetInfo: upcoming.nextSetInfo,
+          endsAtMs: expiredRestEndsAtMs,
         });
 
         if (isWorkoutOverviewModalOpen) {
@@ -4248,7 +4242,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const finishRestAndNextSet = (naturalExpiry = false) => {
-    stopRestCountdown(false);
+    stopRestCountdown(naturalExpiry);
 
     if (pendingExerciseAdvance) {
       setPendingExerciseAdvance(false);
