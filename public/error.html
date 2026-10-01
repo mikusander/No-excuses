@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>No Excuses Dev - Connessione Dev Server</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      margin: 0;
+      padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)) 20px;
+      background-color: #000000;
+      color: #FFFFFF;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .card {
+      background-color: #1C1C1E;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 28px;
+      padding: 32px 24px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+    .icon-badge {
+      width: 68px;
+      height: 68px;
+      border-radius: 22px;
+      background: linear-gradient(135deg, rgba(255, 94, 0, 0.2), rgba(255, 119, 36, 0.08));
+      border: 1px solid rgba(255, 94, 0, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px auto;
+      color: #FF5E00;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 8px 0;
+      color: #FFFFFF;
+    }
+    p.subtitle {
+      font-size: 14px;
+      color: #8E8E93;
+      margin: 0 0 24px 0;
+      line-height: 1.45;
+    }
+    .input-section {
+      text-align: left;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8E8E93;
+      margin-bottom: 8px;
+      padding-left: 4px;
+    }
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    input {
+      background: #2C2C2E;
+      border: 1.5px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 14px 16px;
+      color: #FFFFFF;
+      font-size: 16px;
+      font-weight: 500;
+      width: 100%;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    input:focus {
+      border-color: #FF5E00;
+      box-shadow: 0 0 0 3px rgba(255, 94, 0, 0.25);
+    }
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .btn-connect {
+      background: linear-gradient(135deg, #FF5E00, #FF7724);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 16px;
+      padding: 16px 20px;
+      font-size: 16px;
+      font-weight: 700;
+      width: 100%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(255, 94, 0, 0.35);
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+    .btn-connect:active {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+    .btn-offline {
+      background: rgba(255, 255, 255, 0.08);
+      color: #E5E5EA;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 14px 20px;
+      font-size: 15px;
+      font-weight: 600;
+      width: 100%;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    .btn-offline:active {
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .info-box {
+      margin-top: 24px;
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      text-align: left;
+    }
+    .info-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #FF7724;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .info-list {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 12px;
+      color: #AEAEB2;
+      line-height: 1.6;
+    }
+    .info-list code {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2px 5px;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      color: #FFF;
+    }
+    .status-msg {
+      font-size: 12px;
+      color: #FF453A;
+      margin-top: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-badge">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+        <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+        <line x1="12" y1="20" x2="12.01" y2="20"/>
+      </svg>
+    </div>
+
+    <h1>Dev Server Non Raggiungibile</h1>
+    <p class="subtitle">L'app No Excuses Dev non è riuscita a collegarsi al server Vite in esecuzione sul PC.</p>
+
+    <div class="input-section">
+      <label for="serverInput">Indirizzo IP Dev Server</label>
+      <div class="input-wrapper">
+        <input 
+          type="url" 
+          id="serverInput" 
+          placeholder="http://192.168.1.146:5173" 
+          autocapitalize="none" 
+          autocorrect="off" 
+          spellcheck="false" 
+        />
+      </div>
+      <div id="statusMsg" class="status-msg"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-connect" onclick="handleConnect()">
+        Riconnetti al Dev Server
+      </button>
+      <button class="btn-offline" onclick="handleOffline()">
+        Usa Versione Offline (Locale)
+      </button>
+    </div>
+
+    <div class="info-box">
+      <div class="info-title">Verifiche Rapide</div>
+      <ol class="info-list">
+        <li>Il comando <code>npm run dev</code> deve essere attivo su questo PC.</li>
+        <li>iPhone e PC devono essere connessi alla <strong>stessa rete Wi-Fi</strong>.</li>
+        <li>Se l'indirizzo IP del PC cambia, digitalo sopra e tocca Riconnetti.</li>
+        <li>Su Safari puoi anche navigare a: <code>http://192.168.1.146:5173</code></li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_SERVER = 'http://192.168.1.146:5173';
+    const inputEl = document.getElementById('serverInput');
+    const statusEl = document.getElementById('statusMsg');
+
+    const savedUrl = localStorage.getItem('no_excuses_dev_url') || DEFAULT_SERVER;
+    inputEl.value = savedUrl;
+
+    function handleConnect() {
+      let raw = inputEl.value.trim();
+      if (!raw) raw = DEFAULT_SERVER;
+
+      if (!/^https?:\/\//i.test(raw)) {
+        raw = 'http://' + raw;
+      }
+
+      if (!/:\d+$/.test(raw)) {
+        raw = raw + ':5173';
+      }
+
+      localStorage.setItem('no_excuses_dev_url', raw);
+      statusEl.style.display = 'block';
+      statusEl.style.color = '#FF9F0A';
+      statusEl.textContent = 'Connessione a ' + raw + '...';
+
+      window.location.href = raw;
+    }
+
+    function handleOffline() {
+      window.location.href = 'index.html';
+    }
+  </script>
+</body>
+</html>
