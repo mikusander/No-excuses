@@ -190,6 +190,8 @@ interface ExerciseNoteEntry {
 interface NoteModalContext {
   key: string;
   name: string;
+  exerciseIndex?: number;
+  exercise?: Exercise;
 }
 
 interface InstructionModalItem {
@@ -3113,25 +3115,7 @@ const ActiveWorkoutPage: React.FC = () => {
         : isLastSet
   );
 
-  const getCurrentExerciseNoteContext = () => {
-    const orderStr = `${currentExerciseIdx + 1}`;
-    const exerciseKey = String(currentExercise.id);
-    if (isGroup) {
-      const groupName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
-      return {
-        key: exerciseKey,
-        name: `${orderStr}. ${groupName}`,
-      };
-    }
 
-    const baseName = String(currentExercise.name || '').trim() || `Exercise ${currentExerciseIdx + 1}`;
-    return {
-      key: exerciseKey,
-      name: `${orderStr}. ${baseName}`,
-    };
-  };
-
-  const currentExerciseNoteContext = getCurrentExerciseNoteContext();
   const currentExerciseNoteEntry = getExerciseNoteEntry(currentExerciseIdx, currentExercise);
   const hasCurrentWorkoutNote = Boolean(currentExerciseNoteEntry?.note?.trim());
   const hasGeneralWorkoutNote = Boolean((workoutGeneralNoteRef.current || workoutGeneralNote).trim());
@@ -3339,11 +3323,27 @@ const ActiveWorkoutPage: React.FC = () => {
     setExerciseEditError(null);
   };
 
-  const openCurrentExerciseNoteModal = () => {
-    const existingExerciseNote = getExerciseNoteEntry(currentExerciseIdx, currentExercise)?.note || '';
-    setNoteModalContext(currentExerciseNoteContext);
+  const openExerciseNoteModal = (targetIndex?: number) => {
+    if (!workout?.exercises) return;
+    const targetIdx = targetIndex != null ? targetIndex : currentExerciseIdx;
+    const targetEx = workout.exercises[targetIdx] || currentExercise;
+    const existingExerciseNote = getExerciseNoteEntry(targetIdx, targetEx)?.note || '';
+    const orderStr = `${targetIdx + 1}`;
+    const exerciseKey = String(targetEx.id);
+    const targetName = String(targetEx.name || '').trim() || `Esercizio ${targetIdx + 1}`;
+
+    setNoteModalContext({
+      key: exerciseKey,
+      name: `${orderStr}. ${targetName}`,
+      exerciseIndex: targetIdx,
+      exercise: targetEx,
+    });
     setNoteModalDraft(existingExerciseNote);
     setIsNoteModalOpen(true);
+  };
+
+  const openCurrentExerciseNoteModal = () => {
+    openExerciseNoteModal(currentExerciseIdx);
   };
 
   const closeCurrentExerciseNoteModal = () => {
@@ -3388,12 +3388,15 @@ const ActiveWorkoutPage: React.FC = () => {
   const saveCurrentExerciseNote = () => {
     if (noteModalContext) {
       const trimmedExerciseNote = noteModalDraft.trim();
+      const targetIdx = noteModalContext.exerciseIndex != null ? noteModalContext.exerciseIndex : currentExerciseIdx;
+      const targetEx = noteModalContext.exercise || workout?.exercises[targetIdx] || currentExercise;
+
       setExerciseNotesByKey((prev) => {
         const next = { ...prev };
         const primaryKey = noteModalContext.key;
-        const idxKey = `idx_${currentExerciseIdx}`;
-        const orderKey = `order_${currentExercise.order_index ?? currentExerciseIdx + 1}`;
-        const cleanName = (currentExercise.name || '').trim().toLowerCase();
+        const idxKey = `idx_${targetIdx}`;
+        const orderKey = `order_${targetEx.order_index ?? targetIdx + 1}`;
+        const cleanName = (targetEx.name || '').trim().toLowerCase();
         const nameKey = cleanName ? `name_${cleanName}` : '';
 
         const countWithName = cleanName && workout?.exercises
@@ -3408,7 +3411,7 @@ const ActiveWorkoutPage: React.FC = () => {
           if (nameKey) delete next[nameKey];
         } else {
           const entry = {
-            exerciseName: `${currentExerciseIdx + 1}. ${currentExercise.name || noteModalContext.name}`,
+            exerciseName: `${targetIdx + 1}. ${targetEx.name || noteModalContext.name}`,
             note: trimmedExerciseNote,
           };
           next[primaryKey] = entry;
@@ -3423,6 +3426,10 @@ const ActiveWorkoutPage: React.FC = () => {
         exerciseNotesByKeyRef.current = next;
         return next;
       });
+
+      setTimeout(() => {
+        persistWorkoutProgress(true);
+      }, 50);
     }
 
     void hapticLight();
@@ -4612,13 +4619,16 @@ const ActiveWorkoutPage: React.FC = () => {
   const renderExerciseNoteModal = () => {
     if (!isNoteModalOpen) return null;
     return (
-      <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
+      <div className="fixed inset-0 z-[90] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-md bg-brand-darkGrey/95 border border-white/10 rounded-3xl p-5 shadow-2xl">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h3 className="text-lg font-bold text-white">Note Esercizio</h3>
-              <p className="text-xs text-brand-grey mt-0.5 truncate max-w-[250px]">
-                {noteModalContext?.name || currentExercise.name || 'Esercizio corrente'}
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <FileText size={18} className="text-brand-orange" />
+                <span>Note Esercizio</span>
+              </h3>
+              <p className="text-xs text-brand-grey mt-0.5 truncate max-w-[280px]">
+                {noteModalContext?.name || currentExercise.name || 'Esercizio'}
               </p>
             </div>
             <button
@@ -4856,6 +4866,8 @@ const ActiveWorkoutPage: React.FC = () => {
               const exerciseTitle = String(exercise.name || '').trim() || `Esercizio ${index + 1}`;
               const summary = getWorkoutOverviewSummary(exercise);
               const { progressPct, label: progressLabel } = calculateExerciseProgress(exercise, index);
+              const exerciseNote = getExerciseNoteEntry(index, exercise)?.note?.trim();
+              const hasNote = Boolean(exerciseNote);
 
               return (
                 <div
@@ -5104,7 +5116,17 @@ const ActiveWorkoutPage: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between">
+                    {hasNote && (
+                      <div className="mt-2.5 rounded-xl border border-brand-orange/30 bg-black/40 px-3 py-2 flex items-start gap-2">
+                        <FileText size={13} className="text-brand-orange shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] uppercase font-bold tracking-wider text-brand-orange/90 mb-0.5">Nota Esercizio</p>
+                          <p className="text-xs text-zinc-200 line-clamp-2 leading-relaxed whitespace-pre-wrap">{exerciseNote}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 pt-2.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] font-bold">
                         {isCurrentExercise ? (
                           <span className="text-brand-orange font-black flex items-center gap-1.5">
@@ -5122,19 +5144,39 @@ const ActiveWorkoutPage: React.FC = () => {
                           </span>
                         )}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => openEditExerciseModal(index)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${
-                          isCurrentExercise
-                            ? 'bg-brand-orange text-black hover:bg-brand-lightOrange shadow-brand-orange/20 font-black'
-                            : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
-                        }`}
-                        title={`Modifica parametri di ${exerciseTitle}`}
-                      >
-                        <SlidersHorizontal size={13} />
-                        <span>Modifica Parametri</span>
-                      </button>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openExerciseNoteModal(index)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm relative ${
+                            hasNote
+                              ? 'bg-brand-orange/20 border border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.3)]'
+                              : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                          }`}
+                          title={`Note per ${exerciseTitle}`}
+                        >
+                          <FileText size={13} />
+                          <span>{hasNote ? 'Modifica Nota' : 'Nota'}</span>
+                          {hasNote && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-brand-orange ring-1 ring-black" />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openEditExerciseModal(index)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${
+                            isCurrentExercise
+                              ? 'bg-brand-orange text-black hover:bg-brand-lightOrange shadow-brand-orange/20 font-black'
+                              : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                          }`}
+                          title={`Modifica parametri di ${exerciseTitle}`}
+                        >
+                          <SlidersHorizontal size={13} />
+                          <span>Modifica Parametri</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
