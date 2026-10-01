@@ -114,7 +114,7 @@ import {
   unlockAudio,
   isAudioFeedbackEnabled,
 } from '../utils/audio';
-import { hapticLight } from '../utils/haptics';
+import { hapticLight, hapticSuccess } from '../utils/haptics';
 import { pipManager } from '../utils/pipManager';
 import { requestScreenWakeLock, releaseScreenWakeLock } from '../utils/wakeLock';
 import {
@@ -563,6 +563,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isWorkoutOverviewAdvancePending, setIsWorkoutOverviewAdvancePending] = useState(false);
   const [isAutoCountModalOpen, setIsAutoCountModalOpen] = useState(false);
   const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
+  const [editingExerciseIdx, setEditingExerciseIdx] = useState<number | null>(null);
   const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
     sets: '',
     restSeconds: '',
@@ -599,7 +600,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const suppressSwipeNextExerciseVoiceCueRef = useRef(false);
   const SWIPE_MIN_DISTANCE_PX = 60;
   const SWIPE_MAX_VERTICAL_DRIFT_PX = 48;
-  const canPersistExerciseEdits = sourceSchedaId != null;
+
 
   const openVoiceHelp = () => {
     setIsVoiceHelpVisible(true);
@@ -3294,28 +3295,38 @@ const ActiveWorkoutPage: React.FC = () => {
     }));
   };
 
-  const openEditExerciseModal = () => {
-    const currentSub = isGroup ? subExercise : null;
-    const currentStep = currentExercise.type === 'pyramid'
-      ? currentExercise.pyramid_steps?.[currentPyramidStepIdx]
+  const openEditExerciseModal = (targetIndex?: number) => {
+    if (!workout?.exercises) return;
+    const targetExIdx = targetIndex != null ? targetIndex : currentExerciseIdx;
+    const targetExercise = workout.exercises[targetExIdx];
+    if (!targetExercise) return;
+
+    setEditingExerciseIdx(targetExIdx);
+
+    const isCurrent = targetExIdx === currentExerciseIdx;
+    const currentSub = isCurrent
+      ? (isGroup ? subExercise : null)
+      : (targetExercise.subExercises?.[0] || null);
+    const currentStep = targetExercise.type === 'pyramid'
+      ? (isCurrent ? targetExercise.pyramid_steps?.[currentPyramidStepIdx] : targetExercise.pyramid_steps?.[0])
       : null;
 
     setExerciseEditDraft({
-      sets: String(currentExercise.sets || 1),
-      restSeconds: String(currentExercise.rest_seconds || 0),
-      reps: formatTargetDraft(currentExercise.reps),
-      durationSeconds: formatTargetDraft(currentExercise.duration_seconds),
-      weightKg: formatWeightDraft(currentExercise.weight_kg),
-      emomRounds: String(effectiveEmomRounds),
-      emomRoundDuration: String(currentExercise.emom_round_duration || 60),
+      sets: String(targetExercise.sets || 1),
+      restSeconds: String(targetExercise.rest_seconds || 0),
+      reps: formatTargetDraft(targetExercise.reps),
+      durationSeconds: formatTargetDraft(targetExercise.duration_seconds),
+      weightKg: formatWeightDraft(targetExercise.weight_kg),
+      emomRounds: String(getEffectiveEmomRounds(targetExercise)),
+      emomRoundDuration: String(targetExercise.emom_round_duration || 60),
       currentSubReps: formatTargetDraft(currentSub?.reps),
       currentSubDuration: formatTargetDraft(currentSub?.duration_seconds),
       currentSubWeightKg: formatWeightDraft(currentSub?.weight_kg),
       currentStepReps: formatTargetDraft(currentStep?.reps),
       currentStepRestSeconds: String(currentStep?.rest_seconds || 0),
       currentStepWeightKg: formatWeightDraft(currentStep?.weight_kg),
-      subExerciseDrafts: buildSubExerciseDrafts(currentExercise.subExercises),
-      pyramidStepDrafts: buildPyramidStepDrafts(currentExercise.pyramid_steps),
+      subExerciseDrafts: buildSubExerciseDrafts(targetExercise.subExercises),
+      pyramidStepDrafts: buildPyramidStepDrafts(targetExercise.pyramid_steps),
     });
     setExerciseEditError(null);
     setIsEditExerciseModalOpen(true);
@@ -3324,6 +3335,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const closeEditExerciseModal = () => {
     if (isSavingExerciseEdit) return;
     setIsEditExerciseModalOpen(false);
+    setEditingExerciseIdx(null);
     setExerciseEditError(null);
   };
 
@@ -3419,10 +3431,10 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const saveCurrentExerciseEdits = async () => {
     if (!workout) return;
-    if (sourceSchedaId == null) {
-      setExerciseEditError('Live editing is unavailable for historical replay without a linked template.');
-      return;
-    }
+
+    const targetExIdx = editingExerciseIdx != null ? editingExerciseIdx : currentExerciseIdx;
+    const targetExercise = workout.exercises[targetExIdx];
+    if (!targetExercise) return;
 
     setIsSavingExerciseEdit(true);
     setExerciseEditError(null);
@@ -3432,91 +3444,90 @@ const ActiveWorkoutPage: React.FC = () => {
       const nextSubExerciseDrafts = exerciseEditDraft.subExerciseDrafts;
       const nextPyramidStepDrafts = exerciseEditDraft.pyramidStepDrafts;
 
-      const minAllowedSets = currentSetIdx + 1;
+      const isEditingCurrent = targetExIdx === currentExerciseIdx;
+      const minAllowedSets = isEditingCurrent ? currentSetIdx + 1 : 1;
 
-      if (currentExercise.type === 'emom') {
+      if (targetExercise.type === 'emom') {
         const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Sets');
         const nextRounds = parseStrictInt(exerciseEditDraft.emomRounds, 'Rounds');
         const nextRoundDuration = parseStrictInt(exerciseEditDraft.emomRoundDuration, 'Round duration');
         const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
 
         if (nextSets < minAllowedSets) {
-          throw new Error(`You are currently at set ${minAllowedSets}. Sets cannot be lower than this value.`);
+          throw new Error(`Sei attualmente al set ${minAllowedSets}. I set totali non possono essere inferiori.`);
         }
 
-        const minAllowedRounds = currentEmomRoundIdx + 1;
+        const minAllowedRounds = isEditingCurrent ? currentEmomRoundIdx + 1 : 1;
         if (nextRounds < minAllowedRounds) {
-          throw new Error(`You are currently at round ${minAllowedRounds}. Rounds cannot be lower than this value.`);
+          throw new Error(`Sei attualmente al round ${minAllowedRounds}. I round totali non possono essere inferiori.`);
         }
 
-        const { error: emomTableError } = await supabase
-          .from('emom')
-          .update({
-            round_totali: nextRounds,
-            durata_round_secondi: nextRoundDuration,
-          })
-          .eq('id_emom', Number(currentExercise.id));
-        if (emomTableError) throw emomTableError;
+        if (schedaId != null) {
+          const { error: emomTableError } = await supabase
+            .from('emom')
+            .update({
+              round_totali: nextRounds,
+              durata_round_secondi: nextRoundDuration,
+            })
+            .eq('id_emom', Number(targetExercise.id));
+          if (emomTableError) throw emomTableError;
 
-        const { error: emomRowsError } = await supabase
-          .from('esecuzioni')
-          .update({
-            set_num: nextSets,
-            rest_secondi: nextRest > 0 ? nextRest : null,
-          })
-          .eq('id_scheda', schedaId)
-          .eq('id_emom', Number(currentExercise.id));
-        if (emomRowsError) throw emomRowsError;
-
-        const emomSubExercises = currentExercise.subExercises || [];
-        if (nextSubExerciseDrafts.length !== emomSubExercises.length) {
-          throw new Error('Could not map all EMOM sub-exercises to the edit form.');
-        }
-
-        const { data: emomRows, error: emomFetchError } = await supabase
-          .from('esecuzioni')
-          .select('id_esecuzione, ordine')
-          .eq('id_scheda', schedaId)
-          .eq('id_emom', Number(currentExercise.id))
-          .order('ordine', { ascending: true });
-        if (emomFetchError) throw emomFetchError;
-
-        if ((emomRows?.length || 0) < nextSubExerciseDrafts.length) {
-          throw new Error('Unable to map all EMOM exercises to database rows.');
-        }
-
-        await Promise.all((emomRows || []).slice(0, nextSubExerciseDrafts.length).map(async (row, index) => {
-          const currentSub = emomSubExercises[index];
-          const draft = nextSubExerciseDrafts[index];
-          if (!currentSub || !draft) return;
-
-          const nextSubWeight = parseOptionalWeight(draft.weightKg);
-          const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'EMOM reps', true) : null;
-          const nextSubDuration = (currentSub.type === 'isometry' || currentSub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : null;
-
-          const { error: currentSubUpdateError } = await supabase
+          const { error: emomRowsError } = await supabase
             .from('esecuzioni')
             .update({
-              reps: nextSubReps,
-              durata_secondi: nextSubDuration,
-              peso_kg: nextSubWeight,
+              set_num: nextSets,
+              rest_secondi: nextRest > 0 ? nextRest : null,
             })
             .eq('id_scheda', schedaId)
-            .eq('id_esecuzione', row.id_esecuzione);
-          if (currentSubUpdateError) throw currentSubUpdateError;
-        }));
+            .eq('id_emom', Number(targetExercise.id));
+          if (emomRowsError) throw emomRowsError;
+
+          const emomSubExercises = targetExercise.subExercises || [];
+          if (nextSubExerciseDrafts.length === emomSubExercises.length) {
+            const { data: emomRows, error: emomFetchError } = await supabase
+              .from('esecuzioni')
+              .select('id_esecuzione, ordine')
+              .eq('id_scheda', schedaId)
+              .eq('id_emom', Number(targetExercise.id))
+              .order('ordine', { ascending: true });
+            if (emomFetchError) throw emomFetchError;
+
+            if ((emomRows?.length || 0) >= nextSubExerciseDrafts.length) {
+              await Promise.all((emomRows || []).slice(0, nextSubExerciseDrafts.length).map(async (row, index) => {
+                const currentSub = emomSubExercises[index];
+                const draft = nextSubExerciseDrafts[index];
+                if (!currentSub || !draft) return;
+
+                const nextSubWeight = parseOptionalWeight(draft.weightKg);
+                const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'EMOM reps', true) : null;
+                const nextSubDuration = (currentSub.type === 'isometry' || currentSub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : null;
+
+                const { error: currentSubUpdateError } = await supabase
+                  .from('esecuzioni')
+                  .update({
+                    reps: nextSubReps,
+                    durata_secondi: nextSubDuration,
+                    peso_kg: nextSubWeight,
+                  })
+                  .eq('id_scheda', schedaId)
+                  .eq('id_esecuzione', row.id_esecuzione);
+                if (currentSubUpdateError) throw currentSubUpdateError;
+              }));
+            }
+          }
+        }
 
         setWorkout((prev) => {
           if (!prev) return prev;
           const exercises = [...prev.exercises];
-          exercises[currentExerciseIdx] = {
-            ...exercises[currentExerciseIdx],
+          exercises[targetExIdx] = {
+            ...exercises[targetExIdx],
             sets: nextSets,
             rest_seconds: nextRest,
             emom_rounds: nextRounds,
             emom_round_duration: nextRoundDuration,
             duration_seconds: nextRoundDuration,
-            subExercises: (exercises[currentExerciseIdx].subExercises || []).map((sub, index) => {
+            subExercises: (exercises[targetExIdx].subExercises || []).map((sub, index) => {
               const draft = nextSubExerciseDrafts[index];
               if (!draft) return sub;
               return {
@@ -3530,75 +3541,77 @@ const ActiveWorkoutPage: React.FC = () => {
           return { ...prev, exercises };
         });
 
-        setEmomRoundRemainingWithSync(Math.min(emomRoundRemaining, nextRoundDuration));
-      } else if (currentExercise.type === 'superset' || currentExercise.type === 'circuit') {
+        if (isEditingCurrent) {
+          setEmomRoundRemainingWithSync(Math.min(emomRoundRemaining, nextRoundDuration));
+        }
+      } else if (targetExercise.type === 'superset' || targetExercise.type === 'circuit') {
         const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Rounds');
         const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
         if (nextSets < minAllowedSets) {
-          throw new Error(`You are currently at round ${minAllowedSets}. Rounds cannot be lower than this value.`);
+          throw new Error(`Sei attualmente al round ${minAllowedSets}. I round totali non possono essere inferiori.`);
         }
 
-        const currentSupersetExercises = currentExercise.subExercises || [];
+        const currentSupersetExercises = targetExercise.subExercises || [];
         if (nextSubExerciseDrafts.length !== currentSupersetExercises.length) {
-          throw new Error('Could not map all superset sub-exercises to the edit form.');
+          throw new Error('Impossibile mappare tutti gli esercizi del superset.');
         }
 
-        const supersetId = Number(currentExercise.id);
-        const { error: supersetTableError } = await supabase
-          .from('superset')
-          .update({
-            round_totali: nextSets,
-          })
-          .eq('id_superset', supersetId);
-        if (supersetTableError) throw supersetTableError;
+        if (schedaId != null) {
+          const supersetId = Number(targetExercise.id);
+          const { error: supersetTableError } = await supabase
+            .from('superset')
+            .update({
+              round_totali: nextSets,
+            })
+            .eq('id_superset', supersetId);
+          if (supersetTableError) throw supersetTableError;
 
-        const { error: supersetRowsError } = await supabase
-          .from('esecuzioni')
-          .update({
-            set_num: nextSets,
-            rest_secondi: nextRest > 0 ? nextRest : null,
-          })
-          .eq('id_scheda', schedaId)
-          .eq('id_superset', supersetId);
-        if (supersetRowsError) throw supersetRowsError;
-
-        const { data: supersetRows, error: supersetFetchError } = await supabase
-          .from('esecuzioni')
-          .select('id_esecuzione, ordine')
-          .eq('id_scheda', schedaId)
-          .eq('id_superset', supersetId)
-          .order('ordine', { ascending: true });
-        if (supersetFetchError) throw supersetFetchError;
-
-        if ((supersetRows?.length || 0) < nextSubExerciseDrafts.length) {
-          throw new Error('Unable to map all superset exercises to database rows.');
-        }
-
-        await Promise.all((supersetRows || []).slice(0, nextSubExerciseDrafts.length).map(async (row, index) => {
-          const currentSub = currentSupersetExercises[index];
-          const draft = nextSubExerciseDrafts[index];
-          if (!currentSub || !draft) return;
-
-          const nextSubWeight = parseOptionalWeight(draft.weightKg);
-          const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'Superset reps', true) : null;
-          const nextSubDuration = (currentSub.type === 'isometry' || currentSub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : null;
-
-          const { error: currentSubUpdateError } = await supabase
+          const { error: supersetRowsError } = await supabase
             .from('esecuzioni')
             .update({
-              reps: nextSubReps,
-              durata_secondi: nextSubDuration,
-              peso_kg: nextSubWeight,
+              set_num: nextSets,
+              rest_secondi: nextRest > 0 ? nextRest : null,
             })
             .eq('id_scheda', schedaId)
-            .eq('id_esecuzione', row.id_esecuzione);
-          if (currentSubUpdateError) throw currentSubUpdateError;
-        }));
+            .eq('id_superset', supersetId);
+          if (supersetRowsError) throw supersetRowsError;
+
+          const { data: supersetRows, error: supersetFetchError } = await supabase
+            .from('esecuzioni')
+            .select('id_esecuzione, ordine')
+            .eq('id_scheda', schedaId)
+            .eq('id_superset', supersetId)
+            .order('ordine', { ascending: true });
+          if (supersetFetchError) throw supersetFetchError;
+
+          if ((supersetRows?.length || 0) >= nextSubExerciseDrafts.length) {
+            await Promise.all((supersetRows || []).slice(0, nextSubExerciseDrafts.length).map(async (row, index) => {
+              const currentSub = currentSupersetExercises[index];
+              const draft = nextSubExerciseDrafts[index];
+              if (!currentSub || !draft) return;
+
+              const nextSubWeight = parseOptionalWeight(draft.weightKg);
+              const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'Superset reps', true) : null;
+              const nextSubDuration = (currentSub.type === 'isometry' || currentSub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : null;
+
+              const { error: currentSubUpdateError } = await supabase
+                .from('esecuzioni')
+                .update({
+                  reps: nextSubReps,
+                  durata_secondi: nextSubDuration,
+                  peso_kg: nextSubWeight,
+                })
+                .eq('id_scheda', schedaId)
+                .eq('id_esecuzione', row.id_esecuzione);
+              if (currentSubUpdateError) throw currentSubUpdateError;
+            }));
+          }
+        }
 
         setWorkout((prev) => {
           if (!prev) return prev;
           const exercises = [...prev.exercises];
-          const updated = { ...exercises[currentExerciseIdx] };
+          const updated = { ...exercises[targetExIdx] };
           updated.sets = nextSets;
           updated.rest_seconds = nextRest;
           updated.subExercises = (updated.subExercises || []).map((sub, index) => {
@@ -3611,51 +3624,51 @@ const ActiveWorkoutPage: React.FC = () => {
               weight_kg: parseOptionalWeight(draft.weightKg),
             };
           });
-          exercises[currentExerciseIdx] = updated;
+          exercises[targetExIdx] = updated;
           return { ...prev, exercises };
         });
-      } else if (currentExercise.type === 'pyramid') {
-        const pyramidSteps = currentExercise.pyramid_steps || [];
+      } else if (targetExercise.type === 'pyramid') {
+        const pyramidSteps = targetExercise.pyramid_steps || [];
         if (nextPyramidStepDrafts.length !== pyramidSteps.length) {
-          throw new Error('Could not map all pyramid steps to the edit form.');
+          throw new Error('Impossibile mappare tutti gli step della piramide.');
         }
 
-        const { data: pyramidRows, error: pyramidFetchError } = await supabase
-          .from('esecuzioni')
-          .select('id_esecuzione, ordine, stepindex_piramide')
-          .eq('id_scheda', schedaId)
-          .eq('id_piramide', Number(currentExercise.id))
-          .order('ordine', { ascending: true });
-        if (pyramidFetchError) throw pyramidFetchError;
-
-        if ((pyramidRows?.length || 0) < nextPyramidStepDrafts.length) {
-          throw new Error('Unable to map all pyramid steps to database rows.');
-        }
-
-        await Promise.all((pyramidRows || []).slice(0, nextPyramidStepDrafts.length).map(async (row, index) => {
-          const draft = nextPyramidStepDrafts[index];
-          if (!draft) return;
-
-          const nextStepReps = parseStrictInt(draft.reps, 'Step reps', true);
-          const nextStepRest = parseStrictInt(draft.restSeconds, 'Step rest', true);
-          const nextStepWeight = parseOptionalWeight(draft.weightKg);
-
-          const { error: rowUpdateError } = await supabase
+        if (schedaId != null) {
+          const { data: pyramidRows, error: pyramidFetchError } = await supabase
             .from('esecuzioni')
-            .update({
-              reps: nextStepReps,
-              rest_secondi: nextStepRest > 0 ? nextStepRest : null,
-              peso_kg: nextStepWeight,
-            })
+            .select('id_esecuzione, ordine, stepindex_piramide')
             .eq('id_scheda', schedaId)
-            .eq('id_esecuzione', row.id_esecuzione);
-          if (rowUpdateError) throw rowUpdateError;
-        }));
+            .eq('id_piramide', Number(targetExercise.id))
+            .order('ordine', { ascending: true });
+          if (pyramidFetchError) throw pyramidFetchError;
+
+          if ((pyramidRows?.length || 0) >= nextPyramidStepDrafts.length) {
+            await Promise.all((pyramidRows || []).slice(0, nextPyramidStepDrafts.length).map(async (row, index) => {
+              const draft = nextPyramidStepDrafts[index];
+              if (!draft) return;
+
+              const nextStepReps = parseStrictInt(draft.reps, 'Step reps', true);
+              const nextStepRest = parseStrictInt(draft.restSeconds, 'Step rest', true);
+              const nextStepWeight = parseOptionalWeight(draft.weightKg);
+
+              const { error: rowUpdateError } = await supabase
+                .from('esecuzioni')
+                .update({
+                  reps: nextStepReps,
+                  rest_secondi: nextStepRest > 0 ? nextStepRest : null,
+                  peso_kg: nextStepWeight,
+                })
+                .eq('id_scheda', schedaId)
+                .eq('id_esecuzione', row.id_esecuzione);
+              if (rowUpdateError) throw rowUpdateError;
+            }));
+          }
+        }
 
         setWorkout((prev) => {
           if (!prev) return prev;
           const exercises = [...prev.exercises];
-          const updated = { ...exercises[currentExerciseIdx] };
+          const updated = { ...exercises[targetExIdx] };
           updated.pyramid_steps = (updated.pyramid_steps || []).map((step, index) => {
             const draft = nextPyramidStepDrafts[index];
             if (!draft) return step;
@@ -3666,7 +3679,7 @@ const ActiveWorkoutPage: React.FC = () => {
               weight_kg: parseOptionalWeight(draft.weightKg),
             };
           });
-          exercises[currentExerciseIdx] = updated;
+          exercises[targetExIdx] = updated;
           return { ...prev, exercises };
         });
       } else {
@@ -3675,34 +3688,36 @@ const ActiveWorkoutPage: React.FC = () => {
         const nextWeight = parseOptionalWeight(exerciseEditDraft.weightKg);
 
         if (nextSets < minAllowedSets) {
-          throw new Error(`You are currently at set ${minAllowedSets}. Sets cannot be lower than this value.`);
+          throw new Error(`Sei attualmente al set ${minAllowedSets}. I set totali non possono essere inferiori.`);
         }
 
-        const isIso = currentExercise.type === 'isometry' || currentExercise.type === 'cardio';
-        const nextReps = isIso ? currentExercise.reps : parseStrictInt(exerciseEditDraft.reps, 'Reps', true);
+        const isIso = targetExercise.type === 'isometry' || targetExercise.type === 'cardio';
+        const nextReps = isIso ? targetExercise.reps : parseStrictInt(exerciseEditDraft.reps, 'Reps', true);
         const nextDuration = isIso
           ? parseStrictInt(exerciseEditDraft.durationSeconds, 'Duration', true)
-          : currentExercise.duration_seconds;
+          : targetExercise.duration_seconds;
 
-        const basePayload = {
-          set_num: nextSets,
-          rest_secondi: nextRest > 0 ? nextRest : null,
-          peso_kg: nextWeight,
-          reps: isIso ? null : nextReps,
-          durata_secondi: isIso ? nextDuration : null,
-        };
-        const { error: baseUpdateError } = await supabase
-          .from('esecuzioni')
-          .update(basePayload)
-          .eq('id_scheda', schedaId)
-          .eq('id_esecuzione', Number(currentExercise.id));
-        if (baseUpdateError) throw baseUpdateError;
+        if (schedaId != null) {
+          const basePayload = {
+            set_num: nextSets,
+            rest_secondi: nextRest > 0 ? nextRest : null,
+            peso_kg: nextWeight,
+            reps: isIso ? null : nextReps,
+            durata_secondi: isIso ? nextDuration : null,
+          };
+          const { error: baseUpdateError } = await supabase
+            .from('esecuzioni')
+            .update(basePayload)
+            .eq('id_scheda', schedaId)
+            .eq('id_esecuzione', Number(targetExercise.id));
+          if (baseUpdateError) throw baseUpdateError;
+        }
 
         setWorkout((prev) => {
           if (!prev) return prev;
           const exercises = [...prev.exercises];
-          exercises[currentExerciseIdx] = {
-            ...exercises[currentExerciseIdx],
+          exercises[targetExIdx] = {
+            ...exercises[targetExIdx],
             sets: nextSets,
             rest_seconds: nextRest,
             weight_kg: nextWeight,
@@ -3712,15 +3727,20 @@ const ActiveWorkoutPage: React.FC = () => {
           return { ...prev, exercises };
         });
 
-        if (isIso) {
+        if (isEditingCurrent && isIso) {
           setIsometryRemainingWithSync(Math.min(isometryRemaining, nextDuration));
         }
       }
 
       setIsEditExerciseModalOpen(false);
+      setEditingExerciseIdx(null);
+      void hapticSuccess();
+      setTimeout(() => {
+        persistWorkoutProgress(true);
+      }, 50);
     } catch (error: any) {
       console.error('Error saving live exercise edits:', error);
-      setExerciseEditError(error?.message || 'Unable to save exercise changes.');
+      setExerciseEditError(error?.message || 'Impossibile salvare le modifiche.');
     } finally {
       setIsSavingExerciseEdit(false);
     }
@@ -4687,7 +4707,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-[10px] uppercase tracking-[0.25em] text-brand-grey/70 font-bold mb-1">
-                        Exercise {index + 1}
+                        Esercizio {index + 1}
                       </p>
                       <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
                       <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
@@ -4699,7 +4719,7 @@ const ActiveWorkoutPage: React.FC = () => {
                       ? 'bg-brand-orange text-black'
                       : 'bg-white/5 text-brand-grey'
                       }`}>
-                      {isCurrentExercise ? 'You are here' : `#${index + 1}`}
+                      {isCurrentExercise ? 'Sei qui' : `#${index + 1}`}
                     </div>
                   </div>
 
@@ -4767,6 +4787,25 @@ const ActiveWorkoutPage: React.FC = () => {
                       ))}
                     </div>
                   )}
+
+                  <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-zinc-400">
+                      {isCurrentExercise ? 'In esecuzione adesso' : `Esercizio ${index + 1} di ${workout.exercises.length}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openEditExerciseModal(index)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${
+                        isCurrentExercise
+                          ? 'bg-brand-orange text-black hover:bg-brand-lightOrange shadow-brand-orange/20 font-black'
+                          : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                      }`}
+                      title={`Modifica parametri di ${exerciseTitle}`}
+                    >
+                      <SlidersHorizontal size={13} />
+                      <span>Modifica Parametri</span>
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -4837,343 +4876,357 @@ const ActiveWorkoutPage: React.FC = () => {
 
         {renderWorkoutOverviewModal()}
 
-        {isEditExerciseModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
-            <div className="w-full max-w-lg bg-brand-darkGrey/95 border border-brand-grey/20 rounded-3xl p-5 shadow-2xl">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-bold text-white">Edit Current Exercise</h3>
-                  <p className="text-xs text-brand-grey mt-1">
-                    {currentExercise.name}
-                  </p>
-                </div>
-                <button
-                  onClick={closeEditExerciseModal}
-                  className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                  title="Close exercise editor"
-                  disabled={isSavingExerciseEdit}
-                >
-                  <X size={18} />
-                </button>
-              </div>
+        {isEditExerciseModalOpen && (() => {
+          const targetExIdx = editingExerciseIdx != null ? editingExerciseIdx : currentExerciseIdx;
+          const targetEx = workout.exercises[targetExIdx] || currentExercise;
+          const targetExerciseTitle = String(targetEx?.name || '').trim() || `Esercizio ${targetExIdx + 1}`;
+          const isTargetCurrent = targetExIdx === currentExerciseIdx;
 
-              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-                {currentExercise.type === 'emom' && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="text-sm text-brand-grey">Sets
-                        <input
-                          type="number" inputMode="numeric"
-                          min={1}
-                          value={exerciseEditDraft.sets}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
-                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                        />
-                      </label>
-                      <label className="text-sm text-brand-grey">Rounds
-                        <input
-                          type="number" inputMode="numeric"
-                          min={1}
-                          value={exerciseEditDraft.emomRounds}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, emomRounds: e.target.value }))}
-                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                        />
-                      </label>
+          return (
+            <div className="fixed inset-0 z-[90] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+              <div className="w-full max-w-lg bg-brand-darkGrey/95 border border-white/10 rounded-3xl p-5 shadow-2xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-bold text-white">Modifica Parametri</h3>
+                      {isTargetCurrent && (
+                        <span className="text-[10px] font-black tracking-wider uppercase bg-brand-orange/20 text-brand-orange px-2 py-0.5 rounded-full border border-brand-orange/30">
+                          In esecuzione
+                        </span>
+                      )}
                     </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="flex flex-col">
-                        <label className="text-sm text-brand-grey">Round Duration</label>
-                        <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
-                          <div className="relative flex-1 border-r border-brand-grey/10">
-                            <input
-                              type="number" inputMode="numeric"
-                              min={0}
-                              value={toDurationParts(exerciseEditDraft.emomRoundDuration).minutes}
-                              onChange={(e) => updateEmomRoundDurationPart('min', e.target.value)}
-                              className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
-                            />
-                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">MIN</span>
-                          </div>
-                          <div className="relative flex-1">
-                            <input
-                              type="number" inputMode="numeric"
-                              min={0}
-                              max={59}
-                              value={toDurationParts(exerciseEditDraft.emomRoundDuration).seconds}
-                              onChange={(e) => updateEmomRoundDurationPart('sec', e.target.value)}
-                              className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
-                            />
-                            <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">SEC</span>
-                          </div>
-                        </div>
-                      </div>
-                      <label className="text-sm text-brand-grey">Rest Between Sets (sec)
-                        <input
-                          type="number" inputMode="numeric"
-                          min={0}
-                          value={exerciseEditDraft.restSeconds}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
-                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                        />
-                      </label>
-                    </div>
-
-                    <div className="space-y-3 pt-2">
-                      {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
-                        <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">EMOM exercise {index + 1}</p>
-                              <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
-                            </div>
-                            <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">{draft.type === 'isometry' ? 'Isometry' : 'Reps'}</span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            {draft.type === 'isometry' ? (
-                              <label className="text-sm text-brand-grey">Duration (sec)
-                                <input
-                                  type="number" inputMode="numeric"
-                                  min={0}
-                                  value={draft.durationSeconds}
-                                  onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
-                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                                />
-                              </label>
-                            ) : (
-                              <label className="text-sm text-brand-grey">Reps
-                                <input
-                                  type="number" inputMode="numeric"
-                                  min={0}
-                                  value={draft.reps}
-                                  onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
-                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                                />
-                              </label>
-                            )}
-
-                            <label className="text-sm text-brand-grey">Weight (kg)
-                              <input
-                                type="text"
-                                value={draft.weightKg}
-                                onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
-                                placeholder="body weight"
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {(currentExercise.type === 'superset' || currentExercise.type === 'circuit') && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="text-sm text-brand-grey">{currentExercise.type === 'circuit' ? 'Giri (Rounds)' : 'Rounds'}
-                        <input
-                          type="number" inputMode="numeric"
-                          min={1}
-                          value={exerciseEditDraft.sets}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
-                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                        />
-                      </label>
-                      <label className="text-sm text-brand-grey">Rest Between Rounds (sec)
-                        <input
-                          type="number" inputMode="numeric"
-                          min={0}
-                          value={exerciseEditDraft.restSeconds}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
-                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                        />
-                      </label>
-                    </div>
-
-                    <div className="space-y-3 pt-2">
-                      {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
-                        <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">
-                                {currentExercise.type === 'circuit' ? 'Circuit station' : 'Superset exercise'} {index + 1}
-                              </p>
-                              <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
-                            </div>
-                            <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">
-                              {draft.type === 'isometry' ? 'Isometry' : 'Reps'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            {draft.type === 'isometry' ? (
-                              <label className="text-sm text-brand-grey">Duration (sec)
-                                <input
-                                  type="number" inputMode="numeric"
-                                  min={0}
-                                  value={draft.durationSeconds}
-                                  onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
-                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                                />
-                              </label>
-                            ) : (
-                              <label className="text-sm text-brand-grey">Reps
-                                <input
-                                  type="number" inputMode="numeric"
-                                  min={0}
-                                  value={draft.reps}
-                                  onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
-                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                                />
-                              </label>
-                            )}
-
-                            <label className="text-sm text-brand-grey">Weight (kg)
-                              <input
-                                type="text"
-                                value={draft.weightKg}
-                                onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
-                                placeholder="body weight"
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {currentExercise.type === 'pyramid' && (
-                  <div className="space-y-3">
-                    <div className="space-y-3 pt-2">
-                      {exerciseEditDraft.pyramidStepDrafts.map((draft, index) => (
-                        <div key={`step-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">Step {index + 1}</p>
-                              <h4 className="text-white font-black text-base truncate">Pyramid step {index + 1}</h4>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-3">
-                            <label className="text-sm text-brand-grey">Reps
-                              <input
-                                type="number" inputMode="numeric"
-                                min={0}
-                                value={draft.reps}
-                                onChange={(e) => updatePyramidStepDraft(index, { reps: e.target.value })}
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                            <label className="text-sm text-brand-grey">Rest (sec)
-                              <input
-                                type="number" inputMode="numeric"
-                                min={0}
-                                value={draft.restSeconds}
-                                onChange={(e) => updatePyramidStepDraft(index, { restSeconds: e.target.value })}
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                            <label className="text-sm text-brand-grey">Weight (kg)
-                              <input
-                                type="text"
-                                value={draft.weightKg}
-                                onChange={(e) => updatePyramidStepDraft(index, { weightKg: e.target.value })}
-                                placeholder="body weight"
-                                className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <p className="text-xs text-brand-grey mt-1">
+                      {targetExerciseTitle}
+                    </p>
                   </div>
-                )}
+                  <button
+                    onClick={closeEditExerciseModal}
+                    className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                    title="Chiudi editor parametri"
+                    disabled={isSavingExerciseEdit}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
 
-                {(currentExercise.type === 'reps' || currentExercise.type === 'isometry' || currentExercise.type === 'cardio') && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="text-sm text-brand-grey">Sets
-                        <input
-                          type="number" inputMode="numeric"
-                          min={1}
-                          value={exerciseEditDraft.sets}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
-                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                        />
-                      </label>
-                      <label className="text-sm text-brand-grey">Rest (sec)
-                        <input
-                          type="number" inputMode="numeric"
-                          min={0}
-                          value={exerciseEditDraft.restSeconds}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
-                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                        />
-                      </label>
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                  {targetEx.type === 'emom' && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="text-sm text-brand-grey">Serie (Sets)
+                          <input
+                            type="number" inputMode="numeric"
+                            min={1}
+                            value={exerciseEditDraft.sets}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                        <label className="text-sm text-brand-grey">Giri (Rounds)
+                          <input
+                            type="number" inputMode="numeric"
+                            min={1}
+                            value={exerciseEditDraft.emomRounds}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, emomRounds: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex flex-col">
+                          <label className="text-sm text-brand-grey">Durata Round</label>
+                          <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
+                            <div className="relative flex-1 border-r border-brand-grey/10">
+                              <input
+                                type="number" inputMode="numeric"
+                                min={0}
+                                value={toDurationParts(exerciseEditDraft.emomRoundDuration).minutes}
+                                onChange={(e) => updateEmomRoundDurationPart('min', e.target.value)}
+                                className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                              />
+                              <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">MIN</span>
+                            </div>
+                            <div className="relative flex-1">
+                              <input
+                                type="number" inputMode="numeric"
+                                min={0}
+                                max={59}
+                                value={toDurationParts(exerciseEditDraft.emomRoundDuration).seconds}
+                                onChange={(e) => updateEmomRoundDurationPart('sec', e.target.value)}
+                                className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                              />
+                              <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">SEC</span>
+                            </div>
+                          </div>
+                        </div>
+                        <label className="text-sm text-brand-grey">Recupero tra Serie (sec)
+                          <input
+                            type="number" inputMode="numeric"
+                            min={0}
+                            value={exerciseEditDraft.restSeconds}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="space-y-3 pt-2">
+                        {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
+                          <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">Esercizio EMOM {index + 1}</p>
+                                <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
+                              </div>
+                              <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">{draft.type === 'isometry' ? 'Isometria' : 'Ripetizioni'}</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              {draft.type === 'isometry' ? (
+                                <label className="text-sm text-brand-grey">Durata (sec)
+                                  <input
+                                    type="number" inputMode="numeric"
+                                    min={0}
+                                    value={draft.durationSeconds}
+                                    onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
+                                    className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                  />
+                                </label>
+                              ) : (
+                                <label className="text-sm text-brand-grey">Ripetizioni
+                                  <input
+                                    type="number" inputMode="numeric"
+                                    min={0}
+                                    value={draft.reps}
+                                    onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
+                                    className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                  />
+                                </label>
+                              )}
+
+                              <label className="text-sm text-brand-grey">Peso (kg)
+                                <input
+                                  type="text"
+                                  value={draft.weightKg}
+                                  onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
+                                  placeholder="a corpo libero"
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {(targetEx.type === 'superset' || targetEx.type === 'circuit') && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="text-sm text-brand-grey">{targetEx.type === 'circuit' ? 'Giri (Rounds)' : 'Serie (Sets)'}
+                          <input
+                            type="number" inputMode="numeric"
+                            min={1}
+                            value={exerciseEditDraft.sets}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                        <label className="text-sm text-brand-grey">Recupero tra Giri (sec)
+                          <input
+                            type="number" inputMode="numeric"
+                            min={0}
+                            value={exerciseEditDraft.restSeconds}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="space-y-3 pt-2">
+                        {exerciseEditDraft.subExerciseDrafts.map((draft, index) => (
+                          <div key={`${draft.name}-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">
+                                  {targetEx.type === 'circuit' ? 'Stazione circuito' : 'Esercizio superset'} {index + 1}
+                                </p>
+                                <h4 className="text-white font-black text-base truncate">{draft.name}</h4>
+                              </div>
+                              <span className="text-[10px] uppercase tracking-[0.24em] font-black text-brand-orange/90">
+                                {draft.type === 'isometry' ? 'Isometria' : 'Ripetizioni'}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              {draft.type === 'isometry' ? (
+                                <label className="text-sm text-brand-grey">Durata (sec)
+                                  <input
+                                    type="number" inputMode="numeric"
+                                    min={0}
+                                    value={draft.durationSeconds}
+                                    onChange={(e) => updateSubExerciseDraft(index, { durationSeconds: e.target.value })}
+                                    className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                  />
+                                </label>
+                              ) : (
+                                <label className="text-sm text-brand-grey">Ripetizioni
+                                  <input
+                                    type="number" inputMode="numeric"
+                                    min={0}
+                                    value={draft.reps}
+                                    onChange={(e) => updateSubExerciseDraft(index, { reps: e.target.value })}
+                                    className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                  />
+                                </label>
+                              )}
+
+                              <label className="text-sm text-brand-grey">Peso (kg)
+                                <input
+                                  type="text"
+                                  value={draft.weightKg}
+                                  onChange={(e) => updateSubExerciseDraft(index, { weightKg: e.target.value })}
+                                  placeholder="a corpo libero"
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {targetEx.type === 'pyramid' && (
+                    <div className="space-y-3">
+                      <div className="space-y-3 pt-2">
+                        {exerciseEditDraft.pyramidStepDrafts.map((draft, index) => (
+                          <div key={`step-${index}`} className="rounded-2xl border border-white/10 bg-black/25 p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[10px] uppercase tracking-[0.24em] text-brand-grey/70 font-bold">Step {index + 1}</p>
+                                <h4 className="text-white font-black text-base truncate">Step piramidale {index + 1}</h4>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3">
+                              <label className="text-sm text-brand-grey">Ripetizioni
+                                <input
+                                  type="number" inputMode="numeric"
+                                  min={0}
+                                  value={draft.reps}
+                                  onChange={(e) => updatePyramidStepDraft(index, { reps: e.target.value })}
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                              <label className="text-sm text-brand-grey">Recupero (sec)
+                                <input
+                                  type="number" inputMode="numeric"
+                                  min={0}
+                                  value={draft.restSeconds}
+                                  onChange={(e) => updatePyramidStepDraft(index, { restSeconds: e.target.value })}
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                              <label className="text-sm text-brand-grey">Peso (kg)
+                                <input
+                                  type="text"
+                                  value={draft.weightKg}
+                                  onChange={(e) => updatePyramidStepDraft(index, { weightKg: e.target.value })}
+                                  placeholder="a corpo libero"
+                                  className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
+                  )}
 
-                    {(currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
-                      <label className="text-sm text-brand-grey">Duration (sec)
+                  {(targetEx.type === 'reps' || targetEx.type === 'isometry' || targetEx.type === 'cardio') && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="text-sm text-brand-grey">Serie (Sets)
+                          <input
+                            type="number" inputMode="numeric"
+                            min={1}
+                            value={exerciseEditDraft.sets}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, sets: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                        <label className="text-sm text-brand-grey">Recupero (sec)
+                          <input
+                            type="number" inputMode="numeric"
+                            min={0}
+                            value={exerciseEditDraft.restSeconds}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, restSeconds: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                      </div>
+
+                      {(targetEx.type === 'isometry' || targetEx.type === 'cardio') ? (
+                        <label className="text-sm text-brand-grey">Durata (sec)
+                          <input
+                            type="number" inputMode="numeric"
+                            min={0}
+                            value={exerciseEditDraft.durationSeconds}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, durationSeconds: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                      ) : (
+                        <label className="text-sm text-brand-grey">Ripetizioni
+                          <input
+                            type="number" inputMode="numeric"
+                            min={0}
+                            value={exerciseEditDraft.reps}
+                            onChange={(e) => setExerciseEditDraft((d) => ({ ...d, reps: e.target.value }))}
+                            className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                          />
+                        </label>
+                      )}
+
+                      <label className="text-sm text-brand-grey">Peso (kg)
                         <input
-                          type="number" inputMode="numeric"
-                          min={0}
-                          value={exerciseEditDraft.durationSeconds}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, durationSeconds: e.target.value }))}
+                          type="text"
+                          value={exerciseEditDraft.weightKg}
+                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, weightKg: e.target.value }))}
+                          placeholder="a corpo libero"
                           className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
                         />
                       </label>
-                    ) : (
-                      <label className="text-sm text-brand-grey">Reps
-                        <input
-                          type="number" inputMode="numeric"
-                          min={0}
-                          value={exerciseEditDraft.reps}
-                          onChange={(e) => setExerciseEditDraft((d) => ({ ...d, reps: e.target.value }))}
-                          className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                        />
-                      </label>
-                    )}
+                    </>
+                  )}
+                </div>
 
-                    <label className="text-sm text-brand-grey">Weight (kg)
-                      <input
-                        type="text"
-                        value={exerciseEditDraft.weightKg}
-                        onChange={(e) => setExerciseEditDraft((d) => ({ ...d, weightKg: e.target.value }))}
-                        placeholder="body Weight"
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
-                      />
-                    </label>
-                  </>
+                {exerciseEditError && (
+                  <p className="mt-3 text-sm text-red-300">{exerciseEditError}</p>
                 )}
-              </div>
 
-              {exerciseEditError && (
-                <p className="mt-3 text-sm text-red-300">{exerciseEditError}</p>
-              )}
-
-              <div className="mt-4 flex items-center justify-end gap-3">
-                <button
-                  onClick={closeEditExerciseModal}
-                  disabled={isSavingExerciseEdit}
-                  className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold disabled:opacity-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveCurrentExerciseEdits}
-                  disabled={isSavingExerciseEdit}
-                  className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60 cursor-pointer"
-                >
-                  {isSavingExerciseEdit ? 'Saving...' : 'Save Changes'}
-                </button>
+                <div className="mt-4 flex items-center justify-end gap-3">
+                  <button
+                    onClick={closeEditExerciseModal}
+                    disabled={isSavingExerciseEdit}
+                    className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold disabled:opacity-50 cursor-pointer"
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    onClick={saveCurrentExerciseEdits}
+                    disabled={isSavingExerciseEdit}
+                    className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60 cursor-pointer"
+                  >
+                    {isSavingExerciseEdit ? 'Salvataggio...' : 'Salva Modifiche'}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Auto-Count Choice Modal */}
         {isAutoCountModalOpen && currentExercise && !isSuperset && (
@@ -5994,20 +6047,11 @@ const ActiveWorkoutPage: React.FC = () => {
             )}
 
             {/* Bottom Tools Row */}
-            <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
+            <div className="pt-1 border-t border-white/5">
               <button
-                onClick={openEditExerciseModal}
-                disabled={!canPersistExerciseEdits}
-                className="flex-1 py-1.5 rounded-xl border bg-brand-darkGrey/60 border-white/10 text-zinc-300 hover:text-white hover:border-white/25 transition-all active:scale-95 flex items-center justify-center gap-1 text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed shadow-sm cursor-pointer"
-                title={canPersistExerciseEdits ? 'Modifica esercizio al volo' : 'Modifica non disponibile per questa scheda'}
-              >
-                <SlidersHorizontal size={13} />
-                <span>Modifica</span>
-              </button>
-
-              <button
+                type="button"
                 onClick={openCurrentExerciseNoteModal}
-                className={`flex-1 py-1.5 rounded-xl border transition-all active:scale-95 flex items-center justify-center gap-1 text-xs font-bold relative shadow-sm cursor-pointer ${
+                className={`w-full py-1.5 rounded-xl border transition-all active:scale-95 flex items-center justify-center gap-1.5 text-xs font-bold relative shadow-sm cursor-pointer ${
                   hasCurrentWorkoutNote
                     ? 'bg-brand-orange/20 border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.35)]'
                     : 'bg-brand-darkGrey/60 border-white/10 text-zinc-300 hover:text-white hover:border-white/25'
@@ -6015,7 +6059,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 title="Note esercizio"
               >
                 <FileText size={13} />
-                <span>Note</span>
+                <span>Note esercizio</span>
                 {hasCurrentWorkoutNote && (
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-orange" />
                 )}
@@ -7551,15 +7595,7 @@ const ActiveWorkoutPage: React.FC = () => {
         {/* ZONE 4: BOTTOM ACTION DOCK */}
         <div className="shrink-0 h-[60px] sm:h-[68px] flex items-stretch gap-2.5 sm:gap-3 mt-1">
           <button
-            onClick={openEditExerciseModal}
-            disabled={!canPersistExerciseEdits}
-            className="w-[60px] sm:w-[68px] rounded-2xl border bg-brand-darkGrey/60 border-white/10 text-zinc-400 hover:text-white hover:border-white/25 transition-all active:scale-95 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed shadow-sm"
-            title={canPersistExerciseEdits ? 'Modifica esercizio al volo' : 'Modifica non disponibile per questa scheda'}
-          >
-            <SlidersHorizontal size={22} />
-          </button>
-
-          <button
+            type="button"
             onClick={openCurrentExerciseNoteModal}
             className={`w-[60px] sm:w-[68px] rounded-2xl border transition-all active:scale-95 flex items-center justify-center relative shadow-sm cursor-pointer ${
               hasCurrentWorkoutNote
