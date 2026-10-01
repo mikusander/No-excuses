@@ -446,6 +446,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const [circuitLapTimes, setCircuitLapTimes] = useState<number[]>([]);
   const circuitStopwatchStartedAtMsRef = useRef<number | null>(null);
   const circuitAccumulatedMsRef = useRef(0);
+  const pyramidScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const activePyramidStepRef = useRef<HTMLButtonElement | null>(null);
 
   const wasRestingRef = useRef(false);
   const wasEmomActiveRef = useRef(false);
@@ -3102,6 +3104,20 @@ const ActiveWorkoutPage: React.FC = () => {
   const emomRoundProgressRatio = Math.max(0, Math.min(1, emomRoundRemaining / totalEmomRoundDuration));
   const isPyramid = currentExercise.type === 'pyramid';
   const isLastPyramidStep = currentPyramidStepIdx === ((currentExercise.pyramid_steps?.length || 1) - 1);
+
+  useEffect(() => {
+    if (!isPyramid) return;
+    const timer = window.setTimeout(() => {
+      if (activePyramidStepRef.current) {
+        activePyramidStepRef.current.scrollIntoView({
+          behavior: 'smooth',
+          inline: 'center',
+          block: 'nearest',
+        });
+      }
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [currentPyramidStepIdx, currentExerciseIdx, isPyramid]);
 
   const isCircuit = currentExercise.type === 'circuit';
   const isSuperset = currentExercise.type === 'superset';
@@ -6313,19 +6329,27 @@ const ActiveWorkoutPage: React.FC = () => {
                     const isCurrent = sIdx === currentPyramidStepIdx;
                     const isDone = sIdx < currentPyramidStepIdx;
                     return (
-                      <div
+                      <button
                         key={sIdx}
-                        className={`py-1 px-1.5 rounded-lg border text-center transition-all min-w-[38px] ${
+                        type="button"
+                        onClick={() => {
+                          void hapticLight();
+                          setCurrentPyramidStepIdx(sIdx);
+                        }}
+                        className={`py-1 px-1.5 rounded-lg border text-center transition-all min-w-[38px] cursor-pointer ${
                           isCurrent
-                            ? 'bg-brand-orange/20 border-brand-orange text-white shadow-sm ring-1 ring-brand-orange/50'
+                            ? 'bg-[#521d00]/95 border-brand-orange text-white shadow-sm ring-1 ring-brand-orange/50'
                             : isDone
                               ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                              : 'bg-white/5 border-white/5 text-zinc-500'
+                              : 'bg-white/5 border-white/5 text-zinc-500 hover:border-white/20'
                         }`}
+                        title={`Vai allo Step ${sIdx + 1}`}
                       >
                         <span className="text-[7px] uppercase font-bold block opacity-70">S{sIdx + 1}</span>
-                        <span className="text-[11px] font-black font-mono mt-0.5">{step.reps}r</span>
-                      </div>
+                        <span className="text-[11px] font-black font-mono mt-0.5">
+                          {isMaxTarget(step.reps) ? 'MAX' : `${step.reps}r`}
+                        </span>
+                      </button>
                     );
                   })}
                 </div>
@@ -7487,46 +7511,114 @@ const ActiveWorkoutPage: React.FC = () => {
                 );
               })()
             ) : currentExercise.type === 'pyramid' ? (
-              <div className="text-center w-full flex flex-col items-center justify-center my-auto">
-                <span className="block text-8xl sm:text-9xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_30px_rgba(255,107,0,0.3)] tracking-tight">
-                  {formatBigTargetValue(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0)}
-                </span>
-                <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-sm mt-2">RIPETIZIONI TARGET</span>
+              <div className="text-center w-full flex flex-col items-center justify-between h-full my-auto py-1">
+                {/* Hero Target Reps Display */}
+                <div className="flex flex-col items-center justify-center my-auto">
+                  <span className="block text-7xl min-[390px]:text-8xl sm:text-9xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_35px_rgba(255,107,0,0.35)] tracking-tight">
+                    {formatBigTargetValue(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0)}
+                  </span>
+                  <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs sm:text-sm mt-2">
+                    RIPETIZIONI TARGET
+                  </span>
+                </div>
 
-                {/* Pyramid Steps Timeline */}
-                <div className="mt-4 w-full bg-black/40 border border-white/5 rounded-2xl p-3">
+                {/* Pyramid Steps Interactive Carousel with Rich Cards & Centered Active Step */}
+                <div className="w-full mt-auto pt-2">
                   <div className="flex items-center justify-between text-[11px] text-zinc-400 uppercase tracking-wider font-bold mb-2 px-1">
-                    <span>Step {currentPyramidStepIdx + 1} di {currentExercise.pyramid_steps?.length || 1}</span>
-                    <span className="text-brand-orange font-mono font-black">{currentExecutionWeightLabel}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-brand-orange font-mono font-black">
+                        Step {currentPyramidStepIdx + 1}
+                      </span>
+                      <span className="text-zinc-500">di</span>
+                      <span className="font-mono font-bold text-zinc-300">
+                        {currentExercise.pyramid_steps?.length || 1}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400 font-semibold tracking-normal lowercase opacity-80">
+                      scorri per altri step ↔
+                    </span>
                   </div>
-                  <div className="flex gap-2">
+
+                  {/* Scrollable Container centered on active step */}
+                  <div
+                    ref={pyramidScrollContainerRef}
+                    className="w-full flex gap-3 overflow-x-auto no-scrollbar py-2 px-[calc(50%-70px)] scroll-smooth snap-x snap-mandatory"
+                    style={{ WebkitOverflowScrolling: 'touch' }}
+                  >
                     {currentExercise.pyramid_steps?.map((step, sIdx) => {
                       const isCurrent = sIdx === currentPyramidStepIdx;
                       const isDone = sIdx < currentPyramidStepIdx;
+
                       return (
-                        <div
+                        <button
                           key={sIdx}
-                          className={`flex-1 py-2 px-1.5 rounded-xl text-center border transition-all ${
+                          ref={isCurrent ? activePyramidStepRef : null}
+                          type="button"
+                          onClick={() => {
+                            void hapticLight();
+                            setCurrentPyramidStepIdx(sIdx);
+                          }}
+                          className={`shrink-0 w-[140px] p-3 rounded-2xl border text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between ${
                             isCurrent
-                              ? 'bg-brand-orange/20 border-brand-orange text-white shadow-sm ring-1 ring-brand-orange/50'
+                              ? 'bg-[#521d00]/95 border-2 border-brand-orange text-white shadow-[0_0_25px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60 scale-[1.03] z-10'
                               : isDone
-                                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                                : 'bg-white/5 border-white/5 text-zinc-500'
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:border-emerald-500/60 shadow-sm'
+                                : 'bg-white/5 border-white/10 text-zinc-400 opacity-60 hover:opacity-90 hover:border-white/20'
                           }`}
+                          title={`Vai allo Step ${sIdx + 1}`}
                         >
-                          <span className="text-[9px] uppercase font-bold block opacity-70">S{sIdx + 1}</span>
-                          <span className="text-sm font-black font-mono mt-0.5">{step.reps}r</span>
-                        </div>
+                          {/* Step Header */}
+                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className={`text-[10px] uppercase font-black tracking-wider ${
+                              isCurrent ? 'text-brand-lightOrange font-mono' : isDone ? 'text-emerald-400' : 'text-zinc-400'
+                            }`}>
+                              Step {sIdx + 1}
+                            </span>
+                            {isDone && <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />}
+                            {isCurrent && (
+                              <span className="flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
+                                <span className="w-2 h-2 rounded-full bg-brand-orange shrink-0" />
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Big Reps Count */}
+                          <div className="flex items-baseline gap-1.5 my-1">
+                            <span className={`text-2xl sm:text-3xl font-black font-mono leading-none tracking-tight ${
+                              isCurrent ? 'text-white' : isDone ? 'text-emerald-200' : 'text-zinc-300'
+                            }`}>
+                              {isMaxTarget(step.reps) ? 'MAX' : step.reps}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">
+                              reps
+                            </span>
+                          </div>
+
+                          {/* Details: Carico & Recupero */}
+                          <div className="mt-2 pt-2 border-t border-white/10 space-y-1 text-[10px] font-semibold">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[9px] uppercase tracking-wider opacity-60">Carico</span>
+                              <span className={`font-mono font-bold truncate max-w-[70px] ${
+                                isCurrent ? 'text-white' : isDone ? 'text-emerald-300' : 'text-zinc-300'
+                              }`}>
+                                {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[9px] uppercase tracking-wider opacity-60">Recupero</span>
+                              <span className={`font-mono font-bold ${
+                                isCurrent ? 'text-brand-orange' : isDone ? 'text-emerald-400' : 'text-zinc-400'
+                              }`}>
+                                {step.rest_seconds > 0 ? `${step.rest_seconds}s` : '0s'}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
                       );
                     })}
                   </div>
                 </div>
-
-                {nextRecoveryLabel && (
-                  <p className="text-xs text-zinc-400 uppercase tracking-wider font-bold text-center mt-3">
-                    Prossimo Recupero: <span className="text-brand-orange font-mono">{nextRecoveryLabel}</span>
-                  </p>
-                )}
               </div>
             ) : isCircuit ? (
               <div className="text-center w-full flex flex-col items-center justify-between h-full">
