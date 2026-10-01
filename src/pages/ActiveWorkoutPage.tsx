@@ -143,7 +143,6 @@ import { WorkoutCelebrationModal } from '../components/WorkoutCelebrationModal';
 import {
   lockAppToPortrait,
   unlockAppForWorkout,
-  lockAppToLandscape,
   useIsLandscape,
 } from '../utils/orientationManager';
 
@@ -369,10 +368,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Gestione orientamento: l'app ruota in landscape esclusivamente durante il workout
-  const isDeviceLandscape = useIsLandscape();
-  const [manualLandscapeOverride, setManualLandscapeOverride] = useState<boolean | null>(null);
-  const isLandscape = manualLandscapeOverride !== null ? manualLandscapeOverride : isDeviceLandscape;
+  // Gestione orientamento: l'app ruota automaticamente in landscape quando il dispositivo viene fisicamente girato di 90°
+  const isLandscape = useIsLandscape();
 
   useEffect(() => {
     // Sblocca la rotazione in orizzontale durante il workout attivo
@@ -382,19 +379,6 @@ const ActiveWorkoutPage: React.FC = () => {
       void lockAppToPortrait();
     };
   }, []);
-
-  const toggleLandscapeMode = () => {
-    const nextMode = !isLandscape;
-    setManualLandscapeOverride(nextMode);
-    if (nextMode) {
-      void lockAppToLandscape();
-    } else {
-      void lockAppToPortrait();
-      setTimeout(() => {
-        void unlockAppForWorkout();
-      }, 600);
-    }
-  };
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
@@ -5413,16 +5397,6 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={toggleLandscapeMode}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange border border-brand-orange/30 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
-              title="Torna in visualizzazione verticale"
-            >
-              <Smartphone size={14} />
-              <span>Verticale</span>
-            </button>
-
             <div className="relative">
               {voiceStatus === 'success' && (
                 <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -5658,16 +5632,6 @@ const ActiveWorkoutPage: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={toggleLandscapeMode}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange border border-brand-orange/30 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
-                title="Torna in visualizzazione verticale"
-              >
-                <Smartphone size={14} />
-                <span>Verticale</span>
-              </button>
-
               <div className="relative">
                 {voiceStatus === 'success' && (
                   <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -5877,7 +5841,65 @@ const ActiveWorkoutPage: React.FC = () => {
                   })}
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <div className="my-1 overflow-x-auto">
+                <div className="flex gap-1 justify-center">
+                  {Array.from({ length: currentExercise.sets || 1 }, (_, sIdx) => {
+                    const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
+                    const isCurrent = sIdx === currentSetIdx;
+                    const isDone = sIdx < currentSetIdx;
+                    return (
+                      <button
+                        key={sIdx}
+                        type="button"
+                        onClick={() => openEditSpecificSetModal(sIdx)}
+                        className={`py-1 px-1.5 rounded-lg border text-center transition-all flex flex-col items-center justify-center cursor-pointer min-w-[38px] ${
+                          isCurrent
+                            ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-sm'
+                            : isDone
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                              : 'bg-white/5 border-white/5 text-zinc-500 hover:border-white/20'
+                        }`}
+                        title={`Modifica set ${sIdx + 1}`}
+                      >
+                        <span className="text-[7px] uppercase font-bold opacity-70">S{sIdx + 1}</span>
+                        <span className="text-[11px] font-black font-mono mt-0.5">
+                          {logged != null && logged > 0
+                            ? `${logged}r`
+                            : isDone
+                              ? `${currentExercise.reps}r`
+                              : isCurrent
+                                ? `${currentExercise.reps}r`
+                                : `${currentExercise.reps}r`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Instruction or AI Count context trigger if present */}
+            {hasCurrentInstructionNote && (
+              <button
+                type="button"
+                onClick={openCurrentInstructionModal}
+                className="w-full py-1 px-2 rounded-lg bg-brand-orange/10 hover:bg-brand-orange/20 border border-brand-orange/30 text-brand-orange text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer mb-1 shrink-0"
+              >
+                <Info size={11} />
+                <span>Leggi Istruzioni Esercizio</span>
+              </button>
+            )}
+            {!isSuperset && currentExercise.auto_count_type && (
+              <button
+                type="button"
+                onClick={() => setIsAutoCountModalOpen(true)}
+                className="w-full py-1 px-2 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/40 text-purple-300 text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer mb-1 shrink-0"
+              >
+                <Video size={11} />
+                <span>Auto-Count con Fotocamera</span>
+              </button>
+            )}
 
             {/* Bottom Tools Row */}
             <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
@@ -6362,16 +6384,6 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={toggleLandscapeMode}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10 text-[11px] font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
-              title="Attiva visualizzazione orizzontale"
-            >
-              <Smartphone className="rotate-90" size={13} />
-              <span className="hidden sm:inline">Orizzontale</span>
-            </button>
-
             <div className="relative">
               {voiceStatus === 'success' && (
                 <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -6612,16 +6624,6 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={toggleLandscapeMode}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10 text-[11px] font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
-              title="Attiva visualizzazione orizzontale"
-            >
-              <Smartphone className="rotate-90" size={13} />
-              <span className="hidden sm:inline">Orizzontale</span>
-            </button>
-
             <div className="relative">
               {voiceStatus === 'success' && (
                 <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
