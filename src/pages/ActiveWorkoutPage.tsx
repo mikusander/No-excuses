@@ -4662,6 +4662,162 @@ const ActiveWorkoutPage: React.FC = () => {
     );
   };
 
+  const calculateExerciseProgress = (
+    exercise: (typeof workout.exercises)[number],
+    exerciseIndex: number
+  ): { progressPct: number; completedUnits: number; totalUnits: number; label: string } => {
+    // 1. Esercizio già completato prima di quello corrente
+    if (exerciseIndex < currentExerciseIdx) {
+      const total = exercise.type === 'pyramid'
+        ? (exercise.pyramid_steps?.length || 1)
+        : exercise.type === 'emom'
+          ? (exercise.sets || 1) * getEffectiveEmomRounds(exercise)
+          : (exercise.type === 'superset' || exercise.type === 'circuit')
+            ? (exercise.sets || 1) * (exercise.subExercises?.length || 1)
+            : (exercise.sets || 1);
+
+      return {
+        progressPct: 100,
+        completedUnits: total,
+        totalUnits: total,
+        label: 'Esercizio completato',
+      };
+    }
+
+    // 2. Esercizio futuro non ancora iniziato
+    if (exerciseIndex > currentExerciseIdx) {
+      const total = exercise.type === 'pyramid'
+        ? (exercise.pyramid_steps?.length || 1)
+        : exercise.type === 'emom'
+          ? (exercise.sets || 1) * getEffectiveEmomRounds(exercise)
+          : (exercise.type === 'superset' || exercise.type === 'circuit')
+            ? (exercise.sets || 1) * (exercise.subExercises?.length || 1)
+            : (exercise.sets || 1);
+
+      return {
+        progressPct: 0,
+        completedUnits: 0,
+        totalUnits: total,
+        label: 'In programma',
+      };
+    }
+
+    // 3. Esercizio corrente in esecuzione
+    if (pendingExerciseAdvance) {
+      const total = exercise.type === 'pyramid'
+        ? (exercise.pyramid_steps?.length || 1)
+        : exercise.type === 'emom'
+          ? (exercise.sets || 1) * getEffectiveEmomRounds(exercise)
+          : (exercise.type === 'superset' || exercise.type === 'circuit')
+            ? (exercise.sets || 1) * (exercise.subExercises?.length || 1)
+            : (exercise.sets || 1);
+
+      return {
+        progressPct: 100,
+        completedUnits: total,
+        totalUnits: total,
+        label: 'Tutti i set completati',
+      };
+    }
+
+    if (exercise.type === 'pyramid') {
+      const steps = exercise.pyramid_steps || [];
+      const totalSteps = Math.max(1, steps.length);
+      const completedSteps = pendingPyramidAdvance
+        ? Math.min(totalSteps, currentPyramidStepIdx + 1)
+        : Math.min(totalSteps, currentPyramidStepIdx);
+      const pct = Math.round((completedSteps / totalSteps) * 100);
+      const stepLabel = pendingPyramidAdvance
+        ? `Step ${completedSteps} di ${totalSteps} completati · Recupero`
+        : `Step ${currentPyramidStepIdx + 1} di ${totalSteps} in corso`;
+
+      return {
+        progressPct: Math.min(100, Math.max(0, pct)),
+        completedUnits: completedSteps,
+        totalUnits: totalSteps,
+        label: stepLabel,
+      };
+    }
+
+    if (exercise.type === 'emom') {
+      const totalSets = Math.max(1, exercise.sets || 1);
+      const effRounds = Math.max(1, getEffectiveEmomRounds(exercise));
+      const totalUnits = totalSets * effRounds;
+
+      let completedUnits = currentSetIdx * effRounds + currentEmomRoundIdx;
+      if (isResting && !pendingExerciseAdvance) {
+        completedUnits = (currentSetIdx + 1) * effRounds;
+      }
+      completedUnits = Math.min(totalUnits, Math.max(0, completedUnits));
+      const pct = Math.round((completedUnits / totalUnits) * 100);
+      const emomLabel = isResting
+        ? `Set ${currentSetIdx + 1} completato · Recupero`
+        : totalSets > 1
+          ? `Set ${currentSetIdx + 1} · Round ${currentEmomRoundIdx + 1} di ${effRounds}`
+          : `Round ${currentEmomRoundIdx + 1} di ${effRounds} in corso`;
+
+      return {
+        progressPct: Math.min(100, Math.max(0, pct)),
+        completedUnits,
+        totalUnits,
+        label: emomLabel,
+      };
+    }
+
+    if (exercise.type === 'superset' || exercise.type === 'circuit') {
+      const totalRounds = Math.max(1, exercise.sets || 1);
+      const subCount = Math.max(1, exercise.subExercises?.length || 1);
+      const totalUnits = totalRounds * subCount;
+
+      let completedUnits = currentSetIdx * subCount + currentSubExerciseIdx;
+      if (isResting && !pendingExerciseAdvance) {
+        completedUnits = (currentSetIdx + 1) * subCount;
+      }
+      completedUnits = Math.min(totalUnits, Math.max(0, completedUnits));
+      const pct = Math.round((completedUnits / totalUnits) * 100);
+      const typeLabel = exercise.type === 'circuit' ? 'Giro' : 'Round';
+      const groupLabel = isResting
+        ? `${typeLabel} ${currentSetIdx + 1} completato · Recupero`
+        : `${typeLabel} ${currentSetIdx + 1} di ${totalRounds} · Stazione ${currentSubExerciseIdx + 1} di ${subCount}`;
+
+      return {
+        progressPct: Math.min(100, Math.max(0, pct)),
+        completedUnits,
+        totalUnits,
+        label: groupLabel,
+      };
+    }
+
+    // Standard reps / isometry / cardio
+    const totalSets = Math.max(1, exercise.sets || 1);
+    let completedSets = currentSetIdx;
+    if (isResting && !pendingExerciseAdvance) {
+      completedSets = currentSetIdx + 1;
+    }
+    completedSets = Math.min(totalSets, Math.max(0, completedSets));
+
+    let fractionalSet = 0;
+    if (!isResting && (exercise.type === 'isometry' || exercise.type === 'cardio')) {
+      const dur = exercise.duration_seconds || 0;
+      if (dur > 0 && isometryRemaining < dur) {
+        fractionalSet = Math.max(0, Math.min(1, (dur - isometryRemaining) / dur));
+      }
+    }
+
+    const rawPct = ((completedSets + fractionalSet) / totalSets) * 100;
+    const pct = Math.round(rawPct);
+    const stdLabel = isResting
+      ? `Set ${completedSets} di ${totalSets} completati · Recupero`
+      : `Set ${currentSetIdx + 1} di ${totalSets} in corso`;
+
+    return {
+      progressPct: Math.min(100, Math.max(0, pct)),
+      completedUnits: completedSets,
+      totalUnits: totalSets,
+      label: stdLabel,
+    };
+  };
+
   const renderWorkoutOverviewModal = () => {
     if (!isWorkoutOverviewModalOpen) return null;
     return (
@@ -4669,11 +4825,14 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="w-full max-w-xl bg-brand-darkGrey/95 border border-brand-orange/25 rounded-3xl p-5 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-bold text-white">Workout Overview</h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-lg font-bold text-white">Panoramica Scheda</h3>
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
                   <Clock size={12} />
                   {formatTime(getCurrentWorkoutElapsedSeconds())}
+                </span>
+                <span className="inline-flex items-center text-[10px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                  {currentExerciseIdx} / {workout.exercises.length} completati
                 </span>
               </div>
               <p className="text-xs text-brand-grey mt-1">{workout.name}</p>
@@ -4692,119 +4851,291 @@ const ActiveWorkoutPage: React.FC = () => {
             {renderOverviewGeneralNotes()}
 
             {workout.exercises.map((exercise, index) => {
+              const isCompleted = index < currentExerciseIdx;
               const isCurrentExercise = index === currentExerciseIdx;
-              const exerciseTitle = String(exercise.name || '').trim() || `Exercise ${index + 1}`;
+              const exerciseTitle = String(exercise.name || '').trim() || `Esercizio ${index + 1}`;
               const summary = getWorkoutOverviewSummary(exercise);
+              const { progressPct, label: progressLabel } = calculateExerciseProgress(exercise, index);
 
               return (
                 <div
                   key={exercise.id}
-                  className={`rounded-2xl border p-4 transition-colors ${isCurrentExercise
-                    ? 'border-brand-orange/60 bg-brand-orange/10 shadow-[0_0_18px_rgba(255,107,0,0.12)]'
-                    : 'border-white/10 bg-black/30'
-                    }`}
+                  className={`relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 ${
+                    isCurrentExercise
+                      ? 'border-2 border-brand-orange/80 bg-brand-darkGrey/95 shadow-[0_0_24px_rgba(255,94,0,0.22)] ring-1 ring-brand-orange/40'
+                      : isCompleted
+                        ? 'border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 via-emerald-900/15 to-black/50 shadow-[0_0_15px_rgba(16,185,129,0.06)]'
+                        : 'border-white/10 bg-black/30 opacity-75 hover:opacity-100'
+                  }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-[0.25em] text-brand-grey/70 font-bold mb-1">
-                        Esercizio {index + 1}
-                      </p>
-                      <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
-                      <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-brand-orange/90">
-                        {getWorkoutOverviewDisplayLabel(exercise)}
-                      </p>
-                    </div>
+                  {/* Background Fill Layer: 100% per esercizi completati, proporzionale per l'attuale */}
+                  {isCompleted && (
+                    <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
+                  )}
+                  {isCurrentExercise && (
+                    <>
+                      <div
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-brand-orange/35 via-brand-orange/25 to-brand-orange/15 pointer-events-none transition-all duration-500 ease-out"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                      {progressPct > 0 && progressPct < 100 && (
+                        <div
+                          className="absolute inset-y-0 w-[2px] bg-brand-orange shadow-[0_0_10px_rgba(255,94,0,0.9)] pointer-events-none transition-all duration-500 ease-out"
+                          style={{ left: `calc(${progressPct}% - 2px)` }}
+                        />
+                      )}
+                    </>
+                  )}
 
-                    <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${isCurrentExercise
-                      ? 'bg-brand-orange text-black'
-                      : 'bg-white/5 text-brand-grey'
+                  {/* Card Content (relativo per stare sopra i livelli di riempimento) */}
+                  <div className="relative z-10">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] uppercase tracking-[0.25em] font-bold mb-1 flex items-center">
+                          {isCompleted ? (
+                            <span className="text-emerald-400 font-bold flex items-center gap-1">
+                              <CheckCircle2 size={11} /> Esercizio {index + 1}
+                            </span>
+                          ) : isCurrentExercise ? (
+                            <span className="text-brand-orange font-bold flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-brand-orange animate-pulse" /> Esercizio {index + 1}
+                            </span>
+                          ) : (
+                            <span className="text-brand-grey/70">Esercizio {index + 1}</span>
+                          )}
+                        </p>
+                        <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
+                        <p className={`text-[10px] uppercase tracking-widest font-bold mt-1 ${
+                          isCompleted
+                            ? 'text-emerald-400/90'
+                            : isCurrentExercise
+                              ? 'text-brand-orange font-black'
+                              : 'text-zinc-400'
+                        }`}>
+                          {getWorkoutOverviewDisplayLabel(exercise)}
+                        </p>
+                      </div>
+
+                      <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
+                        isCompleted
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm'
+                          : isCurrentExercise
+                            ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20'
+                            : 'bg-white/5 text-brand-grey border border-white/5'
                       }`}>
-                      {isCurrentExercise ? 'Sei qui' : `#${index + 1}`}
+                        {isCompleted ? (
+                          <>
+                            <CheckCircle2 size={12} className="text-emerald-400" />
+                            <span>Completato</span>
+                          </>
+                        ) : isCurrentExercise ? (
+                          <>
+                            <span>Sei qui</span>
+                            <span className="opacity-70">·</span>
+                            <span>{progressPct}%</span>
+                          </>
+                        ) : (
+                          <span>#{index + 1}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {summary.map((item, summaryIndex) => (
-                      <span
-                        key={`${exercise.id}:summary:${summaryIndex}`}
-                        className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-3 py-1 text-[11px] font-bold text-white/85"
-                      >
-                        {item}
+                    {/* Barra di avanzamento dell'esercizio */}
+                    {(isCompleted || isCurrentExercise) && (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                          <span className={isCompleted ? 'text-emerald-400/90' : 'text-brand-orange tracking-wide'}>
+                            {progressLabel}
+                          </span>
+                          <span className={`font-mono text-xs font-black px-2 py-0.5 rounded-md ${
+                            isCompleted
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-brand-orange/20 text-white border border-brand-orange/30'
+                          }`}>
+                            {progressPct}%
+                          </span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden relative">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              isCompleted
+                                ? 'bg-emerald-500'
+                                : 'bg-gradient-to-r from-brand-orange via-brand-lightOrange to-yellow-400 shadow-[0_0_10px_rgba(255,94,0,0.6)]'
+                            }`}
+                            style={{ width: `${progressPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {summary.map((item, summaryIndex) => (
+                        <span
+                          key={`${exercise.id}:summary:${summaryIndex}`}
+                          className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${
+                            isCompleted
+                              ? 'border-emerald-500/20 bg-emerald-950/30 text-emerald-200'
+                              : isCurrentExercise
+                                ? 'border-brand-orange/30 bg-black/40 text-brand-orange/95'
+                                : 'border-white/10 bg-black/25 text-white/85'
+                          }`}
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+
+                    {(exercise.type === 'superset' || exercise.type === 'circuit') && exercise.subExercises && exercise.subExercises.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {exercise.subExercises.map((sub, subIndex) => {
+                          const isSubActive = isCurrentExercise && subIndex === currentSubExerciseIdx;
+                          const isSubDone = isCompleted || (isCurrentExercise && subIndex < currentSubExerciseIdx);
+
+                          return (
+                            <div
+                              key={`${exercise.id}:sub:${subIndex}`}
+                              className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-3 transition-colors ${
+                                isSubActive
+                                  ? 'border-brand-orange/60 bg-brand-orange/15 shadow-[0_0_10px_rgba(255,94,0,0.15)]'
+                                  : isSubDone
+                                    ? 'border-emerald-500/20 bg-emerald-950/20'
+                                    : 'border-white/5 bg-black/25'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${
+                                  isSubActive ? 'text-white font-black' : isSubDone ? 'text-emerald-100' : 'text-zinc-300'
+                                }`}>
+                                  {isSubDone && <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />}
+                                  {sub.name || `Esercizio ${subIndex + 1}`}
+                                </p>
+                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${
+                                  isSubActive ? 'text-brand-orange' : isSubDone ? 'text-emerald-400/90' : 'text-zinc-400'
+                                }`}>
+                                  {formatSupersetTaskMetricLabel(sub)}
+                                </p>
+                              </div>
+                              <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                                {formatWeightLabel(sub.weight_kg)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {exercise.type === 'emom' && exercise.subExercises && exercise.subExercises.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {exercise.subExercises.map((sub, subIndex) => {
+                          const isSubActive = isCurrentExercise && subIndex === (currentEmomRoundIdx % (exercise.subExercises?.length || 1));
+                          const isSubDone = isCompleted;
+
+                          return (
+                            <div
+                              key={`${exercise.id}:emom:${subIndex}`}
+                              className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-3 transition-colors ${
+                                isSubActive
+                                  ? 'border-brand-orange/60 bg-brand-orange/15 shadow-[0_0_10px_rgba(255,94,0,0.15)]'
+                                  : isSubDone
+                                    ? 'border-emerald-500/20 bg-emerald-950/20'
+                                    : 'border-white/5 bg-black/25'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${
+                                  isSubActive ? 'text-white font-black' : isSubDone ? 'text-emerald-100' : 'text-zinc-300'
+                                }`}>
+                                  {isSubDone && <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />}
+                                  {sub.name || `Esercizio ${subIndex + 1}`}
+                                </p>
+                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${
+                                  isSubActive ? 'text-brand-orange' : isSubDone ? 'text-emerald-400/90' : 'text-zinc-400'
+                                }`}>
+                                  {formatEmomTaskMetricLabel(sub)}
+                                </p>
+                              </div>
+                              <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                                {formatWeightLabel(sub.weight_kg)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {exercise.type === 'pyramid' && exercise.pyramid_steps && exercise.pyramid_steps.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {exercise.pyramid_steps.map((step, stepIndex) => {
+                          const isStepActive = isCurrentExercise && stepIndex === currentPyramidStepIdx;
+                          const isStepDone = isCompleted || (isCurrentExercise && (
+                            pendingPyramidAdvance ? stepIndex <= currentPyramidStepIdx : stepIndex < currentPyramidStepIdx
+                          ));
+
+                          return (
+                            <div
+                              key={`${exercise.id}:pyramid:${stepIndex}`}
+                              className={`rounded-xl border px-3 py-2 flex items-center justify-between gap-3 transition-colors ${
+                                isStepActive
+                                  ? 'border-brand-orange/60 bg-brand-orange/15 shadow-[0_0_10px_rgba(255,94,0,0.15)]'
+                                  : isStepDone
+                                    ? 'border-emerald-500/20 bg-emerald-950/20'
+                                    : 'border-white/5 bg-black/25'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${
+                                  isStepActive ? 'text-white font-black' : isStepDone ? 'text-emerald-100' : 'text-zinc-300'
+                                }`}>
+                                  {isStepDone && <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />}
+                                  Step {stepIndex + 1}
+                                </p>
+                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${
+                                  isStepActive ? 'text-brand-orange' : isStepDone ? 'text-emerald-400/90' : 'text-zinc-400'
+                                }`}>
+                                  {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
+                                </p>
+                              </div>
+                              <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
+                                {formatWeightLabel(step.weight_kg)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between">
+                      <span className="text-[11px] font-bold">
+                        {isCurrentExercise ? (
+                          <span className="text-brand-orange font-black flex items-center gap-1.5">
+                            <Flame size={12} className="text-brand-orange animate-pulse" />
+                            In esecuzione adesso
+                          </span>
+                        ) : isCompleted ? (
+                          <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                            <CheckCircle2 size={12} />
+                            Completato
+                          </span>
+                        ) : (
+                          <span className="text-zinc-400">
+                            Esercizio {index + 1} di {workout.exercises.length}
+                          </span>
+                        )}
                       </span>
-                    ))}
-                  </div>
-
-                  {(exercise.type === 'superset' || exercise.type === 'circuit') && exercise.subExercises && exercise.subExercises.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {exercise.subExercises.map((sub, subIndex) => (
-                        <div key={`${exercise.id}:sub:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                            <p className="text-[11px] text-brand-orange/90 font-black uppercase tracking-wide mt-1">
-                              {formatSupersetTaskMetricLabel(sub)}
-                            </p>
-                          </div>
-                          <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
-                            {formatWeightLabel(sub.weight_kg)}
-                          </span>
-                        </div>
-                      ))}
+                      <button
+                        type="button"
+                        onClick={() => openEditExerciseModal(index)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${
+                          isCurrentExercise
+                            ? 'bg-brand-orange text-black hover:bg-brand-lightOrange shadow-brand-orange/20 font-black'
+                            : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+                        }`}
+                        title={`Modifica parametri di ${exerciseTitle}`}
+                      >
+                        <SlidersHorizontal size={13} />
+                        <span>Modifica Parametri</span>
+                      </button>
                     </div>
-                  )}
-
-                  {exercise.type === 'emom' && exercise.subExercises && exercise.subExercises.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {exercise.subExercises.map((sub, subIndex) => (
-                        <div key={`${exercise.id}:emom:${subIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-white font-bold text-sm truncate">{sub.name || `Exercise ${subIndex + 1}`}</p>
-                            <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
-                              {formatEmomTaskMetricLabel(sub)}
-                            </p>
-                          </div>
-                          <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
-                            {formatWeightLabel(sub.weight_kg)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {exercise.type === 'pyramid' && exercise.pyramid_steps && exercise.pyramid_steps.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {exercise.pyramid_steps.map((step, stepIndex) => (
-                        <div key={`${exercise.id}:pyramid:${stepIndex}`} className="rounded-xl border border-white/5 bg-black/25 px-3 py-2 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-white font-bold text-sm truncate">Step {stepIndex + 1}</p>
-                            <p className="text-[11px] text-brand-orange font-black uppercase tracking-wide mt-1">
-                              {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
-                            </p>
-                          </div>
-                          <span className="text-[10px] text-brand-grey/80 font-bold shrink-0">
-                            {formatWeightLabel(step.weight_kg)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-zinc-400">
-                      {isCurrentExercise ? 'In esecuzione adesso' : `Esercizio ${index + 1} di ${workout.exercises.length}`}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => openEditExerciseModal(index)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${
-                        isCurrentExercise
-                          ? 'bg-brand-orange text-black hover:bg-brand-lightOrange shadow-brand-orange/20 font-black'
-                          : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
-                      }`}
-                      title={`Modifica parametri di ${exerciseTitle}`}
-                    >
-                      <SlidersHorizontal size={13} />
-                      <span>Modifica Parametri</span>
-                    </button>
                   </div>
                 </div>
               );
