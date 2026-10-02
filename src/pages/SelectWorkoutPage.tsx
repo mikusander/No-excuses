@@ -183,7 +183,7 @@ const SelectWorkoutPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col safe-pb-nav relative">
       <AppHeader
-        title="Select Workout"
+        title="Seleziona Scheda"
         onBack={() => navigate('/')}
       />
 
@@ -280,8 +280,10 @@ const SelectWorkoutPage: React.FC = () => {
                           <Calendar className="text-brand-orange" size={28} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <h2 className="text-xl font-bold text-white leading-tight truncate">{workout.name}</h2>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-lg sm:text-xl font-bold text-white leading-snug break-words">
+                              {workout.name}
+                            </h2>
                             {isWorkoutActive(workout.id) && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2 py-0.5 rounded-full shrink-0">
                                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
