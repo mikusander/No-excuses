@@ -6260,16 +6260,6 @@ const ActiveWorkoutPage: React.FC = () => {
                         {specialExerciseLabel}
                       </span>
                     )}
-                    {hasCurrentInstructionNote && (
-                      <button
-                        onClick={openCurrentInstructionModal}
-                        className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-brand-orange hover:text-white text-[9px] font-bold transition-colors cursor-pointer"
-                        title="Istruzioni Esercizio"
-                      >
-                        <Info size={10} />
-                        <span>Info</span>
-                      </button>
-                    )}
                     {!isSuperset && currentExercise.auto_count_type && (
                       <button
                         onClick={() => setIsAutoCountModalOpen(true)}
@@ -6511,10 +6501,10 @@ const ActiveWorkoutPage: React.FC = () => {
               <button
                 type="button"
                 onClick={openCurrentInstructionModal}
-                className="w-full py-1 px-2 rounded-lg bg-brand-orange/10 hover:bg-brand-orange/20 border border-brand-orange/30 text-brand-orange text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer mb-1 shrink-0"
+                className="w-full py-1.5 px-2 rounded-lg bg-brand-orange/10 hover:bg-brand-orange/20 border border-brand-orange/30 text-brand-orange text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer mb-1 shrink-0"
               >
-                <Info size={11} />
-                <span>Leggi Istruzioni Esercizio</span>
+                <Info size={13} />
+                <span>Note e Istruzioni Esercizio</span>
               </button>
             )}
             {!isSuperset && currentExercise.auto_count_type && (
@@ -7319,16 +7309,6 @@ const ActiveWorkoutPage: React.FC = () => {
                     {specialExerciseLabel}
                   </span>
                 )}
-                {hasCurrentInstructionNote && (
-                  <button
-                    onClick={openCurrentInstructionModal}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-brand-orange hover:text-white text-[10px] font-bold transition-colors"
-                    title="Istruzioni Esercizio"
-                  >
-                    <Info size={11} />
-                    <span>Info</span>
-                  </button>
-                )}
                 {!isSuperset && currentExercise.auto_count_type && (
                   <button
                     onClick={() => setIsAutoCountModalOpen(true)}
@@ -8123,10 +8103,10 @@ const ActiveWorkoutPage: React.FC = () => {
               <button
                 type="button"
                 onClick={openCurrentInstructionModal}
-                className="w-full py-1.5 px-3 rounded-xl bg-brand-orange/10 hover:bg-brand-orange/20 border border-brand-orange/30 text-brand-orange text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-2 px-3 rounded-xl bg-brand-orange/10 hover:bg-brand-orange/20 border border-brand-orange/30 text-brand-orange text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-[0.98]"
               >
-                <Info size={13} />
-                <span>Leggi Istruzioni Esercizio</span>
+                <Info size={14} />
+                <span>Note e Istruzioni Esercizio</span>
               </button>
             )}
             {!isSuperset && currentExercise.auto_count_type && (
