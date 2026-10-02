@@ -155,6 +155,9 @@ class SoundManager {
    */
   public isAudioEnabled(): boolean {
     if (typeof window === 'undefined') return false;
+    const mode = localStorage.getItem('audio_mode_preference');
+    if (mode === 'disabled') return false;
+    if (mode === 'minimal' || mode === 'full') return true;
     return localStorage.getItem('voice_assistance_enabled') !== 'false';
   }
 

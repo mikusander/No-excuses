@@ -33,16 +33,18 @@ export let lastUtterance: SpeechSynthesisUtterance | null = null;
  * Senza questa chiamata iniziale, speak() può fallire silenziosamente
  * quando invocata da requestAnimationFrame o altri contesti non-gesture.
  */
+import { isVoiceGuidanceEnabled } from './audioSettings';
+
 export const warmupSpeechSynthesis = () => {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  if (localStorage.getItem('voice_assistance_enabled') === 'false') return;
+  if (!isVoiceGuidanceEnabled()) return;
   try {
     const synth = window.speechSynthesis;
     synth.cancel();
     // Riproduce un'utterance quasi silenziosa solo per sbloccare il contesto audio
     const utterance = new SpeechSynthesisUtterance(' ');
     utterance.volume = 0.01;
-    utterance.lang = 'en-US';
+    utterance.lang = 'it-IT';
     synth.speak(utterance);
   } catch {
     // ignore errors
@@ -52,18 +54,13 @@ export const warmupSpeechSynthesis = () => {
 /**
  * `speak` — Riproduce un testo tramite la sintesi vocale del browser.
  *
- * Prima di parlare controlla la preferenza utente salvata in localStorage
- * (`voice_assistance_enabled`). Se il flag è 'false', la funzione è no-op.
- *
- * Interrompe l'eventuale utterance in corso prima di avviare la nuova,
- * ma solo se il synth è già attivo (per evitare bug su Chrome mobile).
+ * Prima di parlare controlla che la modalità audio attiva sia 'full'
+ * (isVoiceGuidanceEnabled). Nelle modalità 'disabled' o 'minimal' è una no-op.
  *
  * @param text - Il testo da riprodurre vocalmente
  */
 export const speak = (text: string) => {
-  // Controlla la preferenza utente salvata nelle impostazioni
-  const isVoiceAssistantEnabled = localStorage.getItem('voice_assistance_enabled') !== 'false';
-  if (!isVoiceAssistantEnabled) return;
+  if (!isVoiceGuidanceEnabled()) return;
 
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     const synth = window.speechSynthesis;
@@ -74,7 +71,6 @@ export const speak = (text: string) => {
     }
 
     // Solo cancel se c'è qualcosa in riproduzione o in coda.
-    // Chiamare cancel() su un synth inattivo può rompere lo stato su Chrome mobile.
     if (synth.speaking || synth.pending) {
       try {
         synth.cancel();
@@ -85,9 +81,9 @@ export const speak = (text: string) => {
 
     const utterance = new SpeechSynthesisUtterance(text);
     
-    utterance.lang = 'en-US';
-    utterance.rate = 1;
-    utterance.pitch = 1;
+    utterance.lang = 'it-IT';
+    utterance.rate = 1.05;
+    utterance.pitch = 1.0;
     
     // Mantiene un riferimento per evitare garbage collection prematura
     lastUtterance = utterance;

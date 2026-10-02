@@ -113,6 +113,7 @@ import {
   playRestFinishedSound,
   unlockAudio,
   isAudioFeedbackEnabled,
+  isVoiceGuidanceEnabled,
 } from '../utils/audio';
 import { hapticLight, hapticSuccess } from '../utils/haptics';
 import { pipManager } from '../utils/pipManager';
@@ -638,13 +639,22 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const speakCue = (text: string) => {
-    const isVoiceAssistantEnabled = localStorage.getItem('voice_assistance_enabled') !== 'false';
-    if (!isVoiceAssistantEnabled || !voiceAssistanceEnabled) return;
+    if (!isVoiceGuidanceEnabled() || !voiceAssistanceEnabled) return;
     const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
     if (!synth) return;
+    if (synth.paused) {
+      synth.resume();
+    }
+    if (synth.speaking || synth.pending) {
+      try {
+        synth.cancel();
+      } catch {
+        // ignore errors
+      }
+    }
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
-    utterance.rate = 1;
+    utterance.lang = 'it-IT';
+    utterance.rate = 1.05;
     utterance.pitch = 1;
     synth.speak(utterance);
   };
@@ -654,56 +664,124 @@ const ActiveWorkoutPage: React.FC = () => {
     return Math.max(0, Math.ceil((endsAtMs - Date.now()) / 1000));
   };
 
-  const buildSetAnnouncementCue = (exercise: Exercise, nextSetIdx: number, pyramidStepIdx?: number) => {
-    const name = String(exercise.name || '').trim();
-    const parts: string[] = [];
-    if (name) parts.push(name);
+  const formatExerciseTypeVoiceLabel = (type: string): string => {
+    switch (type) {
+      case 'isometry': return 'Isometria';
+      case 'pyramid': return 'Piramidale';
+      case 'emom': return 'EMOM';
+      case 'superset': return 'Superset';
+      case 'circuit': return 'Circuito';
+      case 'cardio': return 'Cardio';
+      default: return 'Ripetizioni';
+    }
+  };
 
-    parts.push(`set ${nextSetIdx + 1}`);
+  const formatWeightVoice = (weight?: number | null): string => {
+    if (weight == null || weight <= 0) return '';
+    const rounded = Math.round(weight * 100) / 100;
+    const str = String(rounded).replace('.', ' virgola ');
+    return `${str} ${rounded === 1 ? 'chilo' : 'chili'}`;
+  };
 
-    if (exercise.type === 'circuit') {
-      return parts.join(', ');
+  const formatDurationVoice = (totalSeconds: number): string => {
+    if (totalSeconds <= 0) return 'zero secondi';
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    if (m > 0 && s > 0) {
+      return `${m} ${m === 1 ? 'minuto' : 'minuti'} e ${s} ${s === 1 ? 'secondo' : 'secondi'}`;
+    }
+    if (m > 0) {
+      return `${m} ${m === 1 ? 'minuto' : 'minuti'}`;
+    }
+    return `${s} ${s === 1 ? 'secondo' : 'secondi'}`;
+  };
+
+  const buildRestVoiceAnnouncement = (
+    durationSeconds: number,
+    upcoming: { nextExerciseName: string; nextSetInfo?: string; nextWeightKg?: number | null }
+  ): string => {
+    const durationText = formatDurationVoice(durationSeconds);
+    const nextName = String(upcoming.nextExerciseName || '').trim();
+
+    if (nextName === 'Fine Allenamento') {
+      return `Recupero ${durationText}. Fine allenamento in arrivo.`;
     }
 
-    if ((exercise.type === 'superset' || exercise.type === 'emom') && exercise.subExercises && exercise.subExercises.length > 0) {
+    const weightText =
+      upcoming.nextWeightKg != null && upcoming.nextWeightKg > 0
+        ? `, ${formatWeightVoice(upcoming.nextWeightKg)}`
+        : '';
+
+    return `Recupero ${durationText}. Prossimo: ${nextName}${weightText}.`;
+  };
+
+  const buildSetAnnouncementCue = (
+    exercise: Exercise,
+    nextSetIdx: number,
+    pyramidStepIdx?: number
+  ): string => {
+    const name = String(exercise.name || '').trim();
+    const typeLabel = formatExerciseTypeVoiceLabel(exercise.type);
+    const parts: string[] = [];
+
+    if (name) parts.push(name);
+    parts.push(typeLabel);
+
+    if (exercise.type === 'pyramid' && exercise.pyramid_steps) {
+      const stepIdx = pyramidStepIdx != null ? pyramidStepIdx : 0;
+      const step = exercise.pyramid_steps[stepIdx];
+      const totalSteps = exercise.pyramid_steps.length;
+      if (step) {
+        if (step.weight_kg != null && step.weight_kg > 0) {
+          parts.push(formatWeightVoice(step.weight_kg));
+        }
+        parts.push(step.reps > 0 ? `${step.reps} ripetizioni` : 'ripetizioni a sfinimento');
+      }
+      parts.push(`Step ${stepIdx + 1} di ${totalSteps}`);
+    } else if ((exercise.type === 'superset' || exercise.type === 'emom') && exercise.subExercises && exercise.subExercises.length > 0) {
+      const totalRounds = exercise.type === 'emom' ? getEffectiveEmomRounds(exercise) : (exercise.sets || 1);
+      parts.push(`Round ${nextSetIdx + 1} di ${totalRounds}`);
+
       const subParts = exercise.subExercises.map((sub) => {
         const subName = String(sub.name || '').trim();
         const subInfo: string[] = [];
         if (subName) subInfo.push(subName);
+        if (sub.weight_kg != null && sub.weight_kg > 0) subInfo.push(formatWeightVoice(sub.weight_kg));
         if (sub.type === 'isometry') {
-          if (sub.duration_seconds > 0) subInfo.push(`${sub.duration_seconds} seconds`);
+          subInfo.push(sub.duration_seconds > 0 ? `${sub.duration_seconds} secondi` : 'tenuta a sfinimento');
         } else {
-          if (sub.reps > 0) subInfo.push(`${sub.reps} reps`);
+          subInfo.push(sub.reps > 0 ? `${sub.reps} ripetizioni` : 'ripetizioni a sfinimento');
         }
-        if (sub.weight_kg != null && sub.weight_kg > 0) subInfo.push(`${sub.weight_kg} kilos`);
         return subInfo.join(', ');
       });
       parts.push(subParts.join('. '));
-    } else if (exercise.type === 'pyramid' && exercise.pyramid_steps) {
-      const stepIdx = pyramidStepIdx != null ? pyramidStepIdx : 0;
-      const step = exercise.pyramid_steps[stepIdx];
-      if (step) {
-        if (step.reps > 0) parts.push(`${step.reps} reps`);
-        if (step.weight_kg != null && step.weight_kg > 0) parts.push(`${step.weight_kg} kilos`);
+    } else if (exercise.type === 'circuit') {
+      if (exercise.weight_kg != null && exercise.weight_kg > 0) {
+        parts.push(formatWeightVoice(exercise.weight_kg));
       }
+      parts.push(`Giro ${nextSetIdx + 1} di ${exercise.sets || 1}`);
     } else {
-      if (exercise.type === 'isometry') {
-        if (exercise.duration_seconds > 0) parts.push(`${exercise.duration_seconds} seconds`);
-      } else {
-        if (exercise.reps > 0) parts.push(`${exercise.reps} reps`);
+      // Standard reps o isometria
+      if (exercise.weight_kg != null && exercise.weight_kg > 0) {
+        parts.push(formatWeightVoice(exercise.weight_kg));
       }
-      if (exercise.weight_kg != null && exercise.weight_kg > 0) parts.push(`${exercise.weight_kg} kilos`);
+      if (exercise.type === 'isometry' || exercise.type === 'cardio') {
+        parts.push(exercise.duration_seconds > 0 ? `${exercise.duration_seconds} secondi` : 'tenuta a sfinimento');
+      } else {
+        parts.push(exercise.reps > 0 ? `${exercise.reps} ripetizioni` : 'ripetizioni a sfinimento');
+      }
+      parts.push(`Set ${nextSetIdx + 1} di ${exercise.sets || 1}`);
     }
 
-    return parts.join(', ');
+    return parts.join('. ');
   };
 
   const getUpcomingRestTargetInfo = useCallback(
     (overridePendingAdvance?: boolean) => {
-      if (!workout) return { nextExerciseName: 'Prossimo Esercizio', nextSetInfo: '' };
+      if (!workout) return { nextExerciseName: 'Prossimo Esercizio', nextSetInfo: '', nextWeightKg: null };
 
       const currentEx = workout.exercises[currentExerciseIdx];
-      if (!currentEx) return { nextExerciseName: 'Prossimo Esercizio', nextSetInfo: '' };
+      if (!currentEx) return { nextExerciseName: 'Prossimo Esercizio', nextSetInfo: '', nextWeightKg: null };
 
       // Controlla se siamo all'ultimo set dell'esercizio corrente
       const isLastSetOfCurrent =
@@ -720,27 +798,35 @@ const ActiveWorkoutPage: React.FC = () => {
 
       if (isTransitioningToNext) {
         const nextEx = workout.exercises[currentExerciseIdx + 1];
-        if (!nextEx) return { nextExerciseName: 'Fine Allenamento', nextSetInfo: '' };
+        if (!nextEx) return { nextExerciseName: 'Fine Allenamento', nextSetInfo: '', nextWeightKg: null };
 
         const name = String(nextEx.name || '').trim() || `Esercizio ${currentExerciseIdx + 2}`;
         const totalSets = nextEx.sets || 1;
 
         let setInfo = `Set 1 di ${totalSets}`;
+        let weightKg: number | null = null;
+
         if (nextEx.type === 'circuit') {
           setInfo = `Giro 1 di ${totalSets}`;
+          weightKg = nextEx.weight_kg ?? nextEx.subExercises?.[0]?.weight_kg ?? null;
         } else if (nextEx.type === 'superset') {
           setInfo = `Round 1 di ${totalSets}`;
+          weightKg = nextEx.subExercises?.[0]?.weight_kg ?? null;
         } else if (nextEx.type === 'emom') {
           const totalRounds = getEffectiveEmomRounds(nextEx);
           setInfo = `Round 1 di ${totalRounds}`;
+          weightKg = nextEx.subExercises?.[0]?.weight_kg ?? null;
         } else if (nextEx.type === 'pyramid') {
           const totalSteps = nextEx.pyramid_steps?.length || 1;
           const step = nextEx.pyramid_steps?.[0];
           const reps = step ? (step.reps > 0 ? `${step.reps} reps` : 'MAX reps') : '';
           setInfo = `Step 1 di ${totalSteps}${reps ? ` • ${reps}` : ''}`;
+          weightKg = step?.weight_kg ?? null;
+        } else {
+          weightKg = nextEx.weight_kg ?? null;
         }
 
-        return { nextExerciseName: name, nextSetInfo: setInfo };
+        return { nextExerciseName: name, nextSetInfo: setInfo, nextWeightKg: weightKg };
       }
 
       // Recupero tra step piramidali dello stesso esercizio
@@ -752,6 +838,7 @@ const ActiveWorkoutPage: React.FC = () => {
         return {
           nextExerciseName: currentEx.name,
           nextSetInfo: `Step ${nextStepIdx + 1} di ${totalSteps}${reps ? ` • ${reps}` : ''}`,
+          nextWeightKg: step?.weight_kg ?? null,
         };
       }
 
@@ -760,6 +847,7 @@ const ActiveWorkoutPage: React.FC = () => {
         return {
           nextExerciseName: currentEx.name,
           nextSetInfo: `Giro ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
+          nextWeightKg: currentEx.weight_kg ?? currentEx.subExercises?.[0]?.weight_kg ?? null,
         };
       }
 
@@ -768,6 +856,7 @@ const ActiveWorkoutPage: React.FC = () => {
         return {
           nextExerciseName: currentEx.name,
           nextSetInfo: `Round ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
+          nextWeightKg: currentEx.subExercises[0]?.weight_kg ?? null,
         };
       }
 
@@ -777,6 +866,7 @@ const ActiveWorkoutPage: React.FC = () => {
         return {
           nextExerciseName: currentEx.name,
           nextSetInfo: `Round ${currentEmomRoundIdx + 2} di ${totalRounds}`,
+          nextWeightKg: currentEx.subExercises?.[0]?.weight_kg ?? null,
         };
       }
 
@@ -784,6 +874,7 @@ const ActiveWorkoutPage: React.FC = () => {
       return {
         nextExerciseName: currentEx.name,
         nextSetInfo: `Set ${currentSetIdx + 2} di ${currentEx.sets || 1}`,
+        nextWeightKg: currentEx.weight_kg ?? null,
       };
     },
     [workout, pendingExerciseAdvance, currentExerciseIdx, pendingPyramidAdvance, currentPyramidStepIdx, currentSetIdx, currentEmomRoundIdx]
@@ -791,7 +882,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const startRestCountdown = (
     durationSeconds: number,
-    customUpcoming?: { nextExerciseName: string; nextSetInfo: string }
+    customUpcoming?: { nextExerciseName: string; nextSetInfo: string; nextWeightKg?: number | null }
   ) => {
     unlockAudio();
     void requestScreenWakeLock();
@@ -816,6 +907,10 @@ const ActiveWorkoutPage: React.FC = () => {
       nextSetInfo: upcoming.nextSetInfo,
       onSkip: skipRest,
     }).catch(() => {});
+
+    // In modalità Completa: annuncia durata recupero e prossimo esercizio (nome + chili)
+    const restVoiceCue = buildRestVoiceAnnouncement(safe, upcoming);
+    speakCue(restVoiceCue);
   };
 
   const stopRestCountdown = (keepActiveNotifications = false) => {
@@ -1208,7 +1303,7 @@ const ActiveWorkoutPage: React.FC = () => {
       } else {
         isometryStopwatchStartMsRef.current = Date.now() - (isometryElapsedSeconds * 1000);
         setIsometryStopwatchActive(true);
-        speakCue('start');
+        speakCue('Inizia');
       }
       return;
     }
@@ -1989,8 +2084,14 @@ const ActiveWorkoutPage: React.FC = () => {
       }
     };
 
+    const onAudioModeChanged = (e: Event) => {
+      const custom = e as CustomEvent<string>;
+      setVoiceAssistanceEnabled(custom.detail === 'full');
+    };
+
     window.addEventListener('storage', onStorage);
     window.addEventListener('voice-assistance-changed', onVoiceChanged);
+    window.addEventListener('audio-mode-changed', onAudioModeChanged);
     window.addEventListener('focus', syncFromLocalStorage);
     document.addEventListener('visibilitychange', syncFromLocalStorage);
 
@@ -1998,6 +2099,7 @@ const ActiveWorkoutPage: React.FC = () => {
       isUnmounted = true;
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('voice-assistance-changed', onVoiceChanged);
+      window.removeEventListener('audio-mode-changed', onAudioModeChanged);
       window.removeEventListener('focus', syncFromLocalStorage);
       document.removeEventListener('visibilitychange', syncFromLocalStorage);
     };
@@ -2051,7 +2153,7 @@ const ActiveWorkoutPage: React.FC = () => {
     else if (workout?.exercises[currentExerciseIdx]?.type === 'emom') {
       const ex = workout.exercises[currentExerciseIdx];
       if (currentEmomRoundIdx < getEffectiveEmomRounds(ex) - 1) {
-        speakCue('next round');
+        speakCue('Prossimo round');
         setCurrentEmomRoundIdx(prev => prev + 1);
         setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
       } else {
@@ -2140,7 +2242,7 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    speakCue('last exercise');
+    speakCue('Ultimo esercizio');
   };
 
   handleVoicePrevExerciseRef.current = () => {
@@ -2151,7 +2253,7 @@ const ActiveWorkoutPage: React.FC = () => {
       return;
     }
 
-    speakCue('first exercise');
+    speakCue('Primo esercizio');
   };
 
   handleVoiceEndWorkoutRef.current = () => {
@@ -2440,8 +2542,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
       const firstEx = nextWorkout.exercises[0];
       if (firstEx) {
-        const firstExerciseName = String(firstEx.name || '').trim() || 'Exercise 1';
-        speakCue(`first exercise ${firstExerciseName}`);
+        speakCue(buildSetAnnouncementCue(firstEx, 0));
 
         if (firstEx.type === 'isometry' || firstEx.type === 'cardio') {
           setIsometryRemainingWithSync(firstEx.duration_seconds);
@@ -2919,7 +3020,7 @@ const ActiveWorkoutPage: React.FC = () => {
             if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
               playRestFinishedSound();
             }
-            speakCue('next round');
+            speakCue('Prossimo round');
             setCurrentEmomRoundIdx(prev => prev + 1);
             setEmomRoundRemainingWithSync(ex.emom_round_duration || 60);
           } else {
@@ -2972,7 +3073,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   useEffect(() => {
     if (!wasEmomActiveRef.current && emomActive && emomRoundRemaining > 0) {
-      speakCue('start');
+      speakCue('Inizia');
     }
     wasEmomActiveRef.current = emomActive;
   }, [emomActive, emomRoundRemaining]);
@@ -3061,7 +3162,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   useEffect(() => {
     if (!wasIsometryActiveRef.current && isometryActive && isometryRemaining > 0) {
-      speakCue('start');
+      speakCue('Inizia');
     }
     wasIsometryActiveRef.current = isometryActive;
   }, [isometryActive, isometryRemaining]);
@@ -3917,41 +4018,7 @@ const ActiveWorkoutPage: React.FC = () => {
         ? 'border-brand-orange/60 bg-brand-orange/10 text-brand-orange'
         : '';
 
-  const buildNextExerciseVoiceCue = (nextExercise: Exercise, _nextExerciseIndex: number) => {
-    const name = String(nextExercise.name || '').trim();
-    const parts: string[] = ['next exercise'];
-    if (name) parts.push(name);
 
-    if ((nextExercise.type === 'superset' || nextExercise.type === 'circuit' || nextExercise.type === 'emom') && nextExercise.subExercises && nextExercise.subExercises.length > 0) {
-      const subParts = nextExercise.subExercises.map((sub) => {
-        const subName = String(sub.name || '').trim();
-        const subInfo: string[] = [];
-        if (subName) subInfo.push(subName);
-        if (sub.type === 'isometry') {
-          if (sub.duration_seconds > 0) subInfo.push(`${sub.duration_seconds} seconds`);
-        } else {
-          if (sub.reps > 0) subInfo.push(`${sub.reps} reps`);
-        }
-        if (sub.weight_kg != null && sub.weight_kg > 0) subInfo.push(`${sub.weight_kg} kilos`);
-        return subInfo.join(', ');
-      });
-      parts.push(subParts.join('. '));
-    } else if (nextExercise.type === 'pyramid' && nextExercise.pyramid_steps) {
-      const firstStep = nextExercise.pyramid_steps[0];
-      if (firstStep) {
-        if (firstStep.reps > 0) parts.push(`${firstStep.reps} reps`);
-        if (firstStep.weight_kg != null && firstStep.weight_kg > 0) parts.push(`${firstStep.weight_kg} kilos`);
-      }
-    } else if (nextExercise.type === 'isometry' || nextExercise.type === 'cardio') {
-      if (nextExercise.duration_seconds > 0) parts.push(`${nextExercise.duration_seconds} seconds`);
-      if (nextExercise.weight_kg != null && nextExercise.weight_kg > 0) parts.push(`${nextExercise.weight_kg} kilos`);
-    } else {
-      if (nextExercise.reps > 0) parts.push(`${nextExercise.reps} reps`);
-      if (nextExercise.weight_kg != null && nextExercise.weight_kg > 0) parts.push(`${nextExercise.weight_kg} kilos`);
-    }
-
-    return parts.join(', ');
-  };
 
   const queueNextExerciseFlow = (sourceExercise: Exercise) => {
     const transitionRestSeconds = Math.max(0, Math.trunc(sourceExercise.transition_rest_seconds || 0));
@@ -3996,7 +4063,7 @@ const ActiveWorkoutPage: React.FC = () => {
       const shouldSuppressVoiceCue = suppressSwipeNextExerciseVoiceCueRef.current;
       suppressSwipeNextExerciseVoiceCueRef.current = false;
       if (!shouldSuppressVoiceCue) {
-        speakCue(buildNextExerciseVoiceCue(nextEx, nextIdx));
+        speakCue(buildSetAnnouncementCue(nextEx, 0));
       }
       setCurrentExerciseIdx(nextIdx);
       setCurrentSetIdx(0);
@@ -4022,6 +4089,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (currentExerciseIdx > 0) {
       const prevIdx = currentExerciseIdx - 1;
       const prevEx = workout.exercises[prevIdx];
+      speakCue(buildSetAnnouncementCue(prevEx, 0));
       setCurrentExerciseIdx(prevIdx);
       setCurrentSetIdx(0);
       setCurrentSubExerciseIdx(0);
@@ -4044,7 +4112,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (currentExercise.type === 'emom') {
       // Skipping round manually via button
       if (currentEmomRoundIdx < effectiveEmomRounds - 1) {
-        speakCue('next round');
+        speakCue('Prossimo round');
         setCurrentEmomRoundIdx(prev => prev + 1);
         setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
       } else {
@@ -4073,6 +4141,7 @@ const ActiveWorkoutPage: React.FC = () => {
           const upcomingPyramid = {
             nextExerciseName: currentExercise.name,
             nextSetInfo: `Step ${nextStepIdx + 1} di ${totalSteps}${reps ? ` • ${reps}` : ''}`,
+            nextWeightKg: step?.weight_kg ?? null,
           };
           startRestCountdown(stepRest, upcomingPyramid);
         } else {
@@ -4344,7 +4413,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const skipRest = () => {
     stopRestCountdown();
     setRestRemaining(0);
-    finishRestAndNextSet();
+    finishRestAndNextSet(true);
   };
 
   const nextRecoveryLabel = getNextRecoveryLabel();
@@ -4368,7 +4437,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
       playGoalReachedSound();
     }
-    speakCue('workout complete');
+    speakCue('Allenamento completato');
     stopEmomCountdown();
     stopIsometryCountdown();
     stopRestCountdown();
@@ -4424,7 +4493,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (isEmom) {
       // NEXT ROUND must advance even if timer is still running.
       if (!isLastEmomRound) {
-        speakCue('next round');
+        speakCue('Prossimo round');
         setCurrentEmomRoundIdx(prev => prev + 1);
         setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
         return;

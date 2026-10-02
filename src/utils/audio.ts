@@ -25,28 +25,49 @@ export const getAudioCtx = (): AudioContext => {
   return ctx;
 };
 
+import {
+  areTimerEndSoundsEnabled,
+  areCountdownBeepsEnabled,
+  getAudioMode,
+  setAudioMode,
+  isAudioDisabled,
+  isAudioMinimal,
+  isAudioFull,
+  isVoiceGuidanceEnabled,
+  type AudioMode,
+} from './audioSettings';
+
+export {
+  getAudioMode,
+  setAudioMode,
+  isAudioDisabled,
+  isAudioMinimal,
+  isAudioFull,
+  isVoiceGuidanceEnabled,
+  type AudioMode,
+};
+
 export const isAudioFeedbackEnabled = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem('voice_assistance_enabled') !== 'false';
+  return areTimerEndSoundsEnabled();
 };
 
 export const playCountdownBeep = (secondsRemaining?: number) => {
-  if (!isAudioFeedbackEnabled()) return;
+  if (!areCountdownBeepsEnabled()) return;
   soundManager.playCountdownBeep(secondsRemaining);
 };
 
 export const playRestFinishedSound = () => {
-  if (!isAudioFeedbackEnabled()) return;
+  if (!areTimerEndSoundsEnabled()) return;
   soundManager.playRestFinishedSound();
 };
 
 export const playGoalReachedSound = () => {
-  if (!isAudioFeedbackEnabled()) return;
+  if (!areTimerEndSoundsEnabled()) return;
   soundManager.playGoalReachedSound();
 };
 
 export const testAudio = () => {
-  if (!isAudioFeedbackEnabled()) return;
+  if (!areTimerEndSoundsEnabled()) return;
   soundManager.testAudio();
 };
 

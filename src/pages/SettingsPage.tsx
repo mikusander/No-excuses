@@ -40,11 +40,17 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellOff, Volume2 } from 'lucide-react';
+import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellOff, Volume2, Volume1, VolumeX, Play } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeader from '../components/AppHeader';
 import { hapticLight, hapticMedium, hapticHeavy } from '../utils/haptics';
 import { supabase } from '../lib/supabase';
+import {
+  getAudioMode,
+  setAudioMode,
+  type AudioMode,
+  testAudio,
+} from '../utils/audio';
 import {
   areNotificationsEnabled,
   setNotificationsEnabled,
@@ -61,7 +67,6 @@ import {
 
 const SettingsPage: React.FC = () => {
   const { user, signOut } = useAuth();
-  const VOICE_ASSIST_KEY = 'voice_assistance_enabled';
 
   const [userName, setUserName] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
@@ -71,7 +76,7 @@ const SettingsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [voiceAssistanceEnabled, setVoiceAssistanceEnabled] = useState(true);
+  const [audioMode, setAudioModeState] = useState<AudioMode>(getAudioMode());
   const [voiceSyncError, setVoiceSyncError] = useState<string | null>(null);
   const [voiceSaving, setVoiceSaving] = useState(false);
 
@@ -228,43 +233,48 @@ const SettingsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem(VOICE_ASSIST_KEY);
-    if (saved !== null) {
-      setVoiceAssistanceEnabled(saved === 'true');
-    }
+    setAudioModeState(getAudioMode());
   }, []);
 
-  const handleToggleVoiceAssistance = async () => {
-    if (!user || voiceSaving) return;
+  const handleSelectAudioMode = async (nextMode: AudioMode) => {
+    if (voiceSaving) return;
 
-    void hapticLight();
-    const previous = voiceAssistanceEnabled;
-    const next = !voiceAssistanceEnabled;
+    void hapticMedium();
+    const previous = audioMode;
 
     setVoiceSyncError(null);
-    setVoiceAssistanceEnabled(next);
-    localStorage.setItem(VOICE_ASSIST_KEY, String(next));
-    window.dispatchEvent(new CustomEvent('voice-assistance-changed', { detail: next }));
+    setAudioModeState(nextMode);
+    setAudioMode(nextMode);
     setVoiceSaving(true);
 
     try {
-      await ensureProfileExists(next);
+      const isVoiceOn = nextMode === 'full';
+      await ensureProfileExists(isVoiceOn);
 
-      const { error: updateError } = await supabase
-        .from('profili')
-        .update({
-          voice_assistant: next,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id_utente', user.id);
+      if (user) {
+        // 1. Sincronizzazione metadati utente Supabase (cross-device)
+        await supabase.auth.updateUser({
+          data: {
+            audio_mode: nextMode,
+          },
+        });
 
-      if (updateError) throw updateError;
+        // 2. Tabella profili (retrocompatibilità col booleano voice_assistant)
+        const { error: updateError } = await supabase
+          .from('profili')
+          .update({
+            voice_assistant: isVoiceOn,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id_utente', user.id);
+
+        if (updateError) throw updateError;
+      }
     } catch (toggleError) {
-      console.error('Error syncing voice assistance preference:', toggleError);
-      setVoiceAssistanceEnabled(previous);
-      localStorage.setItem(VOICE_ASSIST_KEY, String(previous));
-      window.dispatchEvent(new CustomEvent('voice-assistance-changed', { detail: previous }));
-      setVoiceSyncError('Unable to sync this setting across devices. Please try again.');
+      console.error('Error syncing audio mode preference:', toggleError);
+      setAudioModeState(previous);
+      setAudioMode(previous);
+      setVoiceSyncError('Impossibile sincronizzare la preferenza sul cloud. Riprova.');
     } finally {
       setVoiceSaving(false);
     }
@@ -286,10 +296,17 @@ const SettingsPage: React.FC = () => {
         setUserName(user.email?.split('@')[0] || 'User');
       }
 
-      if (!error && typeof data?.voice_assistant === 'boolean') {
-        setVoiceAssistanceEnabled(data.voice_assistant);
-        localStorage.setItem(VOICE_ASSIST_KEY, String(data.voice_assistant));
-        window.dispatchEvent(new CustomEvent('voice-assistance-changed', { detail: data.voice_assistant }));
+      // Sincronizza modalità audio (da metadata auth o fallback su profili)
+      if (user.user_metadata?.audio_mode) {
+        const metaMode = user.user_metadata.audio_mode as AudioMode;
+        if (metaMode === 'disabled' || metaMode === 'minimal' || metaMode === 'full') {
+          setAudioModeState(metaMode);
+          setAudioMode(metaMode);
+        }
+      } else if (!error && typeof data?.voice_assistant === 'boolean') {
+        const fallbackMode: AudioMode = data.voice_assistant ? 'full' : 'disabled';
+        setAudioModeState(fallbackMode);
+        setAudioMode(fallbackMode);
       }
 
       setProfileLoading(false);
@@ -426,41 +443,143 @@ const SettingsPage: React.FC = () => {
 
         {/* Impostazioni Grouped Card */}
         <div className="w-full space-y-4">
-          {/* Assistente Vocale */}
+          {/* Audio & Voce Guida (3 modalità) */}
           <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-xl space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div
-                  className={`p-2.5 rounded-2xl border shrink-0 transition-colors ${
-                    voiceAssistanceEnabled
-                      ? 'bg-brand-orange/15 text-brand-orange border-brand-orange/30'
-                      : 'bg-white/5 text-zinc-500 border-white/10'
-                  }`}
-                >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-brand-orange/15 text-brand-orange border border-brand-orange/30">
                   <Volume2 size={18} />
                 </div>
                 <div>
-                  <p className="text-white font-bold text-sm">Assistente Vocale</p>
-                  <p className="text-brand-grey/60 text-xs mt-0.5">Countdown e avvisi vocali durante l'allenamento</p>
+                  <h3 className="text-white font-bold text-sm">Feedback Audio & Voce</h3>
+                  <p className="text-brand-grey/60 text-xs mt-0.5">Segnali acustici e voce durante il workout</p>
                 </div>
               </div>
               <button
-                onClick={handleToggleVoiceAssistance}
-                disabled={voiceSaving || profileLoading}
-                className={`relative w-12 h-7 rounded-full transition-colors cursor-pointer shrink-0 select-none ${
-                  voiceAssistanceEnabled ? 'bg-brand-orange' : 'bg-white/20'
-                }`}
-                aria-label="Toggle assistente vocale"
+                type="button"
+                onClick={() => {
+                  void hapticLight();
+                  testAudio();
+                }}
+                disabled={audioMode === 'disabled'}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-brand-grey transition-colors disabled:opacity-30 disabled:pointer-events-none cursor-pointer border border-white/10"
+                title="Test audio"
               >
-                <span
-                  className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform shadow-md ${
-                    voiceAssistanceEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
+                <Play size={12} className="fill-current" />
+                <span>Prova audio</span>
               </button>
             </div>
+
+            {/* 3 Opzioni */}
+            <div className="space-y-2 pt-1">
+              {/* Opzione 1: Disattivato */}
+              <button
+                type="button"
+                onClick={() => void handleSelectAudioMode('disabled')}
+                disabled={voiceSaving}
+                className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-start gap-3 cursor-pointer ${
+                  audioMode === 'disabled'
+                    ? 'bg-brand-orange/10 border-brand-orange/60 shadow-lg shadow-brand-orange/5'
+                    : 'bg-white/[0.02] border-white/10 hover:bg-white/5'
+                }`}
+              >
+                <div className={`p-2 rounded-xl border shrink-0 mt-0.5 ${
+                  audioMode === 'disabled'
+                    ? 'bg-brand-orange text-white border-brand-orange'
+                    : 'bg-white/5 text-zinc-500 border-white/10'
+                }`}>
+                  <VolumeX size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className={`text-sm font-bold ${audioMode === 'disabled' ? 'text-white' : 'text-zinc-300'}`}>
+                      Disattivato
+                    </p>
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                      audioMode === 'disabled' ? 'border-brand-orange bg-brand-orange' : 'border-white/20'
+                    }`}>
+                      {audioMode === 'disabled' && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                    </div>
+                  </div>
+                  <p className="text-brand-grey/60 text-xs mt-0.5 leading-relaxed">
+                    Nessun suono né voce durante l'allenamento.
+                  </p>
+                </div>
+              </button>
+
+              {/* Opzione 2: Minimale */}
+              <button
+                type="button"
+                onClick={() => void handleSelectAudioMode('minimal')}
+                disabled={voiceSaving}
+                className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-start gap-3 cursor-pointer ${
+                  audioMode === 'minimal'
+                    ? 'bg-brand-orange/10 border-brand-orange/60 shadow-lg shadow-brand-orange/5'
+                    : 'bg-white/[0.02] border-white/10 hover:bg-white/5'
+                }`}
+              >
+                <div className={`p-2 rounded-xl border shrink-0 mt-0.5 ${
+                  audioMode === 'minimal'
+                    ? 'bg-brand-orange text-white border-brand-orange'
+                    : 'bg-white/5 text-zinc-500 border-white/10'
+                }`}>
+                  <Volume1 size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className={`text-sm font-bold ${audioMode === 'minimal' ? 'text-white' : 'text-zinc-300'}`}>
+                      Minimale
+                    </p>
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                      audioMode === 'minimal' ? 'border-brand-orange bg-brand-orange' : 'border-white/20'
+                    }`}>
+                      {audioMode === 'minimal' && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                    </div>
+                  </div>
+                  <p className="text-brand-grey/60 text-xs mt-0.5 leading-relaxed">
+                    Segnali acustici solo al termine di ogni timer (recupero, EMOM, isometrie). Nessuna voce.
+                  </p>
+                </div>
+              </button>
+
+              {/* Opzione 3: Completa */}
+              <button
+                type="button"
+                onClick={() => void handleSelectAudioMode('full')}
+                disabled={voiceSaving}
+                className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-start gap-3 cursor-pointer ${
+                  audioMode === 'full'
+                    ? 'bg-brand-orange/10 border-brand-orange/60 shadow-lg shadow-brand-orange/5'
+                    : 'bg-white/[0.02] border-white/10 hover:bg-white/5'
+                }`}
+              >
+                <div className={`p-2 rounded-xl border shrink-0 mt-0.5 ${
+                  audioMode === 'full'
+                    ? 'bg-brand-orange text-white border-brand-orange'
+                    : 'bg-white/5 text-zinc-500 border-white/10'
+                }`}>
+                  <Volume2 size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className={`text-sm font-bold ${audioMode === 'full' ? 'text-white' : 'text-zinc-300'}`}>
+                      Completa
+                    </p>
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                      audioMode === 'full' ? 'border-brand-orange bg-brand-orange' : 'border-white/20'
+                    }`}>
+                      {audioMode === 'full' && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                    </div>
+                  </div>
+                  <p className="text-brand-grey/60 text-xs mt-0.5 leading-relaxed">
+                    Voce guida completa (nome, tipo, chili, reps/set e prossimo esercizio nei recuperi) + segnali acustici.
+                  </p>
+                </div>
+              </button>
+            </div>
+
             {voiceSyncError && (
-              <p className="text-red-400 text-xs mt-2">{voiceSyncError}</p>
+              <p className="text-red-400 text-xs mt-1">{voiceSyncError}</p>
             )}
           </div>
 
