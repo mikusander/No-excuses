@@ -6586,11 +6586,11 @@ const ActiveWorkoutPage: React.FC = () => {
                         />
                       </svg>
 
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-orange/90 mb-0.5 z-10">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-orange/90 mb-1 z-10">
                         ROUND {currentEmomRoundIdx + 1}/{currentExercise.emom_rounds || 1}
                       </span>
                       <span
-                        className={`text-6xl sm:text-7xl font-mono font-black tracking-tighter leading-none z-10 transition-all ${
+                        className={`text-4xl sm:text-5xl font-mono font-black tracking-tight leading-none z-10 transition-all ${
                           emomRoundRemaining <= 3 && emomRoundRemaining > 0
                             ? 'text-brand-orange scale-105 drop-shadow-[0_0_20px_rgba(255,107,0,0.8)]'
                             : emomActive
@@ -6600,11 +6600,11 @@ const ActiveWorkoutPage: React.FC = () => {
                       >
                         {emomRoundRemaining >= 100 ? formatTime(emomRoundRemaining) : emomRoundRemaining}
                       </span>
-                      <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] mt-1 z-10">
+                      <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] mt-1.5 z-10">
                         {emomActive ? 'SEC LEFT' : 'IN PAUSA'}
                       </span>
                       <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none z-20">
-                        {emomActive ? <Pause size={38} className="text-white" /> : <Play size={38} className="text-white ml-1" />}
+                        {emomActive ? <Pause size={34} className="text-white" /> : <Play size={34} className="text-white ml-1" />}
                       </div>
                     </div>
                     <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-1.5">
@@ -7440,20 +7440,20 @@ const ActiveWorkoutPage: React.FC = () => {
               (() => {
                 const hasEmomTasks = Boolean(currentExercise.subExercises && currentExercise.subExercises.length > 0);
                 return (
-                  <div className="text-center w-full flex flex-col items-center justify-between h-full py-0.5">
-                    {/* EMOM Big Circular Hero Timer */}
-                    <div className="flex-1 min-h-0 flex flex-col items-center justify-center w-full my-auto">
+                  <div className="text-center w-full flex flex-col items-center justify-between h-full py-0.5 min-h-0">
+                    {/* EMOM Circular Hero Timer */}
+                    <div className={`${hasEmomTasks ? 'shrink-0' : 'flex-1 min-h-0 flex flex-col justify-center'} flex flex-col items-center w-full`}>
                       <div
                         className={`relative group ${
                           hasEmomTasks
-                            ? 'w-[min(58vw,26vh,230px)] h-[min(58vw,26vh,230px)]'
-                            : 'w-[min(82vw,42vh,350px)] h-[min(82vw,42vh,350px)]'
+                            ? 'w-[min(50vw,21vh,185px)] h-[min(50vw,21vh,185px)]'
+                            : 'w-[min(68vw,32vh,270px)] h-[min(68vw,32vh,270px)]'
                         } mx-auto rounded-full flex flex-col justify-center items-center transition-all duration-300 shadow-2xl cursor-pointer select-none shrink-0 overflow-hidden ${
                           emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                            ? 'border-[10px] sm:border-[12px] border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_80px_rgba(255,107,0,0.6)] animate-pulse'
+                            ? 'border-[8px] sm:border-[10px] border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_80px_rgba(255,107,0,0.6)] animate-pulse'
                             : emomActive
-                              ? 'border-[10px] sm:border-[12px] border-brand-orange shadow-[0_0_45px_rgba(255,94,0,0.35)]'
-                              : 'border-[10px] sm:border-[12px] border-white/10 bg-black/40 shadow-[0_0_30px_rgba(0,0,0,0.5)]'
+                              ? 'border-[8px] sm:border-[10px] border-brand-orange shadow-[0_0_45px_rgba(255,94,0,0.35)]'
+                              : 'border-[8px] sm:border-[10px] border-white/10 bg-black/40 shadow-[0_0_30px_rgba(0,0,0,0.5)]'
                         }`}
                         onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
                         onPointerUp={(event) => handleTimerPointerUp(event, handleEmomTimerTap)}
@@ -7485,7 +7485,7 @@ const ActiveWorkoutPage: React.FC = () => {
                         </svg>
 
                         {/* Round Indicator Badge inside dial */}
-                        <span className={`${hasEmomTasks ? 'text-[10px] sm:text-xs' : 'text-xs sm:text-sm'} font-black uppercase tracking-[0.2em] text-brand-orange/90 mb-1 z-10 drop-shadow-sm`}>
+                        <span className={`${hasEmomTasks ? 'text-[9px] sm:text-[10px]' : 'text-xs sm:text-sm'} font-black uppercase tracking-[0.2em] text-brand-orange/90 mb-1 z-10 drop-shadow-sm`}>
                           ROUND {currentEmomRoundIdx + 1} DI {effectiveEmomRounds}
                         </span>
 
@@ -7493,9 +7493,9 @@ const ActiveWorkoutPage: React.FC = () => {
                         <span
                           className={`${
                             hasEmomTasks
-                              ? 'text-6xl min-[375px]:text-7xl font-mono'
-                              : 'text-8xl min-[375px]:text-9xl min-[410px]:text-[10rem] font-mono'
-                          } font-black tracking-tighter leading-none z-10 transition-all ${
+                              ? 'text-4xl min-[375px]:text-5xl font-mono'
+                              : 'text-6xl min-[390px]:text-7xl font-mono'
+                          } font-black tracking-tight leading-none z-10 transition-all ${
                             emomRoundRemaining <= 3 && emomRoundRemaining > 0
                               ? 'text-brand-orange scale-105 drop-shadow-[0_0_25px_rgba(255,107,0,0.8)]'
                               : emomActive
@@ -7507,20 +7507,20 @@ const ActiveWorkoutPage: React.FC = () => {
                         </span>
 
                         {/* Label */}
-                        <span className={`text-zinc-400 font-black uppercase tracking-widest ${hasEmomTasks ? 'text-[9px] sm:text-[10px]' : 'text-[11px] sm:text-xs'} mt-1.5 z-10 flex items-center gap-1.5`}>
-                          <Timer size={hasEmomTasks ? 12 : 14} className="text-brand-orange" />
+                        <span className={`text-zinc-400 font-black uppercase tracking-widest ${hasEmomTasks ? 'text-[8px] sm:text-[9px]' : 'text-[10px] sm:text-xs'} mt-1.5 z-10 flex items-center gap-1`}>
+                          <Timer size={hasEmomTasks ? 10 : 13} className="text-brand-orange" />
                           {emomActive ? 'SECONDI RIMASTI' : 'IN PAUSA'}
                         </span>
 
                         {/* Tap overlay icon */}
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none z-20">
-                          {emomActive ? <Pause size={hasEmomTasks ? 40 : 54} className="text-white" /> : <Play size={hasEmomTasks ? 40 : 54} className="text-white ml-1.5" />}
+                          {emomActive ? <Pause size={hasEmomTasks ? 34 : 48} className="text-white" /> : <Play size={hasEmomTasks ? 34 : 48} className="text-white ml-1" />}
                         </div>
                       </div>
 
                       {/* Interactive Round Timeline when no sub-exercises */}
                       {!hasEmomTasks && effectiveEmomRounds > 1 && (
-                        <div className="w-full mt-3 px-1">
+                        <div className="w-full shrink-0 mt-3 px-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 px-0.5">
                             <span>Progressione Round</span>
                             <span className="text-brand-orange font-mono font-black">
@@ -7557,33 +7557,33 @@ const ActiveWorkoutPage: React.FC = () => {
                       )}
 
                       {/* Helper Text */}
-                      <p className="text-[11px] sm:text-xs text-zinc-400 font-bold uppercase tracking-wider text-center mt-2">
-                        Tocca per {emomActive ? 'mettere in pausa' : 'avviare'} • Tieni premuto per azzerare
+                      <p className={`${hasEmomTasks ? 'text-[9px] mt-1 text-zinc-500' : 'text-[11px] sm:text-xs mt-2 text-zinc-400'} font-bold uppercase tracking-wider text-center shrink-0`}>
+                        Tocca per {emomActive ? 'pausa' : 'avvio'} • Tieni premuto per azzerare
                       </p>
                     </div>
 
                     {/* EMOM Tasks List */}
                     {hasEmomTasks && currentExercise.subExercises && (
-                      <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-2 mt-2 px-0.5">
+                      <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-1.5 mt-2 px-0.5 pb-0.5">
                         {currentExercise.subExercises.map((sub, idx) => (
                           <div
                             key={idx}
-                            className="bg-black/50 p-3 sm:p-3.5 rounded-2xl border border-white/10 flex justify-between items-center text-xs sm:text-sm shadow-sm"
+                            className="bg-black/50 p-2.5 sm:p-3 rounded-2xl border border-white/10 flex justify-between items-center text-xs sm:text-sm shadow-sm"
                           >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="w-6 h-6 rounded-full bg-brand-orange/20 text-brand-orange flex items-center justify-center font-bold text-xs shrink-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-5 h-5 rounded-full bg-brand-orange/20 text-brand-orange flex items-center justify-center font-bold text-[10px] shrink-0">
                                 {idx + 1}
                               </span>
-                              <span className="text-white font-bold truncate text-sm sm:text-base">
+                              <span className="text-white font-bold truncate text-xs sm:text-sm">
                                 {sub.name}
                               </span>
                             </div>
-                            <div className="text-right shrink-0 flex items-center gap-2 ml-2">
-                              <span className="text-brand-orange font-mono font-black text-sm sm:text-base bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-1 rounded-xl">
+                            <div className="text-right shrink-0 flex items-center gap-1.5 ml-2">
+                              <span className="text-brand-orange font-mono font-black text-xs sm:text-sm bg-brand-orange/15 border border-brand-orange/30 px-2 py-0.5 rounded-lg">
                                 {formatEmomTaskMetricLabel(sub)}
                               </span>
                               {sub.weight_kg != null && sub.weight_kg > 0 && (
-                                <span className="text-xs text-zinc-300 font-semibold font-mono bg-white/5 border border-white/10 px-2 py-1 rounded-xl">
+                                <span className="text-[11px] text-zinc-300 font-semibold font-mono bg-white/5 border border-white/10 px-1.5 py-0.5 rounded-lg">
                                   {formatWeightLabel(sub.weight_kg)}
                                 </span>
                               )}
