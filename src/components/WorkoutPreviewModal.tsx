@@ -129,6 +129,118 @@ const InlineNumberInput: React.FC<{
   );
 };
 
+const MinutesSecondsInput: React.FC<{
+  label?: string;
+  totalSeconds: number;
+  onChange: (val: number) => void;
+  variant?: 'card' | 'compact';
+}> = ({ label = 'Rest', totalSeconds, onChange, variant = 'card' }) => {
+  const currentMins = Math.floor(Math.max(0, totalSeconds || 0) / 60);
+  const currentSecs = Math.max(0, totalSeconds || 0) % 60;
+
+  const [minsStr, setMinsStr] = useState(currentMins > 0 ? String(currentMins) : '');
+  const [secsStr, setSecsStr] = useState(currentSecs > 0 ? String(currentSecs) : '');
+
+  useEffect(() => {
+    const m = Math.floor(Math.max(0, totalSeconds || 0) / 60);
+    const s = Math.max(0, totalSeconds || 0) % 60;
+    setMinsStr(m > 0 ? String(m) : '');
+    setSecsStr(s > 0 ? String(s) : '');
+  }, [totalSeconds]);
+
+  const handleMinsChange = (val: string) => {
+    const cleaned = val.replace(/[^0-9]/g, '');
+    setMinsStr(cleaned);
+    const m = Number(cleaned) || 0;
+    const s = Number(secsStr) || 0;
+    onChange(m * 60 + s);
+  };
+
+  const handleSecsChange = (val: string) => {
+    const cleaned = val.replace(/[^0-9]/g, '');
+    setSecsStr(cleaned);
+    const m = Number(minsStr) || 0;
+    const s = Number(cleaned) || 0;
+    onChange(m * 60 + s);
+  };
+
+  const handleBlur = () => {
+    const total = (Number(minsStr) || 0) * 60 + (Number(secsStr) || 0);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    setMinsStr(m > 0 ? String(m) : '');
+    setSecsStr(s > 0 ? String(s) : '');
+  };
+
+  if (variant === 'compact') {
+    return (
+      <div className="flex items-center gap-1.5 bg-black/50 border border-white/10 rounded-lg px-2 py-0.5">
+        <div className="flex items-center gap-0.5">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={minsStr}
+            onChange={(e) => handleMinsChange(e.target.value)}
+            onBlur={handleBlur}
+            placeholder="0"
+            className="w-6 bg-transparent text-center text-xs font-black text-brand-orange outline-none"
+          />
+          <span className="text-[10px] text-zinc-400 font-bold">m</span>
+        </div>
+        <span className="text-zinc-600 font-bold text-xs">:</span>
+        <div className="flex items-center gap-0.5">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={secsStr}
+            onChange={(e) => handleSecsChange(e.target.value)}
+            onBlur={handleBlur}
+            placeholder="0"
+            className="w-6 bg-transparent text-center text-xs font-black text-brand-orange outline-none"
+          />
+          <span className="text-[10px] text-zinc-400 font-bold">s</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-1.5 rounded-lg text-center flex flex-col justify-center min-w-0">
+      <span className="text-brand-orange/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center font-semibold">
+        <Clock size={9} className="mr-1 shrink-0" /> {label}
+      </span>
+      <div className="flex items-center justify-center gap-0.5 sm:gap-1">
+        <div className="flex items-center justify-center bg-black/30 rounded px-1 py-0.5 border border-brand-orange/20 flex-1 min-w-0">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={minsStr}
+            onChange={(e) => handleMinsChange(e.target.value)}
+            onBlur={handleBlur}
+            placeholder="0"
+            className="w-full bg-transparent text-xs sm:text-sm text-brand-lightOrange text-center outline-none font-bold min-w-0"
+          />
+          <span className="text-[9px] sm:text-[10px] text-brand-orange/70 font-semibold ml-0.5 select-none">m</span>
+        </div>
+        <span className="text-brand-orange/50 font-bold text-xs">:</span>
+        <div className="flex items-center justify-center bg-black/30 rounded px-1 py-0.5 border border-brand-orange/20 flex-1 min-w-0">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={secsStr}
+            onChange={(e) => handleSecsChange(e.target.value)}
+            onBlur={handleBlur}
+            placeholder="0"
+            className="w-full bg-transparent text-xs sm:text-sm text-brand-lightOrange text-center outline-none font-bold min-w-0"
+          />
+          <span className="text-[9px] sm:text-[10px] text-brand-orange/70 font-semibold ml-0.5 select-none">s</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
   workoutId,
   initialWorkoutName,
@@ -533,9 +645,9 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                                           onChange={(v) => updatePyramidStepField(i, sIdx, 'reps', v)}
                                           placeholder="MAX"
                                         />
-                                        <InlineNumberInput
-                                          label="Rest (s)"
-                                          value={step.rest_seconds}
+                                        <MinutesSecondsInput
+                                          label="Rest"
+                                          totalSeconds={step.rest_seconds}
                                           onChange={(v) => updatePyramidStepField(i, sIdx, 'rest_seconds', v)}
                                         />
                                         <InlineNumberInput
@@ -680,21 +792,11 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                             )}
 
                           {ex.type !== 'pyramid' && (
-                            <div className="flex-1 bg-brand-orange/10 border border-brand-orange/20 py-2 px-2 rounded-lg text-center flex flex-col justify-center">
-                              <span className="text-brand-orange/70 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
-                                <Clock size={9} className="mr-1" /> Rest (s)
-                              </span>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={ex.rest_seconds > 0 ? String(ex.rest_seconds) : ''}
-                                onChange={(e) =>
-                                  updateExerciseField(i, 'rest_seconds', parseNumericInput(e.target.value, 0))
-                                }
-                                placeholder="0"
-                                className="w-full bg-transparent text-sm text-brand-lightOrange text-center outline-none font-bold"
-                              />
-                            </div>
+                            <MinutesSecondsInput
+                              label="Recupero"
+                              totalSeconds={ex.rest_seconds}
+                              onChange={(v) => updateExerciseField(i, 'rest_seconds', v)}
+                            />
                           )}
 
                           {!showInlineWeightNearName &&
@@ -732,17 +834,11 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                           <div className="inline-flex items-center gap-2 bg-[#252528] hover:bg-[#2C2C30] border border-white/10 hover:border-brand-orange/40 px-3.5 py-1.5 rounded-full transition-all text-xs shadow-sm">
                             <Clock size={12} className="text-brand-orange shrink-0" />
                             <span className="text-[11px] font-semibold text-zinc-300">Pausa tra esercizi:</span>
-                            <div className="flex items-center gap-1 bg-black/50 border border-white/10 rounded-lg px-2 py-0.5">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={ex.transition_rest_seconds && ex.transition_rest_seconds > 0 ? String(ex.transition_rest_seconds) : ''}
-                                onChange={(e) => updateExerciseField(i, 'transition_rest_seconds', parseNumericInput(e.target.value, 0))}
-                                placeholder="0"
-                                className="w-10 bg-transparent text-center text-xs font-black text-brand-orange outline-none"
-                              />
-                              <span className="text-[10px] text-zinc-400 font-bold">s</span>
-                            </div>
+                            <MinutesSecondsInput
+                              variant="compact"
+                              totalSeconds={ex.transition_rest_seconds || 0}
+                              onChange={(v) => updateExerciseField(i, 'transition_rest_seconds', v)}
+                            />
                           </div>
                         </div>
                       )}
