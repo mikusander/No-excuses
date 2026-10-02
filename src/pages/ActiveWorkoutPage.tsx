@@ -352,6 +352,25 @@ const formatTime = (secs: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+const WorkoutOverviewTimerBadge: React.FC<{ getElapsed: () => number }> = ({ getElapsed }) => {
+  const [elapsed, setElapsed] = useState(() => getElapsed());
+
+  useEffect(() => {
+    setElapsed(getElapsed());
+    const interval = setInterval(() => {
+      setElapsed(getElapsed());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [getElapsed]);
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full tabular-nums">
+      <Clock size={12} />
+      {formatTime(elapsed)}
+    </span>
+  );
+};
+
 const getEffectiveEmomRounds = (ex?: Exercise | null): number => {
   if (!ex) return 1;
   const rawRounds = ex.emom_rounds != null && ex.emom_rounds > 0
@@ -4922,10 +4941,7 @@ const ActiveWorkoutPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-lg font-bold text-white">Panoramica Scheda</h3>
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2.5 py-0.5 rounded-full">
-                  <Clock size={12} />
-                  {formatTime(getCurrentWorkoutElapsedSeconds())}
-                </span>
+                <WorkoutOverviewTimerBadge getElapsed={getCurrentWorkoutElapsedSeconds} />
                 <span className="inline-flex items-center text-[10px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
                   {currentExerciseIdx} / {workout.exercises.length} completati
                 </span>
