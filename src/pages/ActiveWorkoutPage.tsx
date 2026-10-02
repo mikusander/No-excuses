@@ -3197,6 +3197,21 @@ const ActiveWorkoutPage: React.FC = () => {
     }
   }, [location.state?.autoCompleteAction, workout, loading, navigate, location.pathname]);
 
+  useEffect(() => {
+    const isCurPyramid = workout?.exercises?.[currentExerciseIdx]?.type === 'pyramid';
+    if (!isCurPyramid) return;
+    const timer = window.setTimeout(() => {
+      if (activePyramidStepRef.current) {
+        activePyramidStepRef.current.scrollIntoView({
+          behavior: 'smooth',
+          inline: 'center',
+          block: 'nearest',
+        });
+      }
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [currentPyramidStepIdx, currentExerciseIdx, workout]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-brand-dark flex items-center justify-center">
@@ -3214,9 +3229,19 @@ const ActiveWorkoutPage: React.FC = () => {
     );
   }
 
-  const currentExercise = workout.exercises[currentExerciseIdx];
-  const isLastExercise = currentExerciseIdx === workout.exercises.length - 1;
-  const isLastSet = currentSetIdx === currentExercise.sets - 1;
+  const safeExerciseIdx = Math.max(0, Math.min(currentExerciseIdx, workout.exercises.length - 1));
+  const currentExercise = workout.exercises[safeExerciseIdx] || workout.exercises[0];
+  if (!currentExercise) {
+    return (
+      <div className="min-h-screen bg-brand-dark flex flex-col p-6 items-center justify-center">
+        <h2 className="text-xl font-bold text-white mb-4">No exercises found.</h2>
+        <button onClick={() => navigate(-1)} className="text-brand-orange">Go Back</button>
+      </div>
+    );
+  }
+
+  const isLastExercise = safeExerciseIdx === workout.exercises.length - 1;
+  const isLastSet = currentSetIdx === (currentExercise.sets || 1) - 1;
   const isEmom = currentExercise.type === 'emom';
   const effectiveEmomRounds = getEffectiveEmomRounds(currentExercise);
   const isLastEmomRound = currentEmomRoundIdx === effectiveEmomRounds - 1;
@@ -3224,20 +3249,6 @@ const ActiveWorkoutPage: React.FC = () => {
   const emomRoundProgressRatio = Math.max(0, Math.min(1, emomRoundRemaining / totalEmomRoundDuration));
   const isPyramid = currentExercise.type === 'pyramid';
   const isLastPyramidStep = currentPyramidStepIdx === ((currentExercise.pyramid_steps?.length || 1) - 1);
-
-  useEffect(() => {
-    if (!isPyramid) return;
-    const timer = window.setTimeout(() => {
-      if (activePyramidStepRef.current) {
-        activePyramidStepRef.current.scrollIntoView({
-          behavior: 'smooth',
-          inline: 'center',
-          block: 'nearest',
-        });
-      }
-    }, 60);
-    return () => window.clearTimeout(timer);
-  }, [currentPyramidStepIdx, currentExerciseIdx, isPyramid]);
 
   const isCircuit = currentExercise.type === 'circuit';
   const isSuperset = currentExercise.type === 'superset';

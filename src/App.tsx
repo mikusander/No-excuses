@@ -44,6 +44,7 @@ import ActiveWorkoutBanner from './components/ActiveWorkoutBanner';
 import { supabaseConfigError } from './lib/supabase';
 import { lockAppToPortrait, useIsLandscape } from './utils/orientationManager';
 import { Smartphone } from 'lucide-react';
+import ErrorBoundary from './components/ErrorBoundary';
 
 /**
  * ProtectedRoute — Wrapper per le rotte che richiedono autenticazione.
@@ -122,7 +123,7 @@ function App() {
   }
 
   return (
-    <>
+    <ErrorBoundary>
       {/* Modal globale per il reset password — visibile solo dopo click su link email di recupero */}
       {isPasswordRecovery && <ResetPasswordModal />}
       <Router>
@@ -174,13 +175,17 @@ function App() {
         {/* Workout live — avviato da una scheda */}
         <Route path="/active-workout/:id" element={
           <ProtectedRoute>
-            <ActiveWorkoutPage />
+            <ErrorBoundary fallbackTitle="Errore durante l'allenamento">
+              <ActiveWorkoutPage />
+            </ErrorBoundary>
           </ProtectedRoute>
         } />
         {/* Workout live — rieseguito da uno storico (workoutRunId) */}
         <Route path="/active-workout-history/:workoutRunId" element={
           <ProtectedRoute>
-            <ActiveWorkoutPage />
+            <ErrorBoundary fallbackTitle="Errore durante l'allenamento">
+              <ActiveWorkoutPage />
+            </ErrorBoundary>
           </ProtectedRoute>
         } />
         <Route path="/settings" element={
@@ -189,8 +194,8 @@ function App() {
           </ProtectedRoute>
         } />
       </Routes>
-    </Router>
-    </>
+      </Router>
+    </ErrorBoundary>
   );
 }
 
