@@ -934,18 +934,16 @@ const ActiveWorkoutPage: React.FC = () => {
     speakCue(restVoiceCue);
   };
 
-  const stopRestCountdown = (keepActiveNotifications = false) => {
+  const stopRestCountdown = () => {
     setIsResting(false);
     setRestEndsAtMs(null);
     stopRestMediaSession();
     pipManager.closePiP();
-    if (!keepActiveNotifications) {
-      closeActiveRestNotifications();
-    }
+    void closeActiveRestNotifications();
   };
 
   const pauseRestCountdown = () => {
-    closeActiveRestNotifications();
+    void closeActiveRestNotifications();
     setRestRemaining(computeRemainingFromEndsAt(restEndsAtMs));
     setRestEndsAtMs(null);
   };
@@ -2161,8 +2159,9 @@ const ActiveWorkoutPage: React.FC = () => {
   useEffect(() => {
     if (!isNativeApp()) return;
     const unsub = addNotificationActionListener(() => {
+      void closeActiveRestNotifications();
       if (isResting) {
-        stopRestCountdown(false);
+        stopRestCountdown();
         finishRestAndNextSet(true);
       }
     });
@@ -2513,6 +2512,7 @@ const ActiveWorkoutPage: React.FC = () => {
     }
 
     const initializeWorkoutState = (nextWorkout: Workout, nextSourceSchedaId: number | null) => {
+      void closeActiveRestNotifications();
       setWorkout(nextWorkout);
       setSourceSchedaId(nextSourceSchedaId);
 
@@ -2933,20 +2933,28 @@ const ActiveWorkoutPage: React.FC = () => {
           clearInterval(intervalId);
           intervalId = null;
         }
-        const expiredRestEndsAtMs = restEndsAtMs;
         setRestEndsAtMs(null);
         stopRestMediaSession();
         pipManager.closePiP();
+
+        // Cancella immediatamente qualsiasi allarme o notifica programmata pendente
+        void closeActiveRestNotifications();
+
+        // Feedback in-app (suono dedicato + vibrazione)
         if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
           playRestFinishedSound();
         }
+        void hapticSuccess();
 
-        const upcoming = getUpcomingRestTargetInfo();
-        void sendRestFinishedNotification({
-          nextExerciseName: upcoming.nextExerciseName,
-          nextSetInfo: upcoming.nextSetInfo,
-          endsAtMs: expiredRestEndsAtMs,
-        });
+        // Se l'app non è visibile (in background/schermo bloccato), invia notifica; se è in foreground, la notifica di sistema è soppressa
+        if (document.visibilityState !== 'visible') {
+          const upcoming = getUpcomingRestTargetInfo();
+          void sendRestFinishedNotification({
+            nextExerciseName: upcoming.nextExerciseName,
+            nextSetInfo: upcoming.nextSetInfo,
+            endsAtMs: restEndsAtMs,
+          });
+        }
 
         if (isWorkoutOverviewModalOpen) {
           setIsWorkoutOverviewAdvancePending(true);
@@ -4422,7 +4430,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const finishRestAndNextSet = (naturalExpiry = false) => {
-    stopRestCountdown(naturalExpiry);
+    stopRestCountdown();
 
     if (pendingExerciseAdvance) {
       setPendingExerciseAdvance(false);
@@ -4476,6 +4484,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const handleLeaveWorkout = () => {
     freezeForegroundWorkoutTime();
+    stopRestCountdown();
     stopRestMediaSession();
     void releaseScreenWakeLock();
     persistWorkoutProgress(true);
