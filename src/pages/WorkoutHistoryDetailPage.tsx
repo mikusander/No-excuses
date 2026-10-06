@@ -641,6 +641,22 @@ const WorkoutHistoryDetailPage: React.FC = () => {
       </header>
 
       <main className="max-w-3xl mx-auto space-y-4">
+        {notesGrouped.genericNotes.length > 0 && (
+          <section className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 shadow-lg">
+            <div className="flex items-center mb-3 text-brand-orange">
+              <FileText size={16} className="mr-2" />
+              <h2 className="text-sm font-black uppercase tracking-wide">Note generali</h2>
+            </div>
+            <div className="space-y-2">
+              {notesGrouped.genericNotes.map((note, idx) => (
+                <p key={`generic-note:${idx}`} className="text-sm text-brand-grey break-words">
+                  - {note}
+                </p>
+              ))}
+            </div>
+          </section>
+        )}
+
         {exercises.length === 0 ? (
           <div className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 text-brand-grey">
             No exercises found for this workout.
@@ -931,22 +947,6 @@ const WorkoutHistoryDetailPage: React.FC = () => {
               </section>
             );
           })
-        )}
-
-        {notesGrouped.genericNotes.length > 0 && (
-          <section className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5">
-            <div className="flex items-center mb-3 text-brand-orange">
-              <FileText size={16} className="mr-2" />
-              <h2 className="text-sm font-black uppercase tracking-wide">General notes</h2>
-            </div>
-            <div className="space-y-2">
-              {notesGrouped.genericNotes.map((note, idx) => (
-                <p key={`generic-note:${idx}`} className="text-sm text-brand-grey break-words">
-                  - {note}
-                </p>
-              ))}
-            </div>
-          </section>
         )}
 
         {(detail.canRestartFromTemplate && detail.schedaId) || detail.canRestartFromSnapshot ? (

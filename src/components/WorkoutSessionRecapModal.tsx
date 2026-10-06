@@ -153,6 +153,26 @@ export const WorkoutSessionRecapModal: React.FC<WorkoutSessionRecapModalProps> =
 
         {/* Lista Esercizi Svolti */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+          {workout.notes && workout.notes.length > 0 && (
+            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/5 mb-3">
+              <div className="flex items-center gap-1.5 mb-2 text-brand-orange text-xs font-bold uppercase tracking-wide">
+                <FileText size={14} />
+                <span>Note generali</span>
+              </div>
+              <div className="space-y-1">
+                {workout.notes.map((n, nIdx) => {
+                  const text = typeof n === 'string' ? n : n.text;
+                  if (!text?.trim()) return null;
+                  return (
+                    <p key={nIdx} className="text-xs text-brand-grey/90 break-words leading-relaxed">
+                      - {text}
+                    </p>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <h3 className="text-xs font-bold text-brand-grey/70 uppercase tracking-wider px-1">
             Esercizi eseguiti
           </h3>
