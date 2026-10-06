@@ -10,8 +10,8 @@
  */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, RotateCcw, Dumbbell, ArrowRight, Folder } from 'lucide-react';
-import { hapticMedium } from '../utils/haptics';
+import { Play, RotateCcw, Dumbbell, ArrowRight, Folder, Trash2 } from 'lucide-react';
+import { hapticMedium, hapticLight } from '../utils/haptics';
 
 export interface LastWorkoutData {
   id_scheda?: number;
@@ -34,6 +34,8 @@ interface QuickStartHeroCardProps {
   } | null;
   /** Ultima scheda completata o consigliata */
   lastWorkout?: LastWorkoutData | null;
+  /** Callback per scartare il workout in sospeso */
+  onDiscardCheckpoint?: () => void;
   /** Callback per mostrare l'anteprima modale prima di avviare o riprendere la scheda */
   onQuickStartScheda?: (schedaId: number, workoutName?: string) => void;
 }
@@ -41,6 +43,7 @@ interface QuickStartHeroCardProps {
 const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
   activeCheckpoint,
   lastWorkout,
+  onDiscardCheckpoint,
   onQuickStartScheda,
 }) => {
   const navigate = useNavigate();
@@ -85,12 +88,32 @@ const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
 
       <div className="relative flex flex-col gap-4">
         {/* Top Header Card: Badge di stato */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           {isResuming ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-[10px] font-black uppercase tracking-wider text-brand-orange">
-              <span className="w-2 h-2 rounded-full bg-brand-orange animate-ping" />
-              Workout in sospeso
-            </span>
+            <div className="flex items-center justify-between w-full">
+              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-[10px] font-black uppercase tracking-wider text-brand-orange">
+                <span className="w-2 h-2 rounded-full bg-brand-orange animate-ping" />
+                Workout in corso
+              </span>
+
+              {onDiscardCheckpoint && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void hapticLight();
+                    if (window.confirm('Vuoi davvero annullare e scartare questo allenamento in sospeso?')) {
+                      onDiscardCheckpoint();
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/40 text-[10px] font-bold text-zinc-400 hover:text-red-400 transition-all cursor-pointer active:scale-95"
+                  title="Scarta allenamento in sospeso"
+                >
+                  <Trash2 size={11} />
+                  <span>Scarta</span>
+                </button>
+              )}
+            </div>
           ) : lastWorkout?.isNextInSequence ? (
             <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-[10px] font-black uppercase tracking-wider text-brand-orange shadow-sm">
               <Folder size={12} className="text-brand-orange" />
@@ -119,7 +142,9 @@ const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
           </h2>
           <p className="text-xs font-medium text-brand-grey/70 line-clamp-1">
             {isResuming
-              ? `Esercizio: ${activeCheckpoint?.currentExerciseName || 'In corso'} (Serie ${activeCheckpoint?.currentSetIdx || 1})`
+              ? `Esercizio: ${activeCheckpoint?.currentExerciseName || 'In corso'} • Serie ${(activeCheckpoint?.currentSetIdx ?? 0) + 1}${
+                  activeCheckpoint?.totalSets ? ` di ${activeCheckpoint.totalSets}` : ''
+                }`
               : lastWorkout?.sequenceLabel
               ? lastWorkout.sequenceLabel
               : 'Tocca per avviare la tua scheda con timer e ripetizioni guidate.'}
@@ -131,14 +156,14 @@ const QuickStartHeroCard: React.FC<QuickStartHeroCardProps> = ({
           type="button"
           className={`w-full py-3.5 px-5 rounded-2xl flex items-center justify-center gap-2 font-black text-sm uppercase tracking-wider transition-all shadow-md ${
             isResuming
-              ? 'bg-brand-orange text-black shadow-brand-orange/30'
+              ? 'bg-brand-orange text-black shadow-brand-orange/30 group-hover:brightness-110'
               : 'bg-gradient-to-r from-brand-orange to-brand-lightorange text-black shadow-[0_8px_20px_rgba(255,94,0,0.35)]'
           }`}
         >
           {isResuming ? (
             <>
               <RotateCcw size={18} strokeWidth={2.5} className="animate-spin-slow" />
-              <span>Riprendi Ora</span>
+              <span>Riprendi Allenamento</span>
             </>
           ) : (
             <>
