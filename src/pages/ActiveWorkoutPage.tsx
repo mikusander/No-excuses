@@ -468,6 +468,8 @@ const ActiveWorkoutPage: React.FC = () => {
   const circuitAccumulatedMsRef = useRef(0);
   const pyramidScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const activePyramidStepRef = useRef<HTMLButtonElement | null>(null);
+  const setsCarouselScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const activeSetCardRef = useRef<HTMLButtonElement | null>(null);
 
   const wasRestingRef = useRef(false);
   const wasEmomActiveRef = useRef(false);
@@ -3211,6 +3213,30 @@ const ActiveWorkoutPage: React.FC = () => {
     }, 60);
     return () => window.clearTimeout(timer);
   }, [currentPyramidStepIdx, currentExerciseIdx, workout]);
+
+  useEffect(() => {
+    const ex = workout?.exercises?.[currentExerciseIdx];
+    const isStandardReps =
+      ex &&
+      ex.type !== 'pyramid' &&
+      ex.type !== 'emom' &&
+      ex.type !== 'isometry' &&
+      ex.type !== 'cardio' &&
+      ex.type !== 'circuit' &&
+      ex.type !== 'superset';
+
+    if (!isStandardReps) return;
+    const timer = window.setTimeout(() => {
+      if (activeSetCardRef.current) {
+        activeSetCardRef.current.scrollIntoView({
+          behavior: 'smooth',
+          inline: 'center',
+          block: 'nearest',
+        });
+      }
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [currentSetIdx, currentExerciseIdx, workout]);
 
   if (loading) {
     return (
@@ -6293,27 +6319,8 @@ const ActiveWorkoutPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Segmented Set/Round Tracker */}
-              <div className="flex justify-center items-center gap-1 px-1">
-                {Array.from({ length: isEmom ? effectiveEmomRounds : (currentExercise.sets || 1) }).map((_, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => isEmom ? setCurrentEmomRoundIdx(i) : setCurrentSetIdx(i)}
-                    className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
-                      (isEmom ? i < currentEmomRoundIdx : i < currentSetIdx)
-                        ? 'bg-emerald-500/80 flex-1 max-w-10'
-                        : (isEmom ? i === currentEmomRoundIdx : i === currentSetIdx)
-                          ? 'bg-brand-orange flex-1 max-w-12 shadow-[0_0_10px_rgba(255,107,0,0.6)] ring-1 ring-brand-orange'
-                          : 'bg-white/15 flex-1 max-w-10 hover:bg-white/25'
-                    }`}
-                    title={isEmom ? `Round ${i + 1}` : `Set ${i + 1}`}
-                  />
-                ))}
-              </div>
-
-              {/* 3-Column HUD Chips */}
-              <div className="w-full grid grid-cols-3 gap-1.5 shrink-0">
+              {/* HUD Chips */}
+              <div className={`w-full grid ${isEmom ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5 shrink-0`}>
                 {isEmom ? (
                   <>
                     <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
@@ -6360,13 +6367,6 @@ const ActiveWorkoutPage: React.FC = () => {
                       <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
                       <span className="text-white font-mono font-black text-xs truncate block" title={currentExecutionWeightLabel}>
                         {currentExecutionWeightLabel || '-'}
-                      </span>
-                    </div>
-
-                    <div className="bg-black/50 border border-white/5 rounded-xl py-1.5 px-1 text-center">
-                      <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
-                      <span className="text-zinc-300 font-mono font-black text-xs truncate block" title={nextRecoveryLabel}>
-                        {nextRecoveryLabel || '-'}
                       </span>
                     </div>
                   </>
@@ -6635,10 +6635,12 @@ const ActiveWorkoutPage: React.FC = () => {
                   <span className="block text-6xl sm:text-7xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_25px_rgba(255,107,0,0.3)] tracking-tight">
                     {formatBigTargetValue(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0)}
                   </span>
-                  <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs mt-1.5">RIPETIZIONI TARGET</span>
+                  <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs mt-1.5">Ripetizioni</span>
                   {nextRecoveryLabel && (
                     <p className="text-[11px] text-zinc-400 uppercase tracking-wider font-bold text-center mt-2">
-                      Prossimo Recupero: <span className="text-brand-orange font-mono">{nextRecoveryLabel}</span>
+                      {(currentExercise.sets === 1 || currentSetIdx >= (currentExercise.sets || 1) - 1)
+                        ? 'Prossimo esercizio'
+                        : 'Prossimo recupero'}: <span className="text-brand-orange font-mono">{nextRecoveryLabel}</span>
                     </p>
                   )}
                 </div>
@@ -6900,11 +6902,13 @@ const ActiveWorkoutPage: React.FC = () => {
                     {formatBigTargetValue(currentExercise.reps)}
                   </span>
                   <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs mt-1.5">
-                    RIPETIZIONI TARGET
+                    Ripetizioni
                   </span>
                   {nextRecoveryLabel && (
                     <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold text-center mt-1.5">
-                      Prossimo Recupero: <span className="text-brand-orange font-mono">{nextRecoveryLabel}</span>
+                      {(currentExercise.sets === 1 || currentSetIdx >= (currentExercise.sets || 1) - 1)
+                        ? 'Prossimo esercizio'
+                        : 'Prossimo recupero'}: <span className="text-brand-orange font-mono">{nextRecoveryLabel}</span>
                     </p>
                   )}
                 </div>
@@ -7342,88 +7346,61 @@ const ActiveWorkoutPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Segmented Set Tracker */}
-          <div className="flex justify-center items-center gap-1.5 px-1">
-            {Array.from({ length: isEmom ? effectiveEmomRounds : (currentExercise.sets || 1) }).map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => isEmom ? setCurrentEmomRoundIdx(i) : setCurrentSetIdx(i)}
-                className={`h-2.5 rounded-full transition-all duration-300 cursor-pointer ${
-                  (isEmom ? i < currentEmomRoundIdx : i < currentSetIdx)
-                    ? 'bg-emerald-500/80 flex-1 max-w-12'
-                    : (isEmom ? i === currentEmomRoundIdx : i === currentSetIdx)
-                      ? 'bg-brand-orange flex-1 max-w-16 shadow-[0_0_12px_rgba(255,107,0,0.6)] ring-1 ring-brand-orange'
-                      : 'bg-white/15 flex-1 max-w-12 hover:bg-white/25'
-                }`}
-                title={isEmom ? `Round ${i + 1}` : `Set ${i + 1}`}
-              />
-            ))}
-          </div>
         </div>
 
         {/* ZONE 3: CENTRAL FOCUS AREA (Rich, Screen-Filling Dashboard Card) */}
         <div className="flex-1 min-h-0 w-full max-w-lg mx-auto flex flex-col justify-between my-1 bg-gradient-to-b from-brand-darkGrey/90 via-brand-darkGrey/60 to-brand-darkGrey/40 border border-white/10 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-sm">
-          {/* Top HUD Chips: Clean 3-Column Grid */}
-          <div className="w-full grid grid-cols-3 gap-2.5 shrink-0 mb-2">
-            {isEmom ? (
-              <>
-                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                    {currentExercise.sets && currentExercise.sets > 1 ? 'Set' : 'Round'}
-                  </span>
-                  <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
-                    {currentExercise.sets && currentExercise.sets > 1
-                      ? `${currentSetIdx + 1} / ${currentExercise.sets}`
-                      : `${currentEmomRoundIdx + 1} / ${effectiveEmomRounds}`}
-                  </span>
-                </div>
+          {/* Top HUD Chips */}
+          {isEmom ? (
+            <div className="w-full grid grid-cols-3 gap-2.5 shrink-0 mb-2">
+              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                  {currentExercise.sets && currentExercise.sets > 1 ? 'Set' : 'Round'}
+                </span>
+                <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
+                  {currentExercise.sets && currentExercise.sets > 1
+                    ? `${currentSetIdx + 1} / ${currentExercise.sets}`
+                    : `${currentEmomRoundIdx + 1} / ${effectiveEmomRounds}`}
+                </span>
+              </div>
 
-                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                    {currentExercise.sets && currentExercise.sets > 1 ? 'Round' : 'Round Totali'}
-                  </span>
-                  <span className="text-white font-mono font-black text-sm sm:text-base truncate block">
-                    {currentExercise.sets && currentExercise.sets > 1
-                      ? `${currentEmomRoundIdx + 1} / ${effectiveEmomRounds}`
-                      : `${effectiveEmomRounds} rnd`}
-                  </span>
-                </div>
+              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                  {currentExercise.sets && currentExercise.sets > 1 ? 'Round' : 'Round Totali'}
+                </span>
+                <span className="text-white font-mono font-black text-sm sm:text-base truncate block">
+                  {currentExercise.sets && currentExercise.sets > 1
+                    ? `${currentEmomRoundIdx + 1} / ${effectiveEmomRounds}`
+                    : `${effectiveEmomRounds} rnd`}
+                </span>
+              </div>
 
-                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Durata Round</span>
-                  <span className="text-zinc-300 font-mono font-black text-sm sm:text-base truncate block">
-                    {currentExercise.emom_round_duration || 60}s
-                  </span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                    {isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'}
-                  </span>
-                  <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
-                    {`${currentSetIdx + 1} / ${currentExercise.sets || 1}`}
-                  </span>
-                </div>
+              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Durata Round</span>
+                <span className="text-zinc-300 font-mono font-black text-sm sm:text-base truncate block">
+                  {currentExercise.emom_round_duration || 60}s
+                </span>
+              </div>
+            </div>
+          ) : (isSuperset || isCircuit || currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
+            <div className="w-full grid grid-cols-2 gap-2.5 shrink-0 mb-2">
+              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                  {isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'}
+                </span>
+                <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
+                  {`${currentSetIdx + 1} / ${currentExercise.sets || 1}`}
+                </span>
+              </div>
 
-                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
-                  <span className="text-white font-mono font-black text-sm sm:text-base truncate block" title={currentExecutionWeightLabel}>
-                    {currentExecutionWeightLabel || '-'}
-                  </span>
-                </div>
-
-                <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Recupero</span>
-                  <span className="text-zinc-300 font-mono font-black text-sm sm:text-base truncate block" title={nextRecoveryLabel}>
-                    {nextRecoveryLabel || '-'}
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
+              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Carico</span>
+                <span className="text-white font-mono font-black text-sm sm:text-base truncate block" title={currentExecutionWeightLabel}>
+                  {currentExecutionWeightLabel || '-'}
+                </span>
+              </div>
+            </div>
+          ) : null}
 
           {/* DYNAMIC MODE VIEW (Fills the center of the card richly) */}
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center">
@@ -7594,7 +7571,7 @@ const ActiveWorkoutPage: React.FC = () => {
                     {formatBigTargetValue(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0)}
                   </span>
                   <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs sm:text-sm mt-2">
-                    RIPETIZIONI TARGET
+                    Ripetizioni
                   </span>
                 </div>
 
@@ -8051,50 +8028,101 @@ const ActiveWorkoutPage: React.FC = () => {
                         {formatBigTargetValue(currentExercise.reps)}
                       </span>
                       <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs sm:text-sm mt-3">
-                        RIPETIZIONI TARGET
+                        Ripetizioni
                       </span>
                     </div>
 
-                    {/* Interactive Set History & Timeline */}
-                    <div className="w-full bg-black/40 border border-white/5 rounded-2xl p-3 mt-auto">
+                    {/* Nuovo carosello dei Set (Sotto il conteggio centrale) */}
+                    <div className="w-full mt-auto pt-2">
                       <div className="flex items-center justify-between text-[11px] text-zinc-400 uppercase tracking-wider font-bold mb-2 px-1">
-                        <span>Set {currentSetIdx + 1} di {currentExercise.sets || 1}</span>
-                        <span className="text-brand-orange font-mono font-black">
-                          {currentExecutionWeightLabel ? `Carico: ${currentExecutionWeightLabel}` : 'Corpo Libero'}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-brand-orange font-mono font-black">
+                            Set {currentSetIdx + 1}
+                          </span>
+                          <span className="text-zinc-500">di</span>
+                          <span className="font-mono font-bold text-zinc-300">
+                            {currentExercise.sets || 1}
+                          </span>
+                        </div>
+                        {((currentExercise.sets || 1) - currentSetIdx > 1) && (
+                          <span className="text-[10px] text-zinc-400 font-semibold tracking-normal lowercase opacity-80">
+                            scorri per altri set ↔
+                          </span>
+                        )}
                       </div>
-                      <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
-                        {Array.from({ length: currentExercise.sets || 1 }, (_, sIdx) => {
-                          const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
-                          const isCurrent = sIdx === currentSetIdx;
-                          const isDone = sIdx < currentSetIdx;
-                          return (
-                            <button
-                              key={sIdx}
-                              type="button"
-                              onClick={() => openEditSpecificSetModal(sIdx)}
-                              className={`py-2 px-1.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
-                                isCurrent
-                                  ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-sm'
-                                  : isDone
-                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                                    : 'bg-white/5 border-white/5 text-zinc-500 hover:border-white/20'
-                              }`}
-                              title={`Modifica set ${sIdx + 1}`}
-                            >
-                              <span className="text-[8px] uppercase font-bold opacity-70">Set {sIdx + 1}</span>
-                              <span className="text-xs font-black font-mono mt-0.5">
-                                {logged != null && logged > 0
-                                  ? `${logged}r`
-                                  : isDone
-                                    ? `${currentExercise.reps}r`
-                                    : isCurrent
-                                      ? `${currentExercise.reps}r`
-                                      : `${currentExercise.reps}r`}
-                              </span>
-                            </button>
-                          );
-                        })}
+
+                      {/* Scrollable Container centered on active set */}
+                      <div
+                        ref={setsCarouselScrollContainerRef}
+                        className="w-full flex gap-3 overflow-x-auto no-scrollbar py-2 px-[calc(50%-75px)] scroll-smooth snap-x snap-mandatory"
+                        style={{ WebkitOverflowScrolling: 'touch' }}
+                      >
+                        {Array.from({ length: currentExercise.sets || 1 }, (_, i) => i)
+                          .filter((sIdx) => sIdx >= currentSetIdx)
+                          .map((sIdx) => {
+                            const isCurrent = sIdx === currentSetIdx;
+                            const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
+                            const repsValue = logged != null && logged > 0 ? logged : currentExercise.reps;
+                            const setWeight = currentExercise.weight_kg;
+                            const weightText = setWeight != null && setWeight > 0 ? formatWeightLabel(setWeight) : 'Corpo libero';
+
+                            return (
+                              <button
+                                key={sIdx}
+                                ref={isCurrent ? activeSetCardRef : null}
+                                type="button"
+                                onClick={() => {
+                                  void hapticLight();
+                                  openEditSpecificSetModal(sIdx);
+                                }}
+                                className={`shrink-0 w-[150px] p-3 rounded-2xl border text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between ${
+                                  isCurrent
+                                    ? 'bg-[#521d00]/95 border-2 border-brand-orange text-white shadow-[0_0_25px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60 scale-[1.03] z-10'
+                                    : 'bg-white/5 border-white/10 text-zinc-400 opacity-65 hover:opacity-95 hover:border-white/20'
+                                }`}
+                                title={`Set ${sIdx + 1} - Tocca per modificare`}
+                              >
+                                {/* Set Header */}
+                                <div className="flex items-center justify-between gap-1 mb-1.5">
+                                  <span className={`text-[10px] uppercase font-black tracking-wider ${
+                                    isCurrent ? 'text-brand-lightOrange font-mono' : 'text-zinc-400'
+                                  }`}>
+                                    Set {sIdx + 1}
+                                  </span>
+                                  {isCurrent && (
+                                    <span className="flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
+                                      <span className="w-2 h-2 rounded-full bg-brand-orange shrink-0" />
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Reps Count */}
+                                <div className="flex items-baseline gap-1.5 my-1">
+                                  <span className={`text-2xl sm:text-3xl font-black font-mono leading-none tracking-tight ${
+                                    isCurrent ? 'text-white' : 'text-zinc-300'
+                                  }`}>
+                                    {isMaxTarget(repsValue) ? 'MAX' : repsValue}
+                                  </span>
+                                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">
+                                    reps
+                                  </span>
+                                </div>
+
+                                {/* Details: Carico / Peso previsto */}
+                                <div className="mt-2 pt-2 border-t border-white/10 space-y-1 text-[10px] font-semibold">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="text-[9px] uppercase tracking-wider opacity-60">Carico</span>
+                                    <span className={`font-mono font-bold truncate max-w-[85px] ${
+                                      isCurrent ? 'text-white' : 'text-zinc-300'
+                                    }`}>
+                                      {weightText}
+                                    </span>
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
                       </div>
                     </div>
                   </div>
@@ -8107,7 +8135,10 @@ const ActiveWorkoutPage: React.FC = () => {
           <div className="shrink-0 pt-2 border-t border-white/5 flex flex-col gap-1.5">
             {nextRecoveryLabel && (
               <p className="text-[11px] text-zinc-400 uppercase tracking-wider font-bold text-center">
-                Prossimo Recupero: <span className="text-brand-orange font-mono font-black">{nextRecoveryLabel}</span>
+                {(currentExercise.sets === 1 || currentSetIdx >= (currentExercise.sets || 1) - 1)
+                  ? 'Prossimo esercizio'
+                  : 'Prossimo recupero'}:{' '}
+                <span className="text-brand-orange font-mono font-black">{nextRecoveryLabel}</span>
               </p>
             )}
             {hasCurrentInstructionNote && (
