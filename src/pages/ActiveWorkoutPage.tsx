@@ -104,7 +104,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil, ChevronDown } from 'lucide-react';
+import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Check, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil, ChevronDown } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis } from '../utils/voice';
 import {
@@ -477,7 +477,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const pyramidScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const activePyramidStepRef = useRef<HTMLButtonElement | null>(null);
   const setsCarouselScrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const activeSetCardRef = useRef<HTMLButtonElement | null>(null);
+  const activeSetCardRef = useRef<HTMLDivElement | null>(null);
 
   const wasRestingRef = useRef(false);
   const wasEmomActiveRef = useRef(false);
@@ -5788,7 +5788,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-base font-black text-white uppercase tracking-wider">
-                      Set {targetEditingSetIdx + 1} · A Sfinimento
+                      Set {targetEditingSetIdx + 1} {isMaxTarget(currentExercise.reps) || (currentExercise.type === 'isometry' && isMaxTarget(currentExercise.duration_seconds)) ? '· A Sfinimento' : '· Modifica Set'}
                     </h3>
                     <p className="text-xs text-zinc-400">
                       {currentExercise.name}
@@ -5805,7 +5805,7 @@ const ActiveWorkoutPage: React.FC = () => {
               </div>
 
               <p className="text-xs text-zinc-300 text-center">
-                Inserisci {getPerformanceUnit(currentExercise) === 'sec' ? 'i secondi di tenuta' : 'le ripetizioni'} eseguiti in questo set:
+                Inserisci {getPerformanceUnit(currentExercise) === 'sec' ? 'i secondi di tenuta' : 'le ripetizioni'} per questo set:
               </p>
 
               <div className="flex items-center justify-center gap-2 py-2">
@@ -7877,207 +7877,313 @@ const ActiveWorkoutPage: React.FC = () => {
                 )}
               </div>
             ) : (
-              /* DEFAULT: STANDARD REPS - Fills the central dashboard generously */
-              <div className="text-center w-full flex flex-col items-center justify-between h-full py-1">
-                {isMaxTarget(currentExercise.reps) ? (
-                  <div className="flex flex-col items-center w-full my-auto">
-                    <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-xs font-black uppercase tracking-wider mb-3">
-                      <Flame size={14} className="animate-pulse" />
-                      <span>A Sfinimento (MAX Reps)</span>
-                    </div>
+              /* DEFAULT: STANDARD REPS & TIMELINE SETS CAROUSEL (OPTION B) */
+              <div className="w-full flex-1 min-h-0 flex flex-col items-center justify-center py-0.5">
+                {(() => {
+                  const totalSets = Math.max(1, currentExercise.sets || 1);
+                  const isMax = isMaxTarget(currentExercise.reps);
 
-                    {/* Stepper + Value */}
-                    <div className="flex items-center justify-center gap-2.5 w-full max-w-sm mb-3">
-                      <button
-                        type="button"
-                        onClick={() => adjustCurrentSetPerformance(-5)}
-                        className="w-12 h-12 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 hover:text-white font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
-                        title="-5 reps"
-                      >
-                        -5
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => adjustCurrentSetPerformance(-1)}
-                        className="w-12 h-12 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-xl flex items-center justify-center transition-all border border-white/5 cursor-pointer"
-                        title="-1 rep"
-                      >
-                        -
-                      </button>
-
-                      <div
-                        onClick={() => openEditSpecificSetModal(currentSetIdx)}
-                        className="flex-1 bg-black/50 border-2 border-brand-orange/60 hover:border-brand-orange rounded-3xl py-3 px-3 flex flex-col items-center justify-center cursor-pointer shadow-[0_0_25px_rgba(255,107,0,0.25)] transition-all group select-none"
-                        title="Tocca per inserire le reps fatte"
-                      >
-                        <span className="text-6xl font-mono font-black text-brand-orange leading-tight group-hover:scale-105 transition-transform">
-                          {(getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
-                            ? getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)
-                            : 'MAX'}
-                        </span>
-                        <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-1">
-                          <Pencil size={11} className="text-brand-orange" />
-                          Reps Eseguite
-                        </span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => adjustCurrentSetPerformance(1)}
-                        className="w-12 h-12 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-white font-black text-xl flex items-center justify-center transition-all border border-white/5 cursor-pointer"
-                        title="+1 rep"
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => adjustCurrentSetPerformance(5)}
-                        className="w-12 h-12 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 text-zinc-300 hover:text-white font-bold text-xs flex items-center justify-center transition-all border border-white/5 cursor-pointer"
-                        title="+5 reps"
-                      >
-                        +5
-                      </button>
-                    </div>
-
-                    <p className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider text-center mb-3">
-                      Tocca il valore per inserire le ripetizioni
-                    </p>
-
-                    {/* Summary Set Pills for MAX Reps */}
-                    <div className="w-full max-w-sm grid grid-cols-4 sm:grid-cols-5 gap-1.5">
-                      {Array.from({ length: currentExercise.sets || 1 }, (_, sIdx) => {
-                        const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
-                        const isCurrent = sIdx === currentSetIdx;
-                        const isDone = logged != null && logged > 0;
-                        return (
-                          <button
-                            key={sIdx}
-                            type="button"
-                            onClick={() => openEditSpecificSetModal(sIdx)}
-                            className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
-                              isCurrent
-                                ? 'bg-brand-orange/20 border-brand-orange text-white ring-1 ring-brand-orange/50 shadow-sm'
-                                : isDone
-                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                                  : 'bg-white/5 border-white/5 text-zinc-500'
-                            }`}
-                          >
-                            <span className="text-[8px] uppercase font-bold opacity-70">Set {sIdx + 1}</span>
-                            <span className="text-xs font-black font-mono mt-0.5">
-                              {logged != null && logged > 0 ? `${logged}` : isCurrent ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || '-'}` : '-'}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-between w-full h-full my-auto">
-                    {/* Hero Target Reps */}
-                    <div className="flex flex-col items-center justify-center my-auto py-2">
-                      <span className="block text-8xl min-[390px]:text-9xl sm:text-[10rem] font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_45px_rgba(255,107,0,0.35)] tracking-tighter">
-                        {formatBigTargetValue(currentExercise.reps)}
-                      </span>
-                      <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs sm:text-sm mt-3">
-                        Ripetizioni
-                      </span>
-                    </div>
-
-                    {/* Nuovo carosello dei Set (Sotto il conteggio centrale) */}
-                    <div className="w-full mt-auto pt-2">
-                      <div className="flex items-center justify-between text-[11px] text-zinc-400 uppercase tracking-wider font-bold mb-2 px-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-brand-orange font-mono font-black">
-                            Set {currentSetIdx + 1}
-                          </span>
-                          <span className="text-zinc-500">di</span>
-                          <span className="font-mono font-bold text-zinc-300">
-                            {currentExercise.sets || 1}
-                          </span>
-                        </div>
-                        {((currentExercise.sets || 1) - currentSetIdx > 1) && (
-                          <span className="text-[10px] text-zinc-400 font-semibold tracking-normal lowercase opacity-80">
-                            scorri per altri set ↔
-                          </span>
-                        )}
-                      </div>
-
+                  return (
+                    <div className="w-full flex-1 min-h-0 flex flex-col justify-center items-center">
                       {/* Scrollable Container centered on active set */}
                       <div
                         ref={setsCarouselScrollContainerRef}
-                        className="w-full flex gap-3 overflow-x-auto no-scrollbar py-2 px-[calc(50%-75px)] scroll-smooth snap-x snap-mandatory"
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onTouchEnd={(e) => e.stopPropagation()}
+                        className="w-full flex gap-3.5 sm:gap-4 overflow-x-auto no-scrollbar py-2.5 px-[calc(50%-120px)] min-[390px]:px-[calc(50%-130px)] sm:px-[calc(50%-140px)] scroll-smooth snap-x snap-mandatory items-center"
                         style={{ WebkitOverflowScrolling: 'touch' }}
                       >
-                        {Array.from({ length: currentExercise.sets || 1 }, (_, i) => i)
-                          .filter((sIdx) => sIdx >= currentSetIdx)
-                          .map((sIdx) => {
-                            const isCurrent = sIdx === currentSetIdx;
-                            const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
-                            const repsValue = logged != null && logged > 0 ? logged : currentExercise.reps;
-                            const setWeight = currentExercise.weight_kg;
-                            const weightText = setWeight != null && setWeight > 0 ? formatWeightLabel(setWeight) : 'Corpo libero';
+                        {Array.from({ length: totalSets }, (_, sIdx) => {
+                          const isCurrent = sIdx === currentSetIdx;
+                          const isCompleted = sIdx < currentSetIdx;
+                          const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
+                          const repsValue = logged != null && logged > 0 ? logged : currentExercise.reps;
+                          const setWeight = currentExercise.weight_kg;
+                          const weightText = setWeight != null && setWeight > 0 ? formatWeightLabel(setWeight) : 'Corpo libero';
 
+                          if (isCurrent) {
+                            return (
+                              <div
+                                key={sIdx}
+                                ref={activeSetCardRef}
+                                className="shrink-0 w-[240px] min-[390px]:w-[260px] sm:w-[280px] h-[255px] min-[390px]:h-[270px] sm:h-[285px] p-4 sm:p-5 rounded-3xl border-2 border-brand-orange bg-gradient-to-b from-[#2d1405] via-[#1a0c04] to-[#121214] text-white shadow-[0_0_35px_rgba(255,94,0,0.35)] ring-1 ring-brand-orange/60 scale-[1.02] z-10 snap-center select-none flex flex-col justify-between transition-all"
+                              >
+                                {/* Header: Set Number + Status Pill */}
+                                <div className="flex items-center justify-between gap-2 pb-2 border-b border-brand-orange/20 shrink-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs sm:text-sm font-black font-mono text-brand-orange tracking-wider uppercase">
+                                      SET {sIdx + 1}
+                                    </span>
+                                    <span className="text-[11px] font-mono text-zinc-400">
+                                      / {totalSets}
+                                    </span>
+                                  </div>
+                                  {isMax ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-[10px] font-black uppercase tracking-wider animate-pulse">
+                                      <Flame size={12} />
+                                      A Cedimento
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-lightOrange text-[10px] font-black uppercase tracking-wider">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
+                                      In Corso
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Center Area: Hero Reps Counter + Stepper Adjustments */}
+                                {isMax ? (
+                                  <div className="my-auto py-1 flex flex-col items-center justify-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void hapticLight();
+                                        openEditSpecificSetModal(sIdx);
+                                      }}
+                                      className="group flex flex-col items-center justify-center cursor-pointer transition-transform active:scale-95"
+                                      title="Tocca per inserire le ripetizioni"
+                                    >
+                                      <span className="text-5xl min-[390px]:text-6xl font-mono font-black text-brand-orange leading-none drop-shadow-[0_0_25px_rgba(255,107,0,0.45)] group-hover:scale-105 transition-transform">
+                                        {(logged || 0) > 0 ? logged : 'MAX'}
+                                      </span>
+                                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-1 group-hover:text-zinc-200">
+                                        <Pencil size={10} className="text-brand-orange" />
+                                        Reps Eseguite
+                                      </span>
+                                    </button>
+
+                                    {/* Stepper buttons for MAX Reps */}
+                                    <div className="flex items-center justify-center gap-1.5 mt-2.5 w-full">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void hapticLight();
+                                          adjustCurrentSetPerformance(-5);
+                                        }}
+                                        className="h-8 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-90 text-zinc-300 font-bold text-xs flex items-center justify-center border border-white/5 cursor-pointer transition-all"
+                                        title="-5 reps"
+                                      >
+                                        -5
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void hapticLight();
+                                          adjustCurrentSetPerformance(-1);
+                                        }}
+                                        className="h-8 w-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-90 text-white font-black text-base flex items-center justify-center border border-white/5 cursor-pointer transition-all"
+                                        title="-1 rep"
+                                      >
+                                        -
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void hapticLight();
+                                          adjustCurrentSetPerformance(1);
+                                        }}
+                                        className="h-8 w-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-90 text-white font-black text-base flex items-center justify-center border border-white/5 cursor-pointer transition-all"
+                                        title="+1 rep"
+                                      >
+                                        +
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void hapticLight();
+                                          adjustCurrentSetPerformance(5);
+                                        }}
+                                        className="h-8 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-90 text-zinc-300 font-bold text-xs flex items-center justify-center border border-white/5 cursor-pointer transition-all"
+                                        title="+5 reps"
+                                      >
+                                        +5
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="my-auto py-1 flex flex-col items-center justify-center">
+                                    <div className="flex items-center justify-center gap-3 w-full">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void hapticLight();
+                                          adjustCurrentSetPerformance(-1);
+                                        }}
+                                        className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-90 text-white font-black text-xl flex items-center justify-center border border-white/10 cursor-pointer transition-all shadow-sm"
+                                        title="-1 rep"
+                                      >
+                                        -
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          void hapticLight();
+                                          openEditSpecificSetModal(sIdx);
+                                        }}
+                                        className="group flex flex-col items-center justify-center cursor-pointer transition-transform active:scale-95"
+                                        title="Tocca per modificare le ripetizioni"
+                                      >
+                                        <span className="text-5xl min-[390px]:text-6xl font-mono font-black text-white leading-none tracking-tight drop-shadow-[0_0_20px_rgba(255,255,255,0.2)] group-hover:text-brand-orange transition-colors">
+                                          {repsValue}
+                                        </span>
+                                        <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-1 group-hover:text-zinc-200">
+                                          <Pencil size={10} className="text-brand-orange" />
+                                          Ripetizioni
+                                        </span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void hapticLight();
+                                          adjustCurrentSetPerformance(1);
+                                        }}
+                                        className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-90 text-white font-black text-xl flex items-center justify-center border border-white/10 cursor-pointer transition-all shadow-sm"
+                                        title="+1 rep"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Footer: Carico */}
+                                <div className="pt-2 border-t border-brand-orange/20 flex items-center justify-between text-xs shrink-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                    Carico
+                                  </span>
+                                  <span className="font-mono font-black text-brand-lightOrange truncate max-w-[130px]">
+                                    {weightText}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (isCompleted) {
                             return (
                               <button
                                 key={sIdx}
-                                ref={isCurrent ? activeSetCardRef : null}
                                 type="button"
                                 onClick={() => {
                                   void hapticLight();
                                   openEditSpecificSetModal(sIdx);
                                 }}
-                                className={`shrink-0 w-[150px] p-3 rounded-2xl border text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between ${
-                                  isCurrent
-                                    ? 'bg-[#521d00]/95 border-2 border-brand-orange text-white shadow-[0_0_25px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60 scale-[1.03] z-10'
-                                    : 'bg-white/5 border-white/10 text-zinc-400 opacity-65 hover:opacity-95 hover:border-white/20'
-                                }`}
-                                title={`Set ${sIdx + 1} - Tocca per modificare`}
+                                className="shrink-0 w-[155px] min-[390px]:w-[168px] sm:w-[180px] h-[225px] min-[390px]:h-[240px] sm:h-[250px] p-3.5 sm:p-4 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-95"
+                                title={`Set ${sIdx + 1} completato - Tocca per modificare`}
                               >
-                                {/* Set Header */}
-                                <div className="flex items-center justify-between gap-1 mb-1.5">
-                                  <span className={`text-[10px] uppercase font-black tracking-wider ${
-                                    isCurrent ? 'text-brand-lightOrange font-mono' : 'text-zinc-400'
-                                  }`}>
-                                    Set {sIdx + 1}
+                                <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-emerald-500/20 shrink-0">
+                                  <span className="text-xs font-black font-mono text-zinc-300 uppercase tracking-wider">
+                                    SET {sIdx + 1}
                                   </span>
-                                  {isCurrent && (
-                                    <span className="flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
-                                      <span className="w-2 h-2 rounded-full bg-brand-orange shrink-0" />
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Reps Count */}
-                                <div className="flex items-baseline gap-1.5 my-1">
-                                  <span className={`text-2xl sm:text-3xl font-black font-mono leading-none tracking-tight ${
-                                    isCurrent ? 'text-white' : 'text-zinc-300'
-                                  }`}>
-                                    {isMaxTarget(repsValue) ? 'MAX' : repsValue}
-                                  </span>
-                                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">
-                                    reps
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-wider">
+                                    <Check size={11} strokeWidth={3} />
+                                    Fatto
                                   </span>
                                 </div>
 
-                                {/* Details: Carico / Peso previsto */}
-                                <div className="mt-2 pt-2 border-t border-white/10 space-y-1 text-[10px] font-semibold">
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="text-[9px] uppercase tracking-wider opacity-60">Carico</span>
-                                    <span className={`font-mono font-bold truncate max-w-[85px] ${
-                                      isCurrent ? 'text-white' : 'text-zinc-300'
-                                    }`}>
-                                      {weightText}
-                                    </span>
-                                  </div>
+                                <div className="my-auto py-1 flex flex-col items-center justify-center">
+                                  <span className="text-4xl sm:text-5xl font-mono font-black text-emerald-400 leading-none">
+                                    {logged != null && logged > 0 ? logged : repsValue}
+                                  </span>
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 mt-1 flex items-center gap-1">
+                                    <Pencil size={9} />
+                                    Completate
+                                  </span>
+                                </div>
+
+                                <div className="pt-1.5 border-t border-emerald-500/20 flex items-center justify-between text-[11px] shrink-0">
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                                    Carico
+                                  </span>
+                                  <span className="font-mono font-bold text-zinc-200 truncate max-w-[85px]">
+                                    {weightText}
+                                  </span>
                                 </div>
                               </button>
                             );
-                          })}
+                          }
+
+                          // Upcoming Sets (isUpcoming)
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => {
+                                void hapticLight();
+                                openEditSpecificSetModal(sIdx);
+                              }}
+                              className="shrink-0 w-[155px] min-[390px]:w-[168px] sm:w-[180px] h-[225px] min-[390px]:h-[240px] sm:h-[250px] p-3.5 sm:p-4 rounded-3xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between opacity-65 hover:opacity-95 shadow-sm active:scale-95"
+                              title={`Set ${sIdx + 1} - Tocca per modificare target`}
+                            >
+                              <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-white/10 shrink-0">
+                                <span className="text-xs font-black font-mono text-zinc-400 uppercase tracking-wider">
+                                  SET {sIdx + 1}
+                                </span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 text-[9px] font-black uppercase tracking-wider">
+                                  {sIdx === totalSets - 1 ? 'Ultimo Set' : 'Prossimo'}
+                                </span>
+                              </div>
+
+                              <div className="my-auto py-1 flex flex-col items-center justify-center">
+                                <span className="text-4xl sm:text-5xl font-mono font-black text-zinc-300 leading-none">
+                                  {isMax ? 'MAX' : repsValue}
+                                </span>
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 mt-1">
+                                  {isMax ? 'A cedimento' : 'Previste'}
+                                </span>
+                              </div>
+
+                              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px] shrink-0">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                                  Carico
+                                </span>
+                                <span className="font-mono font-bold text-zinc-400 truncate max-w-[85px]">
+                                  {weightText}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
+
+                      {/* Timeline Dots Indicator (if more than 1 set) */}
+                      {totalSets > 1 && (
+                        <div className="flex items-center justify-center gap-1.5 mt-2 shrink-0">
+                          {Array.from({ length: totalSets }, (_, dIdx) => {
+                            const isDotCurrent = dIdx === currentSetIdx;
+                            const isDotDone = dIdx < currentSetIdx;
+                            return (
+                              <button
+                                key={dIdx}
+                                type="button"
+                                onClick={() => {
+                                  void hapticLight();
+                                  openEditSpecificSetModal(dIdx);
+                                }}
+                                className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                                  isDotCurrent
+                                    ? 'w-6 bg-brand-orange shadow-[0_0_8px_rgba(255,94,0,0.6)]'
+                                    : isDotDone
+                                      ? 'w-2 bg-emerald-500/70'
+                                      : 'w-2 bg-white/20 hover:bg-white/40'
+                                }`}
+                                title={`Set ${dIdx + 1}`}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -8100,16 +8206,6 @@ const ActiveWorkoutPage: React.FC = () => {
               >
                 <Info size={14} />
                 <span>Note e Istruzioni Esercizio</span>
-              </button>
-            )}
-            {!isSuperset && currentExercise.auto_count_type && (
-              <button
-                type="button"
-                onClick={() => setIsAutoCountModalOpen(true)}
-                className="w-full py-2 px-3 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/40 text-purple-300 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-              >
-                <Video size={14} />
-                <span>Usa Auto-Count con Fotocamera</span>
               </button>
             )}
           </div>
