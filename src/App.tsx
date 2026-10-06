@@ -45,6 +45,20 @@ import { supabaseConfigError } from './lib/supabase';
 import { lockAppToPortrait, useIsLandscape } from './utils/orientationManager';
 import { Smartphone } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
+import { initSyncNetworkListeners } from './lib/workoutSyncManager';
+
+/**
+ * SyncQueueWatcher — Monitora lo stato della connessione e sincronizza la coda
+ * offline verso Supabase non appena torna disponibile la rete o all'avvio.
+ */
+const SyncQueueWatcher = () => {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (!user?.id) return;
+    return initSyncNetworkListeners(user.id);
+  }, [user?.id]);
+  return null;
+};
 
 /**
  * ProtectedRoute — Wrapper per le rotte che richiedono autenticazione.
@@ -129,6 +143,7 @@ function App() {
       <Router>
         <OrientationWatcher />
         <ActiveWorkoutBanner />
+        <SyncQueueWatcher />
         <Routes>
         {/* Public Routes */}
         <Route path="/auth" element={<AuthPage />} />

@@ -61,6 +61,7 @@ import AppHeader from '../components/AppHeader';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import type { UiExercise, UiSubExercise } from '../lib/workoutSchemaAdapter';
 import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
+import { getSyncQueue } from '../lib/workoutSyncManager';
 
 interface WorkoutHistoryDetail {
   id: string;
@@ -250,6 +251,31 @@ const WorkoutHistoryDetailPage: React.FC = () => {
   useEffect(() => {
     const fetchWorkoutHistoryDetail = async () => {
       if (!user?.id || !workoutRunId) return;
+
+      // 1. Controlla prima se il workout è presente nella coda offline locale
+      if (user?.id && workoutRunId) {
+        const localQueue = getSyncQueue(user.id);
+        const matchedLocal = localQueue.find(
+          (item) => item.workout_uuid === workoutRunId || String(item.remote_workout_run_id) === String(workoutRunId)
+        );
+
+        if (matchedLocal) {
+          const snapshotExercises = toSnapshotExercises(matchedLocal.exercises_snapshot);
+          setDetail({
+            id: matchedLocal.remote_workout_run_id ? String(matchedLocal.remote_workout_run_id) : matchedLocal.workout_uuid,
+            schedaId: matchedLocal.id_scheda != null ? String(matchedLocal.id_scheda) : null,
+            canRestartFromTemplate: false,
+            canRestartFromSnapshot: snapshotExercises.length > 0,
+            workoutName: matchedLocal.workout_name_snapshot || 'Allenamento',
+            executedAt: matchedLocal.executed_at,
+            totalDurationSeconds: matchedLocal.durata_totale_secondi,
+            notes: (matchedLocal.notes || []).map((n) => n.text),
+          });
+          setExercises(snapshotExercises);
+          setLoading(false);
+          return;
+        }
+      }
 
       const workoutRunNumericId = Number(workoutRunId);
       if (Number.isNaN(workoutRunNumericId)) {

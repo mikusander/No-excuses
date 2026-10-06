@@ -36,7 +36,18 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, ChevronRight, Dumbbell, Loader2, Trash2, BarChart3, Sparkles } from 'lucide-react';
+import {
+  Calendar,
+  ChevronRight,
+  Dumbbell,
+  Loader2,
+  Trash2,
+  BarChart3,
+  Sparkles,
+  CloudOff,
+  CheckCircle2,
+  RefreshCw,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
@@ -47,12 +58,20 @@ import {
   type RawWorkoutSession,
   toSnapshotExercises,
 } from '../utils/periodicReportEngine';
+import {
+  getSyncQueue,
+  subscribeToSyncQueue,
+  processSyncQueue,
+  removeWorkoutFromQueue,
+  type SyncStatus,
+} from '../lib/workoutSyncManager';
 
 interface WorkoutHistoryItem {
   id: string;
   schedaId: string | null;
   workoutName: string;
   executedAt: string;
+  syncStatus: SyncStatus;
 }
 
 const WorkoutHistoryPage: React.FC = () => {
@@ -63,107 +82,182 @@ const WorkoutHistoryPage: React.FC = () => {
   const [reportWorkouts, setReportWorkouts] = useState<RawWorkoutSession[]>([]);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<string | null>(null);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
     void fetchHistory();
+
+    const unsubscribe = subscribeToSyncQueue(() => {
+      void fetchHistory();
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [user]);
 
   const fetchHistory = async () => {
     try {
       setLoading(true);
 
-      const runSelectWithDuration = `
-        id_workout,
-        id_scheda,
-        workout_name_snapshot,
-        exercises_snapshot,
-        data_esecuzione,
-        durata_totale_secondi,
-        schede ( id_scheda, nome ),
-        note_workout ( testo, created_at )
-      `;
+      // 1. Recupera la coda di sincronizzazione locale (offline-first)
+      const localQueue = user?.id ? getSyncQueue(user.id) : [];
+      const pendingItems = localQueue.filter((item) => item.sync_status !== 'synced');
+      setPendingSyncCount(pendingItems.length);
 
-      const runSelectBase = `
-        id_workout,
-        id_scheda,
-        workout_name_snapshot,
-        exercises_snapshot,
-        data_esecuzione,
-        schede ( id_scheda, nome ),
-        note_workout ( testo, created_at )
-      `;
+      // 2. Lettura dal database remoto Supabase (gestita in modo resiliente se offline)
+      let rows: any[] = [];
+      try {
+        const runSelectWithDuration = `
+          id_workout,
+          id_scheda,
+          workout_name_snapshot,
+          exercises_snapshot,
+          data_esecuzione,
+          durata_totale_secondi,
+          schede ( id_scheda, nome ),
+          note_workout ( testo, created_at )
+        `;
 
-      let runData: any = null;
-      let runError: any = null;
+        const runSelectBase = `
+          id_workout,
+          id_scheda,
+          workout_name_snapshot,
+          exercises_snapshot,
+          data_esecuzione,
+          schede ( id_scheda, nome ),
+          note_workout ( testo, created_at )
+        `;
 
-      const firstAttempt = await supabase
-        .from('workout_run')
-        .select(runSelectWithDuration)
-        .order('data_esecuzione', { ascending: false });
+        let runData: any = null;
+        let runError: any = null;
 
-      runData = firstAttempt.data;
-      runError = firstAttempt.error;
-
-      if (runError && /durata_totale_secondi/i.test(String(runError.message || ''))) {
-        const fallbackAttempt = await supabase
+        const firstAttempt = await supabase
           .from('workout_run')
-          .select(runSelectBase)
+          .select(runSelectWithDuration)
           .order('data_esecuzione', { ascending: false });
-        runData = fallbackAttempt.data;
-        runError = fallbackAttempt.error;
+
+        runData = firstAttempt.data;
+        runError = firstAttempt.error;
+
+        if (runError && /durata_totale_secondi/i.test(String(runError.message || ''))) {
+          const fallbackAttempt = await supabase
+            .from('workout_run')
+            .select(runSelectBase)
+            .order('data_esecuzione', { ascending: false });
+          runData = fallbackAttempt.data;
+          runError = fallbackAttempt.error;
+        }
+
+        if (!runError && Array.isArray(runData)) {
+          rows = runData;
+        }
+      } catch (cloudErr) {
+        // Nessun alert di errore o blocco UI in caso di assenza di rete
+        console.warn('[WorkoutHistoryPage] Lettura cloud non disponibile (offline):', cloudErr);
       }
 
-      if (runError) throw runError;
+      // Mappiamo gli id e gli UUID già sincronizzati per evitare duplicazioni
+      const syncedUuids = new Set<string>();
+      const syncedRemoteIds = new Set<number>();
 
-      const rows = runData || [];
+      for (const row of rows) {
+        if (row.id_workout) {
+          syncedRemoteIds.add(Number(row.id_workout));
+        }
+        // Ispeziona se l'UUID è presente nello snapshot
+        if (Array.isArray(row.exercises_snapshot) && row.exercises_snapshot.length > 0) {
+          const firstEx = row.exercises_snapshot[0];
+          if (firstEx && firstEx._session_meta && firstEx._session_meta.workout_uuid) {
+            syncedUuids.add(String(firstEx._session_meta.workout_uuid));
+          }
+        }
+      }
 
-      const parsed = rows.map((row: any) => {
+      // 3. Costruisci gli elementi della cronologia
+      const combinedItems: WorkoutHistoryItem[] = [];
+      const combinedRawSessions: RawWorkoutSession[] = [];
+
+      // Aggiungi le sessioni in coda offline (pending o non ancora riscontrate nel cloud)
+      for (const queued of localQueue) {
+        const isAlreadyInCloud =
+          (queued.remote_workout_run_id && syncedRemoteIds.has(queued.remote_workout_run_id)) ||
+          syncedUuids.has(queued.workout_uuid);
+
+        if (!isAlreadyInCloud) {
+          combinedItems.push({
+            id: queued.workout_uuid,
+            schedaId: queued.id_scheda != null ? String(queued.id_scheda) : null,
+            workoutName:
+              queued.workout_name_snapshot ||
+              (queued.id_scheda != null ? `Workout #${queued.id_scheda}` : 'Allenamento'),
+            executedAt: queued.executed_at,
+            syncStatus: queued.sync_status,
+          });
+
+          combinedRawSessions.push({
+            id: queued.workout_uuid,
+            workoutName: queued.workout_name_snapshot || 'Allenamento',
+            executedAt: queued.executed_at,
+            totalDurationSeconds: queued.durata_totale_secondi || null,
+            exercises: toSnapshotExercises(queued.exercises_snapshot),
+            notes: (queued.notes || []).map((n) => ({ text: n.text })),
+          });
+        }
+      }
+
+      // Aggiungi le sessioni dal cloud
+      for (const row of rows) {
         const snapshotName = String((row as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
         const linkedScheda = Array.isArray(row.schede) ? row.schede[0] : row.schede;
-        return {
+        const workoutName =
+          snapshotName ||
+          linkedScheda?.nome ||
+          (row.id_scheda != null ? `Workout #${row.id_scheda}` : `Workout #${row.id_workout}`);
+
+        combinedItems.push({
           id: String(row.id_workout),
           schedaId: row.id_scheda == null ? null : String(row.id_scheda),
-          workoutName:
-            snapshotName ||
-            linkedScheda?.nome ||
-            (row.id_scheda != null ? `Workout #${row.id_scheda}` : `Workout #${row.id_workout}`),
+          workoutName,
           executedAt: row.data_esecuzione,
-        } as WorkoutHistoryItem;
+          syncStatus: 'synced',
+        });
+
+        const exercises = toSnapshotExercises(row.exercises_snapshot);
+        const linkedNotes = Array.isArray(row.note_workout) ? row.note_workout : [];
+        const notes = linkedNotes
+          .filter((n: any) => Boolean(n && typeof n === 'object'))
+          .map((n: any) => ({
+            text: String(n.testo || ''),
+            createdAt: n.created_at ? String(n.created_at) : undefined,
+          }));
+
+        combinedRawSessions.push({
+          id: String(row.id_workout),
+          workoutName,
+          executedAt: String(row.data_esecuzione || ''),
+          totalDurationSeconds: row.durata_totale_secondi != null ? Number(row.durata_totale_secondi) : null,
+          exercises,
+          notes,
+        });
+      }
+
+      // Ordina cronologicamente in modo decrescente (più recenti prima)
+      combinedItems.sort((a, b) => {
+        const timeA = new Date(a.executedAt).getTime() || 0;
+        const timeB = new Date(b.executedAt).getTime() || 0;
+        return timeB - timeA;
       });
 
-      const parsedRawSessions: RawWorkoutSession[] = rows
-        .map((row: any) => {
-          if (!row) return null;
-          const snapshotName = String((row as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
-          const linkedScheda = Array.isArray(row.schede) ? row.schede[0] : row.schede;
-          const workoutName =
-            snapshotName ||
-            linkedScheda?.nome ||
-            (row.id_scheda != null ? `Workout #${row.id_scheda}` : `Workout #${row.id_workout}`);
+      combinedRawSessions.sort((a, b) => {
+        const timeA = new Date(a.executedAt).getTime() || 0;
+        const timeB = new Date(b.executedAt).getTime() || 0;
+        return timeB - timeA;
+      });
 
-          const exercises = toSnapshotExercises(row.exercises_snapshot);
-          const linkedNotes = Array.isArray(row.note_workout) ? row.note_workout : [];
-          const notes = linkedNotes
-            .filter((n: any) => Boolean(n && typeof n === 'object'))
-            .map((n: any) => ({
-              text: String(n.testo || ''),
-              createdAt: n.created_at ? String(n.created_at) : undefined,
-            }));
-
-          return {
-            id: String(row.id_workout),
-            workoutName,
-            executedAt: String(row.data_esecuzione || ''),
-            totalDurationSeconds: row.durata_totale_secondi != null ? Number(row.durata_totale_secondi) : null,
-            exercises,
-            notes,
-          };
-        })
-        .filter((s: RawWorkoutSession | null): s is RawWorkoutSession => Boolean(s && s.executedAt));
-
-      setHistoryItems(parsed);
-      setReportWorkouts(parsedRawSessions);
+      setHistoryItems(combinedItems);
+      setReportWorkouts(combinedRawSessions);
     } catch (error) {
       console.error('Error fetching workout history:', error);
     } finally {
@@ -174,9 +268,9 @@ const WorkoutHistoryPage: React.FC = () => {
   const formatExecutedAt = (isoDate: string) => {
     const parsed = new Date(isoDate);
     if (Number.isNaN(parsed.getTime())) return isoDate;
-    return parsed.toLocaleString('en-GB', {
+    return parsed.toLocaleString('it-IT', {
       day: '2-digit',
-      month: 'long',
+      month: 'short',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
@@ -185,32 +279,38 @@ const WorkoutHistoryPage: React.FC = () => {
 
   const deleteHistoryWorkout = async (workoutRunId: string) => {
     if (!user?.id || deletingWorkoutId != null) return;
-    if (!window.confirm('Delete this completed workout from history?')) return;
-
-    const workoutRunNumericId = Number(workoutRunId);
-    if (Number.isNaN(workoutRunNumericId)) return;
+    if (!window.confirm('Vuoi eliminare questa sessione di allenamento?')) return;
 
     try {
       setDeletingWorkoutId(workoutRunId);
 
-      const { error: notesDeleteError } = await supabase
-        .from('note_workout')
-        .delete()
-        .eq('id_workout', workoutRunNumericId);
-      if (notesDeleteError) throw notesDeleteError;
+      // 1. Rimuovi dalla coda locale se presente
+      removeWorkoutFromQueue(user.id, workoutRunId);
 
-      const { error: workoutDeleteError } = await supabase
-        .from('workout_run')
-        .delete()
-        .eq('id_workout', workoutRunNumericId)
-        .eq('id_utente', user.id);
-      if (workoutDeleteError) throw workoutDeleteError;
+      // 2. Se è un id numerico remoto, rimuovi da Supabase
+      const workoutRunNumericId = Number(workoutRunId);
+      if (!Number.isNaN(workoutRunNumericId)) {
+        try {
+          await supabase
+            .from('note_workout')
+            .delete()
+            .eq('id_workout', workoutRunNumericId);
+
+          await supabase
+            .from('workout_run')
+            .delete()
+            .eq('id_workout', workoutRunNumericId)
+            .eq('id_utente', user.id);
+        } catch (cloudErr) {
+          console.warn('Errore cancellazione cloud:', cloudErr);
+        }
+      }
 
       setHistoryItems((prev) => prev.filter((item) => item.id !== workoutRunId));
       setReportWorkouts((prev) => prev.filter((item) => item.id !== workoutRunId));
     } catch (deleteError) {
       console.error('Error deleting workout from history:', deleteError);
-      alert('Unable to delete workout history entry.');
+      alert('Impossibile eliminare la sessione di allenamento.');
     } finally {
       setDeletingWorkoutId(null);
     }
@@ -257,6 +357,35 @@ const WorkoutHistoryPage: React.FC = () => {
           </div>
         )}
 
+        {/* Banner Sessioni Offline in attesa di sincronizzazione */}
+        {!loading && pendingSyncCount > 0 && (
+          <div className="bg-[#1C1C1E]/95 border border-amber-500/35 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-xl backdrop-blur-md animate-sheet-enter">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/25 text-amber-400 shrink-0">
+                <CloudOff size={20} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-bold text-white truncate">
+                  {pendingSyncCount} {pendingSyncCount === 1 ? 'allenamento salvato in locale' : 'allenamenti salvati in locale'}
+                </p>
+                <p className="text-[11px] text-brand-grey/80 truncate">
+                  Dati protetti da crash. Sincronizzazione automatica appena torna la linea.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                void hapticLight();
+                if (user?.id) void processSyncQueue(user.id);
+              }}
+              className="shrink-0 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-extrabold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+            >
+              <RefreshCw size={13} />
+              <span>Sincronizza ora</span>
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center items-center h-48">
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-brand-orange border-b-2 border-white/10"></div>
@@ -298,9 +427,42 @@ const WorkoutHistoryPage: React.FC = () => {
                       <Calendar className="text-brand-orange" size={22} />
                     </div>
                     <div className="min-w-0">
-                      <h2 className="text-base sm:text-lg font-bold text-white leading-tight break-words">{item.workoutName}</h2>
-                      <p className="text-xs sm:text-sm text-brand-grey/70 mt-1">{formatExecutedAt(item.executedAt)}</p>
-                      <p className="text-[11px] text-brand-orange font-semibold mt-2 tracking-wide uppercase">Tocca per dettagli</p>
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h2 className="text-base sm:text-lg font-bold text-white leading-tight break-words">
+                          {item.workoutName}
+                        </h2>
+
+                        {/* Indicatore discreto stato di sincronizzazione */}
+                        {item.syncStatus === 'pending' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-400">
+                            <CloudOff size={11} />
+                            <span>In attesa di sync</span>
+                          </span>
+                        )}
+                        {item.syncStatus === 'syncing' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-sky-500/15 border border-sky-500/30 text-sky-400">
+                            <RefreshCw size={11} className="animate-spin" />
+                            <span>Sincronizzazione...</span>
+                          </span>
+                        )}
+                        {item.syncStatus === 'failed' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-red-500/15 border border-red-500/30 text-red-400">
+                            <CloudOff size={11} />
+                            <span>Sync non riuscito</span>
+                          </span>
+                        )}
+                        {item.syncStatus === 'synced' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400/80">
+                            <CheckCircle2 size={11} />
+                            <span>Sincronizzato</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs sm:text-sm text-brand-grey/70">{formatExecutedAt(item.executedAt)}</p>
+                      <p className="text-[11px] text-brand-orange font-semibold mt-2 tracking-wide uppercase">
+                        Tocca per dettagli
+                      </p>
                     </div>
                   </div>
 

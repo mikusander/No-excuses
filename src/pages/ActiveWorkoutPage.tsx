@@ -140,6 +140,13 @@ import {
   WORKOUT_PROGRESS_MAX_AGE_MS,
   type WorkoutProgressIdentity,
 } from '../lib/workoutProgressStorage';
+import {
+  generateWorkoutUuid,
+  saveActiveWorkoutDraft,
+  clearActiveWorkoutDraft,
+  enqueueCompletedWorkout,
+  processSyncQueue,
+} from '../lib/workoutSyncManager';
 import { WorkoutCelebrationModal } from '../components/WorkoutCelebrationModal';
 import {
   lockAppToPortrait,
@@ -259,6 +266,7 @@ interface PersistedWorkoutProgressState {
   workoutName?: string;
   currentExerciseName?: string;
   totalSets?: number;
+  workout_uuid?: string;
   recordedMaxPerformance?: Record<string, Record<number, number>>;
 }
 
@@ -477,9 +485,6 @@ const ActiveWorkoutPage: React.FC = () => {
   const lastCountdownRestRef = useRef<number | null>(null);
   const lastCountdownEmomRef = useRef<number | null>(null);
   const lastCountdownIsometryRef = useRef<number | null>(null);
-  const workoutRunSavedRef = useRef(false);
-  const workoutRunIdRef = useRef<number | null>(null);
-  const workoutNotesSavedRef = useRef(false);
   const workoutCompletionHandledRef = useRef(false);
   const workoutStartedAtMsRef = useRef<number | null>(null);
   const workoutElapsedSecondsRef = useRef<number>(0);
@@ -508,6 +513,7 @@ const ActiveWorkoutPage: React.FC = () => {
     }
   }, []);
   const lastProgressPersistAtMsRef = useRef(0);
+  const workoutUuidRef = useRef<string>(generateWorkoutUuid());
   const persistWorkoutProgressRef = useRef<((force?: boolean) => void) | null>(null);
   const suppressProgressPersistenceRef = useRef(false);
   const lastHandledRestCompletionEndsAtMsRef = useRef<number | null>(null);
@@ -1512,6 +1518,9 @@ const ActiveWorkoutPage: React.FC = () => {
         }
       }
       recordedMaxPerformanceRef.current = next;
+      setTimeout(() => {
+        persistWorkoutProgress(true);
+      }, 20);
       return next;
     });
   };
@@ -1673,6 +1682,7 @@ const ActiveWorkoutPage: React.FC = () => {
         workoutElapsedSeconds: getCurrentWorkoutElapsedSeconds(),
         workoutName: workout.name,
         currentExerciseName: safeExercise?.name,
+        workout_uuid: workoutUuidRef.current,
         totalSets: safeExercise?.sets,
         recordedMaxPerformance: activeRecordedMax,
       },
@@ -1681,6 +1691,20 @@ const ActiveWorkoutPage: React.FC = () => {
     try {
       if (user?.id) {
         pruneWorkoutProgressCheckpoints(user.id, storageKey);
+        saveActiveWorkoutDraft({
+          workout_uuid: workoutUuidRef.current,
+          userId: user.id,
+          schedaId: sourceSchedaId,
+          workoutRunId: workoutRunId ? Number(workoutRunId) : null,
+          workoutName: workout.name,
+          updated_at_ms: now,
+          started_at_ms: workoutStartedAtMsRef.current || now,
+          currentExerciseIdx: safeCurrentExerciseIdx,
+          currentSetIdx: safeCurrentSetIdx,
+          currentExerciseName: safeExercise?.name,
+          totalSets: safeExercise?.sets,
+          workoutStateSnapshot: payload.state,
+        });
       }
       localStorage.setItem(storageKey, JSON.stringify(payload));
       notifyWorkoutProgressChanged();
@@ -1721,6 +1745,9 @@ const ActiveWorkoutPage: React.FC = () => {
       if (totalExercises === 0) return false;
 
       const state = parsedPayload.state;
+      if (state.workout_uuid) {
+        workoutUuidRef.current = state.workout_uuid;
+      }
       let safeExerciseIdx = Math.max(0, Math.min(normalizeDurationSeconds(state.currentExerciseIdx), totalExercises - 1));
       let safeExercise = nextWorkout.exercises[safeExerciseIdx];
 
@@ -2545,9 +2572,6 @@ const ActiveWorkoutPage: React.FC = () => {
       setIsEditExerciseModalOpen(false);
       setExerciseEditError(null);
       setIsSavingExerciseEdit(false);
-      workoutRunSavedRef.current = false;
-      workoutRunIdRef.current = null;
-      workoutNotesSavedRef.current = false;
       workoutCompletionHandledRef.current = false;
       workoutStartedAtMsRef.current = Date.now();
       workoutElapsedSecondsRef.current = 0;
@@ -2707,122 +2731,8 @@ const ActiveWorkoutPage: React.FC = () => {
     }
   };
 
-  const saveWorkoutRun = async (): Promise<number | null> => {
-    if (workoutRunSavedRef.current) return workoutRunIdRef.current;
-    if (!user?.id) return null;
 
-    const workoutDurationSeconds = Math.max(0, getCurrentWorkoutElapsedSeconds());
-
-    const fallbackSchedaId = Number(id);
-    const computedSchedaId = sourceSchedaId != null
-      ? sourceSchedaId
-      : Number.isFinite(fallbackSchedaId)
-        ? fallbackSchedaId
-        : null;
-
-    const workoutNameSnapshot = String(
-      workout?.name ||
-      (computedSchedaId != null
-        ? `Workout #${computedSchedaId}`
-        : workoutRunId
-          ? `Workout Replay #${workoutRunId}`
-          : 'Workout')
-    ).trim();
-    const exercisesSnapshot = Array.isArray(workout?.exercises)
-      ? workout.exercises.map((exercise, exIdx) => {
-        const key = getPerformanceKey(exIdx, exercise);
-        const setsMap = recordedMaxPerformanceRef.current[key] || {};
-        const totalSets = Math.max(1, exercise.sets || 1);
-        const completed_sets_records = Array.from({ length: totalSets }, (_, sIdx) => {
-          const val = setsMap[sIdx];
-          return val != null ? val : null;
-        });
-
-        return {
-          ...exercise,
-          subExercises: exercise.subExercises || [],
-          pyramid_steps: exercise.pyramid_steps || [],
-          completed_sets_records: completed_sets_records.some((v) => v != null) ? completed_sets_records : undefined,
-          completed_sets_reps: completed_sets_records.some((v) => v != null) ? completed_sets_records : undefined,
-        };
-      })
-      : [];
-
-    let data: { id_workout?: number } | null = null;
-    let error: { message?: string } | null = null;
-
-    const firstAttempt = await supabase
-      .from('workout_run')
-      .insert([
-        {
-          id_utente: user.id,
-          id_scheda: computedSchedaId,
-          durata_totale_secondi: workoutDurationSeconds,
-          workout_name_snapshot: workoutNameSnapshot,
-          exercises_snapshot: exercisesSnapshot,
-        },
-      ])
-      .select('id_workout')
-      .single();
-
-    data = firstAttempt.data as { id_workout?: number } | null;
-    error = firstAttempt.error as { message?: string } | null;
-
-    const needsDurationFallback =
-      Boolean(error) &&
-      /durata_totale_secondi/i.test(String(error?.message || ''));
-
-    if (needsDurationFallback) {
-      const noDurationAttempt = await supabase
-        .from('workout_run')
-        .insert([
-          {
-            id_utente: user.id,
-            id_scheda: computedSchedaId,
-            workout_name_snapshot: workoutNameSnapshot,
-            exercises_snapshot: exercisesSnapshot,
-          },
-        ])
-        .select('id_workout')
-        .single();
-
-      data = noDurationAttempt.data as { id_workout?: number } | null;
-      error = noDurationAttempt.error as { message?: string } | null;
-    }
-
-    const needsLegacyFallback =
-      Boolean(error) &&
-      /workout_name_snapshot|exercises_snapshot/i.test(String(error?.message || ''));
-
-    if (needsLegacyFallback) {
-      const legacyAttempt = await supabase
-        .from('workout_run')
-        .insert([
-          {
-            id_utente: user.id,
-            id_scheda: computedSchedaId,
-          },
-        ])
-        .select('id_workout')
-        .single();
-
-      data = legacyAttempt.data as { id_workout?: number } | null;
-      error = legacyAttempt.error as { message?: string } | null;
-    }
-
-    if (error || !data?.id_workout) {
-      console.error('Error saving completed workout:', error || 'Missing workout id');
-      return null;
-    }
-
-    workoutRunSavedRef.current = true;
-    workoutRunIdRef.current = Number(data.id_workout);
-    return workoutRunIdRef.current;
-  };
-
-  const saveWorkoutNotes = async (workoutRunId: number) => {
-    if (workoutNotesSavedRef.current) return;
-
+  const compileWorkoutNotesList = (): Array<{ text: string }> => {
     const currentNotes = { ...(exerciseNotesByKeyRef.current || exerciseNotesByKey) };
 
     if (workout?.exercises) {
@@ -2856,9 +2766,8 @@ const ActiveWorkoutPage: React.FC = () => {
     }
 
     const seenNoteTexts = new Set<string>();
-    const rowsToInsert: { id_workout: number; testo: string }[] = [];
+    const notesList: Array<{ text: string }> = [];
 
-    // 1. Inserisci prima le note abbinate agli esercizi attuali con indice d'ordine per evitare collisioni di nome
     if (workout?.exercises) {
       workout.exercises.forEach((ex, exIdx) => {
         const entry = getExerciseNoteEntry(exIdx, ex);
@@ -2868,50 +2777,29 @@ const ActiveWorkoutPage: React.FC = () => {
           if (!seenNoteTexts.has(fullText) && fullText.length > 3) {
             seenNoteTexts.add(fullText);
             seenNoteTexts.add(legacyText);
-            rowsToInsert.push({
-              id_workout: workoutRunId,
-              testo: fullText,
-            });
+            notesList.push({ text: fullText });
           }
         }
       });
     }
 
-    // 2. Inserisci eventuali note orfane o aggiuntive
     Object.values(currentNotes).forEach((entry) => {
       if (!entry?.note?.trim()) return;
       const fullText = `[${entry.exerciseName}] ${entry.note.trim()}`;
       if (!seenNoteTexts.has(fullText) && fullText.length > 3) {
         seenNoteTexts.add(fullText);
-        rowsToInsert.push({
-          id_workout: workoutRunId,
-          testo: fullText,
-        });
+        notesList.push({ text: fullText });
       }
     });
 
     const generalNoteTrimmed = (workoutGeneralNoteRef.current || workoutGeneralNote).trim();
     if (generalNoteTrimmed.length > 0) {
-      rowsToInsert.unshift({
-        id_workout: workoutRunId,
-        testo: `[Scheda] ${generalNoteTrimmed}`,
-      });
+      notesList.unshift({ text: `[Scheda] ${generalNoteTrimmed}` });
     }
 
-    if (rowsToInsert.length === 0) {
-      workoutNotesSavedRef.current = true;
-      return;
-    }
-
-    const { error } = await supabase.from('note_workout').insert(rowsToInsert);
-
-    if (error) {
-      console.error('Error saving workout notes:', error);
-      return;
-    }
-
-    workoutNotesSavedRef.current = true;
+    return notesList;
   };
+
 
   // Timer logic for REST
   useEffect(() => {
@@ -4497,8 +4385,6 @@ const ActiveWorkoutPage: React.FC = () => {
     workoutCompletionHandledRef.current = true;
     suppressProgressPersistenceRef.current = true;
 
-    clearPersistedWorkoutProgress();
-
     if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
       playGoalReachedSound();
     }
@@ -4509,9 +4395,65 @@ const ActiveWorkoutPage: React.FC = () => {
     stopRestMediaSession();
     void releaseScreenWakeLock();
 
-    const workoutRunId = await saveWorkoutRun();
-    if (workoutRunId) {
-      await saveWorkoutNotes(workoutRunId);
+    const workoutDurationSeconds = Math.max(0, getCurrentWorkoutElapsedSeconds());
+    const fallbackSchedaId = Number(id);
+    const computedSchedaId = sourceSchedaId != null
+      ? sourceSchedaId
+      : Number.isFinite(fallbackSchedaId)
+        ? fallbackSchedaId
+        : null;
+
+    const workoutNameSnapshot = String(
+      workout?.name ||
+      (computedSchedaId != null
+        ? `Workout #${computedSchedaId}`
+        : workoutRunId
+          ? `Workout Replay #${workoutRunId}`
+          : 'Workout')
+    ).trim();
+
+    const exercisesSnapshot = Array.isArray(workout?.exercises)
+      ? workout.exercises.map((exercise, exIdx) => {
+        const key = getPerformanceKey(exIdx, exercise);
+        const setsMap = recordedMaxPerformanceRef.current[key] || {};
+        const totalSets = Math.max(1, exercise.sets || 1);
+        const completed_sets_records = Array.from({ length: totalSets }, (_, sIdx) => {
+          const val = setsMap[sIdx];
+          return val != null ? val : null;
+        });
+
+        return {
+          ...exercise,
+          workout_uuid: workoutUuidRef.current,
+          subExercises: exercise.subExercises || [],
+          pyramid_steps: exercise.pyramid_steps || [],
+          completed_sets_records: completed_sets_records.some((v) => v != null) ? completed_sets_records : undefined,
+          completed_sets_reps: completed_sets_records.some((v) => v != null) ? completed_sets_records : undefined,
+        };
+      })
+      : [];
+
+    const compiledNotes = compileWorkoutNotesList();
+
+    // 1. Inserimento immediato in coda locale persistente (stato 'completed', sync_status: 'pending')
+    if (user?.id) {
+      enqueueCompletedWorkout({
+        workout_uuid: workoutUuidRef.current,
+        id_utente: user.id,
+        id_scheda: computedSchedaId,
+        workout_name_snapshot: workoutNameSnapshot,
+        durata_totale_secondi: workoutDurationSeconds,
+        executed_at: new Date().toISOString(),
+        exercises_snapshot: exercisesSnapshot,
+        notes: compiledNotes,
+      });
+      clearActiveWorkoutDraft(user.id);
+    }
+    clearPersistedWorkoutProgress();
+
+    // 2. Trigger automatico background sync se online (senza bloccare la UI)
+    if (user?.id && typeof navigator !== 'undefined' && navigator.onLine) {
+      void processSyncQueue(user.id);
     }
   };
 

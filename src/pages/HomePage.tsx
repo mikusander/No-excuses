@@ -12,7 +12,8 @@
  *  - BentoGrid: 4 tessere modulari (Scegli Scheda, Free Mode, Storico, Nuova Scheda).
  *  - BottomNavigation: Barra di navigazione mobile fluttuante.
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import HomeHeader from '../components/HomeHeader';
 import QuickStartHeroCard, { type LastWorkoutData } from '../components/QuickStartHeroCard';
 import WeeklyConsistencyBar from '../components/WeeklyConsistencyBar';
@@ -22,11 +23,14 @@ import BottomNavigation from '../components/BottomNavigation';
 import WorkoutPreviewModal from '../components/WorkoutPreviewModal';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import WorkoutRecoveryPromptModal from '../components/WorkoutRecoveryPromptModal';
 import {
   getLatestWorkoutProgressCheckpoint,
   subscribeToWorkoutProgress,
+  clearAllWorkoutProgressCheckpoints,
   type WorkoutProgressCheckpointMeta,
 } from '../lib/workoutProgressStorage';
+import { clearActiveWorkoutDraft } from '../lib/workoutSyncManager';
 import {
   getFolders,
   getFolderAssignments,
@@ -46,6 +50,7 @@ const toLocalDateKey = (dateStr: string | Date): string => {
 
 const HomePage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [userName, setUserName] = useState<string>('');
   const [streakDays, setStreakDays] = useState<number>(0);
@@ -62,15 +67,41 @@ const HomePage: React.FC = () => {
   const [quickStartModalSchedaId, setQuickStartModalSchedaId] = useState<number | null>(null);
   const [quickStartModalName, setQuickStartModalName] = useState<string>('');
 
+  const [isRecoveryPromptOpen, setIsRecoveryPromptOpen] = useState<boolean>(false);
+  const recoveryPromptShownRef = useRef<boolean>(false);
+
   // Sincronizza lo stato del checkpoint (workout in sospeso)
   const refreshCheckpoint = useCallback(() => {
     if (!user?.id) {
       setActiveCheckpoint(null);
+      setIsRecoveryPromptOpen(false);
       return;
     }
     const cp = getLatestWorkoutProgressCheckpoint(user.id);
     setActiveCheckpoint(cp);
+    if (cp && !recoveryPromptShownRef.current) {
+      recoveryPromptShownRef.current = true;
+      setIsRecoveryPromptOpen(true);
+    }
   }, [user?.id]);
+
+  const handleDiscardInterruptedWorkout = () => {
+    if (!user?.id) return;
+    clearAllWorkoutProgressCheckpoints(user.id);
+    clearActiveWorkoutDraft(user.id);
+    setActiveCheckpoint(null);
+    setIsRecoveryPromptOpen(false);
+  };
+
+  const handleResumeInterruptedWorkout = () => {
+    if (!activeCheckpoint) return;
+    setIsRecoveryPromptOpen(false);
+    if (activeCheckpoint.identity.type === 'run') {
+      navigate(`/active-workout-history/${activeCheckpoint.identity.id}`);
+      return;
+    }
+    navigate(`/active-workout/${activeCheckpoint.identity.id}`);
+  };
 
   useEffect(() => {
     refreshCheckpoint();
@@ -285,6 +316,18 @@ const HomePage: React.FC = () => {
 
       {/* 5. Floating Bottom Navigation */}
       <BottomNavigation hidden={quickStartModalSchedaId != null || isCalendarModalOpen} />
+
+      {/* 6. Prompt Ripristino Sessione Interrotta all'avvio */}
+      <WorkoutRecoveryPromptModal
+        isOpen={isRecoveryPromptOpen && activeCheckpoint != null}
+        workoutName={activeCheckpoint?.workoutName}
+        currentExerciseName={activeCheckpoint?.currentExerciseName}
+        currentSetIdx={activeCheckpoint?.currentSetIdx}
+        totalSets={activeCheckpoint?.totalSets}
+        savedAtMs={activeCheckpoint?.savedAtMs}
+        onResume={handleResumeInterruptedWorkout}
+        onDiscard={handleDiscardInterruptedWorkout}
+      />
     </div>
   );
 };
