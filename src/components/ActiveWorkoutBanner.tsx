@@ -17,9 +17,11 @@ import { useAuth } from '../context/AuthContext';
 import {
   getLatestWorkoutProgressCheckpoint,
   clearWorkoutProgressCheckpointByIdentity,
+  clearAllWorkoutProgressCheckpoints,
   subscribeToWorkoutProgress,
   type WorkoutProgressCheckpointMeta,
 } from '../lib/workoutProgressStorage';
+import { clearActiveWorkoutDraft } from '../lib/workoutSyncManager';
 import { hapticLight, hapticMedium, hapticSuccess } from '../utils/haptics';
 
 export const ActiveWorkoutBanner: React.FC = () => {
@@ -77,6 +79,8 @@ export const ActiveWorkoutBanner: React.FC = () => {
     if (!user?.id) return;
     void hapticSuccess();
     clearWorkoutProgressCheckpointByIdentity(user.id, checkpoint.identity);
+    clearAllWorkoutProgressCheckpoints(user.id);
+    clearActiveWorkoutDraft(user.id);
     setShowCancelModal(false);
     setCheckpoint(null);
   };
@@ -88,20 +92,17 @@ export const ActiveWorkoutBanner: React.FC = () => {
 
   return (
     <>
-      {/* Banner fluttuante in cima */}
+      {/* Banner notifica in-flow (nessuna sovrapposizione con l'header) */}
       <aside
         aria-label="Workout in corso"
-        className="fixed top-0 inset-x-0 z-40 pointer-events-none px-3"
-        style={{
-          paddingTop: 'max(0.6rem, calc(env(safe-area-inset-top, 0px) + 0.35rem))',
-        }}
+        className="w-full z-20 animate-sheet-enter"
       >
         <div
           onClick={handleResume}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && handleResume()}
-          className="pointer-events-auto max-w-lg mx-auto w-full bg-[#1C1C1E]/95 backdrop-blur-2xl border border-brand-orange/35 shadow-2xl shadow-brand-orange/15 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-3 cursor-pointer select-none transition-all active:scale-[0.985] group"
+          className="w-full bg-[#1C1C1E]/95 backdrop-blur-2xl border border-brand-orange/40 shadow-xl shadow-brand-orange/15 rounded-2xl px-3.5 py-3 flex items-center justify-between gap-3 cursor-pointer select-none transition-all active:scale-[0.985] group hover:border-brand-orange/60"
         >
           {/* Icona pulsante fiamma arancione */}
           <div className="w-9 h-9 rounded-xl bg-brand-orange/15 border border-brand-orange/30 flex items-center justify-center shrink-0">

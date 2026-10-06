@@ -40,7 +40,6 @@ import SelectWorkoutPage from './pages/SelectWorkoutPage';
 import ActiveWorkoutPage from './pages/ActiveWorkoutPage';
 import { useAuth } from './context/AuthContext';
 import ResetPasswordModal from './components/ResetPasswordModal';
-import ActiveWorkoutBanner from './components/ActiveWorkoutBanner';
 import { supabaseConfigError } from './lib/supabase';
 import { lockAppToPortrait, useIsLandscape } from './utils/orientationManager';
 import { Smartphone } from 'lucide-react';
@@ -142,7 +141,6 @@ function App() {
       {isPasswordRecovery && <ResetPasswordModal />}
       <Router>
         <OrientationWatcher />
-        <ActiveWorkoutBanner />
         <SyncQueueWatcher />
         <Routes>
         {/* Public Routes */}

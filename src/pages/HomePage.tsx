@@ -14,6 +14,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import HomeHeader from '../components/HomeHeader';
+import ActiveWorkoutBanner from '../components/ActiveWorkoutBanner';
 import QuickStartHeroCard, { type LastWorkoutData } from '../components/QuickStartHeroCard';
 import WeeklyConsistencyBar from '../components/WeeklyConsistencyBar';
 import MonthlyConsistencyModal, { type MonthlyWorkoutRun } from '../components/MonthlyConsistencyModal';
@@ -25,10 +26,8 @@ import { supabase } from '../lib/supabase';
 import {
   getLatestWorkoutProgressCheckpoint,
   subscribeToWorkoutProgress,
-  clearAllWorkoutProgressCheckpoints,
   type WorkoutProgressCheckpointMeta,
 } from '../lib/workoutProgressStorage';
-import { clearActiveWorkoutDraft } from '../lib/workoutSyncManager';
 import {
   getFolders,
   getFolderAssignments,
@@ -73,13 +72,6 @@ const HomePage: React.FC = () => {
     const cp = getLatestWorkoutProgressCheckpoint(user.id);
     setActiveCheckpoint(cp);
   }, [user?.id]);
-
-  const handleDiscardInterruptedWorkout = () => {
-    if (!user?.id) return;
-    clearAllWorkoutProgressCheckpoints(user.id);
-    clearActiveWorkoutDraft(user.id);
-    setActiveCheckpoint(null);
-  };
 
   useEffect(() => {
     refreshCheckpoint();
@@ -256,16 +248,19 @@ const HomePage: React.FC = () => {
 
       {/* 2. Contenuto principale Dashboard */}
       <main className="w-full max-w-md mx-auto px-4 flex flex-col gap-4 mt-1">
-        {/* Hero Card: Avvio Rapido Sequenziale / Riprendi Workout */}
-        <QuickStartHeroCard
-          activeCheckpoint={activeCheckpoint}
-          lastWorkout={lastWorkout}
-          onDiscardCheckpoint={handleDiscardInterruptedWorkout}
-          onQuickStartScheda={(schedaId, name) => {
-            setQuickStartModalSchedaId(schedaId);
-            setQuickStartModalName(name || '');
-          }}
-        />
+        {/* Notifica per riprendere il workout in sospeso (in-flow, zero sovrapposizioni) */}
+        <ActiveWorkoutBanner />
+
+        {/* Hero Card: Avvio Rapido Sequenziale (visibile quando non c'è una sessione in sospeso) */}
+        {!activeCheckpoint && (
+          <QuickStartHeroCard
+            lastWorkout={lastWorkout}
+            onQuickStartScheda={(schedaId, name) => {
+              setQuickStartModalSchedaId(schedaId);
+              setQuickStartModalName(name || '');
+            }}
+          />
+        )}
 
         {/* Striscia Settimanale con anelli Apple Fitness (cliccabile per aprire il calendario) */}
         <WeeklyConsistencyBar
