@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Flame, Activity, Save, Check } from 'lucide-react';
+import { PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Flame, Activity, Save, Check, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
@@ -11,6 +11,7 @@ import {
   subscribeToWorkoutProgress,
   type WorkoutProgressCheckpointMeta,
 } from '../lib/workoutProgressStorage';
+import { getSyncQueue } from '../lib/workoutSyncManager';
 import { hapticLight, hapticMedium } from '../utils/haptics';
 
 export interface PreviewExercise {
@@ -78,6 +79,13 @@ const parseTaggedNote = (rawNote: string) => {
 };
 
 const normalizeNoteKey = (name: string) => name.toLowerCase().trim();
+
+const formatNoteDate = (isoString?: string) => {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
 
 const parseNumericInput = (raw: string, fallback: number) => {
   const n = Number(raw);
@@ -256,6 +264,7 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
   const [workoutPreview, setWorkoutPreview] = useState<PreviewWorkoutData | null>(null);
   const [editableExercises, setEditableExercises] = useState<PreviewExercise[]>([]);
   const [latestExerciseNotes, setLatestExerciseNotes] = useState<Record<string, string>>({});
+  const [latestGeneralNote, setLatestGeneralNote] = useState<{ text: string; date?: string } | null>(null);
   const [isSavingAndStarting, setIsSavingAndStarting] = useState(false);
   const [isSavingOnly, setIsSavingOnly] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
@@ -357,9 +366,19 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
         setEditableExercises(JSON.parse(JSON.stringify(parsedExercises)));
 
         if (user?.id) {
+          // 1. Controlla la coda di sincronizzazione locale offline per sessioni recenti
+          const localQueue = getSyncQueue(user.id);
+          const localCandidates = localQueue.filter(
+            (item) => Number(item.id_scheda) === numId && item.status === 'completed'
+          );
+          const latestLocal = localCandidates.sort(
+            (a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime()
+          )[0];
+
+          // 2. Recupera l'ultimo workout_run registrato nel DB (senza !inner per identificare l'effettiva ultima sessione)
           const { data: runsData } = await supabase
             .from('workout_run')
-            .select('data_esecuzione, note_workout!inner(testo)')
+            .select('id_workout, data_esecuzione, note_workout ( testo, created_at )')
             .eq('id_utente', user.id)
             .eq('id_scheda', numId)
             .order('data_esecuzione', { ascending: false })
@@ -367,29 +386,63 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
 
           if (isCancelled) return;
 
+          let lastRunDate: string | null = null;
+          let lastRunNotes: string[] = [];
+
+          const remoteRun = runsData?.[0];
+          const remoteTime = remoteRun?.data_esecuzione ? new Date(remoteRun.data_esecuzione).getTime() : 0;
+          const localTime = latestLocal?.executed_at ? new Date(latestLocal.executed_at).getTime() : 0;
+
+          if (localTime > remoteTime && latestLocal) {
+            lastRunDate = latestLocal.executed_at;
+            lastRunNotes = (latestLocal.notes || []).map((n) => n.text);
+          } else if (remoteRun) {
+            lastRunDate = remoteRun.data_esecuzione;
+            const rawNotes = Array.isArray(remoteRun.note_workout)
+              ? remoteRun.note_workout
+              : remoteRun.note_workout
+                ? [remoteRun.note_workout]
+                : [];
+            lastRunNotes = rawNotes.map((n: any) => String(n.testo || '')).filter(Boolean);
+          }
+
           const notesMap: Record<string, string> = {};
-          if (runsData && runsData.length > 0) {
-            const lastRun = runsData[0];
-            const notes = Array.isArray(lastRun.note_workout) ? lastRun.note_workout : [lastRun.note_workout];
-            for (const noteRow of notes) {
-              if (!noteRow) continue;
-              const parsed = parseTaggedNote(String(noteRow.testo || ''));
-              if (parsed?.exerciseName && parsed?.text) {
-                if (parsed.orderIndex !== null) {
-                  const key = `${parsed.orderIndex}_${normalizeNoteKey(parsed.exerciseName)}`;
-                  if (!notesMap[key]) {
-                    notesMap[key] = parsed.text;
-                  }
-                } else {
-                  const key = `legacy_${normalizeNoteKey(parsed.exerciseName)}`;
-                  if (!notesMap[key]) {
-                    notesMap[key] = parsed.text;
-                  }
+          const generalNotes: string[] = [];
+
+          for (const rawNote of lastRunNotes) {
+            if (!rawNote.trim()) continue;
+            const parsed = parseTaggedNote(rawNote);
+            if (!parsed) {
+              generalNotes.push(rawNote.trim());
+            } else if (parsed.orderIndex === null) {
+              const key = normalizeNoteKey(parsed.exerciseName);
+              if (!key || key === 'scheda' || key === 'generale' || key === 'general' || key === 'workout') {
+                generalNotes.push(parsed.text.trim());
+              } else {
+                const legacyKey = `legacy_${key}`;
+                if (!notesMap[legacyKey]) {
+                  notesMap[legacyKey] = parsed.text;
+                }
+              }
+            } else {
+              if (parsed.exerciseName && parsed.text) {
+                const key = `${parsed.orderIndex}_${normalizeNoteKey(parsed.exerciseName)}`;
+                if (!notesMap[key]) {
+                  notesMap[key] = parsed.text;
                 }
               }
             }
           }
+
           setLatestExerciseNotes(notesMap);
+          if (generalNotes.length > 0) {
+            setLatestGeneralNote({
+              text: generalNotes.join('\n\n'),
+              date: lastRunDate ? formatNoteDate(lastRunDate) : undefined,
+            });
+          } else {
+            setLatestGeneralNote(null);
+          }
         }
       } catch (err: any) {
         if (!isCancelled) {
@@ -585,6 +638,30 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                 <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-semibold text-emerald-300 flex items-center gap-2">
                   <Check size={16} className="text-emerald-400 shrink-0" />
                   <span>{saveSuccessMessage}</span>
+                </div>
+              )}
+
+              {/* Nota Generale Ultimo Workout */}
+              {latestGeneralNote && (
+                <div className="mb-4 rounded-2xl border border-brand-orange/30 bg-gradient-to-br from-brand-orange/[0.12] via-brand-darkGrey/95 to-black/60 p-4 shadow-[0_4px_20px_rgba(255,94,0,0.12)]">
+                  <div className="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-brand-orange/20">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-brand-orange/20 border border-brand-orange/30 flex items-center justify-center text-brand-orange">
+                        <FileText size={13} />
+                      </div>
+                      <span className="text-xs font-black uppercase tracking-wider text-brand-orange">
+                        Nota Generale Ultimo Workout
+                      </span>
+                    </div>
+                    {latestGeneralNote.date && (
+                      <span className="text-[10px] font-mono font-bold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                        {latestGeneralNote.date}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap font-medium">
+                    {latestGeneralNote.text}
+                  </p>
                 </div>
               )}
 
