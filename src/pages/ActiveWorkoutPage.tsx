@@ -7890,7 +7890,7 @@ const ActiveWorkoutPage: React.FC = () => {
                         ref={setsCarouselScrollContainerRef}
                         onTouchStart={(e) => e.stopPropagation()}
                         onTouchEnd={(e) => e.stopPropagation()}
-                        className="w-full flex gap-3.5 sm:gap-4 overflow-x-auto no-scrollbar py-2.5 px-[calc(50%-120px)] min-[390px]:px-[calc(50%-130px)] sm:px-[calc(50%-140px)] scroll-smooth snap-x snap-mandatory items-center"
+                        className="w-full flex gap-3.5 sm:gap-4 overflow-x-auto no-scrollbar py-3 px-[calc(50%-130px)] min-[390px]:px-[calc(50%-140px)] sm:px-[calc(50%-155px)] scroll-smooth snap-x snap-mandatory items-center"
                         style={{ WebkitOverflowScrolling: 'touch' }}
                       >
                         {Array.from({ length: totalSets }, (_, sIdx) => {
@@ -7906,15 +7906,15 @@ const ActiveWorkoutPage: React.FC = () => {
                               <div
                                 key={sIdx}
                                 ref={activeSetCardRef}
-                                className="shrink-0 w-[240px] min-[390px]:w-[260px] sm:w-[280px] h-[255px] min-[390px]:h-[270px] sm:h-[285px] p-4 sm:p-5 rounded-3xl border-2 border-brand-orange bg-gradient-to-b from-[#2d1405] via-[#1a0c04] to-[#121214] text-white shadow-[0_0_35px_rgba(255,94,0,0.35)] ring-1 ring-brand-orange/60 scale-[1.02] z-10 snap-center select-none flex flex-col justify-between transition-all"
+                                className="shrink-0 w-[260px] min-[390px]:w-[280px] sm:w-[310px] h-[340px] min-[390px]:h-[370px] sm:h-[400px] p-5 sm:p-6 rounded-3xl border-2 border-brand-orange bg-gradient-to-b from-[#2d1405] via-[#1a0c04] to-[#121214] text-white shadow-[0_0_35px_rgba(255,94,0,0.35)] ring-1 ring-brand-orange/60 scale-[1.02] z-10 snap-center select-none flex flex-col justify-between transition-all"
                               >
                                 {/* Header: Set Number + Status Pill */}
-                                <div className="flex items-center justify-between gap-2 pb-2 border-b border-brand-orange/20 shrink-0">
+                                <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-brand-orange/20 shrink-0">
                                   <div className="flex items-center gap-1.5">
                                     <span className="text-xs sm:text-sm font-black font-mono text-brand-orange tracking-wider uppercase">
                                       SET {sIdx + 1}
                                     </span>
-                                    <span className="text-[11px] font-mono text-zinc-400">
+                                    <span className="text-[11px] sm:text-xs font-mono text-zinc-400">
                                       / {totalSets}
                                     </span>
                                   </div>
@@ -7931,9 +7931,9 @@ const ActiveWorkoutPage: React.FC = () => {
                                   )}
                                 </div>
 
-                                {/* Center Area: Hero Reps Counter + Stepper Adjustments */}
+                                {/* Center Area: Hero Reps Display (Clean, Fixed, No Stepper/Edit Buttons) */}
                                 {isMax ? (
-                                  <div className="my-auto py-1 flex flex-col items-center justify-center">
+                                  <div className="my-auto py-2 flex flex-col items-center justify-center">
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -7941,125 +7941,34 @@ const ActiveWorkoutPage: React.FC = () => {
                                         openEditSpecificSetModal(sIdx);
                                       }}
                                       className="group flex flex-col items-center justify-center cursor-pointer transition-transform active:scale-95"
-                                      title="Tocca per inserire le ripetizioni"
+                                      title="Tocca per inserire le ripetizioni eseguite"
                                     >
-                                      <span className="text-5xl min-[390px]:text-6xl font-mono font-black text-brand-orange leading-none drop-shadow-[0_0_25px_rgba(255,107,0,0.45)] group-hover:scale-105 transition-transform">
+                                      <span className="text-6xl min-[390px]:text-7xl sm:text-8xl font-mono font-black text-brand-orange leading-none drop-shadow-[0_0_25px_rgba(255,107,0,0.45)] group-hover:scale-105 transition-transform">
                                         {(logged || 0) > 0 ? logged : 'MAX'}
                                       </span>
-                                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-1 group-hover:text-zinc-200">
-                                        <Pencil size={10} className="text-brand-orange" />
+                                      <span className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-2 group-hover:text-zinc-200">
+                                        <Pencil size={11} className="text-brand-orange" />
                                         Reps Eseguite
                                       </span>
                                     </button>
-
-                                    {/* Stepper buttons for MAX Reps */}
-                                    <div className="flex items-center justify-center gap-1.5 mt-2.5 w-full">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void hapticLight();
-                                          adjustCurrentSetPerformance(-5);
-                                        }}
-                                        className="h-8 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-90 text-zinc-300 font-bold text-xs flex items-center justify-center border border-white/5 cursor-pointer transition-all"
-                                        title="-5 reps"
-                                      >
-                                        -5
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void hapticLight();
-                                          adjustCurrentSetPerformance(-1);
-                                        }}
-                                        className="h-8 w-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-90 text-white font-black text-base flex items-center justify-center border border-white/5 cursor-pointer transition-all"
-                                        title="-1 rep"
-                                      >
-                                        -
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void hapticLight();
-                                          adjustCurrentSetPerformance(1);
-                                        }}
-                                        className="h-8 w-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-90 text-white font-black text-base flex items-center justify-center border border-white/5 cursor-pointer transition-all"
-                                        title="+1 rep"
-                                      >
-                                        +
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void hapticLight();
-                                          adjustCurrentSetPerformance(5);
-                                        }}
-                                        className="h-8 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-90 text-zinc-300 font-bold text-xs flex items-center justify-center border border-white/5 cursor-pointer transition-all"
-                                        title="+5 reps"
-                                      >
-                                        +5
-                                      </button>
-                                    </div>
                                   </div>
                                 ) : (
-                                  <div className="my-auto py-1 flex flex-col items-center justify-center">
-                                    <div className="flex items-center justify-center gap-3 w-full">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void hapticLight();
-                                          adjustCurrentSetPerformance(-1);
-                                        }}
-                                        className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-90 text-white font-black text-xl flex items-center justify-center border border-white/10 cursor-pointer transition-all shadow-sm"
-                                        title="-1 rep"
-                                      >
-                                        -
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          void hapticLight();
-                                          openEditSpecificSetModal(sIdx);
-                                        }}
-                                        className="group flex flex-col items-center justify-center cursor-pointer transition-transform active:scale-95"
-                                        title="Tocca per modificare le ripetizioni"
-                                      >
-                                        <span className="text-5xl min-[390px]:text-6xl font-mono font-black text-white leading-none tracking-tight drop-shadow-[0_0_20px_rgba(255,255,255,0.2)] group-hover:text-brand-orange transition-colors">
-                                          {repsValue}
-                                        </span>
-                                        <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider flex items-center gap-1 mt-1 group-hover:text-zinc-200">
-                                          <Pencil size={10} className="text-brand-orange" />
-                                          Ripetizioni
-                                        </span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void hapticLight();
-                                          adjustCurrentSetPerformance(1);
-                                        }}
-                                        className="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-90 text-white font-black text-xl flex items-center justify-center border border-white/10 cursor-pointer transition-all shadow-sm"
-                                        title="+1 rep"
-                                      >
-                                        +
-                                      </button>
-                                    </div>
+                                  <div className="my-auto py-4 flex flex-col items-center justify-center select-none">
+                                    <span className="text-7xl min-[390px]:text-8xl sm:text-9xl font-mono font-black text-white leading-none tracking-tight drop-shadow-[0_0_35px_rgba(255,255,255,0.25)]">
+                                      {repsValue}
+                                    </span>
+                                    <span className="text-xs sm:text-sm uppercase font-black text-zinc-400 tracking-[0.25em] mt-3 sm:mt-4">
+                                      Ripetizioni
+                                    </span>
                                   </div>
                                 )}
 
                                 {/* Footer: Carico */}
-                                <div className="pt-2 border-t border-brand-orange/20 flex items-center justify-between text-xs shrink-0">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                <div className="pt-2.5 border-t border-brand-orange/20 flex items-center justify-between text-xs sm:text-sm shrink-0">
+                                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-400">
                                     Carico
                                   </span>
-                                  <span className="font-mono font-black text-brand-lightOrange truncate max-w-[130px]">
+                                  <span className="font-mono font-black text-brand-lightOrange truncate max-w-[140px]">
                                     {weightText}
                                   </span>
                                 </div>
@@ -8076,34 +7985,34 @@ const ActiveWorkoutPage: React.FC = () => {
                                   void hapticLight();
                                   openEditSpecificSetModal(sIdx);
                                 }}
-                                className="shrink-0 w-[155px] min-[390px]:w-[168px] sm:w-[180px] h-[225px] min-[390px]:h-[240px] sm:h-[250px] p-3.5 sm:p-4 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-95"
+                                className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-95"
                                 title={`Set ${sIdx + 1} completato - Tocca per modificare`}
                               >
-                                <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-emerald-500/20 shrink-0">
-                                  <span className="text-xs font-black font-mono text-zinc-300 uppercase tracking-wider">
+                                <div className="flex items-center justify-between gap-1 pb-2 border-b border-emerald-500/20 shrink-0">
+                                  <span className="text-xs sm:text-sm font-black font-mono text-zinc-300 uppercase tracking-wider">
                                     SET {sIdx + 1}
                                   </span>
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-wider">
-                                    <Check size={11} strokeWidth={3} />
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
+                                    <Check size={12} strokeWidth={3} />
                                     Fatto
                                   </span>
                                 </div>
 
-                                <div className="my-auto py-1 flex flex-col items-center justify-center">
-                                  <span className="text-4xl sm:text-5xl font-mono font-black text-emerald-400 leading-none">
+                                <div className="my-auto py-2 flex flex-col items-center justify-center">
+                                  <span className="text-5xl sm:text-6xl font-mono font-black text-emerald-400 leading-none">
                                     {logged != null && logged > 0 ? logged : repsValue}
                                   </span>
-                                  <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 mt-1 flex items-center gap-1">
-                                    <Pencil size={9} />
+                                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/80 mt-2 flex items-center gap-1">
+                                    <Pencil size={11} />
                                     Completate
                                   </span>
                                 </div>
 
-                                <div className="pt-1.5 border-t border-emerald-500/20 flex items-center justify-between text-[11px] shrink-0">
-                                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                                <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs shrink-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                                     Carico
                                   </span>
-                                  <span className="font-mono font-bold text-zinc-200 truncate max-w-[85px]">
+                                  <span className="font-mono font-bold text-zinc-200 truncate max-w-[100px]">
                                     {weightText}
                                   </span>
                                 </div>
@@ -8111,20 +8020,14 @@ const ActiveWorkoutPage: React.FC = () => {
                             );
                           }
 
-                          // Upcoming Sets (isUpcoming)
+                          // Upcoming Sets (isUpcoming) - Static and Clean without Rep Edit Button
                           return (
-                            <button
+                            <div
                               key={sIdx}
-                              type="button"
-                              onClick={() => {
-                                void hapticLight();
-                                openEditSpecificSetModal(sIdx);
-                              }}
-                              className="shrink-0 w-[155px] min-[390px]:w-[168px] sm:w-[180px] h-[225px] min-[390px]:h-[240px] sm:h-[250px] p-3.5 sm:p-4 rounded-3xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between opacity-65 hover:opacity-95 shadow-sm active:scale-95"
-                              title={`Set ${sIdx + 1} - Tocca per modificare target`}
+                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] text-left transition-all snap-center select-none flex flex-col justify-between opacity-65 shadow-sm"
                             >
-                              <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-white/10 shrink-0">
-                                <span className="text-xs font-black font-mono text-zinc-400 uppercase tracking-wider">
+                              <div className="flex items-center justify-between gap-1 pb-2 border-b border-white/10 shrink-0">
+                                <span className="text-xs sm:text-sm font-black font-mono text-zinc-400 uppercase tracking-wider">
                                   SET {sIdx + 1}
                                 </span>
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 text-[9px] font-black uppercase tracking-wider">
@@ -8132,24 +8035,24 @@ const ActiveWorkoutPage: React.FC = () => {
                                 </span>
                               </div>
 
-                              <div className="my-auto py-1 flex flex-col items-center justify-center">
-                                <span className="text-4xl sm:text-5xl font-mono font-black text-zinc-300 leading-none">
+                              <div className="my-auto py-2 flex flex-col items-center justify-center">
+                                <span className="text-5xl sm:text-6xl font-mono font-black text-zinc-300 leading-none">
                                   {isMax ? 'MAX' : repsValue}
                                 </span>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 mt-1">
+                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-2">
                                   {isMax ? 'A cedimento' : 'Previste'}
                                 </span>
                               </div>
 
-                              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px] shrink-0">
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs shrink-0">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                                   Carico
                                 </span>
-                                <span className="font-mono font-bold text-zinc-400 truncate max-w-[85px]">
+                                <span className="font-mono font-bold text-zinc-400 truncate max-w-[100px]">
                                   {weightText}
                                 </span>
                               </div>
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
