@@ -4954,7 +4954,7 @@ const ActiveWorkoutPage: React.FC = () => {
               const isCurrentExercise = index === currentExerciseIdx;
               const exerciseTitle = String(exercise.name || '').trim() || `Esercizio ${index + 1}`;
               const summary = getWorkoutOverviewSummary(exercise);
-              const { progressPct, label: progressLabel } = calculateExerciseProgress(exercise, index);
+              const { progressPct } = calculateExerciseProgress(exercise, index);
               const exerciseNote = getExerciseNoteEntry(index, exercise)?.note?.trim();
               const hasNote = Boolean(exerciseNote);
 
@@ -4971,7 +4971,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 >
                   {/* Background Fill Layer: 100% per esercizi completati, proporzionale per l'attuale */}
                   {isCompleted && (
-                    <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
+                    <div className="absolute inset-0 bg-emerald-500/15 pointer-events-none" />
                   )}
                   {isCurrentExercise && (
                     <>
@@ -5030,44 +5030,12 @@ const ActiveWorkoutPage: React.FC = () => {
                             <span>Completato</span>
                           </>
                         ) : isCurrentExercise ? (
-                          <>
-                            <span>Sei qui</span>
-                            <span className="opacity-70">·</span>
-                            <span>{progressPct}%</span>
-                          </>
+                          <span>In corso</span>
                         ) : (
                           <span>#{index + 1}</span>
                         )}
                       </div>
                     </div>
-
-                    {/* Barra di avanzamento dell'esercizio */}
-                    {(isCompleted || isCurrentExercise) && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between text-[11px] font-bold mb-1">
-                          <span className={isCompleted ? 'text-emerald-400/90' : 'text-brand-orange tracking-wide'}>
-                            {progressLabel}
-                          </span>
-                          <span className={`font-mono text-xs font-black px-2 py-0.5 rounded-md ${
-                            isCompleted
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-brand-orange/20 text-white border border-brand-orange/30'
-                          }`}>
-                            {progressPct}%
-                          </span>
-                        </div>
-                        <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden relative">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              isCompleted
-                                ? 'bg-emerald-500'
-                                : 'bg-gradient-to-r from-brand-orange via-brand-lightOrange to-yellow-400 shadow-[0_0_10px_rgba(255,94,0,0.6)]'
-                            }`}
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       {summary.map((item, summaryIndex) => (
