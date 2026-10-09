@@ -104,7 +104,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Check, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil, ChevronDown } from 'lucide-react';
+import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Check, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil, ChevronDown, Zap, Dumbbell } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis } from '../utils/voice';
 import {
@@ -7301,11 +7301,32 @@ const ActiveWorkoutPage: React.FC = () => {
                 </span>
               </div>
             </div>
-          ) : (isSuperset || isCircuit || currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
+          ) : isSuperset ? (
             <div className="w-full grid grid-cols-2 gap-2.5 shrink-0 mb-2">
               <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
                 <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                  {isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'}
+                  Round
+                </span>
+                <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
+                  {`${currentSetIdx + 1} / ${currentExercise.sets || 1}`}
+                </span>
+              </div>
+
+              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                  Sequenza
+                </span>
+                <span className="text-white font-mono font-black text-sm sm:text-base truncate flex items-center justify-center gap-1">
+                  <Zap size={13} className="text-brand-orange fill-brand-orange shrink-0" />
+                  <span>{currentExercise.subExercises?.length || 2} Esercizi</span>
+                </span>
+              </div>
+            </div>
+          ) : (isCircuit || currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
+            <div className="w-full grid grid-cols-2 gap-2.5 shrink-0 mb-2">
+              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
+                  {isCircuit ? 'Giro' : 'Set'}
                 </span>
                 <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
                   {`${currentSetIdx + 1} / ${currentExercise.sets || 1}`}
@@ -7656,86 +7677,153 @@ const ActiveWorkoutPage: React.FC = () => {
                 </div>
               </div>
             ) : isSuperset ? (
-              <div className="text-center w-full flex flex-col items-center justify-between h-full">
-                {/* Superset Sub-Exercises List */}
-                <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-2 px-0.5 my-auto">
-                  {(currentExercise.subExercises || []).map((sub, idx) => {
-                    const isIsoSub = sub.type === 'isometry';
-                    const isClickableIsoTimer = isIsoSub && sub.duration_seconds > 0;
-                    const isThisTimerActive = isClickableIsoTimer && isometryActive && supersetIsometrySubIdx === idx;
-                    const targetDuration = isClickableIsoTimer ? Math.max(1, sub.duration_seconds || 1) : 1;
-                    const currentRemaining = isThisTimerActive || (isClickableIsoTimer && supersetIsometrySubIdx === idx) ? isometryRemaining : targetDuration;
-                    const fillPercent = isClickableIsoTimer && supersetIsometrySubIdx === idx ? Math.max(0, Math.min(100, ((targetDuration - currentRemaining) / targetDuration) * 100)) : 0;
+              (() => {
+                const subExercises = currentExercise.subExercises || [];
+                const isTwoExercises = subExercises.length === 2;
 
-                    const handleSubIsoTap = () => {
-                      if (!isClickableIsoTimer) return;
-                      if (isThisTimerActive) {
-                        pauseIsometryCountdown();
-                        return;
-                      }
-                      if (isometryActive) stopIsometryCountdown();
-                      setSupersetIsometrySubIdx(idx);
-                      const duration = (supersetIsometrySubIdx === idx && isometryRemaining > 0) ? isometryRemaining : targetDuration;
-                      startIsometryCountdown(duration);
-                    };
+                return (
+                  <div className="w-full h-full flex flex-col justify-between py-0.5 min-h-0">
+                    {/* Header Banner */}
+                    <div className="flex items-center justify-between gap-2 px-1 mb-2 shrink-0">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/15 border border-brand-orange/40 text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-brand-orange shadow-sm">
+                        <Zap size={12} className="fill-brand-orange shrink-0 animate-pulse" />
+                        <span>SUPERSET · {subExercises.length} {subExercises.length === 1 ? 'ESERCIZIO' : 'ESERCIZI'} A RUOTA</span>
+                      </span>
+                      <span className="text-[10px] font-mono font-black text-zinc-400 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 uppercase tracking-widest">
+                        NO REST
+                      </span>
+                    </div>
 
-                    const handleSubIsoReset = () => {
-                      if (!isClickableIsoTimer) return;
-                      stopIsometryCountdown();
-                      setSupersetIsometrySubIdx(idx);
-                      setIsometryRemaining(targetDuration);
-                    };
+                    {/* The Athletic Chain Container */}
+                    <div className={`w-full flex-1 min-h-0 overflow-y-auto px-0.5 ${isTwoExercises ? 'flex flex-col justify-center gap-1.5' : 'space-y-1.5 my-auto'}`}>
+                      {subExercises.map((sub, idx) => {
+                        const isIsoSub = sub.type === 'isometry';
+                        const isClickableIsoTimer = isIsoSub && sub.duration_seconds > 0;
+                        const isThisTimerActive = isClickableIsoTimer && isometryActive && supersetIsometrySubIdx === idx;
+                        const targetDuration = isClickableIsoTimer ? Math.max(1, sub.duration_seconds || 1) : 1;
+                        const currentRemaining = isThisTimerActive || (isClickableIsoTimer && supersetIsometrySubIdx === idx) ? isometryRemaining : targetDuration;
+                        const fillPercent = isClickableIsoTimer && supersetIsometrySubIdx === idx ? Math.max(0, Math.min(100, ((targetDuration - currentRemaining) / targetDuration) * 100)) : 0;
 
-                    return (
-                      <div
-                        key={`${currentExercise.id}:superset:${idx}`}
-                        className={`relative overflow-hidden p-3.5 rounded-2xl border flex justify-between items-start gap-3 select-none transition-colors ${
-                          isThisTimerActive
-                            ? 'border-brand-orange/70 bg-brand-orange/15 shadow-[0_0_15px_rgba(255,107,0,0.2)]'
-                            : isClickableIsoTimer && supersetIsometrySubIdx === idx && fillPercent > 0
-                              ? 'border-brand-orange/40 bg-black/40'
-                              : 'border-white/10 bg-black/30'
-                        } ${isClickableIsoTimer ? 'cursor-pointer active:scale-[0.98]' : ''}`}
-                        {...(isClickableIsoTimer ? {
-                          onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerDown(event, handleSubIsoReset),
-                          onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerUp(event, handleSubIsoTap),
-                          onPointerCancel: handleTimerPointerAbort,
-                          onPointerLeave: handleTimerPointerAbort,
-                        } : {})}
-                      >
-                        {isClickableIsoTimer && fillPercent > 0 && (
-                          <div
-                            className="absolute inset-0 bg-brand-orange/20 transition-[width] duration-300 ease-linear pointer-events-none rounded-2xl"
-                            style={{ width: `${fillPercent}%` }}
-                          />
-                        )}
-                        <div className="text-left min-w-0 relative z-10 flex flex-col justify-center">
-                          <p className="text-white font-black text-sm sm:text-base truncate">{idx + 1}. {sub.name || `Exercise ${idx + 1}`}</p>
-                          <p className="text-xs text-brand-orange font-black uppercase tracking-wide mt-1">
-                            {isClickableIsoTimer && supersetIsometrySubIdx === idx
-                              ? `${currentRemaining}s / ${targetDuration}s`
-                              : formatSupersetTaskMetricLabel(sub)
-                            }
-                          </p>
-                          {isClickableIsoTimer && (
-                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-1 opacity-90">
-                              Tocca per avviare/pausa • Tieni premuto per azzerare
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right shrink-0 relative z-10">
-                          <span className="text-[10px] uppercase tracking-widest text-zinc-400 block font-semibold">Peso</span>
-                          <span className="text-xs sm:text-sm text-brand-lightOrange font-mono font-bold block">{formatWeightLabel(sub.weight_kg)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        const handleSubIsoTap = () => {
+                          if (!isClickableIsoTimer) return;
+                          if (isThisTimerActive) {
+                            pauseIsometryCountdown();
+                            return;
+                          }
+                          if (isometryActive) stopIsometryCountdown();
+                          setSupersetIsometrySubIdx(idx);
+                          const duration = (supersetIsometrySubIdx === idx && isometryRemaining > 0) ? isometryRemaining : targetDuration;
+                          startIsometryCountdown(duration);
+                        };
 
-                  {(!currentExercise.subExercises || currentExercise.subExercises.length === 0) && (
-                    <p className="text-xs text-zinc-400">Nessun esercizio configurato per questo superset.</p>
-                  )}
-                </div>
-              </div>
+                        const handleSubIsoReset = () => {
+                          if (!isClickableIsoTimer) return;
+                          stopIsometryCountdown();
+                          setSupersetIsometrySubIdx(idx);
+                          setIsometryRemaining(targetDuration);
+                        };
+
+                        const isReps = sub.type === 'reps';
+                        const targetVal = isReps
+                          ? (isMaxTarget(sub.reps) ? 'MAX' : toSafeTargetInt(sub.reps))
+                          : (isClickableIsoTimer && supersetIsometrySubIdx === idx
+                            ? `${currentRemaining}s`
+                            : (isMaxTarget(sub.duration_seconds) ? 'MAX' : `${toSafeTargetInt(sub.duration_seconds)}s`));
+                        const targetUnit = isReps
+                          ? (isMaxTarget(sub.reps) ? 'A SFINIMENTO' : 'REPS')
+                          : (isMaxTarget(sub.duration_seconds) ? 'A SFINIMENTO' : 'SECONDI');
+
+                        return (
+                          <React.Fragment key={`${currentExercise.id}:superset:${idx}`}>
+                            {/* Athletic Card */}
+                            <div
+                              className={`relative overflow-hidden rounded-2xl border flex items-center justify-between gap-3 select-none transition-all shadow-md ${
+                                isTwoExercises ? 'p-3.5 sm:p-4' : 'p-3'
+                              } ${
+                                isThisTimerActive
+                                  ? 'border-brand-orange bg-brand-orange/15 shadow-[0_0_25px_rgba(255,94,0,0.25)] ring-1 ring-brand-orange/60'
+                                  : isClickableIsoTimer && supersetIsometrySubIdx === idx && fillPercent > 0
+                                    ? 'border-brand-orange/40 bg-black/50'
+                                    : 'border-white/10 bg-gradient-to-br from-black/60 via-brand-darkGrey/80 to-black/80 hover:border-white/20'
+                              } ${isClickableIsoTimer ? 'cursor-pointer active:scale-[0.99]' : ''}`}
+                              {...(isClickableIsoTimer ? {
+                                onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerDown(event, handleSubIsoReset),
+                                onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => handleTimerPointerUp(event, handleSubIsoTap),
+                                onPointerCancel: handleTimerPointerAbort,
+                                onPointerLeave: handleTimerPointerAbort,
+                              } : {})}
+                            >
+                              {isClickableIsoTimer && fillPercent > 0 && (
+                                <div
+                                  className="absolute inset-0 bg-brand-orange/20 transition-[width] duration-300 ease-linear pointer-events-none rounded-2xl"
+                                  style={{ width: `${fillPercent}%` }}
+                                />
+                              )}
+
+                              {/* Left: Step Number + Exercise info */}
+                              <div className="text-left min-w-0 relative z-10 flex items-center gap-3">
+                                <div className={`rounded-xl bg-brand-orange/15 border border-brand-orange/40 text-brand-orange flex items-center justify-center font-mono font-black shrink-0 shadow-inner ${
+                                  isTwoExercises ? 'w-9 h-9 sm:w-10 sm:h-10 text-xs sm:text-sm' : 'w-8 h-8 text-xs'
+                                }`}>
+                                  {String(idx + 1).padStart(2, '0')}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className={`text-white font-black leading-snug truncate ${
+                                    isTwoExercises ? 'text-base sm:text-lg' : 'text-sm sm:text-base'
+                                  }`}>
+                                    {sub.name || `Esercizio ${idx + 1}`}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-zinc-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
+                                      <Dumbbell size={10} className="text-brand-orange shrink-0" />
+                                      <span>{formatWeightLabel(sub.weight_kg)}</span>
+                                    </span>
+                                    {isClickableIsoTimer && (
+                                      <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider opacity-80">
+                                        {isThisTimerActive ? 'In corso' : 'Tap timer'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Right: Big Target Number */}
+                              <div className="text-right shrink-0 relative z-10 pl-2">
+                                <span className={`font-mono font-black text-brand-orange block leading-none drop-shadow-sm ${
+                                  isTwoExercises ? 'text-3xl sm:text-4xl' : 'text-2xl sm:text-3xl'
+                                }`}>
+                                  {targetVal}
+                                </span>
+                                <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-zinc-400 block mt-1">
+                                  {targetUnit}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Neon Athletic Connector between exercises */}
+                            {idx < subExercises.length - 1 && (
+                              <div className="flex flex-col items-center justify-center shrink-0 select-none py-0.5">
+                                <div className={`w-0.5 ${isTwoExercises ? 'h-2 sm:h-2.5' : 'h-1.5'} bg-gradient-to-b from-brand-orange to-brand-orange/60`} />
+                                <div className={`inline-flex items-center gap-1.5 rounded-full bg-[#1c0c02] border border-brand-orange/50 shadow-[0_0_12px_rgba(255,94,0,0.25)] text-brand-orange font-black uppercase tracking-wider ${
+                                  isTwoExercises ? 'px-3 py-0.5 text-[10px] sm:text-[11px]' : 'px-2.5 py-0.5 text-[9px]'
+                                }`}>
+                                  <Zap size={isTwoExercises ? 11 : 9} className="shrink-0 fill-brand-orange animate-pulse" />
+                                  <span>{isTwoExercises ? 'SENZA PAUSA · PASSA SUBITO AL PROSSIMO' : 'PASSA SUBITO SENZA PAUSA'}</span>
+                                </div>
+                                <div className={`w-0.5 ${isTwoExercises ? 'h-2 sm:h-2.5' : 'h-1.5'} bg-gradient-to-b from-brand-orange/60 to-brand-orange`} />
+                              </div>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+
+                      {subExercises.length === 0 && (
+                        <p className="text-xs text-zinc-400 text-center my-auto">Nessun esercizio configurato per questo superset.</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()
             ) : (currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
               <div className="text-center w-full max-w-sm relative group select-none my-auto flex flex-col items-center">
                 <div
