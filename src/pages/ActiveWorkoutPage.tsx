@@ -478,6 +478,9 @@ const ActiveWorkoutPage: React.FC = () => {
   const activePyramidStepRef = useRef<HTMLButtonElement | null>(null);
   const setsCarouselScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const activeSetCardRef = useRef<HTMLDivElement | null>(null);
+  const [isEmomRoundWorkFinished, setIsEmomRoundWorkFinished] = useState(false);
+  const emomScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const activeEmomRoundCardRef = useRef<HTMLDivElement | null>(null);
 
   const wasRestingRef = useRef(false);
   const wasEmomActiveRef = useRef(false);
@@ -3133,6 +3136,25 @@ const ActiveWorkoutPage: React.FC = () => {
     }, 60);
     return () => window.clearTimeout(timer);
   }, [currentSetIdx, currentExerciseIdx, workout]);
+
+  useEffect(() => {
+    setIsEmomRoundWorkFinished(false);
+  }, [currentEmomRoundIdx, currentExerciseIdx]);
+
+  useEffect(() => {
+    const isCurEmom = workout?.exercises?.[currentExerciseIdx]?.type === 'emom';
+    if (!isCurEmom) return;
+    const timer = window.setTimeout(() => {
+      if (activeEmomRoundCardRef.current) {
+        activeEmomRoundCardRef.current.scrollIntoView({
+          behavior: 'smooth',
+          inline: 'center',
+          block: 'nearest',
+        });
+      }
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [currentEmomRoundIdx, currentExerciseIdx, workout]);
 
   if (loading) {
     return (
@@ -7270,38 +7292,7 @@ const ActiveWorkoutPage: React.FC = () => {
         {/* ZONE 3: CENTRAL FOCUS AREA (Rich, Screen-Filling Dashboard Card) */}
         <div className="flex-1 min-h-0 w-full max-w-lg mx-auto flex flex-col justify-between my-1 bg-gradient-to-b from-brand-darkGrey/90 via-brand-darkGrey/60 to-brand-darkGrey/40 border border-white/10 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-sm">
           {/* Top HUD Chips */}
-          {isEmom ? (
-            <div className="w-full grid grid-cols-3 gap-2.5 shrink-0 mb-2">
-              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                  {currentExercise.sets && currentExercise.sets > 1 ? 'Set' : 'Round'}
-                </span>
-                <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
-                  {currentExercise.sets && currentExercise.sets > 1
-                    ? `${currentSetIdx + 1} / ${currentExercise.sets}`
-                    : `${currentEmomRoundIdx + 1} / ${effectiveEmomRounds}`}
-                </span>
-              </div>
-
-              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                  {currentExercise.sets && currentExercise.sets > 1 ? 'Round' : 'Round Totali'}
-                </span>
-                <span className="text-white font-mono font-black text-sm sm:text-base truncate block">
-                  {currentExercise.sets && currentExercise.sets > 1
-                    ? `${currentEmomRoundIdx + 1} / ${effectiveEmomRounds}`
-                    : `${effectiveEmomRounds} rnd`}
-                </span>
-              </div>
-
-              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">Durata Round</span>
-                <span className="text-zinc-300 font-mono font-black text-sm sm:text-base truncate block">
-                  {currentExercise.emom_round_duration || 60}s
-                </span>
-              </div>
-            </div>
-          ) : isSuperset ? (
+          {isSuperset ? (
             <div className="w-full grid grid-cols-2 gap-2.5 shrink-0 mb-2">
               <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
                 <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
@@ -7347,157 +7338,337 @@ const ActiveWorkoutPage: React.FC = () => {
             {currentExercise.type === 'emom' ? (
               (() => {
                 const hasEmomTasks = Boolean(currentExercise.subExercises && currentExercise.subExercises.length > 0);
+                const roundDuration = currentExercise.emom_round_duration || 60;
+
                 return (
-                  <div className="text-center w-full flex flex-col items-center justify-between h-full py-0.5 min-h-0">
-                    {/* EMOM Circular Hero Timer */}
-                    <div className={`${hasEmomTasks ? 'shrink-0' : 'flex-1 min-h-0 flex flex-col justify-center'} flex flex-col items-center w-full`}>
-                      <div
-                        className={`relative group ${
-                          hasEmomTasks
-                            ? 'w-[min(50vw,21vh,185px)] h-[min(50vw,21vh,185px)]'
-                            : 'w-[min(68vw,32vh,270px)] h-[min(68vw,32vh,270px)]'
-                        } mx-auto rounded-full flex flex-col justify-center items-center transition-all duration-300 shadow-2xl cursor-pointer select-none shrink-0 overflow-hidden ${
-                          emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                            ? 'border-[8px] sm:border-[10px] border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_80px_rgba(255,107,0,0.6)] animate-pulse'
-                            : emomActive
-                              ? 'border-[8px] sm:border-[10px] border-brand-orange shadow-[0_0_45px_rgba(255,94,0,0.35)]'
-                              : 'border-[8px] sm:border-[10px] border-white/10 bg-black/40 shadow-[0_0_30px_rgba(0,0,0,0.5)]'
-                        }`}
-                        onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
-                        onPointerUp={(event) => handleTimerPointerUp(event, handleEmomTimerTap)}
-                        onPointerCancel={handleTimerPointerAbort}
-                        onPointerLeave={handleTimerPointerAbort}
-                      >
-                        {/* Apple-style circular progress track */}
-                        <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
-                          <circle
-                            cx="50"
-                            cy="50"
-                            r="44"
-                            stroke="rgba(255, 255, 255, 0.06)"
-                            strokeWidth={hasEmomTasks ? "5" : "6"}
-                            fill="transparent"
-                          />
-                          <circle
-                            cx="50"
-                            cy="50"
-                            r="44"
-                            stroke={emomRoundRemaining <= 3 && emomRoundRemaining > 0 ? '#FF7724' : '#FF5E00'}
-                            strokeWidth={hasEmomTasks ? "5" : "6"}
-                            strokeDasharray={2 * Math.PI * 44}
-                            strokeDashoffset={2 * Math.PI * 44 * (1 - emomRoundProgressRatio)}
-                            strokeLinecap="round"
-                            fill="transparent"
-                            className="transition-[stroke-dashoffset] duration-300 ease-linear"
-                          />
-                        </svg>
+                  <div className="w-full flex-1 min-h-0 flex flex-col justify-between items-center">
+                    {/* Horizontal Round Timeline Carousel */}
+                    <div
+                      ref={emomScrollContainerRef}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => e.stopPropagation()}
+                      className="w-full flex gap-3.5 sm:gap-4 overflow-x-auto no-scrollbar py-2 sm:py-3 px-[calc(50%-130px)] min-[390px]:px-[calc(50%-140px)] sm:px-[calc(50%-155px)] scroll-smooth snap-x snap-mandatory items-center my-auto"
+                      style={{ WebkitOverflowScrolling: 'touch' }}
+                    >
+                      {Array.from({ length: effectiveEmomRounds }, (_, rIdx) => {
+                        const isCurrent = rIdx === currentEmomRoundIdx;
+                        const isCompleted = rIdx < currentEmomRoundIdx;
 
-                        {/* Round Indicator Badge inside dial */}
-                        <span className={`${hasEmomTasks ? 'text-[9px] sm:text-[10px]' : 'text-xs sm:text-sm'} font-black uppercase tracking-[0.2em] text-brand-orange/90 mb-1 z-10 drop-shadow-sm`}>
-                          ROUND {currentEmomRoundIdx + 1} DI {effectiveEmomRounds}
-                        </span>
-
-                        {/* Big Countdown Number */}
-                        <span
-                          className={`${
-                            hasEmomTasks
-                              ? 'text-4xl min-[375px]:text-5xl font-mono'
-                              : 'text-6xl min-[390px]:text-7xl font-mono'
-                          } font-black tracking-tight leading-none z-10 transition-all ${
-                            emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                              ? 'text-brand-orange scale-105 drop-shadow-[0_0_25px_rgba(255,107,0,0.8)]'
-                              : emomActive
-                                ? 'text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.25)]'
-                                : 'text-zinc-400'
-                          }`}
-                        >
-                          {emomRoundRemaining >= 100 ? formatTime(emomRoundRemaining) : emomRoundRemaining}
-                        </span>
-
-                        {/* Label */}
-                        <span className={`text-zinc-400 font-black uppercase tracking-widest ${hasEmomTasks ? 'text-[8px] sm:text-[9px]' : 'text-[10px] sm:text-xs'} mt-1.5 z-10 flex items-center gap-1`}>
-                          <Timer size={hasEmomTasks ? 10 : 13} className="text-brand-orange" />
-                          {emomActive ? 'SECONDI RIMASTI' : 'IN PAUSA'}
-                        </span>
-
-                        {/* Tap overlay icon */}
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full transition-opacity pointer-events-none z-20">
-                          {emomActive ? <Pause size={hasEmomTasks ? 34 : 48} className="text-white" /> : <Play size={hasEmomTasks ? 34 : 48} className="text-white ml-1" />}
-                        </div>
-                      </div>
-
-                      {/* Interactive Round Timeline when no sub-exercises */}
-                      {!hasEmomTasks && effectiveEmomRounds > 1 && (
-                        <div className="w-full shrink-0 mt-3 px-1">
-                          <div className="flex items-center justify-between text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 px-0.5">
-                            <span>Progressione Round</span>
-                            <span className="text-brand-orange font-mono font-black">
-                              {Math.round(((currentEmomRoundIdx + 1) / effectiveEmomRounds) * 100)}%
-                            </span>
-                          </div>
-                          <div className="flex gap-1.5 overflow-x-auto py-1">
-                            {Array.from({ length: effectiveEmomRounds }).map((_, rIdx) => {
-                              const isCurrent = rIdx === currentEmomRoundIdx;
-                              const isDone = rIdx < currentEmomRoundIdx;
-                              return (
-                                <button
-                                  key={rIdx}
-                                  type="button"
-                                  onClick={() => setCurrentEmomRoundIdx(rIdx)}
-                                  className={`flex-1 min-w-[38px] py-1.5 px-1 rounded-xl text-center border transition-all cursor-pointer ${
-                                    isCurrent
-                                      ? 'bg-brand-orange/25 border-brand-orange text-white shadow-sm ring-1 ring-brand-orange/60'
-                                      : isDone
-                                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                                        : 'bg-white/5 border-white/10 text-zinc-500 hover:border-white/20'
-                                  }`}
-                                  title={`Vai al round ${rIdx + 1}`}
-                                >
-                                  <span className="text-[8px] uppercase font-bold block opacity-70">R{rIdx + 1}</span>
-                                  <span className="text-xs font-mono font-black">
-                                    {isDone ? '✓' : isCurrent ? `${emomRoundRemaining}s` : `${currentExercise.emom_round_duration || 60}s`}
+                        if (isCurrent) {
+                          return (
+                            <div
+                              key={rIdx}
+                              ref={activeEmomRoundCardRef}
+                              className={`shrink-0 w-[260px] min-[390px]:w-[280px] sm:w-[310px] h-[340px] min-[390px]:h-[370px] sm:h-[400px] p-4 min-[390px]:p-5 sm:p-6 rounded-3xl border-2 transition-all duration-300 z-10 snap-center select-none flex flex-col justify-between ${
+                                isEmomRoundWorkFinished
+                                  ? 'border-emerald-500 bg-gradient-to-b from-[#062c20] via-[#041a13] to-[#121214] text-white shadow-[0_0_35px_rgba(16,185,129,0.35)] ring-1 ring-emerald-500/60'
+                                  : emomRoundRemaining <= 3 && emomRoundRemaining > 0
+                                    ? 'border-brand-orange bg-gradient-to-b from-[#3a1805] via-[#200e04] to-[#121214] text-white shadow-[0_0_40px_rgba(255,94,0,0.5)] ring-2 ring-brand-orange/80 animate-pulse'
+                                    : 'border-brand-orange bg-gradient-to-b from-[#2d1405] via-[#1a0c04] to-[#121214] text-white shadow-[0_0_35px_rgba(255,94,0,0.35)] ring-1 ring-brand-orange/60'
+                              } scale-[1.02]`}
+                            >
+                              {/* Header della card: ROUND X DI Y con badge pulsante In Corso / In Riposo e durata */}
+                              <div className={`flex items-center justify-between gap-2 pb-2 border-b shrink-0 ${
+                                isEmomRoundWorkFinished ? 'border-emerald-500/20' : 'border-brand-orange/20'
+                              }`}>
+                                <div className="flex flex-col text-left">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`text-xs sm:text-sm font-black font-mono tracking-wider uppercase ${
+                                      isEmomRoundWorkFinished ? 'text-emerald-400' : 'text-brand-orange'
+                                    }`}>
+                                      ROUND {rIdx + 1}
+                                    </span>
+                                    <span className="text-[11px] sm:text-xs font-mono text-zinc-400">
+                                      / {effectiveEmomRounds}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-zinc-400 font-mono font-medium">
+                                    Ogni {roundDuration}s
+                                    {currentExercise.sets && currentExercise.sets > 1 ? ` • Set ${currentSetIdx + 1}/${currentExercise.sets}` : ''}
                                   </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
+                                </div>
 
-                      {/* Helper Text */}
-                      <p className={`${hasEmomTasks ? 'text-[9px] mt-1 text-zinc-500' : 'text-[11px] sm:text-xs mt-2 text-zinc-400'} font-bold uppercase tracking-wider text-center shrink-0`}>
-                        Tocca per {emomActive ? 'pausa' : 'avvio'} • Tieni premuto per azzerare
-                      </p>
-                    </div>
+                                {isEmomRoundWorkFinished ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                    In Riposo
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-lightOrange text-[10px] font-black uppercase tracking-wider">
+                                    <span className={`w-1.5 h-1.5 rounded-full bg-brand-orange ${emomActive ? 'animate-ping' : ''}`} />
+                                    {emomActive ? 'In Corso' : 'In Pausa'}
+                                  </span>
+                                )}
+                              </div>
 
-                    {/* EMOM Tasks List */}
-                    {hasEmomTasks && currentExercise.subExercises && (
-                      <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-1.5 mt-2 px-0.5 pb-0.5">
-                        {currentExercise.subExercises.map((sub, idx) => (
+                              {/* Timer integrato: Countdown maxi centrale (:42s) con micro-barra di avanzamento del minuto */}
+                              <div
+                                className="my-auto py-1 flex flex-col items-center justify-center cursor-pointer select-none group"
+                                onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
+                                onPointerUp={(event) => handleTimerPointerUp(event, handleEmomTimerTap)}
+                                onPointerCancel={handleTimerPointerAbort}
+                                onPointerLeave={handleTimerPointerAbort}
+                                title="Tocca per avviare/mettere in pausa • Tieni premuto per azzerare"
+                              >
+                                <span
+                                  className={`text-6xl min-[390px]:text-7xl sm:text-8xl font-mono font-black tracking-tight leading-none transition-all ${
+                                    isEmomRoundWorkFinished
+                                      ? 'text-emerald-400 drop-shadow-[0_0_25px_rgba(16,185,129,0.5)]'
+                                      : emomRoundRemaining <= 3 && emomRoundRemaining > 0
+                                        ? 'text-brand-orange scale-105 drop-shadow-[0_0_30px_rgba(255,107,0,0.85)]'
+                                        : emomActive
+                                          ? 'text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                                          : 'text-zinc-400'
+                                  }`}
+                                >
+                                  {emomRoundRemaining >= 60
+                                    ? formatTime(emomRoundRemaining)
+                                    : `:${String(emomRoundRemaining).padStart(2, '0')}s`}
+                                </span>
+
+                                {/* Barra di avanzamento del minuto */}
+                                <div className="w-36 min-[390px]:w-44 sm:w-52 bg-white/10 h-1.5 rounded-full overflow-hidden mt-2 mb-1.5">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-300 ease-linear ${
+                                      isEmomRoundWorkFinished
+                                        ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                                        : emomRoundRemaining <= 3 && emomRoundRemaining > 0
+                                          ? 'bg-brand-orange shadow-[0_0_8px_rgba(255,107,0,0.8)]'
+                                          : 'bg-brand-orange shadow-[0_0_6px_rgba(255,94,0,0.5)]'
+                                    }`}
+                                    style={{ width: `${Math.max(0, Math.min(100, emomRoundProgressRatio * 100))}%` }}
+                                  />
+                                </div>
+
+                                <span className={`text-[10px] sm:text-xs font-black uppercase tracking-wider flex items-center gap-1 ${
+                                  isEmomRoundWorkFinished
+                                    ? 'text-emerald-400'
+                                    : emomActive
+                                      ? 'text-zinc-400'
+                                      : 'text-zinc-500'
+                                }`}>
+                                  <Timer size={12} className={isEmomRoundWorkFinished ? 'text-emerald-400' : 'text-brand-orange'} />
+                                  {isEmomRoundWorkFinished
+                                    ? `Recupero Guadagnato (${emomRoundRemaining}s)`
+                                    : emomActive
+                                      ? 'Secondi Rimasti'
+                                      : 'In Pausa (Tocca per avvio)'}
+                                </span>
+                              </div>
+
+                              {/* Blocco Lavoro del Round */}
+                              <div className="shrink-0 mb-2">
+                                {hasEmomTasks ? (
+                                  /* Multi-esercizio: satin frosted box compatto */
+                                  <div className="bg-black/50 border border-white/10 rounded-2xl p-2.5 sm:p-3 text-left shadow-sm">
+                                    <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-brand-orange mb-1.5">
+                                      <Zap size={11} className="text-brand-orange fill-brand-orange shrink-0" />
+                                      <span>Compito del Round</span>
+                                    </div>
+                                    <div className="space-y-1.5 max-h-[82px] overflow-y-auto no-scrollbar">
+                                      {currentExercise.subExercises!.map((sub, sIdx) => (
+                                        <div key={sIdx} className="flex items-center justify-between gap-2 text-xs">
+                                          <div className="flex items-center gap-1.5 truncate">
+                                            <span className="w-4 h-4 rounded-full bg-white/10 text-zinc-300 font-mono font-bold text-[10px] flex items-center justify-center shrink-0">
+                                              {sIdx + 1}
+                                            </span>
+                                            <span className="text-white font-bold truncate">
+                                              {sub.name}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1 shrink-0 font-mono">
+                                            <span className="font-black text-brand-lightOrange text-xs">
+                                              {formatEmomTaskMetricLabel(sub)}
+                                            </span>
+                                            {sub.weight_kg != null && sub.weight_kg > 0 ? (
+                                              <span className="text-[10px] text-zinc-400 font-semibold">
+                                                • {formatWeightLabel(sub.weight_kg)}
+                                              </span>
+                                            ) : (
+                                              <span className="text-[9px] text-zinc-500">
+                                                • Libero
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* Singolo esercizio: reps e kg puliti al centro */
+                                  <div className="bg-black/40 border border-white/10 rounded-2xl p-2.5 sm:p-3 text-center shadow-sm">
+                                    <span className="text-[9px] min-[390px]:text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
+                                      Obiettivo del Round
+                                    </span>
+                                    <div className="flex items-center justify-center gap-2">
+                                      <span className="text-xl min-[390px]:text-2xl font-mono font-black text-white">
+                                        {currentExercise.reps === 0 ? 'MAX REPS' : `${currentExercise.reps} REPS`}
+                                      </span>
+                                      <span className="text-zinc-500 font-bold">•</span>
+                                      <span className="text-sm min-[390px]:text-base font-mono font-black text-brand-lightOrange">
+                                        {currentExercise.weight_kg != null && currentExercise.weight_kg > 0
+                                          ? formatWeightLabel(currentExercise.weight_kg)
+                                          : 'Corpo libero'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Pulsante Opzionale "Fatto prima del tempo" */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void hapticLight();
+                                  setIsEmomRoundWorkFinished((prev) => !prev);
+                                }}
+                                className={`w-full py-2 px-3 rounded-xl border font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 shrink-0 shadow-sm ${
+                                  isEmomRoundWorkFinished
+                                    ? 'bg-emerald-500/25 border-emerald-500/60 text-emerald-300 hover:bg-emerald-500/35 ring-1 ring-emerald-500/40'
+                                    : 'bg-white/10 hover:bg-white/15 border-white/15 text-zinc-200'
+                                }`}
+                                title={isEmomRoundWorkFinished ? 'Tocca per riprendere la modalità lavoro' : 'Hai finito gli esercizi del round? Tocca per attivare lo stato di riposo'}
+                              >
+                                {isEmomRoundWorkFinished ? (
+                                  <>
+                                    <Check size={14} className="text-emerald-400 shrink-0" strokeWidth={3} />
+                                    <span>In Riposo ({emomRoundRemaining}s)</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check size={14} className="text-brand-orange shrink-0" strokeWidth={2.5} />
+                                    <span>Fatto prima del tempo</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        if (isCompleted) {
+                          return (
+                            <button
+                              key={rIdx}
+                              type="button"
+                              onClick={() => {
+                                void hapticLight();
+                                setCurrentEmomRoundIdx(rIdx);
+                              }}
+                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-95"
+                              title={`Round ${rIdx + 1} completato - Tocca per rivedere`}
+                            >
+                              <div className="flex items-center justify-between gap-1 pb-2 border-b border-emerald-500/20 shrink-0">
+                                <span className="text-xs sm:text-sm font-black font-mono text-zinc-300 uppercase tracking-wider">
+                                  ROUND {rIdx + 1}
+                                </span>
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
+                                  <Check size={12} strokeWidth={3} />
+                                  Concluso
+                                </span>
+                              </div>
+
+                              <div className="my-auto py-2 flex flex-col items-center justify-center text-center">
+                                <span className="text-4xl min-[390px]:text-5xl font-mono font-black text-emerald-400 leading-none">
+                                  ✓
+                                </span>
+                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/90 mt-2">
+                                  Completato
+                                </span>
+                                {hasEmomTasks ? (
+                                  <span className="text-[10px] text-zinc-400 font-mono mt-1">
+                                    {currentExercise.subExercises?.length} esercizi
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-zinc-400 font-mono mt-1">
+                                    {currentExercise.reps === 0 ? 'MAX reps' : `${currentExercise.reps} reps`}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs shrink-0">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                  Durata
+                                </span>
+                                <span className="font-mono font-bold text-zinc-200">
+                                  {roundDuration}s
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        }
+
+                        // Upcoming Round
+                        return (
                           <div
-                            key={idx}
-                            className="bg-black/50 p-2.5 sm:p-3 rounded-2xl border border-white/10 flex justify-between items-center text-xs sm:text-sm shadow-sm"
+                            key={rIdx}
+                            className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] text-left transition-all snap-center select-none flex flex-col justify-between opacity-65 shadow-sm"
                           >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="w-5 h-5 rounded-full bg-brand-orange/20 text-brand-orange flex items-center justify-center font-bold text-[10px] shrink-0">
-                                {idx + 1}
+                            <div className="flex items-center justify-between gap-1 pb-2 border-b border-white/10 shrink-0">
+                              <span className="text-xs sm:text-sm font-black font-mono text-zinc-400 uppercase tracking-wider">
+                                ROUND {rIdx + 1}
                               </span>
-                              <span className="text-white font-bold truncate text-xs sm:text-sm">
-                                {sub.name}
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 text-[9px] font-black uppercase tracking-wider">
+                                {rIdx === effectiveEmomRounds - 1 ? 'Ultimo' : 'In attesa'}
                               </span>
                             </div>
-                            <div className="text-right shrink-0 flex items-center gap-1.5 ml-2">
-                              <span className="text-brand-orange font-mono font-black text-xs sm:text-sm bg-brand-orange/15 border border-brand-orange/30 px-2 py-0.5 rounded-lg">
-                                {formatEmomTaskMetricLabel(sub)}
+
+                            <div className="my-auto py-2 flex flex-col items-center justify-center text-center">
+                              <span className="text-4xl min-[390px]:text-5xl font-mono font-black text-zinc-400 leading-none">
+                                :{String(roundDuration).padStart(2, '0')}
                               </span>
-                              {sub.weight_kg != null && sub.weight_kg > 0 && (
-                                <span className="text-[11px] text-zinc-300 font-semibold font-mono bg-white/5 border border-white/10 px-1.5 py-0.5 rounded-lg">
-                                  {formatWeightLabel(sub.weight_kg)}
+                              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-2">
+                                Ogni {roundDuration}s
+                              </span>
+                              {hasEmomTasks ? (
+                                <span className="text-[10px] text-zinc-500 font-mono mt-1">
+                                  {currentExercise.subExercises?.length} esercizi
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-zinc-500 font-mono mt-1">
+                                  {currentExercise.reps === 0 ? 'MAX reps' : `${currentExercise.reps} reps`}
                                 </span>
                               )}
                             </div>
+
+                            <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs shrink-0">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                                Stato
+                              </span>
+                              <span className="font-mono text-zinc-400 text-[11px]">
+                                Prossimo
+                              </span>
+                            </div>
                           </div>
-                        ))}
+                        );
+                      })}
+                    </div>
+
+                    {/* Round Dots Navigation Indicator */}
+                    {effectiveEmomRounds > 1 && (
+                      <div className="flex items-center justify-center gap-1.5 py-1 shrink-0">
+                        {Array.from({ length: effectiveEmomRounds }).map((_, dotIdx) => {
+                          const isCurrentDot = dotIdx === currentEmomRoundIdx;
+                          const isCompletedDot = dotIdx < currentEmomRoundIdx;
+                          return (
+                            <button
+                              key={dotIdx}
+                              type="button"
+                              onClick={() => {
+                                void hapticLight();
+                                setCurrentEmomRoundIdx(dotIdx);
+                              }}
+                              className={`transition-all rounded-full cursor-pointer ${
+                                isCurrentDot
+                                  ? 'w-6 h-2 bg-brand-orange shadow-[0_0_8px_rgba(255,94,0,0.6)]'
+                                  : isCompletedDot
+                                    ? 'w-2 h-2 bg-emerald-400/80'
+                                    : 'w-2 h-2 bg-white/20 hover:bg-white/40'
+                              }`}
+                              title={`Vai al round ${dotIdx + 1}`}
+                            />
+                          );
+                        })}
                       </div>
                     )}
                   </div>
