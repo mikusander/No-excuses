@@ -65,7 +65,7 @@
  * (es. da ActiveWorkoutPage → "edit this exercise"), la pagina fa auto-scroll
  * alla card dell'esercizio N e la mette a fuoco (`focusedExerciseId`).
  */
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -93,6 +93,7 @@ import {
   FileText,
   Activity,
   X,
+  GripVertical,
 } from 'lucide-react';
 import AppHeader from '../components/AppHeader';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
@@ -108,7 +109,7 @@ import {
   type WorkoutFolder,
 } from '../utils/folderManager';
 import { generateUUID } from '../utils/uuid';
-import { hapticLight } from '../utils/haptics';
+import { hapticLight, hapticMedium, hapticSuccess } from '../utils/haptics';
 
 interface ExerciseDraft {
   id: string;
@@ -275,6 +276,25 @@ const NewTrainPage: React.FC = () => {
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [didAutoFocusExercise, setDidAutoFocusExercise] = useState(false);
   const exerciseRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+
+  // ─── Drag & Drop Reordering State ───────────────────────────────────────────
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragTranslateY, setDragTranslateY] = useState<number>(0);
+
+  const itemWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const autoScrollFrameRef = useRef<number | null>(null);
+  const dragStateRef = useRef<{
+    index: number;
+    startY: number;
+    startScrollY: number;
+    currentClientY: number;
+    itemTops: number[];
+    itemHeights: number[];
+    itemCenters: number[];
+    activePointerId: number;
+    lastTargetIndex: number;
+  } | null>(null);
 
   const { searchHistory } = useUserExerciseHistory(user?.id);
   const [exerciseSuggestions, setExerciseSuggestions] = useState<Record<string, UserExerciseHistoryItem[]>>({});
@@ -1195,6 +1215,7 @@ const NewTrainPage: React.FC = () => {
     if (direction === 'up' && index === 0) return;
     if (direction === 'down' && index === exercises.length - 1) return;
 
+    void hapticLight();
     const newExercises = [...exercises];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
 
@@ -1204,6 +1225,174 @@ const NewTrainPage: React.FC = () => {
 
     setExercises(newExercises);
   };
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollFrameRef.current != null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+  }, []);
+
+  const updateDragCalculations = useCallback(() => {
+    const ds = dragStateRef.current;
+    if (!ds) return;
+
+    const currentScrollY = window.scrollY;
+    const deltaY = (ds.currentClientY - ds.startY) + (currentScrollY - ds.startScrollY);
+    setDragTranslateY(deltaY);
+
+    const currentDraggedCenter = ds.itemCenters[ds.index] + deltaY;
+
+    let newTargetIndex = 0;
+    for (let j = 0; j < ds.itemCenters.length; j++) {
+      if (j === ds.index) continue;
+      if (currentDraggedCenter > ds.itemCenters[j]) {
+        newTargetIndex++;
+      }
+    }
+    newTargetIndex = Math.max(0, Math.min(exercises.length - 1, newTargetIndex));
+
+    if (newTargetIndex !== ds.lastTargetIndex) {
+      ds.lastTargetIndex = newTargetIndex;
+      setDragOverIndex(newTargetIndex);
+      void hapticLight();
+    }
+  }, [exercises.length]);
+
+  const startAutoScroll = useCallback(() => {
+    if (autoScrollFrameRef.current != null) return;
+
+    const loop = () => {
+      const ds = dragStateRef.current;
+      if (!ds) {
+        autoScrollFrameRef.current = null;
+        return;
+      }
+
+      const clientY = ds.currentClientY;
+      const topThreshold = 140;
+      const bottomThreshold = window.innerHeight - 140;
+
+      let scrollDelta = 0;
+      if (clientY < topThreshold) {
+        const factor = Math.min(1, Math.max(0, (topThreshold - clientY) / topThreshold));
+        scrollDelta = -Math.round(4 + factor * 20);
+      } else if (clientY > bottomThreshold) {
+        const factor = Math.min(1, Math.max(0, (clientY - bottomThreshold) / 140));
+        scrollDelta = Math.round(4 + factor * 20);
+      }
+
+      if (scrollDelta !== 0) {
+        window.scrollBy({ top: scrollDelta, behavior: 'instant' });
+        updateDragCalculations();
+      }
+
+      autoScrollFrameRef.current = requestAnimationFrame(loop);
+    };
+
+    autoScrollFrameRef.current = requestAnimationFrame(loop);
+  }, [updateDragCalculations]);
+
+  const handleDragStart = useCallback((index: number, e: React.PointerEvent) => {
+    if (exercises.length <= 1) return;
+    e.preventDefault();
+    void hapticMedium();
+
+    const startScrollY = window.scrollY;
+    const tops: number[] = [];
+    const heights: number[] = [];
+    const centers: number[] = [];
+
+    itemWrapperRefs.current.forEach((el) => {
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const top = rect.top + startScrollY;
+        tops.push(top);
+        heights.push(rect.height);
+        centers.push(top + rect.height / 2);
+      } else {
+        tops.push(0);
+        heights.push(0);
+        centers.push(0);
+      }
+    });
+
+    dragStateRef.current = {
+      index,
+      startY: e.clientY,
+      startScrollY,
+      currentClientY: e.clientY,
+      itemTops: tops,
+      itemHeights: heights,
+      itemCenters: centers,
+      activePointerId: e.pointerId,
+      lastTargetIndex: index,
+    };
+
+    setDraggedIndex(index);
+    setDragOverIndex(index);
+    setDragTranslateY(0);
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      const ds = dragStateRef.current;
+      if (!ds || moveEv.pointerId !== ds.activePointerId) return;
+      ds.currentClientY = moveEv.clientY;
+      updateDragCalculations();
+    };
+
+    const onPointerEnd = (endEv: PointerEvent) => {
+      const ds = dragStateRef.current;
+      if (!ds || endEv.pointerId !== ds.activePointerId) return;
+
+      stopAutoScroll();
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerEnd);
+      window.removeEventListener('pointercancel', onPointerEnd);
+
+      const sourceIdx = ds.index;
+      const destIdx = ds.lastTargetIndex;
+
+      dragStateRef.current = null;
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      setDragTranslateY(0);
+
+      if (sourceIdx !== destIdx && destIdx >= 0 && destIdx < exercises.length) {
+        setExercises((prev) => {
+          const next = [...prev];
+          const [moved] = next.splice(sourceIdx, 1);
+          next.splice(destIdx, 0, moved);
+          return next;
+        });
+        void hapticSuccess();
+      }
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
+
+    startAutoScroll();
+  }, [exercises.length, startAutoScroll, stopAutoScroll, updateDragCalculations]);
+
+  useEffect(() => {
+    return () => {
+      stopAutoScroll();
+    };
+  }, [stopAutoScroll]);
+
+  useEffect(() => {
+    if (draggedIndex !== null) {
+      const originalUserSelect = document.body.style.userSelect;
+      const originalCursor = document.body.style.cursor;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'grabbing';
+      return () => {
+        document.body.style.userSelect = originalUserSelect;
+        document.body.style.cursor = originalCursor;
+      };
+    }
+  }, [draggedIndex]);
 
   const updateExercise = (id: string, field: keyof ExerciseDraft, value: any) => {
     setExercises(exercises.map(ex =>
@@ -2248,15 +2437,117 @@ const NewTrainPage: React.FC = () => {
               <p className="text-xs text-brand-grey">Tocca qui o premi il pulsante sotto per inserire un esercizio</p>
             </div>
           ) : (
-            exercises.map((ex, index) => (
-              <React.Fragment key={ex.id}>
+            exercises.map((ex, index) => {
+              const isBeingDragged = draggedIndex === index;
+              const isAnyDragging = draggedIndex !== null;
+
+              let siblingShiftY = 0;
+              if (isAnyDragging && !isBeingDragged && dragOverIndex !== null && dragStateRef.current) {
+                const source = draggedIndex;
+                const dest = dragOverIndex;
+                const draggedItemHeight = (dragStateRef.current.itemHeights[source] || 0) + 16;
+
+                if (source < dest) {
+                  if (index > source && index <= dest) {
+                    siblingShiftY = -draggedItemHeight;
+                  }
+                } else if (source > dest) {
+                  if (index >= dest && index < source) {
+                    siblingShiftY = draggedItemHeight;
+                  }
+                }
+              }
+
+              const wrapperTransform = isBeingDragged
+                ? `translate3d(0, ${dragTranslateY}px, 0) scale(1.02)`
+                : siblingShiftY !== 0
+                  ? `translate3d(0, ${siblingShiftY}px, 0)`
+                  : 'translate3d(0, 0, 0)';
+
+              const wrapperTransition = isBeingDragged
+                ? 'box-shadow 200ms ease, border-color 200ms ease'
+                : isAnyDragging
+                  ? 'transform 260ms cubic-bezier(0.2, 0, 0, 1)'
+                  : 'none';
+
+              const wrapperZIndex = isBeingDragged ? 50 : 1;
+              const isDropTarget = isAnyDragging && !isBeingDragged && dragOverIndex === index;
+
+              return (
                 <div
+                  key={ex.id}
                   ref={(node) => {
-                    exerciseRefs.current[ex.id] = node;
+                    itemWrapperRefs.current[index] = node;
                   }}
-                  className={`bg-brand-darkGrey/40 border p-4 rounded-3xl flex flex-col space-y-4 relative shadow-lg transition-colors ${focusedExerciseId === ex.id ? 'border-brand-orange/70 ring-2 ring-brand-orange/30' : 'border-brand-grey/20'
-                    }`}
+                  style={{
+                    transform: wrapperTransform,
+                    transition: wrapperTransition,
+                    zIndex: wrapperZIndex,
+                  }}
+                  className={`relative ${isBeingDragged ? 'z-50' : 'z-1'}`}
                 >
+                  <div className="flex items-stretch gap-2 sm:gap-2.5">
+                    {/* BARRA LATERALE PER SPOSTAMENTO E ORDINAMENTO */}
+                    {exercises.length > 1 && (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Trascina per spostare l'esercizio ${index + 1}`}
+                        onPointerDown={(e) => handleDragStart(index, e)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            moveExercise(index, 'up');
+                          } else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            moveExercise(index, 'down');
+                          }
+                        }}
+                        className={`w-9 sm:w-10 rounded-3xl flex flex-col items-center justify-between py-3.5 select-none touch-none cursor-grab active:cursor-grabbing transition-all border shrink-0 ${
+                          isBeingDragged
+                            ? 'bg-brand-orange text-black border-brand-orange shadow-[0_0_24px_rgba(255,94,0,0.6)] ring-2 ring-brand-orange'
+                            : isDropTarget
+                              ? 'bg-brand-orange/20 border-brand-orange/50 text-brand-orange ring-1 ring-brand-orange/40'
+                              : 'bg-[#18181A]/90 hover:bg-white/10 active:bg-brand-orange/20 border-white/10 hover:border-brand-orange/40 text-zinc-400 hover:text-white'
+                        }`}
+                        title="Tieni premuto e trascina per spostare l'esercizio nella scheda"
+                      >
+                        {/* Numero Esercizio */}
+                        <span className={`text-[11px] font-black tracking-tight ${isBeingDragged ? 'text-black font-mono' : 'text-zinc-300'}`}>
+                          #{index + 1}
+                        </span>
+
+                        {/* Grip Icon con animazione */}
+                        <div className={`p-1.5 rounded-xl transition-all ${
+                          isBeingDragged
+                            ? 'bg-black/20 text-black scale-110'
+                            : 'bg-white/5 text-brand-orange group-hover:scale-105'
+                        }`}>
+                          <GripVertical size={16} />
+                        </div>
+
+                        {/* 3 micro-tacche decorative touch */}
+                        <div className="flex flex-col gap-0.5 opacity-40">
+                          <span className="w-1 h-1 rounded-full bg-current" />
+                          <span className="w-1 h-1 rounded-full bg-current" />
+                          <span className="w-1 h-1 rounded-full bg-current" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Card Esercizio */}
+                    <div
+                      ref={(node) => {
+                        exerciseRefs.current[ex.id] = node;
+                      }}
+                      className={`flex-1 min-w-0 bg-brand-darkGrey/40 border p-4 rounded-3xl flex flex-col space-y-4 relative shadow-lg transition-all ${
+                        isBeingDragged
+                          ? 'border-brand-orange ring-2 ring-brand-orange/80 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(255,94,0,0.4)]'
+                          : focusedExerciseId === ex.id
+                            ? 'border-brand-orange/70 ring-2 ring-brand-orange/30'
+                            : 'border-brand-grey/20'
+                      }`}
+                    >
 
                   {/* Header Esercizio: Frecce Ordine, Selettore Tipo Compatto, Duplica ed Elimina */}
                   <div className="flex justify-between items-center bg-black/40 -mx-4 -mt-4 p-3 rounded-t-3xl border-b border-white/5">
@@ -3569,6 +3860,7 @@ const NewTrainPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </div>
 
                 {index < exercises.length - 1 && (
                   <div className="my-3 px-0.5">
@@ -3741,8 +4033,9 @@ const NewTrainPage: React.FC = () => {
                     )}
                   </div>
                 )}
-              </React.Fragment>
-            ))
+              </div>
+            );
+          })
           )}
 
           <button
