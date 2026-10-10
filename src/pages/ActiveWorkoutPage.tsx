@@ -6880,7 +6880,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 ) : isCircuit ? (
                   isLastSet
                     ? <>COMPLETA CIRCUITO <ArrowRight size={16} className="ml-1.5" /></>
-                    : <>FINE SET & RECUPERO <ArrowRight size={16} className="ml-1.5" /></>
+                    : <>FINE GIRO {currentSetIdx + 1} & RECUPERO <ArrowRight size={16} className="ml-1.5" /></>
                 ) : isSuperset ? (
                   isLastSet
                     ? <>PROSSIMO ESERCIZIO <ArrowRight size={16} className="ml-1.5" /></>
@@ -7313,11 +7313,11 @@ const ActiveWorkoutPage: React.FC = () => {
                 </span>
               </div>
             </div>
-          ) : (isCircuit || currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
+          ) : (currentExercise.type === 'isometry' || currentExercise.type === 'cardio') ? (
             <div className="w-full grid grid-cols-2 gap-2.5 shrink-0 mb-2">
               <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
                 <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                  {isCircuit ? 'Giro' : 'Set'}
+                  Set
                 </span>
                 <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
                   {`${currentSetIdx + 1} / ${currentExercise.sets || 1}`}
@@ -7927,66 +7927,119 @@ const ActiveWorkoutPage: React.FC = () => {
                 );
               })()
             ) : isCircuit ? (
-              <div className="text-center w-full flex flex-col items-center justify-between h-full">
-                {/* Interactive Circuit Stopwatch */}
+              <div className="w-full flex-1 min-h-0 flex flex-col justify-between items-center py-0.5">
+                {/* IN ALTO — Cronometro del Giro (Lap Stopwatch) */}
                 <div
-                  className={`w-full p-3.5 rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-300 shadow-md cursor-pointer select-none group shrink-0 ${
+                  className={`w-full p-3 sm:p-4 rounded-3xl border-2 transition-all duration-300 shadow-xl cursor-pointer select-none group shrink-0 ${
                     isCircuitStopwatchRunning
-                      ? 'border-brand-orange bg-brand-orange/15 shadow-[0_0_25px_rgba(179,72,0,0.25)]'
+                      ? 'border-brand-orange bg-gradient-to-b from-[#2d1405] via-[#1a0c04] to-[#121214] shadow-[0_0_35px_rgba(255,94,0,0.35)] ring-1 ring-brand-orange/60'
                       : circuitStopwatchElapsed > 0
-                        ? 'border-brand-orange/70 bg-black/40'
-                        : 'border-white/10 bg-black/30 hover:border-brand-orange/40'
+                        ? 'border-brand-orange/60 bg-gradient-to-b from-[#1f1006] via-[#140b04] to-[#121214]'
+                        : 'border-white/10 bg-[#1C1C1E]/90 hover:border-white/20'
                   }`}
                   onPointerDown={(event) => handleTimerPointerDown(event, resetCircuitStopwatch)}
                   onPointerUp={(event) => handleTimerPointerUp(event, toggleCircuitStopwatch)}
                   onPointerCancel={handleTimerPointerAbort}
                   onPointerLeave={handleTimerPointerAbort}
+                  title="Tocca per avviare o mettere in pausa • Tieni premuto per azzerare"
                 >
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                      isCircuitStopwatchRunning
-                        ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/40 animate-pulse'
-                        : circuitStopwatchElapsed > 0
-                          ? 'bg-brand-orange/20 text-brand-orange border border-brand-orange/40'
-                          : 'bg-white/10 text-zinc-400 border border-white/10'
-                    }`}>
-                      <Timer size={10} />
-                      {isCircuitStopwatchRunning ? 'IN CORSO' : circuitStopwatchElapsed > 0 ? 'IN PAUSA' : 'PRONTO'}
+                  {/* Header: Badge satinato GIRO X DI Y + Stato Stopwatch */}
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/10 shrink-0">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] sm:text-[11px] font-black font-mono tracking-wider text-brand-orange uppercase">
+                      GIRO {currentSetIdx + 1} DI {currentExercise.sets || 1}
+                    </span>
+
+                    {isCircuitStopwatchRunning ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-lightOrange text-[10px] font-black uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
+                        IN CORSO
+                      </span>
+                    ) : circuitStopwatchElapsed > 0 ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 text-[10px] font-black uppercase tracking-wider">
+                        IN PAUSA
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/10 text-zinc-400 text-[10px] font-black uppercase tracking-wider">
+                        PRONTO
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Cronometro in grande font-mono (02:15) */}
+                  <div className="my-2 sm:my-3 text-center flex flex-col items-center justify-center">
+                    <span className="text-6xl min-[390px]:text-7xl sm:text-8xl font-black font-mono tracking-tight text-white leading-none drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">
+                      {formatTime(circuitStopwatchElapsed)}
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-1.5 flex items-center gap-1">
+                      <Timer size={11} className="text-brand-orange" />
+                      Tocca per {isCircuitStopwatchRunning ? 'pausa' : 'avvio'} • Tieni premuto per azzerare
                     </span>
                   </div>
 
-                  <div className="text-5xl sm:text-6xl font-black font-mono tracking-tight text-white leading-none my-1 drop-shadow-sm">
-                    {formatTime(circuitStopwatchElapsed)}
-                  </div>
-
-                  <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold mt-1">
-                    Tocca per {isCircuitStopwatchRunning ? 'fermare' : 'avviare'} • Tieni premuto per azzerare
-                  </p>
+                  {/* Indicazione discreta del tempo del giro precedente */}
+                  {circuitLapTimes.length > 0 && (
+                    <div className="pt-2 border-t border-white/10 flex items-center justify-center gap-1.5 text-xs font-mono font-bold text-emerald-400">
+                      <Check size={13} strokeWidth={2.5} className="text-emerald-400" />
+                      <span>
+                        Giro {circuitLapTimes.length}: {formatTime(circuitLapTimes[circuitLapTimes.length - 1])}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Stations list */}
-                <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-1.5 px-0.5 my-2">
-                  {(currentExercise.subExercises || []).map((sub, idx) => (
-                    <div
-                      key={`${currentExercise.id}:circuit-station:${idx}`}
-                      className="p-2.5 px-3 rounded-xl border border-white/10 bg-black/40 flex justify-between items-center text-xs"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="w-5 h-5 rounded-full bg-brand-orange/20 text-brand-orange flex items-center justify-center font-bold text-[10px] shrink-0">
-                          {idx + 1}
-                        </span>
-                        <span className="truncate font-bold text-white/90 text-sm">{sub.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0 ml-2">
-                        {sub.weight_kg != null && sub.weight_kg > 0 && (
-                          <span className="text-[11px] text-zinc-400 font-semibold">{formatWeightLabel(sub.weight_kg)}</span>
-                        )}
-                        <span className="font-mono text-sm text-brand-orange font-black">
-                          {sub.type === 'reps' ? `${sub.reps}r` : `${sub.duration_seconds}s`}
-                        </span>
-                      </div>
+                {/* AL CENTRO — Sequenza Stazioni del Circuito (Roadmap Verticale Satinata #1C1C1E) */}
+                <div className="w-full flex-1 min-h-0 bg-[#1C1C1E] border border-white/10 rounded-3xl p-3 sm:p-4 my-2 sm:my-2.5 flex flex-col shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 shrink-0">
+                    <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-brand-orange">
+                      <Zap size={13} className="text-brand-orange fill-brand-orange shrink-0" />
+                      <span>Roadmap Stazioni Circuito</span>
                     </div>
-                  ))}
+                    <span className="text-[10px] font-mono text-zinc-400 font-bold">
+                      {(currentExercise.subExercises || []).length} Stazioni
+                    </span>
+                  </div>
+
+                  <div className="w-full flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5">
+                    {(currentExercise.subExercises || []).map((sub, idx) => {
+                      const isIso = sub.type === 'isometry' || sub.duration_seconds > 0;
+                      const targetLabel = isIso
+                        ? `${sub.duration_seconds} sec`
+                        : sub.reps === 0
+                          ? 'MAX reps'
+                          : `${sub.reps} reps`;
+                      const weightLabel =
+                        sub.weight_kg != null && sub.weight_kg > 0
+                          ? formatWeightLabel(sub.weight_kg)
+                          : 'Corpo libero';
+
+                      return (
+                        <div
+                          key={`${currentExercise.id}:circuit-station:${idx}`}
+                          className="flex items-center justify-between p-2.5 sm:p-3 rounded-2xl bg-black/40 border border-white/5 hover:border-white/10 transition-all text-xs sm:text-sm"
+                        >
+                          {/* Numero stazione cerchiato in arancione + Nome esercizio in bianco bold */}
+                          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
+                            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full border-2 border-brand-orange bg-brand-orange/15 text-brand-orange font-mono font-black text-xs sm:text-sm flex items-center justify-center shrink-0 shadow-[0_0_8px_rgba(255,94,0,0.3)]">
+                              {idx + 1}
+                            </div>
+                            <span className="font-bold text-white truncate text-xs sm:text-sm">
+                              {sub.name}
+                            </span>
+                          </div>
+
+                          {/* Pillola arancione con il target + Carico dedicato */}
+                          <div className="flex items-center gap-2 shrink-0 font-mono">
+                            <span className="inline-flex items-center px-2 sm:px-2.5 py-1 rounded-xl bg-brand-orange/15 border border-brand-orange/30 text-brand-lightOrange font-black text-xs">
+                              {targetLabel}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 font-bold bg-white/5 border border-white/10 px-2 py-1 rounded-xl truncate max-w-[90px]">
+                              {weightLabel}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             ) : isSuperset ? (
@@ -8523,7 +8576,7 @@ const ActiveWorkoutPage: React.FC = () => {
             ) : isCircuit ? (
               isLastSet
                 ? <>COMPLETA CIRCUITO <ArrowRight size={20} className="ml-2" /></>
-                : <>FINE SET & RECUPERO <ArrowRight size={20} className="ml-2" /></>
+                : <>FINE GIRO {currentSetIdx + 1} & RECUPERO <ArrowRight size={20} className="ml-2" /></>
             ) : isSuperset ? (
               isLastSet
                 ? <>PROSSIMO ESERCIZIO <ArrowRight size={20} className="ml-2" /></>
