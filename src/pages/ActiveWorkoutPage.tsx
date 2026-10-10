@@ -475,7 +475,7 @@ const ActiveWorkoutPage: React.FC = () => {
   const circuitStopwatchStartedAtMsRef = useRef<number | null>(null);
   const circuitAccumulatedMsRef = useRef(0);
   const pyramidScrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const activePyramidStepRef = useRef<HTMLButtonElement | null>(null);
+  const activePyramidStepRef = useRef<HTMLDivElement | null>(null);
   const setsCarouselScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const activeSetCardRef = useRef<HTMLDivElement | null>(null);
   const [isEmomRoundWorkFinished, setIsEmomRoundWorkFinished] = useState(false);
@@ -7675,115 +7675,257 @@ const ActiveWorkoutPage: React.FC = () => {
                 );
               })()
             ) : currentExercise.type === 'pyramid' ? (
-              <div className="text-center w-full flex flex-col items-center justify-between h-full my-auto py-1">
-                {/* Hero Target Reps Display */}
-                <div className="flex flex-col items-center justify-center my-auto">
-                  <span className="block text-7xl min-[390px]:text-8xl sm:text-9xl font-black font-mono text-brand-orange leading-none drop-shadow-[0_0_35px_rgba(255,107,0,0.35)] tracking-tight">
-                    {formatBigTargetValue(currentExercise.pyramid_steps?.[currentPyramidStepIdx]?.reps || 0)}
-                  </span>
-                  <span className="text-zinc-400 font-black uppercase tracking-[0.25em] text-xs sm:text-sm mt-2">
-                    Ripetizioni
-                  </span>
-                </div>
+              (() => {
+                const steps = currentExercise.pyramid_steps || [];
+                const weights = steps.map((s) => s.weight_kg || 0);
+                const minW = Math.min(...weights);
+                const maxW = Math.max(...weights);
+                const hasDiffWeights = maxW > minW;
 
-                {/* Pyramid Steps Interactive Carousel with Rich Cards & Centered Active Step */}
-                <div className="w-full mt-auto pt-2">
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400 uppercase tracking-wider font-bold mb-2 px-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-brand-orange font-mono font-black">
-                        Step {currentPyramidStepIdx + 1}
-                      </span>
-                      <span className="text-zinc-500">di</span>
-                      <span className="font-mono font-bold text-zinc-300">
-                        {currentExercise.pyramid_steps?.length || 1}
-                      </span>
+                const repsArr = steps.map((s) => (s.reps > 0 ? s.reps : 1));
+                const minR = Math.min(...repsArr);
+                const maxR = Math.max(...repsArr);
+                const hasDiffReps = maxR > minR;
+
+                return (
+                  <div className="w-full flex-1 min-h-0 flex flex-col justify-between items-center">
+                    {/* Horizontal Pyramid Cards Timeline Carousel */}
+                    <div
+                      ref={pyramidScrollContainerRef}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => e.stopPropagation()}
+                      className="w-full flex gap-3.5 sm:gap-4 overflow-x-auto no-scrollbar py-2 sm:py-3 px-[calc(50%-130px)] min-[390px]:px-[calc(50%-135px)] sm:px-[calc(50%-145px)] scroll-smooth snap-x snap-mandatory items-center my-auto"
+                      style={{ WebkitOverflowScrolling: 'touch' }}
+                    >
+                      {steps.map((step, sIdx) => {
+                        const isCurrent = sIdx === currentPyramidStepIdx;
+                        const isDone = sIdx < currentPyramidStepIdx;
+                        const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
+                        const isMax = isMaxTarget(step.reps);
+                        const isPeakStep =
+                          (hasDiffWeights && (step.weight_kg || 0) === maxW) ||
+                          (!hasDiffWeights && hasDiffReps && step.reps === minR);
+
+                        if (isCurrent) {
+                          return (
+                            <div
+                              key={sIdx}
+                              ref={activePyramidStepRef}
+                              className="shrink-0 w-[260px] min-[390px]:w-[270px] sm:w-[290px] h-[340px] min-[390px]:h-[370px] sm:h-[400px] p-4 min-[390px]:p-5 sm:p-6 rounded-3xl border-2 border-brand-orange bg-gradient-to-b from-[#2d1405] via-[#1a0c04] to-[#121214] text-white shadow-[0_0_35px_rgba(255,94,0,0.35)] ring-1 ring-brand-orange/60 scale-[1.02] z-10 snap-center select-none flex flex-col justify-between transition-all"
+                            >
+                              {/* Header: Step Number + Dynamic Status Badge */}
+                              <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-brand-orange/20 shrink-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs sm:text-sm font-black font-mono text-brand-orange tracking-wider uppercase">
+                                    STEP {sIdx + 1}
+                                  </span>
+                                  <span className="text-[11px] sm:text-xs font-mono text-zinc-400">
+                                    / {steps.length}
+                                  </span>
+                                </div>
+                                {isPeakStep ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 text-[10px] font-black uppercase tracking-wider animate-pulse">
+                                    <Flame size={12} className="text-amber-400 shrink-0" />
+                                    Vertice • Carico Max
+                                  </span>
+                                ) : isMax ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-[10px] font-black uppercase tracking-wider animate-pulse">
+                                    <Flame size={12} />
+                                    A Cedimento
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-lightOrange text-[10px] font-black uppercase tracking-wider">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
+                                    🔥 In esecuzione
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Center Area: Repetitions (NO Stepper +/- as strictly requested) */}
+                              <div className="my-auto py-3 flex flex-col items-center justify-center select-none">
+                                <span className="text-6xl min-[390px]:text-7xl sm:text-8xl font-mono font-black text-white leading-none tracking-tight drop-shadow-[0_0_35px_rgba(255,255,255,0.25)]">
+                                  {isMax ? 'MAX' : step.reps}
+                                </span>
+                                <span className="text-xs sm:text-sm uppercase font-black text-zinc-400 tracking-[0.25em] mt-3 sm:mt-4">
+                                  Ripetizioni
+                                </span>
+                              </div>
+
+                              {/* Footer: Carico dedicato dello step & Recupero di questo step */}
+                              <div className="pt-2.5 border-t border-brand-orange/20 flex items-center justify-between text-xs sm:text-sm shrink-0">
+                                <div className="flex flex-col text-left">
+                                  <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                    Carico
+                                  </span>
+                                  <span className="font-mono font-black text-brand-lightOrange text-sm sm:text-base">
+                                    {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Corpo libero'}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col text-right">
+                                  <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                    Recupero
+                                  </span>
+                                  <span className="font-mono font-black text-zinc-200 text-sm sm:text-base flex items-center justify-end gap-1">
+                                    <Clock size={12} className="text-brand-orange shrink-0" />
+                                    {step.rest_seconds > 0 ? `${step.rest_seconds}s` : '0s'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (isDone) {
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => {
+                                void hapticLight();
+                                openEditSpecificSetModal(sIdx);
+                              }}
+                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-95"
+                              title={`Step ${sIdx + 1} completato - Tocca per modificare`}
+                            >
+                              <div className="flex items-center justify-between gap-1 pb-2 border-b border-emerald-500/20 shrink-0">
+                                <span className="text-xs sm:text-sm font-black font-mono text-zinc-300 uppercase tracking-wider">
+                                  STEP {sIdx + 1}
+                                </span>
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
+                                  <Check size={12} strokeWidth={3} />
+                                  Fatto
+                                </span>
+                              </div>
+
+                              <div className="my-auto py-2 flex flex-col items-center justify-center">
+                                <span className="text-5xl sm:text-6xl font-mono font-black text-emerald-400 leading-none">
+                                  {logged != null && logged > 0 ? logged : (isMax ? 'MAX' : step.reps)}
+                                </span>
+                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/80 mt-2 flex items-center gap-1">
+                                  <Pencil size={11} />
+                                  Completate
+                                </span>
+                              </div>
+
+                              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs shrink-0">
+                                <div className="flex flex-col text-left">
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Carico</span>
+                                  <span className="font-mono font-bold text-zinc-200 truncate max-w-[80px]">
+                                    {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col text-right">
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Recupero</span>
+                                  <span className="font-mono font-bold text-emerald-300">
+                                    {step.rest_seconds > 0 ? `${step.rest_seconds}s` : '0s'}
+                                  </span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        }
+
+                        // Future Steps
+                        return (
+                          <div
+                            key={sIdx}
+                            className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] text-left transition-all snap-center select-none flex flex-col justify-between opacity-65 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between gap-1 pb-2 border-b border-white/10 shrink-0">
+                              <span className="text-xs sm:text-sm font-black font-mono text-zinc-400 uppercase tracking-wider">
+                                STEP {sIdx + 1}
+                              </span>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 text-[9px] font-black uppercase tracking-wider">
+                                {sIdx === currentPyramidStepIdx + 1 ? 'Prossimo' : sIdx === steps.length - 1 ? 'Ultimo' : 'In attesa'}
+                              </span>
+                            </div>
+
+                            <div className="my-auto py-2 flex flex-col items-center justify-center text-center">
+                              <span className="text-5xl sm:text-6xl font-mono font-black text-zinc-300 leading-none">
+                                {isMax ? 'MAX' : step.reps}
+                              </span>
+                              <span className="text-[11px] font-mono font-black text-brand-lightOrange mt-2 bg-brand-orange/10 border border-brand-orange/20 px-2 py-0.5 rounded-lg">
+                                {isMax ? 'MAX' : `${step.reps} reps`} @ {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                              </span>
+                              <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider mt-1">
+                                Anteprima carico
+                              </span>
+                            </div>
+
+                            <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs shrink-0">
+                              <div className="flex flex-col text-left">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Carico</span>
+                                <span className="font-mono text-zinc-400 truncate max-w-[80px]">
+                                  {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                                </span>
+                              </div>
+                              <div className="flex flex-col text-right">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Recupero</span>
+                                <span className="font-mono text-zinc-400">
+                                  {step.rest_seconds > 0 ? `${step.rest_seconds}s` : '0s'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <span className="text-[10px] text-zinc-400 font-semibold tracking-normal lowercase opacity-80">
-                      scorri per altri step ↔
-                    </span>
+
+                    {/* Pyramid Indicator in basso: barra a gradini grafici di altezze diverse (sagoma piramide) */}
+                    {steps.length > 1 && (
+                      <div className="w-full flex flex-col items-center justify-center pt-1 pb-0.5 shrink-0">
+                        <div className="flex items-end justify-center gap-1.5 sm:gap-2 h-9 px-4">
+                          {steps.map((pStep, barIdx) => {
+                            const isCurrentBar = barIdx === currentPyramidStepIdx;
+                            const isDoneBar = barIdx < currentPyramidStepIdx;
+
+                            // Calculate normalized height of bar based on load or reps
+                            let ratio = 0.5;
+                            if (hasDiffWeights) {
+                              ratio = ((pStep.weight_kg || 0) - minW) / (maxW - minW);
+                            } else if (hasDiffReps) {
+                              ratio = (maxR - pStep.reps) / (maxR - minR);
+                            } else {
+                              const center = (steps.length - 1) / 2;
+                              const dist = Math.abs(barIdx - center);
+                              ratio = Math.max(0, 1 - dist / (center || 1));
+                            }
+                            const barHeight = Math.round(12 + ratio * 20);
+
+                            return (
+                              <button
+                                key={barIdx}
+                                type="button"
+                                onClick={() => {
+                                  void hapticLight();
+                                  setCurrentPyramidStepIdx(barIdx);
+                                }}
+                                className={`w-4 sm:w-5 rounded-t-md transition-all duration-300 cursor-pointer flex flex-col items-center justify-end group ${
+                                  isCurrentBar
+                                    ? 'bg-brand-orange shadow-[0_0_12px_rgba(255,94,0,0.7)] ring-1 ring-brand-orange/80'
+                                    : isDoneBar
+                                      ? 'bg-emerald-400/80 hover:bg-emerald-400'
+                                      : 'bg-white/20 hover:bg-white/40'
+                                }`}
+                                style={{ height: `${barHeight}px` }}
+                                title={`Step ${barIdx + 1}: ${pStep.reps} reps${pStep.weight_kg ? ` @ ${pStep.weight_kg}kg` : ''}`}
+                              >
+                                <span className="sr-only">Step {barIdx + 1}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center justify-center gap-1 text-[9px] uppercase font-bold text-zinc-500 tracking-widest mt-1">
+                          <span>Profilo Piramide</span>
+                          <span className="text-brand-orange font-mono font-black">
+                            • Step {currentPyramidStepIdx + 1}/{steps.length}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-
-                  {/* Scrollable Container centered on active step */}
-                  <div
-                    ref={pyramidScrollContainerRef}
-                    className="w-full flex gap-3 overflow-x-auto no-scrollbar py-2 px-[calc(50%-70px)] scroll-smooth snap-x snap-mandatory"
-                    style={{ WebkitOverflowScrolling: 'touch' }}
-                  >
-                    {currentExercise.pyramid_steps?.map((step, sIdx) => {
-                      const isCurrent = sIdx === currentPyramidStepIdx;
-                      const isDone = sIdx < currentPyramidStepIdx;
-
-                      return (
-                        <button
-                          key={sIdx}
-                          ref={isCurrent ? activePyramidStepRef : null}
-                          type="button"
-                          onClick={() => {
-                            void hapticLight();
-                            setCurrentPyramidStepIdx(sIdx);
-                          }}
-                          className={`shrink-0 w-[140px] p-3 rounded-2xl border text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between ${
-                            isCurrent
-                              ? 'bg-[#521d00]/95 border-2 border-brand-orange text-white shadow-[0_0_25px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60 scale-[1.03] z-10'
-                              : isDone
-                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:border-emerald-500/60 shadow-sm'
-                                : 'bg-white/5 border-white/10 text-zinc-400 opacity-60 hover:opacity-90 hover:border-white/20'
-                          }`}
-                          title={`Vai allo Step ${sIdx + 1}`}
-                        >
-                          {/* Step Header */}
-                          <div className="flex items-center justify-between gap-1 mb-1.5">
-                            <span className={`text-[10px] uppercase font-black tracking-wider ${
-                              isCurrent ? 'text-brand-lightOrange font-mono' : isDone ? 'text-emerald-400' : 'text-zinc-400'
-                            }`}>
-                              Step {sIdx + 1}
-                            </span>
-                            {isDone && <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />}
-                            {isCurrent && (
-                              <span className="flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
-                                <span className="w-2 h-2 rounded-full bg-brand-orange shrink-0" />
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Big Reps Count */}
-                          <div className="flex items-baseline gap-1.5 my-1">
-                            <span className={`text-2xl sm:text-3xl font-black font-mono leading-none tracking-tight ${
-                              isCurrent ? 'text-white' : isDone ? 'text-emerald-200' : 'text-zinc-300'
-                            }`}>
-                              {isMaxTarget(step.reps) ? 'MAX' : step.reps}
-                            </span>
-                            <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">
-                              reps
-                            </span>
-                          </div>
-
-                          {/* Details: Carico & Recupero */}
-                          <div className="mt-2 pt-2 border-t border-white/10 space-y-1 text-[10px] font-semibold">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-[9px] uppercase tracking-wider opacity-60">Carico</span>
-                              <span className={`font-mono font-bold truncate max-w-[70px] ${
-                                isCurrent ? 'text-white' : isDone ? 'text-emerald-300' : 'text-zinc-300'
-                              }`}>
-                                {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-[9px] uppercase tracking-wider opacity-60">Recupero</span>
-                              <span className={`font-mono font-bold ${
-                                isCurrent ? 'text-brand-orange' : isDone ? 'text-emerald-400' : 'text-zinc-400'
-                              }`}>
-                                {step.rest_seconds > 0 ? `${step.rest_seconds}s` : '0s'}
-                              </span>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+                );
+              })()
             ) : isCircuit ? (
               <div className="text-center w-full flex flex-col items-center justify-between h-full">
                 {/* Interactive Circuit Stopwatch */}
