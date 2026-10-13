@@ -104,7 +104,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Check, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil, ChevronDown, Zap, Dumbbell, Plus, Trash2 } from 'lucide-react';
+import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Check, Mic, MicOff, FileText, X, SlidersHorizontal, Info, Video, Smartphone, Layers, Flame, Pencil, ChevronDown, Zap, Dumbbell, Plus, Trash2, RotateCw } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis } from '../utils/voice';
 import {
@@ -151,6 +151,7 @@ import { WorkoutCelebrationModal } from '../components/WorkoutCelebrationModal';
 import {
   lockAppToPortrait,
   unlockAppForWorkout,
+  lockAppToLandscape,
   useIsLandscape,
 } from '../utils/orientationManager';
 
@@ -411,8 +412,26 @@ const ActiveWorkoutPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Gestione orientamento: l'app ruota automaticamente in landscape quando il dispositivo viene fisicamente girato di 90°
-  const isLandscape = useIsLandscape();
+  // Gestione orientamento: rotazione automatica (sensori hardware) + toggle manuale con pulsante 🔄
+  const deviceIsLandscape = useIsLandscape();
+  const [manualLandscape, setManualLandscape] = useState<boolean | null>(null);
+  const isLandscape = manualLandscape !== null ? manualLandscape : deviceIsLandscape;
+
+  useEffect(() => {
+    // Sincronizza lo stato quando il sensore fisico del dispositivo cambia orientamento
+    setManualLandscape(null);
+  }, [deviceIsLandscape]);
+
+  const toggleOrientationMode = async () => {
+    void hapticLight();
+    if (isLandscape) {
+      setManualLandscape(false);
+      await lockAppToPortrait();
+    } else {
+      setManualLandscape(true);
+      await lockAppToLandscape();
+    }
+  };
 
   useEffect(() => {
     // Sblocca la rotazione in orizzontale durante il workout attivo
@@ -6310,6 +6329,15 @@ const ActiveWorkoutPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={toggleOrientationMode}
+                className="p-1.5 rounded-full border border-white/10 bg-brand-darkGrey/60 text-zinc-300 hover:text-white transition-all active:scale-95 flex items-center justify-center cursor-pointer shadow-sm"
+                title="Torna in modalità verticale"
+              >
+                <RotateCw size={15} className="text-brand-orange" />
+              </button>
+
+              <button
+                type="button"
                 onClick={openCurrentExerciseNoteModal}
                 className={`p-1.5 rounded-full border transition-all active:scale-95 flex items-center justify-center relative cursor-pointer ${
                   hasCurrentWorkoutNote
@@ -6624,6 +6652,15 @@ const ActiveWorkoutPage: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleOrientationMode}
+                className="p-1.5 rounded-full border border-white/10 bg-brand-darkGrey/60 text-zinc-300 hover:text-white transition-all active:scale-95 flex items-center justify-center cursor-pointer shadow-sm"
+                title="Torna in modalità verticale"
+              >
+                <RotateCw size={15} className="text-brand-orange" />
+              </button>
+
               <button
                 type="button"
                 onClick={openCurrentExerciseNoteModal}
@@ -7263,6 +7300,15 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={toggleOrientationMode}
+              className="p-2 rounded-full transition-all duration-300 text-zinc-300 hover:text-white bg-brand-darkGrey/60 border border-white/10 active:scale-95 cursor-pointer shadow-sm"
+              title="Passa in modalità orizzontale"
+            >
+              <RotateCw size={17} className="text-brand-orange" />
+            </button>
+
             <div className="relative">
               {voiceStatus === 'success' && (
                 <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -7505,6 +7551,15 @@ const ActiveWorkoutPage: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={toggleOrientationMode}
+              className="p-2 rounded-full transition-all duration-300 text-zinc-300 hover:text-white bg-brand-darkGrey/60 border border-white/10 active:scale-95 cursor-pointer shadow-sm"
+              title="Passa in modalità orizzontale"
+            >
+              <RotateCw size={17} className="text-brand-orange" />
+            </button>
+
             <div className="relative">
               {voiceStatus === 'success' && (
                 <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
