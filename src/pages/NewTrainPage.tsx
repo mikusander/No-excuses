@@ -1636,8 +1636,16 @@ const NewTrainPage: React.FC = () => {
   ) => {
     if (!hasDraftValue(key)) return;
 
-    const raw = numberDrafts[key] ?? '';
-    if (!raw.trim()) {
+    const raw = (numberDrafts[key] ?? '').trim();
+    if (!raw || raw.toLowerCase() === 'bw' || raw === '0' || raw === '0,0' || raw === '0.0') {
+      setExercises(prev => prev.map(ex => {
+        if (ex.id === pyramidId && ex.pyramid_steps) {
+          const nextSteps = [...ex.pyramid_steps];
+          nextSteps[stepIndex] = { ...nextSteps[stepIndex], weight_kg: null };
+          return { ...ex, pyramid_steps: nextSteps };
+        }
+        return ex;
+      }));
       clearDraftValue(key);
       return;
     }
@@ -1645,7 +1653,7 @@ const NewTrainPage: React.FC = () => {
     const fallback = typeof currentWeight === 'number' && Number.isFinite(currentWeight) ? currentWeight : null;
     const parsed = parseWeightInput(raw, fallback);
 
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === pyramidId && ex.pyramid_steps) {
         const nextSteps = [...ex.pyramid_steps];
         nextSteps[stepIndex] = { ...nextSteps[stepIndex], weight_kg: parsed };
@@ -3401,8 +3409,8 @@ const NewTrainPage: React.FC = () => {
                                   onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:weight`, e.target.value)}
                                   onBlur={() => commitPyramidStepWeight(ex.id, sIdx, `${ex.id}:step:${sIdx}:weight`, step.weight_kg)}
                                   onFocus={onNumberFocus}
-                                  placeholder="kg"
-                                  className="w-full bg-black/50 border border-white/10 rounded-lg py-1.5 text-white text-center text-xs font-bold focus:border-purple-400 outline-none"
+                                  placeholder="bw"
+                                  className="w-full bg-black/50 border border-white/10 rounded-lg py-1.5 text-white text-center text-xs font-bold focus:border-purple-400 outline-none placeholder:text-zinc-500 placeholder:font-bold lowercase"
                                 />
                               </div>
 
