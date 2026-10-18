@@ -61,8 +61,7 @@ public class AppOrientationPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "AppOrientationPlugin"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "lockPortrait", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "unlockForWorkout", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "lockLandscape", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "unlockForWorkout", returnType: CAPPluginReturnPromise)
     ]
 
     @objc func lockPortrait(_ call: CAPPluginCall) {
@@ -95,23 +94,6 @@ public class AppOrientationPlugin: CAPPlugin, CAPBridgedPlugin {
                 UIViewController.attemptRotationToDeviceOrientation()
             }
             call.resolve(["mode": "unlocked"])
-        }
-    }
-
-    @objc func lockLandscape(_ call: CAPPluginCall) {
-        AppDelegate.orientationLock = [.landscapeLeft, .landscapeRight]
-        DispatchQueue.main.async {
-            if #available(iOS 16.0, *) {
-                if let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
-                    let geometryPreferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .landscapeRight)
-                    windowScene.requestGeometryUpdate(geometryPreferences) { _ in }
-                }
-                UIViewController.attemptRotationToDeviceOrientation()
-            } else {
-                UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
-                UIViewController.attemptRotationToDeviceOrientation()
-            }
-            call.resolve(["mode": "landscape"])
         }
     }
 }
