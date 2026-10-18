@@ -7019,19 +7019,13 @@ const ActiveWorkoutPage: React.FC = () => {
             {/* Pyramid step silhouette if pyramid */}
             {isPyramid && (currentExercise.pyramid_steps?.length || 0) > 1 && (
               <div className="flex items-end justify-center gap-1.5 h-6 px-4 shrink-0 my-0.5">
-                {currentExercise.pyramid_steps!.map((pStep, barIdx) => {
+                {currentExercise.pyramid_steps!.map((_pStep, barIdx) => {
                   const isCur = barIdx === currentPyramidStepIdx;
                   const isDone = barIdx < currentPyramidStepIdx;
                   const steps = currentExercise.pyramid_steps!;
-                  const weights = steps.map((s) => s.weight_kg || 0);
-                  const minW = Math.min(...weights);
-                  const maxW = Math.max(...weights);
-                  const repsArr = steps.map((s) => s.reps > 0 ? s.reps : 1);
-                  const minR = Math.min(...repsArr);
-                  const maxR = Math.max(...repsArr);
-                  let ratio = 0.5;
-                  if (maxW > minW) ratio = ((pStep.weight_kg || 0) - minW) / (maxW - minW);
-                  else if (maxR > minR) ratio = (maxR - pStep.reps) / (maxR - minR);
+                  const maxDist = Math.max(1, steps.length - 1);
+                  const dist = Math.abs(barIdx - currentPyramidStepIdx);
+                  const ratio = 1 - (dist / maxDist);
                   const barH = Math.round(8 + ratio * 14);
                   return (
                     <button
@@ -8148,15 +8142,6 @@ const ActiveWorkoutPage: React.FC = () => {
             ) : currentExercise.type === 'pyramid' ? (
               (() => {
                 const steps = currentExercise.pyramid_steps || [];
-                const weights = steps.map((s) => s.weight_kg || 0);
-                const minW = Math.min(...weights);
-                const maxW = Math.max(...weights);
-                const hasDiffWeights = maxW > minW;
-
-                const repsArr = steps.map((s) => (s.reps > 0 ? s.reps : 1));
-                const minR = Math.min(...repsArr);
-                const maxR = Math.max(...repsArr);
-                const hasDiffReps = maxR > minR;
 
                 return (
                   <div className="w-full flex-1 min-h-0 flex flex-col justify-between items-center">
@@ -8173,9 +8158,6 @@ const ActiveWorkoutPage: React.FC = () => {
                         const isDone = sIdx < currentPyramidStepIdx;
                         const logged = getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx);
                         const isMax = isMaxTarget(step.reps);
-                        const isPeakStep =
-                          (hasDiffWeights && (step.weight_kg || 0) === maxW) ||
-                          (!hasDiffWeights && hasDiffReps && step.reps === minR);
 
                         if (isCurrent) {
                           return (
@@ -8186,26 +8168,21 @@ const ActiveWorkoutPage: React.FC = () => {
                             >
                               {/* Header: Step Number + Dynamic Status Badge */}
                               <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-brand-orange/20 shrink-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs sm:text-sm font-black font-mono text-brand-orange tracking-wider uppercase">
+                                <div className="flex items-center gap-1 shrink-0 whitespace-nowrap font-mono">
+                                  <span className="text-xs sm:text-sm font-black text-brand-orange tracking-wider uppercase">
                                     STEP {sIdx + 1}
                                   </span>
-                                  <span className="text-[11px] sm:text-xs font-mono text-zinc-400">
-                                    / {steps.length}
+                                  <span className="text-[11px] sm:text-xs font-semibold text-zinc-400">
+                                    /{steps.length}
                                   </span>
                                 </div>
-                                {isPeakStep ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 text-[10px] font-black uppercase tracking-wider animate-pulse">
-                                    <Flame size={12} className="text-amber-400 shrink-0" />
-                                    Vertice • Carico Max
-                                  </span>
-                                ) : isMax ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-[10px] font-black uppercase tracking-wider animate-pulse">
+                                {isMax ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange text-[10px] font-black uppercase tracking-wider animate-pulse shrink-0">
                                     <Flame size={12} />
                                     A Cedimento
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-lightOrange text-[10px] font-black uppercase tracking-wider">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-lightOrange text-[10px] font-black uppercase tracking-wider shrink-0">
                                     <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-ping" />
                                     🔥 In esecuzione
                                   </span>
@@ -8222,23 +8199,14 @@ const ActiveWorkoutPage: React.FC = () => {
                                 </span>
                               </div>
 
-                              {/* Footer: Carico dedicato dello step & Recupero di questo step */}
-                              <div className="pt-2.5 border-t border-brand-orange/20 flex items-center justify-between text-xs sm:text-sm shrink-0">
-                                <div className="flex flex-col text-left">
+                              {/* Footer: Carico dedicato dello step */}
+                              <div className="pt-2.5 border-t border-brand-orange/20 flex items-center justify-center text-xs sm:text-sm shrink-0">
+                                <div className="flex flex-col items-center text-center">
                                   <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                                     Carico
                                   </span>
                                   <span className="font-mono font-black text-brand-lightOrange text-sm sm:text-base">
                                     {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Corpo libero'}
-                                  </span>
-                                </div>
-                                <div className="flex flex-col text-right">
-                                  <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                                    Recupero
-                                  </span>
-                                  <span className="font-mono font-black text-zinc-200 text-sm sm:text-base flex items-center justify-end gap-1">
-                                    <Clock size={12} className="text-brand-orange shrink-0" />
-                                    {step.rest_seconds > 0 ? `${step.rest_seconds}s` : '0s'}
                                   </span>
                                 </div>
                               </div>
@@ -8259,10 +8227,15 @@ const ActiveWorkoutPage: React.FC = () => {
                               title={`Step ${sIdx + 1} completato - Tocca per modificare`}
                             >
                               <div className="flex items-center justify-between gap-1 pb-2 border-b border-emerald-500/20 shrink-0">
-                                <span className="text-xs sm:text-sm font-black font-mono text-zinc-300 uppercase tracking-wider">
-                                  STEP {sIdx + 1}
-                                </span>
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
+                                <div className="flex items-center gap-1 shrink-0 whitespace-nowrap font-mono">
+                                  <span className="text-xs sm:text-sm font-black text-zinc-300 uppercase tracking-wider">
+                                    STEP {sIdx + 1}
+                                  </span>
+                                  <span className="text-[11px] sm:text-xs font-semibold text-zinc-400">
+                                    /{steps.length}
+                                  </span>
+                                </div>
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-wider shrink-0">
                                   <Check size={12} strokeWidth={3} />
                                   Fatto
                                 </span>
@@ -8278,17 +8251,11 @@ const ActiveWorkoutPage: React.FC = () => {
                                 </span>
                               </div>
 
-                              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs shrink-0">
-                                <div className="flex flex-col text-left">
+                              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-center text-xs shrink-0">
+                                <div className="flex flex-col items-center text-center">
                                   <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Carico</span>
-                                  <span className="font-mono font-bold text-zinc-200 truncate max-w-[80px]">
+                                  <span className="font-mono font-bold text-zinc-200 truncate max-w-[120px]">
                                     {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
-                                  </span>
-                                </div>
-                                <div className="flex flex-col text-right">
-                                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Recupero</span>
-                                  <span className="font-mono font-bold text-emerald-300">
-                                    {step.rest_seconds > 0 ? `${step.rest_seconds}s` : '0s'}
                                   </span>
                                 </div>
                               </div>
@@ -8303,10 +8270,15 @@ const ActiveWorkoutPage: React.FC = () => {
                             className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] text-left transition-all snap-center select-none flex flex-col justify-between opacity-65 shadow-sm"
                           >
                             <div className="flex items-center justify-between gap-1 pb-2 border-b border-white/10 shrink-0">
-                              <span className="text-xs sm:text-sm font-black font-mono text-zinc-400 uppercase tracking-wider">
-                                STEP {sIdx + 1}
-                              </span>
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 text-[9px] font-black uppercase tracking-wider">
+                              <div className="flex items-center gap-1 shrink-0 whitespace-nowrap font-mono">
+                                <span className="text-xs sm:text-sm font-black text-zinc-400 uppercase tracking-wider">
+                                  STEP {sIdx + 1}
+                                </span>
+                                <span className="text-[11px] sm:text-xs font-semibold text-zinc-400">
+                                  /{steps.length}
+                                </span>
+                              </div>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 text-[9px] font-black uppercase tracking-wider shrink-0">
                                 {sIdx === currentPyramidStepIdx + 1 ? 'Prossimo' : sIdx === steps.length - 1 ? 'Ultimo' : 'In attesa'}
                               </span>
                             </div>
@@ -8323,17 +8295,11 @@ const ActiveWorkoutPage: React.FC = () => {
                               </span>
                             </div>
 
-                            <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs shrink-0">
-                              <div className="flex flex-col text-left">
+                            <div className="pt-2 border-t border-white/10 flex items-center justify-center text-xs shrink-0">
+                              <div className="flex flex-col items-center text-center">
                                 <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Carico</span>
-                                <span className="font-mono text-zinc-400 truncate max-w-[80px]">
+                                <span className="font-mono text-zinc-400 truncate max-w-[120px]">
                                   {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
-                                </span>
-                              </div>
-                              <div className="flex flex-col text-right">
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Recupero</span>
-                                <span className="font-mono text-zinc-400">
-                                  {step.rest_seconds > 0 ? `${step.rest_seconds}s` : '0s'}
                                 </span>
                               </div>
                             </div>
@@ -8342,7 +8308,7 @@ const ActiveWorkoutPage: React.FC = () => {
                       })}
                     </div>
 
-                    {/* Pyramid Indicator in basso: barra a gradini grafici di altezze diverse (sagoma piramide) */}
+                    {/* Pyramid Indicator in basso: barra a gradini grafici di altezze diverse (sagoma piramide dinamica) */}
                     {steps.length > 1 && (
                       <div className="w-full flex flex-col items-center justify-center pt-1 pb-0.5 shrink-0">
                         <div className="flex items-end justify-center gap-1.5 sm:gap-2 h-9 px-4">
@@ -8350,18 +8316,13 @@ const ActiveWorkoutPage: React.FC = () => {
                             const isCurrentBar = barIdx === currentPyramidStepIdx;
                             const isDoneBar = barIdx < currentPyramidStepIdx;
 
-                            // Calculate normalized height of bar based on load or reps
-                            let ratio = 0.5;
-                            if (hasDiffWeights) {
-                              ratio = ((pStep.weight_kg || 0) - minW) / (maxW - minW);
-                            } else if (hasDiffReps) {
-                              ratio = (maxR - pStep.reps) / (maxR - minR);
-                            } else {
-                              const center = (steps.length - 1) / 2;
-                              const dist = Math.abs(barIdx - center);
-                              ratio = Math.max(0, 1 - dist / (center || 1));
-                            }
-                            const barHeight = Math.round(12 + ratio * 20);
+                            // Altezza dinamica: il gradino corrente è il più alto (vertice), quelli vicini scendono progressivamente verso gli estremi
+                            const maxDist = Math.max(1, steps.length - 1);
+                            const dist = Math.abs(barIdx - currentPyramidStepIdx);
+                            const ratio = 1 - (dist / maxDist);
+                            const minBarHeight = 10;
+                            const maxBarHeight = 32;
+                            const barHeight = Math.round(minBarHeight + ratio * (maxBarHeight - minBarHeight));
 
                             return (
                               <button
@@ -8386,11 +8347,8 @@ const ActiveWorkoutPage: React.FC = () => {
                             );
                           })}
                         </div>
-                        <div className="flex items-center justify-center gap-1 text-[9px] uppercase font-bold text-zinc-500 tracking-widest mt-1">
+                        <div className="flex items-center justify-center text-[9px] uppercase font-bold text-zinc-500 tracking-widest mt-1">
                           <span>Profilo Piramide</span>
-                          <span className="text-brand-orange font-mono font-black">
-                            • Step {currentPyramidStepIdx + 1}/{steps.length}
-                          </span>
                         </div>
                       </div>
                     )}
@@ -8988,9 +8946,13 @@ const ActiveWorkoutPage: React.FC = () => {
           <div className="shrink-0 pt-2 border-t border-white/5 flex flex-col gap-1.5">
             {nextRecoveryLabel && (
               <p className="text-[11px] text-zinc-400 uppercase tracking-wider font-bold text-center">
-                {(currentExercise.sets === 1 || currentSetIdx >= (currentExercise.sets || 1) - 1)
-                  ? 'Prossimo esercizio'
-                  : 'Prossimo recupero'}:{' '}
+                {isPyramid
+                  ? (!isLastPyramidStep ? 'Prossimo recupero' : (currentExercise.transition_rest_seconds ? 'Prossimo recupero' : 'Prossimo esercizio'))
+                  : isEmom
+                    ? (!isLastEmomRound ? 'Prossimo recupero' : (currentExercise.transition_rest_seconds ? 'Prossimo recupero' : 'Prossimo esercizio'))
+                    : (currentExercise.sets === 1 || currentSetIdx >= (currentExercise.sets || 1) - 1)
+                      ? 'Prossimo esercizio'
+                      : 'Prossimo recupero'}:{' '}
                 <span className="text-brand-orange font-mono font-black">{nextRecoveryLabel}</span>
               </p>
             )}
