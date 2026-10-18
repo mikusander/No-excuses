@@ -7129,12 +7129,18 @@ const ActiveWorkoutPage: React.FC = () => {
             {/* Footer Left: Next Recovery preview */}
             <div className="pt-1 border-t border-white/5 flex items-center justify-between text-xs text-zinc-400 shrink-0">
               <span className="text-[10px] uppercase font-bold tracking-wider">
-                {(currentExercise.sets === 1 || currentSetIdx >= (currentExercise.sets || 1) - 1)
-                  ? 'Prossimo esercizio'
-                  : 'Prossimo recupero'}
+                {isEmom
+                  ? 'Prossimo recupero'
+                  : (currentExercise.sets === 1 || currentSetIdx >= (currentExercise.sets || 1) - 1)
+                    ? 'Prossimo esercizio'
+                    : 'Prossimo recupero'}
               </span>
               <span className="font-mono font-bold text-brand-orange text-xs">
-                {nextRecoveryLabel || 'Fine Scheda'}
+                {isEmom
+                  ? (currentEmomRoundIdx < effectiveEmomRounds - 1
+                      ? `${emomRoundRemaining}s`
+                      : (currentExercise.transition_rest_seconds ? `${currentExercise.transition_rest_seconds}s` : (nextRecoveryLabel || 'Fine Scheda')))
+                  : (nextRecoveryLabel || 'Fine Scheda')}
               </span>
             </div>
           </div>
@@ -7169,61 +7175,66 @@ const ActiveWorkoutPage: React.FC = () => {
                   onPointerLeave={handleTimerPointerAbort}
                   title="Tocca per avviare/pausa • Tieni premuto per azzerare"
                 >
-                  <span className={`text-7xl sm:text-8xl font-black font-mono leading-none tracking-tight transition-all ${
-                    isEmomRoundWorkFinished
-                      ? 'text-emerald-400 drop-shadow-[0_0_35px_rgba(16,185,129,0.5)]'
-                      : emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                        ? 'text-brand-orange scale-105 drop-shadow-[0_0_35px_rgba(255,94,0,0.85)] animate-pulse'
-                        : emomActive
-                          ? 'text-white'
-                          : 'text-zinc-400'
-                  }`}>
-                    {emomRoundRemaining >= 60 ? formatTime(emomRoundRemaining) : `:${String(emomRoundRemaining).padStart(2, '0')}s`}
-                  </span>
+                  {/* Riquadro intorno ai numeri del timer che si rimpicciolisce con il passare del tempo */}
+                  <div
+                    className={`relative w-52 h-28 sm:w-64 sm:h-32 rounded-3xl flex flex-col justify-center items-center select-none transition-all duration-300 overflow-hidden ${
+                      emomRoundRemaining <= 3 && emomRoundRemaining > 0
+                        ? 'border-2 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_40px_rgba(255,94,0,0.8)] animate-pulse'
+                        : 'border-2 border-white/10 shadow-[0_0_25px_rgba(255,94,0,0.15)] bg-black/40'
+                    }`}
+                  >
+                    {/* SVG Rectangular Progress Track */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 240 120">
+                      <rect
+                        x="5"
+                        y="5"
+                        width="230"
+                        height="110"
+                        rx="20"
+                        stroke="rgba(255, 255, 255, 0.08)"
+                        strokeWidth="5"
+                        fill="transparent"
+                      />
+                      <rect
+                        x="5"
+                        y="5"
+                        width="230"
+                        height="110"
+                        rx="20"
+                        stroke={
+                          emomRoundRemaining <= 3 && emomRoundRemaining > 0 ? '#FF7724' : '#FF5E00'
+                        }
+                        strokeWidth="5"
+                        strokeDasharray="645.7"
+                        strokeDashoffset={645.7 * (1 - emomRoundProgressRatio)}
+                        strokeLinecap="round"
+                        fill="transparent"
+                        className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+                      />
+                    </svg>
 
-                  {/* Minute progress bar */}
-                  <div className="w-48 sm:w-56 bg-white/10 h-2 rounded-full overflow-hidden mt-3 mb-1.5">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ease-linear ${
-                        isEmomRoundWorkFinished ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.7)]' : 'bg-brand-orange shadow-[0_0_8px_rgba(255,94,0,0.7)]'
+                    <span
+                      className={`text-5xl sm:text-6xl font-black font-mono leading-none tracking-tight z-10 transition-all ${
+                        emomRoundRemaining <= 3 && emomRoundRemaining > 0
+                          ? 'text-brand-orange scale-105'
+                          : emomActive
+                            ? 'text-white'
+                            : 'text-zinc-400'
                       }`}
-                      style={{ width: `${Math.max(0, Math.min(100, emomRoundProgressRatio * 100))}%` }}
-                    />
+                    >
+                      {emomRoundRemaining >= 60 ? formatTime(emomRoundRemaining) : `:${String(emomRoundRemaining).padStart(2, '0')}s`}
+                    </span>
+
+                    <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-zinc-400 mt-1 z-10 flex items-center gap-1 font-mono">
+                      <Timer size={11} className="text-brand-orange" />
+                      {emomActive ? 'SECONDI RIMASTI' : 'IN PAUSA (TAP AVVIO)'}
+                    </span>
                   </div>
 
-                  <span className={`text-xs font-black uppercase tracking-wider flex items-center gap-1 ${
-                    isEmomRoundWorkFinished ? 'text-emerald-400' : 'text-zinc-400'
-                  }`}>
-                    <Timer size={12} className={isEmomRoundWorkFinished ? 'text-emerald-400' : 'text-brand-orange'} />
-                    {isEmomRoundWorkFinished ? `Recupero Guadagnato (${emomRoundRemaining}s)` : (emomActive ? 'Secondi Rimasti' : 'In Pausa (Tap avvio)')}
-                  </span>
+                  <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-2">
+                    Tocca per {emomActive ? 'pausa' : 'avvio'} • Tieni premuto per azzerare
+                  </p>
                 </div>
-
-                {/* Fatto prima del tempo toggle button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    void hapticLight();
-                    setIsEmomRoundWorkFinished((prev) => !prev);
-                  }}
-                  className={`mt-2 py-1 px-3.5 rounded-xl border font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
-                    isEmomRoundWorkFinished
-                      ? 'bg-emerald-500/25 border-emerald-500/60 text-emerald-300'
-                      : 'bg-white/10 hover:bg-white/15 border-white/15 text-zinc-300'
-                  }`}
-                >
-                  {isEmomRoundWorkFinished ? (
-                    <>
-                      <Check size={13} className="text-emerald-400" strokeWidth={3} />
-                      <span>In Riposo ({emomRoundRemaining}s)</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check size={13} className="text-brand-orange" strokeWidth={2.5} />
-                      <span>Fatto prima del tempo</span>
-                    </>
-                  )}
-                </button>
               </div>
             ) : isCircuit ? (
               <div
