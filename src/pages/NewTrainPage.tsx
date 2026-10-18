@@ -97,7 +97,6 @@ import {
 } from 'lucide-react';
 import AppHeader from '../components/AppHeader';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
-import WorkoutBulkToolbar from '../components/WorkoutBulkToolbar';
 import WorkoutQuickImportModal from '../components/WorkoutQuickImportModal';
 import { useUserExerciseHistory, type UserExerciseHistoryItem } from '../hooks/useUserExerciseHistory';
 import { parseExerciseInput, type ParsedWorkoutItem } from '../utils/parseExerciseInput';
@@ -736,53 +735,6 @@ const NewTrainPage: React.FC = () => {
     }
   };
 
-  /**
-   * TECNICA 3: Azioni Cumulative / Bulk Edit su Tutta la Scheda
-   */
-  const handleApplyGlobalRest = (seconds: number) => {
-    setExercises(prev =>
-      prev.map(ex => {
-        const updated = { ...ex, rest_seconds: seconds };
-        if (ex.pyramid_steps && ex.pyramid_steps.length > 0) {
-          updated.pyramid_steps = ex.pyramid_steps.map(s => ({ ...s, rest_seconds: seconds }));
-        }
-        return updated;
-      })
-    );
-    // Cancella eventuali bozze attive di recupero nei numberDrafts
-    setNumberDrafts(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(k => {
-        if (k.includes(':rest:') || k.includes(':step:') && k.includes(':rest')) {
-          delete next[k];
-        }
-      });
-      return next;
-    });
-  };
-
-  const handleApplyGlobalSets = (sets: number) => {
-    setExercises(prev =>
-      prev.map(ex => {
-        if (ex.type === 'emom') {
-          return { ...ex, sets, emom_rounds: sets };
-        }
-        if (ex.type === 'pyramid') {
-          return ex;
-        }
-        return { ...ex, sets };
-      })
-    );
-    setNumberDrafts(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(k => {
-        if (k.endsWith(':sets') || k.endsWith(':emom_rounds')) {
-          delete next[k];
-        }
-      });
-      return next;
-    });
-  };
 
   /**
    * TECNICA 4: Smart String Parser Inline
@@ -2435,11 +2387,6 @@ const NewTrainPage: React.FC = () => {
             </button>
           </div>
 
-          <WorkoutBulkToolbar
-            exercises={exercises}
-            onApplyGlobalRest={handleApplyGlobalRest}
-            onApplyGlobalSets={handleApplyGlobalSets}
-          />
 
           {exercises.length === 0 ? (
             <div
