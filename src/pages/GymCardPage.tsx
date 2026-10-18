@@ -2012,28 +2012,33 @@ const GymCardPage: React.FC = () => {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col">
-                      <label className="text-sm text-brand-grey">Round Duration</label>
-                      <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
-                        <div className="relative flex-1 border-r border-brand-grey/10">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs text-brand-grey font-bold uppercase tracking-wider">Durata Round</label>
+                        <span className="text-xs font-mono font-bold text-amber-400">
+                          {String(toRestParts(exerciseQuickEditDraft.emom_round_duration).minutes).padStart(2, '0')}:{String(toRestParts(exerciseQuickEditDraft.emom_round_duration).seconds).padStart(2, '0')}
+                        </span>
+                      </div>
+                      <div className="flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[48px]">
+                        <div className="relative flex-1 border-r border-brand-grey/10 flex flex-col justify-center items-center">
+                          <span className="text-[9px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">MIN</span>
                           <input
                             type="number" inputMode="numeric"
                             min={0}
                             value={toRestParts(exerciseQuickEditDraft.emom_round_duration).minutes}
                             onChange={(e) => updateQuickEditRoundDurationPart('min', e.target.value)}
-                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                            className="w-full h-full bg-transparent text-center text-white font-mono font-black text-lg focus:outline-none"
                           />
-                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">MIN</span>
                         </div>
-                        <div className="relative flex-1">
+                        <div className="relative flex-1 flex flex-col justify-center items-center">
+                          <span className="text-[9px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">SEC</span>
                           <input
                             type="number" inputMode="numeric"
                             min={0}
                             max={59}
                             value={toRestParts(exerciseQuickEditDraft.emom_round_duration).seconds}
                             onChange={(e) => updateQuickEditRoundDurationPart('sec', e.target.value)}
-                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                            className="w-full h-full bg-transparent text-center text-white font-mono font-black text-lg focus:outline-none"
                           />
-                          <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">SEC</span>
                         </div>
                       </div>
                     </div>

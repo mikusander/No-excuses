@@ -1897,6 +1897,14 @@ const NewTrainPage: React.FC = () => {
     clearDraftValue(key);
   };
 
+  const applyEmomDurationPreset = (exId: string, seconds: number) => {
+    void hapticLight();
+    updateExercise(exId, 'emom_round_duration', Math.max(1, seconds));
+    updateExercise(exId, 'duration_seconds', Math.max(1, seconds));
+    clearDraftValue(`${exId}:emom_round_duration:min`);
+    clearDraftValue(`${exId}:emom_round_duration:sec`);
+  };
+
   const addSubExercise = (supersetId: string) => {
     setExercises(exercises.map(ex => {
       if (ex.id === supersetId && ex.subExercises) {
@@ -2750,55 +2758,107 @@ const NewTrainPage: React.FC = () => {
                   </div>
 
                   {ex.type === 'emom' ? (
-                    <div className="space-y-3 bg-black/25 p-3.5 rounded-2xl border border-amber-500/20">
+                    <div className="space-y-4 bg-black/40 p-4 rounded-3xl border border-amber-500/25 shadow-lg shadow-amber-500/5">
+                      {/* Header Box EMOM */}
                       <div className="flex items-center justify-between px-1">
-                        <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Timer size={14} /> Round EMOM
-                        </span>
-                        <span className="text-[11px] text-zinc-400">
-                          {(ex.emom_rounds || 10) * Math.ceil((ex.emom_round_duration || 60) / 60)} min totali
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                            <Timer size={16} />
+                          </div>
+                          <div>
+                            <span className="text-xs font-black text-amber-400 uppercase tracking-wider block">
+                              Configurazione EMOM
+                            </span>
+                            <span className="text-[10px] text-zinc-400">
+                              Every Minute On the Minute
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-mono font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-xl block">
+                            {(ex.emom_rounds || 10) * Math.ceil((ex.emom_round_duration || 60) / 60)} min totali
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
-                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
-                            Giri / Round Totali
-                          </label>
+                      {/* Configurazione Giri Totali & Tempo per Round */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {/* 1. GIRI / ROUND TOTALI */}
+                        <div className="flex flex-col justify-between bg-black/60 border border-white/10 rounded-2xl p-3.5 space-y-3">
                           <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
+                              Giri / Round Totali
+                            </label>
+                            <span className="text-xs font-mono font-black text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+                              {ex.emom_rounds || 1} { (ex.emom_rounds || 1) === 1 ? 'round' : 'rounds' }
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-2xl p-1.5 h-14">
                             <button
                               type="button"
-                              onClick={() => adjustExerciseNumber(ex.id, 'emom_rounds', -1)}
-                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                              onClick={() => {
+                                const nextRounds = Math.max(1, (ex.emom_rounds || 1) - 1);
+                                adjustExerciseNumber(ex.id, 'emom_rounds', -1);
+                                updateExercise(ex.id, 'sets', nextRounds);
+                              }}
+                              className="w-11 h-11 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center text-zinc-200 transition-all cursor-pointer"
+                              title="Diminuisci round"
                             >
-                              <Minus size={13} />
+                              <Minus size={18} strokeWidth={2.5} />
                             </button>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              min="1"
-                              value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
-                              onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
-                              onBlur={() => commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1)}
-                              onFocus={onNumberFocus}
-                              className="w-14 text-center font-bold text-white bg-transparent focus:outline-none text-base"
-                            />
+                            <div className="flex-1 flex items-center justify-center">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min="1"
+                                value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
+                                onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
+                                onBlur={() => {
+                                  commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1);
+                                  const parsed = parseInt((numberDrafts[`${ex.id}:emom_rounds`] ?? '').trim(), 10);
+                                  if (Number.isFinite(parsed) && parsed >= 1) {
+                                    updateExercise(ex.id, 'sets', parsed);
+                                  }
+                                }}
+                                onFocus={onNumberFocus}
+                                className="w-20 text-center font-mono font-black text-2xl text-white bg-transparent focus:outline-none"
+                              />
+                            </div>
                             <button
                               type="button"
-                              onClick={() => adjustExerciseNumber(ex.id, 'emom_rounds', 1)}
-                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-300 transition-colors"
+                              onClick={() => {
+                                const nextRounds = (ex.emom_rounds || 1) + 1;
+                                adjustExerciseNumber(ex.id, 'emom_rounds', 1);
+                                updateExercise(ex.id, 'sets', nextRounds);
+                              }}
+                              className="w-11 h-11 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center text-zinc-200 transition-all cursor-pointer"
+                              title="Aumenta round"
                             >
-                              <Plus size={13} />
+                              <Plus size={18} strokeWidth={2.5} />
                             </button>
                           </div>
                         </div>
 
-                        <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
-                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
-                            Tempo Singolo Round
-                          </label>
-                          <div className="flex items-center h-7 gap-1">
-                            <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
+                        {/* 2. TEMPO SINGOLO ROUND */}
+                        <div className="flex flex-col justify-between bg-black/60 border border-white/10 rounded-2xl p-3.5 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                              <Timer size={14} className="text-amber-400" />
+                              <span>Tempo Singolo Round</span>
+                            </label>
+                            <span className="text-xs font-mono font-black text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+                              {String(Math.floor((ex.emom_round_duration || 60) / 60)).padStart(2, '0')}:{String((ex.emom_round_duration || 60) % 60).padStart(2, '0')}
+                            </span>
+                          </div>
+
+                          {/* Input Minuti e Secondi Spaziosi e Nitidi */}
+                          <div className="flex items-center gap-2.5">
+                            {/* Card Minuti */}
+                            <div className="flex-1 bg-white/5 hover:bg-white/[0.08] focus-within:bg-white/[0.1] border border-white/10 focus-within:border-amber-500/60 rounded-2xl px-3 py-2 flex flex-col items-center justify-center transition-all h-14">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 leading-none mb-1">
+                                Minuti
+                              </span>
                               <input
                                 type="number"
                                 inputMode="numeric"
@@ -2807,12 +2867,18 @@ const NewTrainPage: React.FC = () => {
                                 onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:min`, e.target.value)}
                                 onBlur={() => commitEmomRoundDurationPart(ex.id, 'min', `${ex.id}:emom_round_duration:min`, ex.emom_round_duration || 60)}
                                 onFocus={onNumberFocus}
-                                className="w-full text-center font-bold text-white bg-transparent focus:outline-none text-sm"
+                                className="w-full text-center font-mono font-black text-2xl text-white bg-transparent focus:outline-none placeholder:text-zinc-600 leading-tight"
+                                placeholder="0"
                               />
-                              <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">MIN</span>
                             </div>
-                            <span className="text-zinc-500 font-bold">:</span>
-                            <div className="relative flex-1 h-full bg-white/5 rounded-lg flex items-center">
+
+                            <span className="text-zinc-500 font-black text-2xl select-none leading-none">:</span>
+
+                            {/* Card Secondi */}
+                            <div className="flex-1 bg-white/5 hover:bg-white/[0.08] focus-within:bg-white/[0.1] border border-white/10 focus-within:border-amber-500/60 rounded-2xl px-3 py-2 flex flex-col items-center justify-center transition-all h-14">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 leading-none mb-1">
+                                Secondi
+                              </span>
                               <input
                                 type="number"
                                 inputMode="numeric"
@@ -2822,9 +2888,38 @@ const NewTrainPage: React.FC = () => {
                                 onChange={(e) => setDraftValue(`${ex.id}:emom_round_duration:sec`, e.target.value)}
                                 onBlur={() => commitEmomRoundDurationPart(ex.id, 'sec', `${ex.id}:emom_round_duration:sec`, ex.emom_round_duration || 60)}
                                 onFocus={onNumberFocus}
-                                className="w-full text-center font-bold text-white bg-transparent focus:outline-none text-sm"
+                                className="w-full text-center font-mono font-black text-2xl text-white bg-transparent focus:outline-none placeholder:text-zinc-600 leading-tight"
+                                placeholder="00"
                               />
-                              <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">SEC</span>
+                            </div>
+                          </div>
+
+                          {/* Presets Rapidi Tempo Round */}
+                          <div className="pt-1 border-t border-white/5">
+                            <div className="flex items-center gap-1.5 justify-between">
+                              {[
+                                { label: '45s', sec: 45 },
+                                { label: '1m', sec: 60 },
+                                { label: '1m 30s', sec: 90 },
+                                { label: '2m', sec: 120 },
+                                { label: '3m', sec: 180 },
+                              ].map((preset) => {
+                                const isSelected = (ex.emom_round_duration || 60) === preset.sec;
+                                return (
+                                  <button
+                                    key={preset.sec}
+                                    type="button"
+                                    onClick={() => applyEmomDurationPreset(ex.id, preset.sec)}
+                                    className={`flex-1 py-1.5 rounded-xl text-[11px] font-black font-mono transition-all active:scale-95 cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
+                                        : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/5'
+                                    }`}
+                                  >
+                                    {preset.label}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -3783,8 +3878,8 @@ const NewTrainPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Dati Serie e Recupero per Superset / Circuito / EMOM (2 colonne) */}
-                  {ex.type !== 'pyramid' && (ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom') && (
+                  {/* Dati Serie e Recupero per Superset / Circuito (2 colonne) */}
+                  {ex.type !== 'pyramid' && ex.type !== 'emom' && (ex.type === 'superset' || ex.type === 'circuit') && (
                     <div className="grid grid-cols-2 gap-2.5 pt-1">
                       <div className="flex flex-col bg-black/40 border border-white/5 rounded-xl p-2.5">
                         <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
