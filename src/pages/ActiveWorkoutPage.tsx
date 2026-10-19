@@ -122,7 +122,6 @@ import {
   initServiceWorker,
   scheduleBackgroundRestNotification,
   closeActiveRestNotifications,
-  sendRestFinishedNotification,
   ensureNativeNotificationPermission,
   addNotificationActionListener,
   isNativeApp,
@@ -2831,24 +2830,16 @@ const ActiveWorkoutPage: React.FC = () => {
         stopRestMediaSession();
         pipManager.closePiP();
 
-        // Cancella immediatamente qualsiasi allarme o notifica programmata pendente
-        void closeActiveRestNotifications();
+        // Se l'app è in primo piano, rimuove l'allarme/notifica dal centro notifiche
+        if (document.visibilityState === 'visible') {
+          void closeActiveRestNotifications();
+        }
 
         // Feedback in-app (suono dedicato + vibrazione)
         if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
           playRestFinishedSound();
         }
         void hapticSuccess();
-
-        // Se l'app non è visibile (in background/schermo bloccato), invia notifica; se è in foreground, la notifica di sistema è soppressa
-        if (document.visibilityState !== 'visible') {
-          const upcoming = getUpcomingRestTargetInfo();
-          void sendRestFinishedNotification({
-            nextExerciseName: upcoming.nextExerciseName,
-            nextSetInfo: upcoming.nextSetInfo,
-            endsAtMs: restEndsAtMs,
-          });
-        }
 
         if (isWorkoutOverviewModalOpen) {
           setIsWorkoutOverviewAdvancePending(true);

@@ -167,7 +167,11 @@ export const cancelTimerNotification = async (): Promise<void> => {
   lastScheduledEndsAtMs = 0;
   try {
     await LocalNotifications.cancel({ notifications: [{ id: TIMER_NOTIFICATION_ID }] });
-    await LocalNotifications.removeDeliveredNotificationsById({ ids: [TIMER_NOTIFICATION_ID] });
+    // Rimuove la notifica consegnata solo se l'app è in primo piano, per evitare di cancellarla
+    // prematuramente dal centro notifiche / lock screen prima che l'utente l'abbia vista
+    if (isAppInForeground()) {
+      await LocalNotifications.removeDeliveredNotificationsById({ ids: [TIMER_NOTIFICATION_ID] });
+    }
   } catch (err) {
     console.debug('[Capacitor] Errore cancellazione notifica timer:', err);
   }
@@ -182,7 +186,7 @@ export const closeActiveRestNotifications = cancelTimerNotification;
 /**
  * Pianifica la sveglia/notifica hardware di fine timer (allarme esatto dell'OS).
  * Funziona e sveglia il dispositivo a schermo bloccato, in background o con app chiusa.
- * Prima di programmare, invoca sempre la cancellazione preventiva di TIMER_NOTIFICATION_ID.
+ * Garantisce che venga programmata ESATTAMENTE UNA SOLA NOTIFICA a livello OS.
  */
 export const scheduleBackgroundRestNotification = async ({
   endsAtMs,
@@ -201,11 +205,9 @@ export const scheduleBackgroundRestNotification = async ({
     return;
   }
 
-  // 1. Eliminazione duplicati & Cancellazione preventiva obbligatoria
-  await cancelTimerNotification();
-
-  // Evita re-schedulazioni duplicate per lo stesso identico target
-  if (isSchedulingInProgress || (lastScheduledEndsAtMs === endsAtMs && now - lastScheduledAtMs < 300)) {
+  // 1. Deduplicazione rigorosa: se per questo stesso target endsAtMs abbiamo già programmato
+  // la notifica negli ultimi 2.5 secondi, non ri-programmare (evita doppie notifiche per re-render rapidi)
+  if (isSchedulingInProgress || (lastScheduledEndsAtMs === endsAtMs && Math.abs(now - lastScheduledAtMs) < 2500)) {
     return;
   }
 
@@ -219,6 +221,11 @@ export const scheduleBackgroundRestNotification = async ({
       console.debug('[Capacitor] Permesso notifiche non concesso.');
       return;
     }
+
+    // Cancella preventivamente solo l'allarme pendente precedente senza toccare lo stato di deduplicazione
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id: TIMER_NOTIFICATION_ID }] });
+    } catch {}
 
     const title = '⏱️ Recupero Terminato!';
     const body = nextSetInfo
@@ -250,7 +257,7 @@ export const scheduleBackgroundRestNotification = async ({
       ],
     });
 
-    console.debug('[Capacitor] Allarme timer esatto programmato per le:', scheduledDate.toLocaleTimeString());
+    console.debug('[Capacitor] Singola notifica timer programmata per le:', scheduledDate.toLocaleTimeString());
   } catch (nativeErr) {
     console.warn('[Capacitor] Errore schedulazione allarme timer nativo:', nativeErr);
   } finally {
@@ -262,6 +269,8 @@ export const scheduleBackgroundRestNotification = async ({
  * Invia notifica istantanea di fine recupero (usata ESCLUSIVAMENTE quando l'app non è in primo piano).
  * Se l'app è in primo piano (foreground/active), la notifica di sistema è soppressa:
  * la fine del timer è gestita esclusivamente in-app tramite audio, vibrazione e UI.
+ * Se la notifica è già stata programmata o recapitata dal sistema OS per questo target, viene soppressa
+ * per garantire che arrivi sempre e solo una singola notifica.
  */
 export const sendRestFinishedNotification = async ({
   nextExerciseName,
@@ -279,11 +288,14 @@ export const sendRestFinishedNotification = async ({
   }
 
   const now = Date.now();
+
+  // Deduplicazione: se la notifica per questo target endsAtMs era già stata programmata
+  // da scheduleBackgroundRestNotification o ne è già stata recapitata una negli ultimi 5s, sopprimi
   if (
-    endsAtMs &&
-    lastDeliveredRestTargetEndsAtMs === endsAtMs &&
-    now - lastNotificationDeliveredAtMs < 1500
+    (endsAtMs && (lastScheduledEndsAtMs === endsAtMs || lastDeliveredRestTargetEndsAtMs === endsAtMs)) ||
+    (now - lastNotificationDeliveredAtMs < 5000)
   ) {
+    console.debug('[Capacitor] Notifica duplicata fine recupero soppressa (già gestita dal sistema OS).');
     return;
   }
 
@@ -295,7 +307,9 @@ export const sendRestFinishedNotification = async ({
     if (!hasPermission) return;
 
     // Cancellazione preventiva per evitare duplicati
-    await cancelTimerNotification();
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id: TIMER_NOTIFICATION_ID }] });
+    } catch {}
 
     const title = '⏱️ Recupero Terminato!';
     const body = nextSetInfo
@@ -360,6 +374,19 @@ if (isNativeApp()) {
       }
     }
   }).catch(() => {});
+}
+
+/**
+ * Quando l'app torna visibile in primo piano (es. l'utente la riapre o la porta in foreground),
+ * rimuove la notifica di recupero già recapitata dal centro notifiche iOS.
+ */
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isNativeApp()) {
+      void LocalNotifications.removeDeliveredNotificationsById({ ids: [TIMER_NOTIFICATION_ID] }).catch(() => {});
+      lastScheduledEndsAtMs = 0;
+    }
+  });
 }
 
 /**
