@@ -88,14 +88,35 @@ const formatNoteDate = (isoString?: string) => {
 };
 
 const parseNumericInput = (raw: string, fallback: number) => {
-  const n = Number(raw);
+  const cleaned = raw.replace(/[^0-9]/g, '');
+  if (cleaned === '') return fallback;
+  const n = Number(cleaned);
   return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : fallback;
 };
 
 const parseWeightInput = (raw: string): number | null => {
-  if (raw.trim() === '' || raw.trim() === '0') return null;
-  const n = Number(raw);
+  const trimmed = raw.trim().replace(',', '.');
+  if (trimmed === '' || trimmed === '0') return null;
+  const n = Number(trimmed);
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+};
+
+const selectAllInputText = (input: HTMLInputElement) => {
+  try {
+    input.select();
+    input.setSelectionRange(0, input.value.length);
+  } catch {
+    // ignore
+  }
+};
+
+const scrollInputIntoView = (target: HTMLElement) => {
+  if (!target.isConnected) return;
+  target.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+    inline: 'nearest',
+  });
 };
 
 const InlineNumberInput: React.FC<{
@@ -107,6 +128,104 @@ const InlineNumberInput: React.FC<{
   weightValue?: number | null;
   onWeightChange?: (v: number | null) => void;
 }> = ({ label, value, onChange, placeholder, isWeight, weightValue, onWeightChange }) => {
+  const [isFocused, setIsFocused] = useState(false);
+  const [localVal, setLocalVal] = useState('');
+  const replaceOnNextInputRef = useRef(false);
+
+  // Sincronizza il valore visualizzato quando l'input non è in stato di focus attivo
+  useEffect(() => {
+    if (!isFocused) {
+      if (isWeight) {
+        setLocalVal(weightValue != null && weightValue > 0 ? String(weightValue).replace('.', ',') : '');
+      } else {
+        setLocalVal(value > 0 ? String(value) : '');
+      }
+    }
+  }, [isFocused, isWeight, weightValue, value]);
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    setIsFocused(true);
+    replaceOnNextInputRef.current = true;
+    const target = e.currentTarget;
+
+    const currentStr = isWeight
+      ? (weightValue != null && weightValue > 0 ? String(weightValue).replace('.', ',') : '')
+      : (value > 0 ? String(value) : '');
+    setLocalVal(currentStr);
+
+    selectAllInputText(target);
+    // Timer di compensazione per tastiere virtuali iOS / Capacitor
+    setTimeout(() => {
+      if (document.activeElement === target) selectAllInputText(target);
+    }, 50);
+    setTimeout(() => {
+      if (document.activeElement === target) selectAllInputText(target);
+    }, 150);
+
+    requestAnimationFrame(() => scrollInputIntoView(target));
+    setTimeout(() => scrollInputIntoView(target), 280);
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    if (replaceOnNextInputRef.current) {
+      selectAllInputText(e.currentTarget);
+    }
+  };
+
+  const handleBeforeInput = (e: React.FormEvent<HTMLInputElement> & { data?: string; inputType?: string }) => {
+    if (replaceOnNextInputRef.current && e.inputType?.startsWith('insert') && e.data) {
+      // Alla prima digitazione dopo il focus, azzera il valore precedente così che venga sostituito integralmente
+      const target = e.currentTarget;
+      target.value = '';
+      setLocalVal('');
+      replaceOnNextInputRef.current = false;
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let raw = e.target.value;
+
+    if (replaceOnNextInputRef.current) {
+      replaceOnNextInputRef.current = false;
+      const oldStr = isWeight
+        ? (weightValue != null && weightValue > 0 ? String(weightValue).replace('.', ',') : '')
+        : (value > 0 ? String(value) : '');
+
+      if (oldStr && raw !== oldStr) {
+        // Se il browser ha accodato o anteposto anziché rimpiazzare
+        if (raw.startsWith(oldStr) && raw.length > oldStr.length) {
+          raw = raw.slice(oldStr.length);
+        } else if (raw.endsWith(oldStr) && raw.length > oldStr.length) {
+          raw = raw.slice(0, raw.length - oldStr.length);
+        }
+      }
+    }
+
+    if (isWeight && onWeightChange) {
+      const cleaned = raw.replace(/[^0-9.,]/g, '');
+      setLocalVal(cleaned);
+      onWeightChange(parseWeightInput(cleaned));
+    } else {
+      const cleaned = raw.replace(/[^0-9]/g, '');
+      setLocalVal(cleaned);
+      onChange(parseNumericInput(cleaned, 0));
+    }
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    replaceOnNextInputRef.current = false;
+    if (isWeight && onWeightChange) {
+      const parsed = parseWeightInput(localVal);
+      onWeightChange(parsed);
+      setLocalVal(parsed != null && parsed > 0 ? String(parsed).replace('.', ',') : '');
+    } else {
+      const parsed = parseNumericInput(localVal, 0);
+      onChange(parsed);
+      setLocalVal(parsed > 0 ? String(parsed) : '');
+    }
+  };
+
   if (isWeight && onWeightChange) {
     return (
       <div className="flex-1 bg-white/5 py-2 px-2 rounded-lg text-center flex flex-col justify-center border border-white/10">
@@ -114,22 +233,31 @@ const InlineNumberInput: React.FC<{
         <input
           type="text"
           inputMode="decimal"
-          value={weightValue != null && weightValue > 0 ? String(weightValue) : ''}
-          onChange={(e) => onWeightChange(parseWeightInput(e.target.value))}
+          value={localVal}
+          onFocus={handleFocus}
+          onClick={handleClick}
+          onBeforeInput={handleBeforeInput}
+          onChange={handleChange}
+          onBlur={handleBlur}
           placeholder="BW"
           className="w-full bg-transparent text-sm text-brand-lightOrange text-center outline-none font-bold"
         />
       </div>
     );
   }
+
   return (
     <div className="flex-1 bg-white/5 py-2 px-2 rounded-lg text-center flex flex-col justify-center border border-white/10">
       <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">{label}</span>
       <input
         type="text"
         inputMode="numeric"
-        value={value > 0 ? String(value) : ''}
-        onChange={(e) => onChange(parseNumericInput(e.target.value, 0))}
+        value={localVal}
+        onFocus={handleFocus}
+        onClick={handleClick}
+        onBeforeInput={handleBeforeInput}
+        onChange={handleChange}
+        onBlur={handleBlur}
         placeholder={placeholder || '0'}
         className="w-full bg-transparent text-sm text-brand-orange text-center outline-none font-bold"
       />
@@ -148,15 +276,95 @@ const MinutesSecondsInput: React.FC<{
 
   const [minsStr, setMinsStr] = useState(currentMins > 0 ? String(currentMins) : '');
   const [secsStr, setSecsStr] = useState(currentSecs > 0 ? String(currentSecs) : '');
+  const [isMinsFocused, setIsMinsFocused] = useState(false);
+  const [isSecsFocused, setIsSecsFocused] = useState(false);
+
+  const minsReplaceRef = useRef(false);
+  const secsReplaceRef = useRef(false);
 
   useEffect(() => {
-    const m = Math.floor(Math.max(0, totalSeconds || 0) / 60);
-    const s = Math.max(0, totalSeconds || 0) % 60;
-    setMinsStr(m > 0 ? String(m) : '');
-    setSecsStr(s > 0 ? String(s) : '');
-  }, [totalSeconds]);
+    if (!isMinsFocused) {
+      const m = Math.floor(Math.max(0, totalSeconds || 0) / 60);
+      setMinsStr(m > 0 ? String(m) : '');
+    }
+  }, [totalSeconds, isMinsFocused]);
 
-  const handleMinsChange = (val: string) => {
+  useEffect(() => {
+    if (!isSecsFocused) {
+      const s = Math.max(0, totalSeconds || 0) % 60;
+      setSecsStr(s > 0 ? String(s) : '');
+    }
+  }, [totalSeconds, isSecsFocused]);
+
+  const handleMinsFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    setIsMinsFocused(true);
+    minsReplaceRef.current = true;
+    const target = e.currentTarget;
+    selectAllInputText(target);
+    setTimeout(() => {
+      if (document.activeElement === target) selectAllInputText(target);
+    }, 50);
+    setTimeout(() => {
+      if (document.activeElement === target) selectAllInputText(target);
+    }, 150);
+    requestAnimationFrame(() => scrollInputIntoView(target));
+    setTimeout(() => scrollInputIntoView(target), 280);
+  };
+
+  const handleSecsFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    setIsSecsFocused(true);
+    secsReplaceRef.current = true;
+    const target = e.currentTarget;
+    selectAllInputText(target);
+    setTimeout(() => {
+      if (document.activeElement === target) selectAllInputText(target);
+    }, 50);
+    setTimeout(() => {
+      if (document.activeElement === target) selectAllInputText(target);
+    }, 150);
+    requestAnimationFrame(() => scrollInputIntoView(target));
+    setTimeout(() => scrollInputIntoView(target), 280);
+  };
+
+  const handleMinsClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    if (minsReplaceRef.current) selectAllInputText(e.currentTarget);
+  };
+
+  const handleSecsClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    if (secsReplaceRef.current) selectAllInputText(e.currentTarget);
+  };
+
+  const handleMinsBeforeInput = (e: React.FormEvent<HTMLInputElement> & { data?: string; inputType?: string }) => {
+    if (minsReplaceRef.current && e.inputType?.startsWith('insert') && e.data) {
+      const target = e.currentTarget;
+      target.value = '';
+      setMinsStr('');
+      minsReplaceRef.current = false;
+    }
+  };
+
+  const handleSecsBeforeInput = (e: React.FormEvent<HTMLInputElement> & { data?: string; inputType?: string }) => {
+    if (secsReplaceRef.current && e.inputType?.startsWith('insert') && e.data) {
+      const target = e.currentTarget;
+      target.value = '';
+      setSecsStr('');
+      secsReplaceRef.current = false;
+    }
+  };
+
+  const handleMinsChange = (raw: string) => {
+    let val = raw;
+    if (minsReplaceRef.current) {
+      minsReplaceRef.current = false;
+      const oldStr = minsStr;
+      if (oldStr && val !== oldStr) {
+        if (val.startsWith(oldStr) && val.length > oldStr.length) {
+          val = val.slice(oldStr.length);
+        } else if (val.endsWith(oldStr) && val.length > oldStr.length) {
+          val = val.slice(0, val.length - oldStr.length);
+        }
+      }
+    }
     const cleaned = val.replace(/[^0-9]/g, '');
     setMinsStr(cleaned);
     const m = Number(cleaned) || 0;
@@ -164,7 +372,19 @@ const MinutesSecondsInput: React.FC<{
     onChange(m * 60 + s);
   };
 
-  const handleSecsChange = (val: string) => {
+  const handleSecsChange = (raw: string) => {
+    let val = raw;
+    if (secsReplaceRef.current) {
+      secsReplaceRef.current = false;
+      const oldStr = secsStr;
+      if (oldStr && val !== oldStr) {
+        if (val.startsWith(oldStr) && val.length > oldStr.length) {
+          val = val.slice(oldStr.length);
+        } else if (val.endsWith(oldStr) && val.length > oldStr.length) {
+          val = val.slice(0, val.length - oldStr.length);
+        }
+      }
+    }
     const cleaned = val.replace(/[^0-9]/g, '');
     setSecsStr(cleaned);
     const m = Number(minsStr) || 0;
@@ -172,7 +392,19 @@ const MinutesSecondsInput: React.FC<{
     onChange(m * 60 + s);
   };
 
-  const handleBlur = () => {
+  const handleMinsBlur = () => {
+    setIsMinsFocused(false);
+    minsReplaceRef.current = false;
+    const total = (Number(minsStr) || 0) * 60 + (Number(secsStr) || 0);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    setMinsStr(m > 0 ? String(m) : '');
+    setSecsStr(s > 0 ? String(s) : '');
+  };
+
+  const handleSecsBlur = () => {
+    setIsSecsFocused(false);
+    secsReplaceRef.current = false;
     const total = (Number(minsStr) || 0) * 60 + (Number(secsStr) || 0);
     const m = Math.floor(total / 60);
     const s = total % 60;
@@ -188,8 +420,11 @@ const MinutesSecondsInput: React.FC<{
             type="text"
             inputMode="numeric"
             value={minsStr}
+            onFocus={handleMinsFocus}
+            onClick={handleMinsClick}
+            onBeforeInput={handleMinsBeforeInput}
             onChange={(e) => handleMinsChange(e.target.value)}
-            onBlur={handleBlur}
+            onBlur={handleMinsBlur}
             placeholder="0"
             className="w-6 bg-transparent text-center text-xs font-black text-brand-orange outline-none"
           />
@@ -201,8 +436,11 @@ const MinutesSecondsInput: React.FC<{
             type="text"
             inputMode="numeric"
             value={secsStr}
+            onFocus={handleSecsFocus}
+            onClick={handleSecsClick}
+            onBeforeInput={handleSecsBeforeInput}
             onChange={(e) => handleSecsChange(e.target.value)}
-            onBlur={handleBlur}
+            onBlur={handleSecsBlur}
             placeholder="0"
             className="w-6 bg-transparent text-center text-xs font-black text-brand-orange outline-none"
           />
@@ -223,8 +461,11 @@ const MinutesSecondsInput: React.FC<{
             type="text"
             inputMode="numeric"
             value={minsStr}
+            onFocus={handleMinsFocus}
+            onClick={handleMinsClick}
+            onBeforeInput={handleMinsBeforeInput}
             onChange={(e) => handleMinsChange(e.target.value)}
-            onBlur={handleBlur}
+            onBlur={handleMinsBlur}
             placeholder="0"
             className="w-full bg-transparent text-xs sm:text-sm text-brand-lightOrange text-center outline-none font-bold min-w-0"
           />
@@ -236,8 +477,11 @@ const MinutesSecondsInput: React.FC<{
             type="text"
             inputMode="numeric"
             value={secsStr}
+            onFocus={handleSecsFocus}
+            onClick={handleSecsClick}
+            onBeforeInput={handleSecsBeforeInput}
             onChange={(e) => handleSecsChange(e.target.value)}
-            onBlur={handleBlur}
+            onBlur={handleSecsBlur}
             placeholder="0"
             className="w-full bg-transparent text-xs sm:text-sm text-brand-lightOrange text-center outline-none font-bold min-w-0"
           />
@@ -287,6 +531,37 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
     });
     return unsub;
   }, [refreshCheckpoints]);
+
+  // Auto-scroll su selezione/focus di qualsiasi campo per mostrare chiaramente il numero in modifica
+  useEffect(() => {
+    let timer1: number | undefined;
+    let timer2: number | undefined;
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target || !(target instanceof HTMLInputElement)) return;
+
+      const scrollIntoViewSafely = () => {
+        if (!target.isConnected) return;
+        target.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'nearest',
+        });
+      };
+
+      requestAnimationFrame(scrollIntoViewSafely);
+      timer1 = window.setTimeout(scrollIntoViewSafely, 280);
+      timer2 = window.setTimeout(scrollIntoViewSafely, 480);
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+      if (timer1) window.clearTimeout(timer1);
+      if (timer2) window.clearTimeout(timer2);
+    };
+  }, []);
 
   const isWorkoutActive = useCallback((schedaIdStr?: string | number | null) => {
     if (schedaIdStr == null) return false;
