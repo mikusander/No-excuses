@@ -1,6 +1,23 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Clock, Timer, Repeat, X, Loader2, Pencil, Flame, Activity, Save, Check, FileText } from 'lucide-react';
+import {
+  PlayCircle,
+  Clock,
+  Timer,
+  Repeat,
+  X,
+  Loader2,
+  Pencil,
+  Flame,
+  Activity,
+  Save,
+  Check,
+  FileText,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
+  Plus,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
@@ -13,6 +30,7 @@ import {
 } from '../lib/workoutProgressStorage';
 import { getSyncQueue } from '../lib/workoutSyncManager';
 import { hapticLight, hapticMedium } from '../utils/haptics';
+import { generateUUID } from '../utils/uuid';
 
 export interface PreviewExercise {
   id: string;
@@ -513,6 +531,7 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
   const [isSavingOnly, setIsSavingOnly] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [activeCheckpoints, setActiveCheckpoints] = useState<WorkoutProgressCheckpointMeta[]>([]);
+  const [editingNameIdx, setEditingNameIdx] = useState<number | null>(null);
 
   const initialExercisesJsonRef = useRef<string>('');
 
@@ -774,6 +793,82 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
     });
   };
 
+  const removeExercise = (index: number) => {
+    if (editableExercises.length <= 1) {
+      setPreviewError('La scheda deve contenere almeno un esercizio.');
+      setTimeout(() => setPreviewError(null), 3000);
+      return;
+    }
+    void hapticLight();
+    setEditableExercises((prev) => {
+      const next = prev.filter((_, idx) => idx !== index);
+      return next.map((ex, idx) => ({ ...ex, order_index: idx }));
+    });
+    if (editingNameIdx === index) {
+      setEditingNameIdx(null);
+    } else if (editingNameIdx != null && editingNameIdx > index) {
+      setEditingNameIdx(editingNameIdx - 1);
+    }
+  };
+
+  const moveExercise = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= editableExercises.length) return;
+    void hapticLight();
+    setEditableExercises((prev) => {
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[targetIndex];
+      next[targetIndex] = temp;
+      return next.map((ex, idx) => ({ ...ex, order_index: idx }));
+    });
+    if (editingNameIdx === index) {
+      setEditingNameIdx(targetIndex);
+    } else if (editingNameIdx === targetIndex) {
+      setEditingNameIdx(index);
+    }
+  };
+
+  const addExercise = (targetIndex: number) => {
+    void hapticMedium();
+    const newExId = generateUUID();
+    const newEx: PreviewExercise = {
+      id: newExId,
+      type: 'reps',
+      name: 'Nuovo Esercizio',
+      sets: 3,
+      reps: 10,
+      duration_seconds: 30,
+      rest_seconds: 60,
+      transition_rest_seconds: 0,
+      weight_kg: null,
+      order_index: targetIndex,
+    };
+
+    setEditableExercises((prev) => {
+      const next = [...prev];
+      next.splice(targetIndex, 0, newEx);
+      return next.map((ex, idx) => ({ ...ex, order_index: idx }));
+    });
+
+    setEditingNameIdx(targetIndex);
+
+    setTimeout(() => {
+      const el = document.getElementById(`preview-exercise-card-${newExId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 120);
+  };
+
+  const sanitizeExercisesBeforeSave = (exercises: PreviewExercise[]): SaveExercise[] => {
+    return exercises.map((ex, idx) => ({
+      ...ex,
+      name: ex.name.trim() || `Esercizio ${idx + 1}`,
+      order_index: idx,
+    })) as SaveExercise[];
+  };
+
   const handleSaveOnly = async () => {
     if (!workoutPreview || isSavingOnly || isSavingAndStarting) return;
     const schedaId = Number(workoutPreview.id);
@@ -784,8 +879,10 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
       setPreviewError(null);
       void hapticMedium();
 
-      await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
-      initialExercisesJsonRef.current = JSON.stringify(editableExercises);
+      const sanitized = sanitizeExercisesBeforeSave(editableExercises);
+      await saveExercisesToDb(schedaId, sanitized);
+      initialExercisesJsonRef.current = JSON.stringify(sanitized);
+      setEditableExercises(sanitized as PreviewExercise[]);
       setSaveSuccessMessage('Modifiche salvate con successo!');
       setTimeout(() => setSaveSuccessMessage(null), 3000);
     } catch (err: any) {
@@ -803,8 +900,9 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
       const schedaId = Number(workoutPreview.id);
       if (Number.isFinite(schedaId)) {
         try {
-          await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
-          initialExercisesJsonRef.current = JSON.stringify(editableExercises);
+          const sanitized = sanitizeExercisesBeforeSave(editableExercises);
+          await saveExercisesToDb(schedaId, sanitized);
+          initialExercisesJsonRef.current = JSON.stringify(sanitized);
         } catch (err) {
           console.error('Error auto-saving workout edits on close:', err);
         }
@@ -824,8 +922,9 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
 
       const hasChanged = JSON.stringify(editableExercises) !== initialExercisesJsonRef.current;
       if (hasChanged) {
-        await saveExercisesToDb(schedaId, editableExercises as SaveExercise[]);
-        initialExercisesJsonRef.current = JSON.stringify(editableExercises);
+        const sanitized = sanitizeExercisesBeforeSave(editableExercises);
+        await saveExercisesToDb(schedaId, sanitized);
+        initialExercisesJsonRef.current = JSON.stringify(sanitized);
       }
 
       const currentCheckpoints = user?.id ? getValidWorkoutProgressCheckpoints(user.id) : [];
@@ -954,126 +1053,216 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
 
                   return (
                     <React.Fragment key={ex.id || i}>
-                      <div className="flex flex-col bg-black/40 px-5 py-4 rounded-2xl border border-white/5">
-                        {ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom' || ex.type === 'pyramid' ? (
-                          <div className="mb-3">
-                            <div className="flex items-start justify-between gap-2 mb-2">
-                              <span className="font-bold text-lg text-white drop-shadow-md flex items-center min-w-0">
-                                <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                                <Repeat size={16} className="mr-1 shrink-0 text-brand-orange" />
-                                <span className="truncate">{ex.name}</span>
-                              </span>
-                              {ex.type === 'circuit' && (
-                                <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                                  CIRCUITO
-                                </span>
-                              )}
-                              {ex.type === 'superset' && (
-                                <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                                  SUPERSET
-                                </span>
-                              )}
-                              {ex.type === 'emom' && (
-                                <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                                  EMOM
-                                </span>
-                              )}
-                              {ex.type === 'pyramid' && (
-                                <span className="shrink-0 inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                                  PYRAMID
-                                </span>
-                              )}
+                      <div
+                        id={`preview-exercise-card-${ex.id}`}
+                        className="flex flex-col bg-black/40 px-4 sm:px-5 py-4 rounded-2xl border border-white/5 transition-all"
+                      >
+                        {/* Header con frecce riordina, numero, nome editabile, badge tipo e pulsante elimina */}
+                        <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-white/5">
+                          {/* Frecce su/giù e numero esercizio */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex flex-col gap-0.5">
+                              <button
+                                type="button"
+                                disabled={i === 0}
+                                onClick={() => moveExercise(i, -1)}
+                                className={`p-1 rounded bg-white/5 hover:bg-white/10 transition-colors ${
+                                  i === 0 ? 'opacity-20 cursor-not-allowed' : 'text-zinc-300 hover:text-white cursor-pointer active:scale-95'
+                                }`}
+                                title="Sposta su"
+                              >
+                                <ChevronUp size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={i === editableExercises.length - 1}
+                                onClick={() => moveExercise(i, 1)}
+                                className={`p-1 rounded bg-white/5 hover:bg-white/10 transition-colors ${
+                                  i === editableExercises.length - 1 ? 'opacity-20 cursor-not-allowed' : 'text-zinc-300 hover:text-white cursor-pointer active:scale-95'
+                                }`}
+                                title="Sposta giù"
+                              >
+                                <ChevronDown size={13} />
+                              </button>
                             </div>
+                            <span className="text-brand-orange font-black text-sm select-none opacity-80 min-w-5">
+                              {i + 1}.
+                            </span>
+                          </div>
 
-                            <div className="flex flex-col pl-6 border-l-2 border-white/10 space-y-2 mt-1">
-                              {ex.type === 'pyramid'
-                                ? ex.pyramid_steps?.map((step, sIdx) => (
+                          {/* Nome esercizio (con modifica al tocco) */}
+                          <div className="flex-1 min-w-0 mx-1">
+                            {editingNameIdx === i ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={ex.name}
+                                  onChange={(e) => updateExerciseField(i, 'name', e.target.value)}
+                                  onBlur={() => setEditingNameIdx(null)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') setEditingNameIdx(null);
+                                  }}
+                                  placeholder="Nome esercizio..."
+                                  className="w-full bg-black/60 border border-brand-orange/60 rounded-lg px-2.5 py-1 text-sm font-bold text-white outline-none focus:ring-1 focus:ring-brand-orange"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingNameIdx(null)}
+                                  className="p-1 rounded bg-brand-orange text-black hover:bg-brand-lightOrange shrink-0 cursor-pointer active:scale-95"
+                                  title="Conferma nome"
+                                >
+                                  <Check size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 group/name">
+                                <span
+                                  onClick={() => setEditingNameIdx(i)}
+                                  className="font-bold text-base sm:text-lg text-white truncate drop-shadow-md cursor-pointer hover:text-brand-lightOrange transition-colors flex items-center"
+                                  title="Tocca per modificare il nome dell'esercizio"
+                                >
+                                  {(ex.type === 'circuit' || ex.type === 'superset' || ex.type === 'emom') && (
+                                    <Repeat size={15} className="mr-1.5 shrink-0 text-brand-orange" />
+                                  )}
+                                  {ex.name || <span className="text-zinc-500 italic font-normal">Senza nome</span>}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingNameIdx(i)}
+                                  className="p-1 rounded text-zinc-500 hover:text-brand-orange transition-colors cursor-pointer shrink-0 opacity-60 group-hover/name:opacity-100"
+                                  title="Modifica nome"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Badge tipo e pulsante elimina */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {ex.type === 'circuit' && (
+                              <span className="inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                CIRCUITO
+                              </span>
+                            )}
+                            {ex.type === 'superset' && (
+                              <span className="inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                SUPERSET
+                              </span>
+                            )}
+                            {ex.type === 'emom' && (
+                              <span className="inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                EMOM
+                              </span>
+                            )}
+                            {ex.type === 'pyramid' && (
+                              <span className="inline-flex items-center rounded-full border border-brand-orange/60 bg-brand-orange/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                                PYRAMID
+                              </span>
+                            )}
+                            {ex.type !== 'circuit' && ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
+                              <button
+                                type="button"
+                                onClick={() => updateExerciseField(i, 'type', ex.type === 'isometry' ? 'reps' : 'isometry')}
+                                className="flex items-center text-[10px] font-bold px-2 py-0.5 rounded bg-brand-darkGrey hover:bg-white/10 text-white shadow-inner cursor-pointer transition-colors border border-white/10"
+                                title="Tocca per alternare tra Ripetizioni e Isometria"
+                              >
+                                {ex.type === 'cardio' ? (
+                                  <Activity size={11} className="mr-1 text-rose-400" />
+                                ) : ex.type === 'isometry' ? (
+                                  <Timer size={11} className="mr-1 text-brand-orange" />
+                                ) : (
+                                  <Repeat size={11} className="mr-1 text-brand-orange" />
+                                )}
+                                {ex.type === 'cardio' ? 'CARDIO' : ex.type === 'isometry' ? 'ISOMETRIA' : 'REPS'}
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => removeExercise(i)}
+                              className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0 active:scale-95 ml-0.5"
+                              title="Rimuovi esercizio dalla scheda"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sezione sub-esercizi o step piramidali */}
+                        {(ex.type === 'superset' || ex.type === 'circuit' || ex.type === 'emom' || ex.type === 'pyramid') && (
+                          <div className="flex flex-col pl-4 sm:pl-6 border-l-2 border-white/10 space-y-2 mb-3 mt-1">
+                            {ex.type === 'pyramid'
+                              ? ex.pyramid_steps?.map((step, sIdx) => (
+                                  <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
+                                    <p className="text-xs font-bold text-brand-grey uppercase">Step {sIdx + 1}</p>
+                                    <div className="grid grid-cols-3 gap-2">
+                                      <InlineNumberInput
+                                        label="Reps"
+                                        value={step.reps}
+                                        onChange={(v) => updatePyramidStepField(i, sIdx, 'reps', v)}
+                                        placeholder="MAX"
+                                      />
+                                      <MinutesSecondsInput
+                                        label="Rest"
+                                        totalSeconds={step.rest_seconds}
+                                        onChange={(v) => updatePyramidStepField(i, sIdx, 'rest_seconds', v)}
+                                      />
+                                      <InlineNumberInput
+                                        label="Kg"
+                                        value={0}
+                                        onChange={() => {}}
+                                        isWeight
+                                        weightValue={step.weight_kg}
+                                        onWeightChange={(v) => updatePyramidStepField(i, sIdx, 'weight_kg', v)}
+                                      />
+                                    </div>
+                                  </div>
+                                ))
+                              : ex.subExercises?.map((sub, sIdx) => {
+                                  const cleanSubName = normalizeNoteKey(sub.name);
+                                  const allSubNames = (ex.subExercises || []).map((s) => normalizeNoteKey(s.name));
+                                  const isSubNameUnique = allSubNames.filter((name) => name === cleanSubName).length === 1;
+                                  const subNoteKey = `${i}_${cleanSubName}`;
+                                  const subNoteLegacyKey = `legacy_${cleanSubName}`;
+                                  const subNote = latestExerciseNotes[subNoteKey] || (isSubNameUnique ? latestExerciseNotes[subNoteLegacyKey] : undefined);
+
+                                  return (
                                     <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
-                                      <p className="text-xs font-bold text-brand-grey uppercase">Step {sIdx + 1}</p>
-                                      <div className="grid grid-cols-3 gap-2">
-                                        <InlineNumberInput
-                                          label="Reps"
-                                          value={step.reps}
-                                          onChange={(v) => updatePyramidStepField(i, sIdx, 'reps', v)}
-                                          placeholder="MAX"
-                                        />
-                                        <MinutesSecondsInput
-                                          label="Rest"
-                                          totalSeconds={step.rest_seconds}
-                                          onChange={(v) => updatePyramidStepField(i, sIdx, 'rest_seconds', v)}
-                                        />
+                                      <p className="text-xs font-bold text-white">{sub.name}</p>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {sub.type === 'reps' ? (
+                                          <InlineNumberInput
+                                            label="Reps"
+                                            value={sub.reps}
+                                            onChange={(v) => updateSubExerciseField(i, sIdx, 'reps', v)}
+                                            placeholder="MAX"
+                                          />
+                                        ) : (
+                                          <InlineNumberInput
+                                            label="Time (s)"
+                                            value={sub.duration_seconds}
+                                            onChange={(v) => updateSubExerciseField(i, sIdx, 'duration_seconds', v)}
+                                          />
+                                        )}
                                         <InlineNumberInput
                                           label="Kg"
                                           value={0}
                                           onChange={() => {}}
                                           isWeight
-                                          weightValue={step.weight_kg}
-                                          onWeightChange={(v) => updatePyramidStepField(i, sIdx, 'weight_kg', v)}
+                                          weightValue={sub.weight_kg}
+                                          onWeightChange={(v) => updateSubExerciseField(i, sIdx, 'weight_kg', v)}
                                         />
                                       </div>
-                                    </div>
-                                  ))
-                                : ex.subExercises?.map((sub, sIdx) => {
-                                    const cleanSubName = normalizeNoteKey(sub.name);
-                                    const allSubNames = (ex.subExercises || []).map((s) => normalizeNoteKey(s.name));
-                                    const isSubNameUnique = allSubNames.filter((name) => name === cleanSubName).length === 1;
-                                    const subNoteKey = `${i}_${cleanSubName}`;
-                                    const subNoteLegacyKey = `legacy_${cleanSubName}`;
-                                    const subNote = latestExerciseNotes[subNoteKey] || (isSubNameUnique ? latestExerciseNotes[subNoteLegacyKey] : undefined);
-
-                                    return (
-                                      <div key={sIdx} className="bg-black/20 rounded-xl p-3 space-y-2">
-                                        <p className="text-xs font-bold text-white">{sub.name}</p>
-                                        <div className="grid grid-cols-2 gap-2">
-                                          {sub.type === 'reps' ? (
-                                            <InlineNumberInput
-                                              label="Reps"
-                                              value={sub.reps}
-                                              onChange={(v) => updateSubExerciseField(i, sIdx, 'reps', v)}
-                                              placeholder="MAX"
-                                            />
-                                          ) : (
-                                            <InlineNumberInput
-                                              label="Time (s)"
-                                              value={sub.duration_seconds}
-                                              onChange={(v) => updateSubExerciseField(i, sIdx, 'duration_seconds', v)}
-                                            />
-                                          )}
-                                          <InlineNumberInput
-                                            label="Kg"
-                                            value={0}
-                                            onChange={() => {}}
-                                            isWeight
-                                            weightValue={sub.weight_kg}
-                                            onWeightChange={(v) => updateSubExerciseField(i, sIdx, 'weight_kg', v)}
-                                          />
+                                      {subNote && (
+                                        <div className="text-xs text-brand-grey italic pl-2 border-l border-brand-orange/30">
+                                          "{subNote}"
                                         </div>
-                                        {subNote && (
-                                          <div className="text-xs text-brand-grey italic pl-2 border-l border-brand-orange/30">
-                                            "{subNote}"
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="font-bold text-lg text-white truncate max-w-[70%] drop-shadow-md flex items-center">
-                              <span className="text-brand-orange opacity-40 mr-2 text-xs font-black">{i + 1}.</span>
-                              {ex.name}
-                            </span>
-                            <div className="flex items-center text-xs font-bold px-2 py-1 rounded bg-brand-darkGrey text-white shadow-inner">
-                              {ex.type === 'cardio' ? (
-                                <Activity size={12} className="mr-1 text-rose-400" />
-                              ) : ex.type === 'isometry' ? (
-                                <Timer size={12} className="mr-1 text-brand-orange" />
-                              ) : (
-                                <Repeat size={12} className="mr-1 text-brand-orange" />
-                              )}
-                              {ex.type === 'cardio' ? 'CARDIO' : ex.type === 'isometry' ? 'ISOMETRIC' : 'REPS'}
-                            </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                           </div>
                         )}
 
@@ -1180,9 +1369,9 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                         )}
                       </div>
 
-                      {/* Transition Rest Timer between exercises */}
+                      {/* Transition Rest Timer & Inserisci Esercizio tra due esercizi */}
                       {i < editableExercises.length - 1 && (
-                        <div className="my-2.5 flex items-center justify-center">
+                        <div className="my-3 flex flex-wrap items-center justify-center gap-2">
                           <div className="inline-flex items-center gap-2 bg-[#252528] hover:bg-[#2C2C30] border border-white/10 hover:border-brand-orange/40 px-3.5 py-1.5 rounded-full transition-all text-xs shadow-sm">
                             <Clock size={12} className="text-brand-orange shrink-0" />
                             <span className="text-[11px] font-semibold text-zinc-300">Pausa tra esercizi:</span>
@@ -1192,6 +1381,16 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                               onChange={(v) => updateExerciseField(i, 'transition_rest_seconds', v)}
                             />
                           </div>
+
+                          <button
+                            type="button"
+                            onClick={() => addExercise(i + 1)}
+                            className="inline-flex items-center gap-1.5 bg-brand-orange/10 hover:bg-brand-orange/20 border border-brand-orange/30 hover:border-brand-orange/60 text-brand-lightOrange px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-sm"
+                            title={`Inserisci un nuovo esercizio tra l'esercizio ${i + 1} e ${i + 2}`}
+                          >
+                            <Plus size={13} className="text-brand-orange" />
+                            <span>Aggiungi esercizio qui</span>
+                          </button>
                         </div>
                       )}
                     </React.Fragment>
@@ -1203,6 +1402,18 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                     Nessun esercizio presente in questa scheda.
                   </p>
                 )}
+
+                {/* Pulsante aggiungi nuovo esercizio a fondo lista */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => addExercise(editableExercises.length)}
+                    className="w-full py-3.5 px-4 rounded-2xl border-2 border-dashed border-white/15 hover:border-brand-orange/60 bg-white/[0.02] hover:bg-brand-orange/10 text-zinc-300 hover:text-brand-orange font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99] shadow-sm"
+                  >
+                    <Plus size={18} className="text-brand-orange" />
+                    <span>Aggiungi Nuovo Esercizio</span>
+                  </button>
+                </div>
               </div>
             </>
           )}
