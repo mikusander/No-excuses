@@ -25,19 +25,19 @@
  * `ResetPasswordModal` viene montato in overlay globale quando l'utente atterra
  * sull'app tramite link email di recupero password (evento PASSWORD_RECOVERY).
  */
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import HomePage from './pages/HomePage';
-import RepCounterPage from './pages/RepCounterPage';
-
 import AuthPage from './pages/AuthPage';
-import NewTrainPage from './pages/NewTrainPage';
-import GymCardPage from './pages/GymCardPage';
-import WorkoutHistoryPage from './pages/WorkoutHistoryPage';
-import WorkoutHistoryDetailPage from './pages/WorkoutHistoryDetailPage';
-import SettingsPage from './pages/SettingsPage';
-import SelectWorkoutPage from './pages/SelectWorkoutPage';
-import ActiveWorkoutPage from './pages/ActiveWorkoutPage';
+
+const RepCounterPage = lazy(() => import('./pages/RepCounterPage'));
+const NewTrainPage = lazy(() => import('./pages/NewTrainPage'));
+const GymCardPage = lazy(() => import('./pages/GymCardPage'));
+const WorkoutHistoryPage = lazy(() => import('./pages/WorkoutHistoryPage'));
+const WorkoutHistoryDetailPage = lazy(() => import('./pages/WorkoutHistoryDetailPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const SelectWorkoutPage = lazy(() => import('./pages/SelectWorkoutPage'));
+const ActiveWorkoutPage = lazy(() => import('./pages/ActiveWorkoutPage'));
 import { useAuth } from './context/AuthContext';
 import ResetPasswordModal from './components/ResetPasswordModal';
 import { supabaseConfigError } from './lib/supabase';
@@ -118,6 +118,14 @@ const OrientationWatcher = () => {
   return null;
 };
 
+const RouteLoadingFallback = () => (
+  <div className="min-h-screen bg-brand-dark flex flex-col items-center justify-center p-6 select-none animate-pulse">
+    <div className="w-12 h-12 rounded-2xl bg-brand-card border border-white/10 flex items-center justify-center shadow-xl">
+      <div className="w-5 h-5 border-2 border-brand-orange border-t-transparent rounded-full animate-spin" />
+    </div>
+  </div>
+);
+
 function App() {
   const { isPasswordRecovery } = useAuth();
 
@@ -142,7 +150,8 @@ function App() {
       <Router>
         <OrientationWatcher />
         <SyncQueueWatcher />
-        <Routes>
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Routes>
         {/* Public Routes */}
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/" element={<HomePage />} />
@@ -207,6 +216,7 @@ function App() {
           </ProtectedRoute>
         } />
       </Routes>
+      </Suspense>
       </Router>
     </ErrorBoundary>
   );

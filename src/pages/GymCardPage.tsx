@@ -1087,8 +1087,30 @@ const GymCardPage: React.FC = () => {
 
       <main className="flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto space-y-6 animate-page-enter">
         {loading ? (
-          <div className="flex justify-center items-center h-48">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey"></div>
+          <div className="space-y-6 animate-pulse">
+            {/* Skeleton Cartelle */}
+            <div className="space-y-3">
+              <div className="h-4 w-28 bg-white/10 rounded-md" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="h-20 bg-brand-card/80 border border-white/5 rounded-2xl" />
+                <div className="h-20 bg-brand-card/80 border border-white/5 rounded-2xl" />
+              </div>
+            </div>
+            {/* Skeleton Schede */}
+            <div className="space-y-3 pt-2">
+              <div className="h-4 w-36 bg-white/10 rounded-md" />
+              <div className="space-y-3">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="bg-brand-card/80 border border-white/5 rounded-3xl p-5 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-white/10 shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-3/5 bg-white/15 rounded-md" />
+                      <div className="h-3 w-2/5 bg-white/10 rounded-md" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         ) : currentFolder ? (
           /* ─── VISTA INTERNA ALLA CARTELLA ──────────────────────────────── */

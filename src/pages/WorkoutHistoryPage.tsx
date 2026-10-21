@@ -387,8 +387,17 @@ const WorkoutHistoryPage: React.FC = () => {
         )}
 
         {loading ? (
-          <div className="flex justify-center items-center h-48">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-brand-orange border-b-2 border-white/10"></div>
+          <div className="space-y-4 animate-pulse">
+            <div className="h-28 bg-brand-card/60 border border-white/5 rounded-3xl" />
+            {[1, 2, 3, 4].map((n) => (
+              <div key={n} className="bg-brand-card/80 border border-white/5 rounded-3xl p-5 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-white/10 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-1/2 bg-white/15 rounded-md" />
+                  <div className="h-3 w-1/3 bg-white/10 rounded-md" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : historyItems.length === 0 ? (
           <div className="text-center bg-[#1C1C1E]/60 border border-white/10 rounded-3xl p-8 mt-8 animate-sheet-enter">

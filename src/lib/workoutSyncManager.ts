@@ -315,13 +315,21 @@ export const processSyncQueue = async (
             .single();
 
           if (insertRunError || !insertedRun?.id_workout) {
-            // Tentativo fallback senza durata se schema database legacy
+            // Se l'errore è dovuto alla chiave esterna id_scheda (scheda cancellata prima del sync)
+            const isForeignKeyError =
+              insertRunError?.code === '23503' ||
+              (Boolean(insertRunError?.message) && insertRunError!.message.toLowerCase().includes('foreign key'));
+
+            const effectiveSchedaId = isForeignKeyError ? null : item.id_scheda;
+
+            // Tentativo fallback con id_scheda null o schema database legacy
             const { data: fallbackRun, error: fallbackError } = await supabase
               .from('workout_run')
               .insert([
                 {
                   id_utente: userId,
-                  id_scheda: item.id_scheda,
+                  id_scheda: effectiveSchedaId,
+                  durata_totale_secondi: item.durata_totale_secondi,
                   workout_name_snapshot: item.workout_name_snapshot,
                   exercises_snapshot: stampedExercisesSnapshot,
                 },
@@ -330,9 +338,27 @@ export const processSyncQueue = async (
               .single();
 
             if (fallbackError || !fallbackRun?.id_workout) {
-              throw insertRunError || fallbackError || new Error('Inserimento workout_run fallito');
+              // Ulteriore fallback garantito con id_scheda null (disaccoppiato da schede eliminate)
+              const { data: legacyRun, error: legacyError } = await supabase
+                .from('workout_run')
+                .insert([
+                  {
+                    id_utente: userId,
+                    id_scheda: null,
+                    workout_name_snapshot: item.workout_name_snapshot,
+                    exercises_snapshot: stampedExercisesSnapshot,
+                  },
+                ])
+                .select('id_workout')
+                .single();
+
+              if (legacyError || !legacyRun?.id_workout) {
+                throw insertRunError || fallbackError || legacyError || new Error('Inserimento workout_run fallito');
+              }
+              remoteRunId = Number(legacyRun.id_workout);
+            } else {
+              remoteRunId = Number(fallbackRun.id_workout);
             }
-            remoteRunId = Number(fallbackRun.id_workout);
           } else {
             remoteRunId = Number(insertedRun.id_workout);
           }

@@ -51,6 +51,15 @@ export const warmupSpeechSynthesis = () => {
   }
 };
 
+let speechWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearSpeechWatchdog = () => {
+  if (speechWatchdogTimer != null) {
+    clearTimeout(speechWatchdogTimer);
+    speechWatchdogTimer = null;
+  }
+};
+
 /**
  * `speak` — Riproduce un testo tramite la sintesi vocale del browser.
  *
@@ -64,6 +73,8 @@ export const speak = (text: string) => {
 
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     const synth = window.speechSynthesis;
+
+    clearSpeechWatchdog();
 
     // Workaround for Chrome/Safari speechSynthesis inactivity state issue
     if (synth.paused) {
@@ -84,9 +95,31 @@ export const speak = (text: string) => {
     utterance.lang = 'it-IT';
     utterance.rate = 1.05;
     utterance.pitch = 1.0;
+
+    utterance.onend = () => {
+      clearSpeechWatchdog();
+    };
+
+    utterance.onerror = () => {
+      clearSpeechWatchdog();
+    };
     
     // Mantiene un riferimento per evitare garbage collection prematura
     lastUtterance = utterance;
+
+    // Watchdog: su iOS WebKit, se l'audio si blocca per perdita di focus o background,
+    // dopo 5 secondi sblocca forzatamente il sintetizzatore per i successivi cue.
+    speechWatchdogTimer = setTimeout(() => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+        try {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.resume();
+        } catch {
+          // ignore errors
+        }
+      }
+    }, 5000);
+
     synth.speak(utterance);
   }
 };
