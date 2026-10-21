@@ -65,7 +65,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Loader2, Play, Target, Repeat, Video, Smartphone, Timer, Square, Flag } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Target, Repeat, Video, Smartphone, Timer, Square, Flag, ShieldAlert, RefreshCw, Info } from 'lucide-react';
 import { usePoseLandmarker } from '../hooks/usePoseLandmarker';
 
 import { useAccelerometerRepCounter, triggerStartHaptic } from '../hooks/useAccelerometerRepCounter';
@@ -205,6 +205,7 @@ const RepCounterPage: React.FC = () => {
 
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraRetryCount, setCameraRetryCount] = useState(0);
   const [paused, setPaused] = useState(false);
   const [isCountingActive, setIsCountingActive] = useState(false);
 
@@ -244,7 +245,7 @@ const RepCounterPage: React.FC = () => {
       setCount(newCount);
       if (repTarget !== null && newCount >= repTarget) {
         triggerStartHaptic();
-        setTimeout(() => speak('finish exercise'), 0);
+        setTimeout(() => speak('Esercizio completato'), 0);
         stopAccelerometerSession();
       } else if (newCount > 0) {
         setTimeout(() => speakNumber(newCount), 0);
@@ -360,7 +361,7 @@ const RepCounterPage: React.FC = () => {
         if (target !== null && newCount >= target) {
           playGoalReachedSound();
           // Defer speech synthesis to execute outside requestAnimationFrame context to prevent mobile browser security blocks
-          setTimeout(() => speak('finish exercise'), 0);
+          setTimeout(() => speak('Esercizio completato'), 0);
           setIsCountingActive(false);
         } else if (newCount > 0) {
           setTimeout(() => speakNumber(newCount), 0);
@@ -426,7 +427,7 @@ const RepCounterPage: React.FC = () => {
     const startCamera = async () => {
       try {
         if (!window.isSecureContext) {
-          setCameraError('Phone camera requires a secure connection (HTTPS or localhost).');
+          setCameraError('La fotocamera richiede una connessione protetta (HTTPS o localhost).');
           return;
         }
 
@@ -442,7 +443,7 @@ const RepCounterPage: React.FC = () => {
         setCameraStream(mediaStream);
       } catch (err) {
         console.error("Camera access error:", err);
-        setCameraError('Cannot access camera. Check browser permissions and use HTTPS on your phone.');
+        setCameraError('Impossibile accedere alla fotocamera. Verifica che i permessi siano concessi nelle impostazioni del dispositivo.');
       }
     };
 
@@ -455,7 +456,7 @@ const RepCounterPage: React.FC = () => {
         return null;
       });
     };
-  }, [selectedExercise, countingMode]);
+  }, [selectedExercise, countingMode, cameraRetryCount]);
 
   useEffect(() => {
     if (countingMode !== 'video' || !cameraStream || !videoRef.current) return;
@@ -465,7 +466,7 @@ const RepCounterPage: React.FC = () => {
 
     const handleTrackEnded = () => {
       setIsCameraReady(false);
-      setCameraError('Camera disconnected. Reopen the exercise to try again.');
+      setCameraError('Fotocamera disconnessa. Riapri l\'esercizio per riprovare.');
     };
 
     if (videoElement.srcObject !== cameraStream) {
@@ -582,19 +583,35 @@ const RepCounterPage: React.FC = () => {
     finishPoseCsvSession();
   };
 
+  const handleRetryCamera = () => {
+    setCameraError(null);
+    setCameraRetryCount((c) => c + 1);
+  };
+
+  const handleRetryMotion = async () => {
+    if (typeof window !== 'undefined' && typeof (window as any).DeviceMotionEvent?.requestPermission === 'function') {
+      try {
+        await (window as any).DeviceMotionEvent.requestPermission();
+      } catch (e) {
+        console.warn('DeviceMotionEvent permission retry failed', e);
+      }
+    }
+    await startAccelerometerSession();
+  };
+
   const isAccelerometerMode = countingMode === 'accelerometer';
   const isAccelerometerPaused = accelerometerPhase === 'paused';
   const isAccelerometerPreparing = accelerometerPhase === 'preparing';
   const isAccelerometerActive = accelerometerPhase === 'active';
   const accelerometerStatusLabel = accelerometerError
-    ? 'Accelerometer not available'
+    ? 'Sensori di movimento non disponibili'
     : isAccelerometerPreparing
-      ? 'Get ready for the exercise'
+      ? 'Preparati per l\'esercizio'
       : isAccelerometerActive
-        ? 'Repetition count in progress'
+        ? 'Conteggio ripetizioni in corso'
         : isAccelerometerPaused
-          ? (prepRemaining > 0 ? 'Preparation paused' : 'Counting paused')
-          : 'Starting accelerometer';
+          ? (prepRemaining > 0 ? 'Preparazione in pausa' : 'Conteggio in pausa')
+          : 'Avvio sensori...';
 
 
   useEffect(() => {
@@ -619,17 +636,17 @@ const RepCounterPage: React.FC = () => {
           <button onClick={() => location.state?.returnUrl ? navigate(location.state.returnUrl) : navigate('/')} className="p-2 text-white hover:text-brand-orange transition-colors">
             <ArrowLeft size={28} />
           </button>
-          <h1 className="text-xl font-bold ml-4 text-white">New Workout</h1>
+          <h1 className="text-xl font-bold ml-4 text-white">Nuovo Esercizio</h1>
         </header>
 
         <main className="flex-1 flex flex-col items-center justify-center p-6 gap-6 w-full max-w-md mx-auto">
           <h2 className="text-2xl font-black text-white text-center mb-4 uppercase tracking-widest">
-            Choose Your Exercise
+            Scegli l'Esercizio
           </h2>
 
           {/* Modalità conteggio */}
           <div className="w-full rounded-3xl border border-white/10 bg-brand-darkGrey/40 p-2 shadow-lg">
-            <p className="px-2 pb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">Counting Mode</p>
+            <p className="px-2 pb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">Modalità di Conteggio</p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -637,7 +654,7 @@ const RepCounterPage: React.FC = () => {
                 className={`flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold transition-all ${countingMode === 'video' ? 'bg-brand-orange text-black shadow-lg' : 'bg-black/30 text-white/70 hover:bg-black/50'}`}
               >
                 <Video className="h-4 w-4" />
-                Camera
+                Fotocamera (IA)
               </button>
               <button
                 type="button"
@@ -645,13 +662,13 @@ const RepCounterPage: React.FC = () => {
                 className={`flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold transition-all ${countingMode === 'accelerometer' ? 'bg-brand-orange text-black shadow-lg' : 'bg-black/30 text-white/70 hover:bg-black/50'}`}
               >
                 <Smartphone className="h-4 w-4" />
-                Accelerometer
+                Accelerometro
               </button>
             </div>
             <p className="px-2 pt-3 text-xs leading-relaxed text-white/50">
               {countingMode === 'video'
-                ? 'Use camera and MediaPipe pose detection.'
-                : 'Use phone motion sensor. Put the phone in your pocket during the 10-second countdown.'}
+                ? 'Usa la fotocamera e l\'IA MediaPipe per il rilevamento visivo del movimento.'
+                : 'Usa i sensori di movimento del telefono. Metti il telefono in tasca durante il conto alla rovescia di 10 secondi.'}
             </p>
           </div>
 
@@ -659,10 +676,10 @@ const RepCounterPage: React.FC = () => {
           <div className="w-full rounded-3xl border border-white/10 bg-brand-darkGrey/40 p-4 shadow-lg">
             <div className="flex items-center gap-2 mb-1">
               <Flag className="h-4 w-4 text-brand-orange" />
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">Repetitions Target</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">Obiettivo Ripetizioni</p>
             </div>
             <p className="text-xs text-white/40 mb-3 leading-relaxed">
-              Enter a number to stop counting automatically when reached — the phone will ring. Leave empty to count infinitely.
+              Inserisci un numero per fermare automaticamente il conteggio al raggiungimento — il telefono emetterà un segnale sonoro. Lascia vuoto per contare senza limiti.
             </p>
             <div className="flex items-center gap-3">
               <input
@@ -671,7 +688,7 @@ const RepCounterPage: React.FC = () => {
                 inputMode="numeric"
                 pattern="[0-9]*"
                 maxLength={4}
-                placeholder="∞  no limit"
+                placeholder="∞  nessun limite"
                 value={repTargetInput}
                 onChange={(e) => {
                   const raw = e.target.value.replace(/\D/g, '');
@@ -687,8 +704,8 @@ const RepCounterPage: React.FC = () => {
           {/* Calibrazione Sperimentale */}
           <div className="w-full rounded-3xl border border-purple-500/20 bg-purple-500/5 p-4 shadow-lg flex items-center justify-between">
             <div className="flex flex-col">
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-purple-400">Calibration Mode</span>
-              <span className="text-xs text-white/50 mt-1">Record 10 reps to analyze data</span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-purple-400">Modalità Calibrazione</span>
+              <span className="text-xs text-white/50 mt-1">Registra ripetizioni per analizzare i dati dei sensori</span>
             </div>
             <button
               onClick={() => {
@@ -719,8 +736,8 @@ const RepCounterPage: React.FC = () => {
                 <Target className="w-8 h-8 text-brand-orange" />
               </div>
               <div className="text-left">
-                <h3 className="text-xl font-bold uppercase tracking-wider">Pullups</h3>
-                <p className="text-brand-grey text-sm">Back and Biceps</p>
+                <h3 className="text-xl font-bold uppercase tracking-wider">Trazioni (Pull-up)</h3>
+                <p className="text-brand-grey text-sm">Dorsali e Bicipiti</p>
               </div>
             </div>
             <Play className="w-6 h-6 text-brand-grey group-hover:text-brand-orange transition-colors" />
@@ -735,8 +752,8 @@ const RepCounterPage: React.FC = () => {
                 <Repeat className="w-8 h-8 text-brand-lightOrange" />
               </div>
               <div className="text-left">
-                <h3 className="text-xl font-bold uppercase tracking-wider">Pushups</h3>
-                <p className="text-brand-grey text-sm">Chest and Triceps</p>
+                <h3 className="text-xl font-bold uppercase tracking-wider">Piegamenti (Push-up)</h3>
+                <p className="text-brand-grey text-sm">Pettorali e Tricipiti</p>
               </div>
             </div>
             <Play className="w-6 h-6 text-brand-grey group-hover:text-brand-lightOrange transition-colors" />
@@ -747,7 +764,7 @@ const RepCounterPage: React.FC = () => {
   }
 
   if (isAccelerometerMode) {
-    const currentExerciseLabel = selectedExercise === 'pullups' ? 'Pullups' : selectedExercise === 'pushups' ? 'Pushups' : '';
+    const currentExerciseLabel = selectedExercise === 'pullups' ? 'Trazioni' : selectedExercise === 'pushups' ? 'Piegamenti' : '';
 
     return (
       <div className="relative flex min-h-screen flex-col overflow-hidden bg-brand-dark">
@@ -760,7 +777,7 @@ const RepCounterPage: React.FC = () => {
             <ArrowLeft className="w-6 h-6 text-white" />
           </button>
           <div className="text-center">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Accelerometer Mode</p>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Modalità Accelerometro</p>
             <h2 className="text-xl font-bold uppercase tracking-widest text-brand-orange">{currentExerciseLabel}</h2>
           </div>
           <div className="w-10" />
@@ -771,28 +788,59 @@ const RepCounterPage: React.FC = () => {
             <Smartphone className="h-12 w-12 text-brand-orange" />
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3 flex flex-col items-center">
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/40">{accelerometerStatusLabel}</p>
             {accelerometerError ? (
-              <div className="max-w-sm rounded-3xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
-                {accelerometerError}
+              <div className="max-w-sm w-full rounded-3xl border border-amber-500/40 bg-black/60 backdrop-blur-xl p-5 text-left space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-2xl bg-amber-500/10 text-amber-400 shrink-0">
+                    <ShieldAlert className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-white font-bold text-sm">Permesso Sensori Richiesto</h4>
+                    <p className="text-white/60 text-xs mt-1 leading-relaxed">
+                      {accelerometerError}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl bg-white/5 p-3.5 space-y-2 text-xs text-white/70 border border-white/5">
+                  <p className="font-semibold text-white/90 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-brand-orange" />
+                    Come abilitare su iOS (iPhone):
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 text-white/60 pl-1">
+                    <li>Premi <strong className="text-brand-orange">Autorizza Sensori</strong> qui sotto</li>
+                    <li>Se persiste, apri <strong className="text-white">Impostazioni &gt; Safari &gt; Movimento e orientamento</strong> e attivalo</li>
+                    <li>Se sei in rete locale, assicurati di usare HTTPS</li>
+                  </ol>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRetryMotion}
+                  className="w-full py-3.5 px-4 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-orange/20"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Autorizza Sensori di Movimento
+                </button>
               </div>
             ) : isAccelerometerPreparing ? (
               <>
                 <div className="text-7xl font-black text-white">{prepRemaining}</div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-4 py-2 text-sm text-white/70">
                   <Timer className="h-4 w-4 text-brand-orange" />
-                  Put the phone in your pocket and get ready
+                  Metti il telefono in tasca e preparati
                 </div>
               </>
             ) : (
               <>
                 <div className="text-7xl font-black text-white">{count}</div>
-                <p className="text-sm uppercase tracking-[0.35em] text-brand-orange">Repetitions</p>
+                <p className="text-sm uppercase tracking-[0.35em] text-brand-orange">Ripetizioni</p>
                 {repTarget !== null && (
                   <div className="w-full max-w-[220px] mt-2">
                     <div className="flex justify-between text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">
-                      <span>Progress</span>
+                      <span>Progresso</span>
                       <span>{count}/{repTarget}</span>
                     </div>
                     <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
@@ -809,12 +857,12 @@ const RepCounterPage: React.FC = () => {
 
           <div className="max-w-sm rounded-3xl border border-white/10 bg-black/20 px-5 py-4 text-sm leading-relaxed text-white/60">
             {accelerometerError
-              ? 'Return to exercise selection and try again after enabling motion access.'
+              ? 'Se il problema persiste dopo aver abilitato l\'accesso nelle impostazioni, riavvia Safari o ricarica l\'app.'
               : isAccelerometerPreparing
-                ? 'The countdown gives you time to prepare. Counting starts automatically at zero.'
+                ? 'Il conto alla rovescia ti dà il tempo di posizionarti. Il conteggio parte automaticamente allo zero.'
                 : isAccelerometerPaused
-                  ? 'Press resume to continue preparation or exercise.'
-                  : 'Reps increase when the phone detects a full down-up cycle from your pocket.'}
+                  ? 'Premi riprendi per continuare la preparazione o l\'esercizio.'
+                  : 'Le ripetizioni aumentano quando il telefono nella tasca rileva il ciclo completo di discesa e salita.'}
           </div>
 
           <div className="flex w-full max-w-sm gap-3">
@@ -825,7 +873,7 @@ const RepCounterPage: React.FC = () => {
             >
               <span className="inline-flex items-center justify-center gap-2">
                 <Square className="h-4 w-4" />
-                End exercise
+                Termina Esercizio
               </span>
             </button>
           </div>
@@ -834,8 +882,8 @@ const RepCounterPage: React.FC = () => {
         {showCalibrationLogs && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-6">
             <div className="bg-brand-dark border border-purple-500/50 rounded-3xl p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
-              <h3 className="text-xl font-black text-purple-400 mb-1 uppercase tracking-wider">Calibration Log</h3>
-              <p className="text-xs text-white/50 mb-4 leading-relaxed">Copy this data to analyze your motion signatures. {calibrationLogs.length} events have been recorded (including rejected ones).</p>
+              <h3 className="text-xl font-black text-purple-400 mb-1 uppercase tracking-wider">Log di Calibrazione</h3>
+              <p className="text-xs text-white/50 mb-4 leading-relaxed">Copia questi dati per analizzare le traiettorie dei movimenti. Sono stati registrati {calibrationLogs.length} eventi.</p>
 
               <div className="flex-1 min-h-[200px] max-h-[400px] mb-4 relative rounded-xl overflow-hidden border border-white/10 bg-black/50">
                 <textarea
@@ -852,13 +900,13 @@ const RepCounterPage: React.FC = () => {
                   }}
                   className="flex-1 bg-white/10 border border-white/20 text-white font-bold py-3 px-4 rounded-xl hover:bg-white/20 transition-colors text-sm"
                 >
-                  Copy JSON
+                  Copia JSON
                 </button>
                 <button
                   onClick={cancelWorkout}
                   className="flex-1 bg-purple-500 text-white font-bold py-3 px-4 rounded-xl hover:bg-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-colors text-sm"
                 >
-                  Done
+                  Fatto
                 </button>
               </div>
             </div>
@@ -881,15 +929,13 @@ const RepCounterPage: React.FC = () => {
             <ArrowLeft className="w-6 h-6 text-white" />
           </button>
           <h2 className="text-xl font-bold uppercase tracking-widest text-brand-orange">
-            {selectedExercise === 'pullups' ? 'Pullups'
-              : selectedExercise === 'pushups' ? 'Pushups'
+            {selectedExercise === 'pullups' ? 'Trazioni'
+              : selectedExercise === 'pushups' ? 'Piegamenti'
                 : ''}
           </h2>
           <div className="w-10"></div>
         </div>
       </div>
-
-
 
       {/* Main Viewport */}
       <div ref={containerRef} className="relative flex-1 bg-zinc-900 overflow-hidden flex items-center justify-center">
@@ -912,12 +958,12 @@ const RepCounterPage: React.FC = () => {
         {/* Device Stillness Countdown Overlay */}
         {accelerometerPhase === 'preparing' && isCameraReady && !isCountingActive && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-xl p-8 rounded-3xl border border-brand-orange/50 text-center max-w-[90%] w-sm shadow-[0_0_40px_rgba(196,90,0,0.3)] animate-in fade-in zoom-in duration-300">
-            <h3 className="text-xl font-black text-brand-orange mb-2 uppercase tracking-wider">Device Stillness</h3>
+            <h3 className="text-xl font-black text-brand-orange mb-2 uppercase tracking-wider">Stabilità Dispositivo</h3>
             <p className="text-white/80 text-sm leading-relaxed mb-4">
-              Place your device down and get in position. The tracking will start automatically when the phone is still.
+              Appoggia il telefono e mettiti in posizione. Il rilevamento inizierà automaticamente quando il dispositivo sarà stabile.
             </p>
             <div className={`text-sm font-bold uppercase tracking-widest mb-6 ${accelerometerError ? 'text-yellow-400' : isDeviceStill ? 'text-green-400' : 'text-red-500 animate-pulse'}`}>
-              {accelerometerError ? 'Timer Fallback' : isDeviceStill ? 'Device is stable' : 'Device is moving...'}
+              {accelerometerError ? 'Timer Fallback' : isDeviceStill ? 'Dispositivo stabile' : 'Dispositivo in movimento...'}
             </div>
             <div className={`text-8xl font-black drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] transition-colors ${isDeviceStill ? 'text-white' : 'text-red-500/50'}`}>
               {prepRemaining}
@@ -925,18 +971,58 @@ const RepCounterPage: React.FC = () => {
           </div>
         )}
 
-
-
         {isLoading && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/55 backdrop-blur-sm">
             <Loader2 className="w-12 h-12 text-brand-orange animate-spin" />
-            <p className="text-white/80 font-medium">Loading AI models...</p>
+            <p className="text-white/80 font-medium">Caricamento modelli IA...</p>
           </div>
         )}
 
         {cameraError && (
-          <div className="absolute bottom-32 left-1/2 z-40 w-[90%] max-w-sm -translate-x-1/2 rounded-3xl border border-red-500/40 bg-black/80 p-4 text-center text-sm text-red-100 shadow-2xl">
-            {cameraError}
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-6">
+            <div className="max-w-sm w-full rounded-3xl border border-red-500/40 bg-brand-darkGrey/95 p-6 text-left space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-2xl bg-red-500/10 text-red-400 shrink-0">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-white font-bold text-base">Accesso Fotocamera Negato</h4>
+                  <p className="text-white/60 text-xs mt-1 leading-relaxed">
+                    {cameraError}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white/5 p-3.5 space-y-2 text-xs text-white/70 border border-white/5">
+                <p className="font-semibold text-white/90 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-brand-orange" />
+                  Come abilitare la fotocamera su iOS:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-white/60 pl-1">
+                  <li>Tocca <strong className="text-brand-orange">Riprova Accesso</strong> qui sotto</li>
+                  <li>Se bloccata in Safari, tocca <strong className="text-white">aA</strong> nella barra indirizzi &gt; <strong className="text-white">Impostazioni sito web &gt; Fotocamera &gt; Consenti</strong></li>
+                  <li>Su app: vai in <strong className="text-white">Impostazioni iPhone &gt; No-Excuses &gt; Fotocamera</strong> e abilitala</li>
+                </ol>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleRetryCamera}
+                  className="flex-1 py-3 px-3 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-orange/20"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Riprova Accesso
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelWorkout}
+                  className="py-3 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider transition-colors"
+                >
+                  Annulla
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -946,17 +1032,15 @@ const RepCounterPage: React.FC = () => {
           </div>
         )}
 
-
-
         {paused && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm">
-            <h3 className="text-3xl font-black text-white mt-4 uppercase tracking-tighter">Paused</h3>
+            <h3 className="text-3xl font-black text-white mt-4 uppercase tracking-tighter">In Pausa</h3>
           </div>
         )}
 
         {repTarget !== null && count >= repTarget && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md p-6">
-            <h3 className="text-4xl font-black text-brand-orange mb-6 uppercase tracking-widest text-center shadow-black drop-shadow-xl">Goal Reached!</h3>
+            <h3 className="text-4xl font-black text-brand-orange mb-6 uppercase tracking-widest text-center shadow-black drop-shadow-xl">Obiettivo Raggiunto!</h3>
             {location.state?.returnUrl ? (
               <button
                 onClick={() => {
@@ -967,7 +1051,7 @@ const RepCounterPage: React.FC = () => {
                 }}
                 className="bg-brand-orange text-black font-black uppercase tracking-widest py-4 px-10 rounded-full text-xl hover:scale-105 transition-transform shadow-[0_0_30px_rgba(255,102,0,0.6)]"
               >
-                Continue Workout
+                Continua Allenamento
               </button>
             ) : (
               <button
@@ -979,7 +1063,7 @@ const RepCounterPage: React.FC = () => {
                 }}
                 className="bg-brand-orange text-black font-black uppercase tracking-widest py-4 px-10 rounded-full text-xl hover:scale-105 transition-transform shadow-[0_0_30px_rgba(255,102,0,0.6)]"
               >
-                Go to Home Page
+                Torna alla Home
               </button>
             )}
           </div>
@@ -993,7 +1077,7 @@ const RepCounterPage: React.FC = () => {
           {repTarget !== null ? (
             <>
               <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">
-                / {repTarget} reps.
+                / {repTarget} rip.
               </p>
               <div className="w-full mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
                 <div
@@ -1003,7 +1087,7 @@ const RepCounterPage: React.FC = () => {
               </div>
             </>
           ) : (
-            <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">Repetitions</p>
+            <p className="text-brand-orange font-bold tracking-[0.2em] uppercase mt-1 text-sm">Ripetizioni</p>
           )}
         </div>
       </div>

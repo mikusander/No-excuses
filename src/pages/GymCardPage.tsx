@@ -72,6 +72,7 @@ import {
   Check,
   Play,
   Flame,
+  Search,
 } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
 import { hapticSelection, hapticMedium, hapticSuccess } from '../utils/haptics';
@@ -311,6 +312,22 @@ const GymCardPage: React.FC = () => {
       return !fId || !folders.some((f) => f.id === fId);
     });
   }, [workouts, folderAssignments, folders]);
+
+  // Stato e filtro ricerca rapida per nome scheda o per nome esercizio
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchFilteredWorkouts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null;
+    return workouts.filter((w) => {
+      const matchName = w.name.toLowerCase().includes(q);
+      const matchExercise = w.exercises.some((e) => {
+        if (e.name.toLowerCase().includes(q)) return true;
+        if (e.subExercises?.some((sub) => sub.name.toLowerCase().includes(q))) return true;
+        return false;
+      });
+      return matchName || matchExercise;
+    });
+  }, [workouts, searchQuery]);
 
   // Schede disponibili da spostare nella cartella corrente (tutte tranne quelle già dentro)
   const candidateWorkoutsToMove = useMemo(() => {
@@ -1050,7 +1067,7 @@ const GymCardPage: React.FC = () => {
             </div>
           </div>
         ) : (
-          <h1 className="text-xl font-bold text-center flex-1">Your Workouts</h1>
+          <h1 className="text-xl font-bold text-center flex-1">Le tue Schede</h1>
         )}
 
         <div className="flex items-center gap-2">
@@ -1086,6 +1103,50 @@ const GymCardPage: React.FC = () => {
       </header>
 
       <main className="flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto space-y-6 animate-page-enter">
+        {/* Barra di Ricerca Rapida Apple Dark Mode */}
+        {!loading && workouts.length > 0 && (
+          <div className="relative">
+            <div className="relative flex items-center">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
+                <Search size={18} />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cerca per scheda o esercizio..."
+                className="w-full bg-[#1C1C1E]/80 border border-white/10 rounded-2xl pl-10 pr-10 py-3 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-brand-orange/60 focus:ring-1 focus:ring-brand-orange/30 transition-all backdrop-blur-md shadow-sm"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                  title="Cancella ricerca"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            {searchQuery.trim() && searchFilteredWorkouts && (
+              <div className="flex items-center justify-between px-2 pt-2 text-xs text-zinc-400">
+                <span>
+                  {searchFilteredWorkouts.length === 0
+                    ? 'Nessun risultato trovato'
+                    : `${searchFilteredWorkouts.length} ${searchFilteredWorkouts.length === 1 ? 'scheda trovata' : 'schede trovate'}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="text-brand-orange hover:underline cursor-pointer font-bold"
+                >
+                  Mostra tutte
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div className="space-y-6 animate-pulse">
             {/* Skeleton Cartelle */}
@@ -1111,6 +1172,140 @@ const GymCardPage: React.FC = () => {
                 ))}
               </div>
             </div>
+          </div>
+        ) : searchFilteredWorkouts !== null ? (
+          /* ─── VISTA RISULTATI DI RICERCA ─────────────────────────────── */
+          <div className="space-y-4 animate-in fade-in duration-200">
+            {searchFilteredWorkouts.length === 0 ? (
+              <div className="text-center bg-[#1C1C1E]/60 border border-white/10 rounded-3xl p-8 mt-2 animate-sheet-enter">
+                <Search size={40} className="mx-auto text-zinc-500 mb-3" />
+                <h3 className="text-base font-bold text-white mb-1">Nessuna scheda trovata</h3>
+                <p className="text-xs text-zinc-400 max-w-xs mx-auto mb-4">
+                  Nessuna scheda o esercizio corrisponde a "{searchQuery}".
+                </p>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancella filtro
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {searchFilteredWorkouts.map((workout) => {
+                  const q = searchQuery.trim().toLowerCase();
+                  const matchingExercises = workout.exercises
+                    .filter((e) => {
+                      if (e.name.toLowerCase().includes(q)) return true;
+                      if (e.subExercises?.some((sub) => sub.name.toLowerCase().includes(q))) return true;
+                      return false;
+                    })
+                    .map((e) => e.name);
+
+                  return (
+                    <div
+                      key={workout.id}
+                      className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 shadow-xl relative overflow-hidden cursor-pointer hover:border-brand-orange/40 transition-colors"
+                      onClick={() => openWorkoutModal(workout)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openWorkoutModal(workout);
+                        }
+                      }}
+                    >
+                      <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
+                        {folders.length > 0 && (
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSingleSchedaToAssign(workout);
+                            }}
+                            className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg cursor-pointer"
+                            title="Sposta in una cartella"
+                          >
+                            <FolderInput size={20} />
+                          </button>
+                        )}
+                        <button 
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void duplicateWorkout(workout);
+                          }}
+                          disabled={duplicatingWorkoutId === workout.id}
+                          className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg disabled:opacity-50 cursor-pointer"
+                          title="Duplica Scheda"
+                        >
+                          {duplicatingWorkoutId === workout.id ? (
+                            <Loader2 size={20} className="animate-spin text-brand-orange" />
+                          ) : (
+                            <Copy size={20} />
+                          )}
+                        </button>
+                        <button 
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/edit-train/${workout.id}`);
+                          }}
+                          className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg cursor-pointer"
+                          title="Modifica Scheda"
+                        >
+                          <Pencil size={20} />
+                        </button>
+                        <button 
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void deleteWorkout(workout.id);
+                          }}
+                          className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg cursor-pointer"
+                          title="Elimina Scheda"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center pr-28 py-1">
+                        <div className="bg-brand-orange/20 p-3 rounded-2xl mr-4 shrink-0">
+                          <Calendar className="text-brand-orange" size={28} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight break-words">{workout.name}</h2>
+                            {isWorkoutActive(workout.id) && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-orange bg-brand-orange/15 border border-brand-orange/30 px-2 py-0.5 rounded-full shrink-0">
+                                <Flame size={10} className="animate-pulse fill-current" />
+                                In corso
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-brand-grey/60 font-semibold mt-1">
+                            {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          </p>
+                          {matchingExercises.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {matchingExercises.slice(0, 3).map((exName, idx) => (
+                                <span key={idx} className="text-[10px] font-bold bg-brand-orange/10 border border-brand-orange/30 text-brand-orange px-2 py-0.5 rounded-md">
+                                  {exName}
+                                </span>
+                              ))}
+                              {matchingExercises.length > 3 && (
+                                <span className="text-[10px] text-zinc-400">+{matchingExercises.length - 3} altri</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-brand-grey/60 font-bold uppercase tracking-wider mt-3 pl-16">
+                        Tocca per visualizzare la scheda
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : currentFolder ? (
           /* ─── VISTA INTERNA ALLA CARTELLA ──────────────────────────────── */
@@ -1562,8 +1757,8 @@ const GymCardPage: React.FC = () => {
                             void duplicateWorkout(workout);
                           }}
                           disabled={duplicatingWorkoutId === workout.id}
-                          className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg disabled:opacity-50"
-                          title="Duplicate Workout"
+                          className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg disabled:opacity-50 cursor-pointer"
+                          title="Duplica Scheda"
                         >
                           {duplicatingWorkoutId === workout.id ? (
                             <Loader2 size={20} className="animate-spin text-brand-orange" />
@@ -1576,8 +1771,8 @@ const GymCardPage: React.FC = () => {
                             event.stopPropagation();
                             navigate(`/edit-train/${workout.id}`);
                           }}
-                          className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg"
-                          title="Edit Workout"
+                          className="p-1 text-brand-grey/40 hover:text-brand-orange transition-colors bg-brand-dark/50 rounded-lg cursor-pointer"
+                          title="Modifica Scheda"
                         >
                           <Pencil size={20} />
                         </button>
@@ -1586,8 +1781,8 @@ const GymCardPage: React.FC = () => {
                             event.stopPropagation();
                             void deleteWorkout(workout.id);
                           }}
-                          className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg"
-                          title="Delete Workout"
+                          className="p-1 text-brand-grey/40 hover:text-red-500 transition-colors bg-brand-dark/50 rounded-lg cursor-pointer"
+                          title="Elimina Scheda"
                         >
                           <Trash2 size={20} />
                         </button>
@@ -1608,13 +1803,13 @@ const GymCardPage: React.FC = () => {
                             )}
                           </div>
                           <p className="text-xs text-brand-grey/60 font-semibold mt-1">
-                            {new Date(workout.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            {new Date(workout.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
                           </p>
                         </div>
                       </div>
 
                       <p className="text-[11px] text-brand-grey/60 font-bold uppercase tracking-wider mt-3 pl-16">
-                        Tap to view workout details
+                        Tocca per visualizzare la scheda
                       </p>
                     </div>
                   ))}
@@ -1806,14 +2001,14 @@ const GymCardPage: React.FC = () => {
           >
             <div className="p-5 border-b border-white/10 flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h3 className="text-xl font-black text-white leading-tight break-words">Quick Edit Exercise</h3>
+                <h3 className="text-xl font-black text-white leading-tight break-words">Modifica Rapida Esercizio</h3>
                 <p className="text-xs text-brand-grey/70 font-semibold mt-1 truncate">{exerciseQuickEditDraft.name}</p>
               </div>
 
               <button
                 onClick={closeExerciseQuickEdit}
-                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors"
-                title="Close quick edit"
+                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                title="Chiudi modifica rapida"
                 disabled={isQuickEditSaving}
               >
                 <X size={18} />
@@ -1827,32 +2022,32 @@ const GymCardPage: React.FC = () => {
                     <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                       <button
                         onClick={() => updateQuickEditExerciseType('reps')}
-                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${exerciseQuickEditDraft.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors cursor-pointer ${exerciseQuickEditDraft.type === 'reps' ? 'bg-brand-orange text-black font-black' : 'text-brand-grey hover:text-white'}`}
                       >
                         REPS
                       </button>
                       <button
                         onClick={() => updateQuickEditExerciseType('isometry')}
-                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${exerciseQuickEditDraft.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
+                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors cursor-pointer ${exerciseQuickEditDraft.type === 'isometry' ? 'bg-brand-orange text-black font-black' : 'text-brand-grey hover:text-white'}`}
                       >
-                        ISOMETRIC
+                        ISOMETRIA
                       </button>
                     </div>
                   )}
 
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-brand-grey">Sets
+                    <label className="text-sm text-brand-grey">Serie
                       <input
                         type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.sets}
                         onChange={(e) => updateQuickEditField('sets', e.target.value)}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none font-bold"
                       />
                     </label>
 
                     <div className="flex flex-col">
-                      <label className="text-sm text-brand-grey">Rest</label>
+                      <label className="text-sm text-brand-grey">Recupero</label>
                       <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                         <div className="relative flex-1 border-r border-brand-grey/10">
                           <input
@@ -1860,7 +2055,7 @@ const GymCardPage: React.FC = () => {
                             min={0}
                             value={toRestParts(exerciseQuickEditDraft.rest_seconds).minutes}
                             onChange={(e) => updateQuickEditRestPart('min', e.target.value)}
-                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none font-bold"
                           />
                           <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">MIN</span>
                         </div>
@@ -1871,7 +2066,7 @@ const GymCardPage: React.FC = () => {
                             max={59}
                             value={toRestParts(exerciseQuickEditDraft.rest_seconds).seconds}
                             onChange={(e) => updateQuickEditRestPart('sec', e.target.value)}
-                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none"
+                            className="w-full h-full bg-transparent pt-3 pb-1 px-3 text-center text-white focus:outline-none font-bold"
                           />
                           <span className="text-[8px] text-brand-grey/60 uppercase absolute top-1 left-2 font-bold tracking-wider pointer-events-none">SEC</span>
                         </div>
@@ -1880,34 +2075,35 @@ const GymCardPage: React.FC = () => {
                   </div>
 
                   {exerciseQuickEditDraft.type === 'reps' ? (
-                    <label className="text-sm text-brand-grey">Reps
+                    <label className="text-sm text-brand-grey">Ripetizioni
                       <input
                         type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.reps}
                         onChange={(e) => updateQuickEditField('reps', e.target.value)}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none font-bold"
                       />
                     </label>
                   ) : (
-                    <label className="text-sm text-brand-grey">Duration (sec)
+                    <label className="text-sm text-brand-grey">Durata (sec)
                       <input
                         type="number" inputMode="numeric"
                         min={1}
                         value={exerciseQuickEditDraft.duration_seconds}
                         onChange={(e) => updateQuickEditField('duration_seconds', e.target.value)}
-                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                        className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none font-bold"
                       />
                     </label>
                   )}
 
-                  <label className="text-sm text-brand-grey">Weight (kg)
+                  <label className="text-sm text-brand-grey">Peso (kg)
                     <input
                       type="text"
+                      inputMode="decimal"
                       value={exerciseQuickEditDraft.weight_kg}
                       onChange={(e) => updateQuickEditField('weight_kg', e.target.value)}
-                      placeholder="body Weight"
-                      className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
+                      placeholder="Corpo libero"
+                      className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none font-bold placeholder:font-normal placeholder:text-zinc-500"
                     />
                   </label>
                 </>
@@ -1916,7 +2112,7 @@ const GymCardPage: React.FC = () => {
               {(exerciseQuickEditDraft.type === 'superset' || exerciseQuickEditDraft.type === 'circuit') && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-brand-grey">Rounds
+                    <label className="text-sm text-brand-grey">Round
                       <input
                         type="number" inputMode="numeric"
                         min={1}
@@ -1927,7 +2123,7 @@ const GymCardPage: React.FC = () => {
                     </label>
 
                     <div className="flex flex-col">
-                      <label className="text-sm text-brand-grey">Rest Between Rounds</label>
+                      <label className="text-sm text-brand-grey">Recupero tra Round</label>
                       <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                         <div className="relative flex-1 border-r border-brand-grey/10">
                           <input
@@ -1957,23 +2153,23 @@ const GymCardPage: React.FC = () => {
                   <div className="space-y-3">
                     {exerciseQuickEditDraft.subExercises.map((sub, subIdx) => (
                       <div key={`${sub.name}:${subIdx}`} className="border border-white/10 rounded-xl p-3 bg-black/20 space-y-2">
-                        <p className="text-xs font-bold uppercase tracking-wider text-brand-grey/70">{sub.name || `Exercise ${subIdx + 1}`}</p>
+                        <p className="text-xs font-bold uppercase tracking-wider text-brand-grey/70">{sub.name || `Esercizio ${subIdx + 1}`}</p>
                         <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                           <button
                             onClick={() => updateQuickEditSubType(subIdx, 'reps')}
                             className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
-                            REPS
+                            RIPETIZIONI
                           </button>
                           <button
                             onClick={() => updateQuickEditSubType(subIdx, 'isometry')}
                             className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
-                            ISOMETRIC
+                            ISOMETRIA
                           </button>
                         </div>
                         {sub.type === 'reps' ? (
-                          <label className="text-sm text-brand-grey">Reps
+                          <label className="text-sm text-brand-grey">Ripetizioni
                             <input
                               type="number" inputMode="numeric"
                               min={1}
@@ -1983,7 +2179,7 @@ const GymCardPage: React.FC = () => {
                             />
                           </label>
                         ) : (
-                          <label className="text-sm text-brand-grey">Duration (sec)
+                          <label className="text-sm text-brand-grey">Durata (sec)
                             <input
                               type="number" inputMode="numeric"
                               min={1}
@@ -1993,12 +2189,13 @@ const GymCardPage: React.FC = () => {
                             />
                           </label>
                         )}
-                        <label className="text-sm text-brand-grey">Weight (kg)
+                        <label className="text-sm text-brand-grey">Peso (kg)
                           <input
                             type="text"
+                            inputMode="decimal"
                             value={sub.weight_kg}
                             onChange={(e) => updateQuickEditSubField(subIdx, 'weight_kg', e.target.value)}
-                            placeholder="body Weight"
+                            placeholder="Corpo libero"
                             className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
                           />
                         </label>
@@ -2011,7 +2208,7 @@ const GymCardPage: React.FC = () => {
               {exerciseQuickEditDraft.type === 'emom' && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-brand-grey">Sets
+                    <label className="text-sm text-brand-grey">Serie
                       <input
                         type="number" inputMode="numeric"
                         min={1}
@@ -2021,7 +2218,7 @@ const GymCardPage: React.FC = () => {
                       />
                     </label>
 
-                    <label className="text-sm text-brand-grey">Rounds
+                    <label className="text-sm text-brand-grey">Round per Serie
                       <input
                         type="number" inputMode="numeric"
                         min={1}
@@ -2066,7 +2263,7 @@ const GymCardPage: React.FC = () => {
                     </div>
 
                     <div className="flex flex-col">
-                      <label className="text-sm text-brand-grey">Rest Between Sets</label>
+                      <label className="text-sm text-brand-grey">Recupero tra Serie</label>
                       <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                         <div className="relative flex-1 border-r border-brand-grey/10">
                           <input
@@ -2096,23 +2293,23 @@ const GymCardPage: React.FC = () => {
                   <div className="space-y-3">
                     {exerciseQuickEditDraft.subExercises.map((sub, subIdx) => (
                       <div key={`${sub.name}:${subIdx}`} className="border border-white/10 rounded-xl p-3 bg-black/20 space-y-2">
-                        <p className="text-xs font-bold uppercase tracking-wider text-brand-grey/70">{sub.name || `Task ${subIdx + 1}`}</p>
+                        <p className="text-xs font-bold uppercase tracking-wider text-brand-grey/70">{sub.name || `Esercizio ${subIdx + 1}`}</p>
                         <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
                           <button
                             onClick={() => updateQuickEditSubType(subIdx, 'reps')}
                             className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'reps' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
-                            REPS
+                            RIPETIZIONI
                           </button>
                           <button
                             onClick={() => updateQuickEditSubType(subIdx, 'isometry')}
                             className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'isometry' ? 'bg-brand-orange text-black' : 'text-brand-grey hover:text-white'}`}
                           >
-                            ISOMETRIC
+                            ISOMETRIA
                           </button>
                         </div>
                         {sub.type === 'reps' ? (
-                          <label className="text-sm text-brand-grey">Reps
+                          <label className="text-sm text-brand-grey">Ripetizioni
                             <input
                               type="number" inputMode="numeric"
                               min={1}
@@ -2122,7 +2319,7 @@ const GymCardPage: React.FC = () => {
                             />
                           </label>
                         ) : (
-                          <label className="text-sm text-brand-grey">Duration (sec)
+                          <label className="text-sm text-brand-grey">Durata (sec)
                             <input
                               type="number" inputMode="numeric"
                               min={1}
@@ -2132,12 +2329,13 @@ const GymCardPage: React.FC = () => {
                             />
                           </label>
                         )}
-                        <label className="text-sm text-brand-grey">Weight (kg)
+                        <label className="text-sm text-brand-grey">Peso (kg)
                           <input
                             type="text"
+                            inputMode="decimal"
                             value={sub.weight_kg}
                             onChange={(e) => updateQuickEditSubField(subIdx, 'weight_kg', e.target.value)}
-                            placeholder="body Weight"
+                            placeholder="Corpo libero"
                             className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
                           />
                         </label>
@@ -2154,7 +2352,7 @@ const GymCardPage: React.FC = () => {
                       <p className="text-xs font-bold uppercase tracking-wider text-brand-grey/70">Step {stepIdx + 1}</p>
 
                       <div className="grid grid-cols-2 gap-3">
-                        <label className="text-sm text-brand-grey">Reps
+                        <label className="text-sm text-brand-grey">Ripetizioni
                           <input
                             type="number" inputMode="numeric"
                             min={1}
@@ -2165,7 +2363,7 @@ const GymCardPage: React.FC = () => {
                         </label>
 
                         <div className="flex flex-col">
-                          <label className="text-sm text-brand-grey">Rest</label>
+                          <label className="text-sm text-brand-grey">Recupero</label>
                           <div className="mt-1 flex bg-black/40 border border-brand-grey/20 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-[42px]">
                             <div className="relative flex-1 border-r border-brand-grey/10">
                               <input
@@ -2192,12 +2390,13 @@ const GymCardPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <label className="text-sm text-brand-grey">Weight (kg)
+                      <label className="text-sm text-brand-grey">Peso (kg)
                         <input
                           type="text"
+                          inputMode="decimal"
                           value={step.weight_kg}
                           onChange={(e) => updateQuickEditPyramidStepField(stepIdx, 'weight_kg', e.target.value)}
-                          placeholder="body Weight"
+                          placeholder="Corpo libero"
                           className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
                         />
                       </label>
@@ -2238,14 +2437,14 @@ const GymCardPage: React.FC = () => {
                 disabled={isQuickEditSaving}
                 className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold disabled:opacity-50"
               >
-                Cancel
+                Annulla
               </button>
               <button
                 onClick={saveExerciseQuickEdit}
                 disabled={isQuickEditSaving}
                 className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60"
               >
-                {isQuickEditSaving ? 'Saving...' : 'Save Changes'}
+                {isQuickEditSaving ? 'Salvataggio...' : 'Salva Modifiche'}
               </button>
             </div>
           </div>
