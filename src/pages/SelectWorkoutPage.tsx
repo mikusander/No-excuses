@@ -134,20 +134,7 @@ const SelectWorkoutPage: React.FC = () => {
     return unsub;
   }, [user?.id]);
 
-  const filteredWorkouts = useMemo(() => {
-    if (selectedFolderFilter === 'all') return workouts;
-    if (selectedFolderFilter === 'root') {
-      return workouts.filter((w) => !folderAssignments[w.id]);
-    }
-    const inFolder = workouts.filter((w) => folderAssignments[w.id] === selectedFolderFilter);
-    return sortSchedeByFolderOrder(inFolder, selectedFolderFilter, user?.id);
-  }, [workouts, folderAssignments, selectedFolderFilter, user?.id, folders]);
-
-  useEffect(() => {
-    fetchWorkouts();
-  }, [user]);
-
-  const fetchWorkouts = async () => {
+  const fetchWorkouts = useCallback(async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -156,7 +143,8 @@ const SelectWorkoutPage: React.FC = () => {
         .order('data_creazione', { ascending: false });
 
       if (error) throw error;
-      setWorkouts((data || []).map((w: any) => ({
+      const rawRows = (data || []) as Array<{ id_scheda: number | string; nome: string; data_creazione: string }>;
+      setWorkouts(rawRows.map((w) => ({
         id: String(w.id_scheda),
         name: w.nome,
         created_at: w.data_creazione,
@@ -166,8 +154,20 @@ const SelectWorkoutPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
+  useEffect(() => {
+    void fetchWorkouts();
+  }, [fetchWorkouts]);
+
+  const filteredWorkouts = useMemo(() => {
+    if (selectedFolderFilter === 'all') return workouts;
+    if (selectedFolderFilter === 'root') {
+      return workouts.filter((w) => !folderAssignments[w.id]);
+    }
+    const inFolder = workouts.filter((w) => folderAssignments[w.id] === selectedFolderFilter);
+    return sortSchedeByFolderOrder(inFolder, selectedFolderFilter, user?.id);
+  }, [workouts, folderAssignments, selectedFolderFilter, user?.id]);
 
   const closePreviewModal = () => {
     setSelectedWorkout(null);
@@ -189,19 +189,37 @@ const SelectWorkoutPage: React.FC = () => {
 
       <main className="flex-1 p-6 w-full max-w-2xl mx-auto space-y-6">
         {loading ? (
-          <div className="flex justify-center items-center h-48">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey"></div>
+          <div className="space-y-4 animate-pulse">
+            <div className="flex gap-2 overflow-hidden pb-1">
+              <div className="h-8 w-24 bg-white/10 rounded-full" />
+              <div className="h-8 w-28 bg-white/10 rounded-full" />
+              <div className="h-8 w-24 bg-white/10 rounded-full" />
+            </div>
+            <div className="space-y-3 pt-2">
+              {[1, 2, 3, 4].map((n) => (
+                <div key={n} className="bg-brand-card/80 border border-white/5 rounded-3xl p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-white/10 shrink-0" />
+                    <div className="space-y-2">
+                      <div className="h-4 w-36 bg-white/15 rounded-md" />
+                      <div className="h-3 w-20 bg-white/10 rounded-md" />
+                    </div>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-white/10" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : workouts.length === 0 ? (
-          <div className="text-center bg-brand-darkGrey/20 border border-dashed border-brand-grey/30 rounded-3xl p-8 mt-12">
-            <Dumbbell size={48} className="mx-auto text-brand-grey/50 mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">No Workouts Found</h2>
-            <p className="text-brand-grey text-sm mb-6">You haven't created any workouts yet.</p>
+          <div className="text-center bg-[#1C1C1E]/60 border border-white/10 rounded-3xl p-8 mt-12 animate-sheet-enter">
+            <Dumbbell size={48} className="mx-auto text-brand-grey/40 mb-4" />
+            <h2 className="text-xl font-bold text-white mb-2">Nessuna scheda trovata</h2>
+            <p className="text-brand-grey/70 text-sm mb-6 max-w-xs mx-auto">Non hai ancora creato nessuna scheda di allenamento.</p>
             <button
               onClick={() => navigate('/new-train')}
-              className="bg-brand-orange hover:bg-brand-lightOrange text-black font-bold py-3 px-6 rounded-full transition-colors"
+              className="bg-brand-orange hover:bg-brand-lightOrange text-black font-extrabold py-3 px-6 rounded-full transition-all shadow-lg shadow-brand-orange/20 cursor-pointer active:scale-95"
             >
-              CREATE ONE NOW
+              CREA UNA SCHEDA ORA
             </button>
           </div>
         ) : (

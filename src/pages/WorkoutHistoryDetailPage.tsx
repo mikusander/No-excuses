@@ -613,22 +613,56 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-brand-dark flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-brand-orange border-b-2 border-brand-darkGrey" />
+      <div className="min-h-screen bg-brand-dark flex flex-col safe-pb-nav relative">
+        <header className="sticky top-0 z-30 pt-[env(safe-area-inset-top,0px)] bg-brand-dark/95 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white/10 animate-pulse" />
+          <div className="space-y-1.5 flex-1 animate-pulse">
+            <div className="h-4 w-40 bg-white/15 rounded-md" />
+            <div className="h-3 w-24 bg-white/10 rounded-md" />
+          </div>
+        </header>
+
+        <main className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 w-full animate-pulse">
+          {/* Hero Summary Skeleton */}
+          <div className="bg-brand-card/80 border border-white/5 rounded-3xl p-5 space-y-4">
+            <div className="h-5 w-48 bg-white/15 rounded-md" />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {[1, 2, 3, 4].map((n) => (
+                <div key={n} className="h-16 bg-white/5 rounded-2xl" />
+              ))}
+            </div>
+          </div>
+
+          {/* Exercise Cards Skeleton */}
+          <div className="space-y-3 pt-2">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="bg-brand-card/80 border border-white/5 rounded-3xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="h-5 w-36 bg-white/15 rounded-md" />
+                  <div className="h-4 w-16 bg-white/10 rounded-full" />
+                </div>
+                <div className="h-12 bg-white/5 rounded-2xl" />
+              </div>
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
 
   if (error || !detail) {
     return (
-      <div className="min-h-screen bg-brand-dark text-white p-6 flex flex-col items-center justify-center text-center">
-        <h1 className="text-2xl font-black mb-3">Details unavailable</h1>
-        <p className="text-brand-grey mb-6">{error || 'No data found for this workout.'}</p>
+      <div className="min-h-screen bg-brand-dark text-white p-6 flex flex-col items-center justify-center text-center select-none">
+        <div className="w-16 h-16 rounded-3xl bg-brand-card border border-white/10 flex items-center justify-center text-brand-orange mb-4 shadow-xl">
+          <Dumbbell size={32} />
+        </div>
+        <h1 className="text-2xl font-black mb-2">Dettagli non disponibili</h1>
+        <p className="text-zinc-400 text-sm mb-6 max-w-xs">{error || 'Nessun dato trovato per questa sessione di allenamento.'}</p>
         <button
           onClick={() => navigate('/workout-history')}
-          className="bg-brand-orange text-black font-black px-5 py-3 rounded-full"
+          className="bg-brand-orange hover:bg-brand-lightOrange text-black font-extrabold px-6 py-3 rounded-full transition-all shadow-lg shadow-brand-orange/20 cursor-pointer active:scale-95"
         >
-          Back to history
+          TORNA ALLO STORICO
         </button>
       </div>
     );
