@@ -109,6 +109,7 @@ import {
 } from '../utils/folderManager';
 import { generateUUID } from '../utils/uuid';
 import { hapticLight, hapticMedium, hapticSuccess } from '../utils/haptics';
+import { getOfflineSchedaById, updateSingleSchedaInOfflineCache, syncOfflineSchedeWithCloud } from '../lib/offlineSchedeManager';
 
 interface ExerciseDraft {
   id: string;
@@ -633,6 +634,34 @@ const NewTrainPage: React.FC = () => {
   const loadWorkout = async (workoutId: string) => {
     try {
       setLoading(true);
+
+      // Se offline, carica direttamente dalla cache locale delle schede
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const cached = getOfflineSchedaById(user?.id, Number(workoutId));
+        if (cached) {
+          setWorkoutName(cached.nome);
+          const currentFolder = getFolderForScheda(workoutId, user?.id);
+          setSelectedFolderId(currentFolder);
+          const parsed = parseDbExerciseRows(cached.esecuzioni || []).map((ex: any) => ({
+            ...ex,
+            id: generateUUID(),
+            instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
+            transition_rest_seconds: Number.isFinite(Number(ex.transition_rest_seconds))
+              ? Math.max(0, Math.trunc(Number(ex.transition_rest_seconds)))
+              : 0,
+            subExercises: Array.isArray(ex.subExercises)
+              ? ex.subExercises.map((sub: any) => ({
+                ...sub,
+                type: sub.type === 'isometry' ? 'isometry' : 'reps',
+                instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
+              }))
+              : ex.subExercises,
+          }));
+          setExercises(parsed as ExerciseDraft[]);
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from('schede')
         .select(`
@@ -665,6 +694,9 @@ const NewTrainPage: React.FC = () => {
       if (error) throw error;
 
       if (data) {
+        if (user?.id) {
+          updateSingleSchedaInOfflineCache(user.id, data as any);
+        }
         setWorkoutName(data.nome);
         const currentFolder = getFolderForScheda(workoutId, user?.id);
         setSelectedFolderId(currentFolder);
@@ -687,6 +719,30 @@ const NewTrainPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
+      // Fallback a cache offline se la rete ha fallito
+      const cached = getOfflineSchedaById(user?.id, Number(workoutId));
+      if (cached) {
+        setWorkoutName(cached.nome);
+        const currentFolder = getFolderForScheda(workoutId, user?.id);
+        setSelectedFolderId(currentFolder);
+        const parsed = parseDbExerciseRows(cached.esecuzioni || []).map((ex: any) => ({
+          ...ex,
+          id: generateUUID(),
+          instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
+          transition_rest_seconds: Number.isFinite(Number(ex.transition_rest_seconds))
+            ? Math.max(0, Math.trunc(Number(ex.transition_rest_seconds)))
+            : 0,
+          subExercises: Array.isArray(ex.subExercises)
+            ? ex.subExercises.map((sub: any) => ({
+              ...sub,
+              type: sub.type === 'isometry' ? 'isometry' : 'reps',
+              instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
+            }))
+            : ex.subExercises,
+        }));
+        setExercises(parsed as ExerciseDraft[]);
+        return;
+      }
       setError('Error loading workout');
     } finally {
       setLoading(false);
@@ -2266,6 +2322,19 @@ const NewTrainPage: React.FC = () => {
 
       if (workoutIdToUse) {
         assignSchedaToFolder(workoutIdToUse, selectedFolderId, user?.id);
+        if (user?.id) {
+          updateSingleSchedaInOfflineCache(user.id, {
+            id_scheda: Number(workoutIdToUse),
+            nome: workoutName,
+            data_creazione: new Date().toISOString(),
+            esecuzioni: rowsToInsert.map((row, rIdx) => ({
+              ...row,
+              id_esecuzione: rIdx + 1,
+              esercizi: { nome: exercises[rIdx]?.name || '' },
+            })),
+          });
+          void syncOfflineSchedeWithCloud(user.id).catch(() => {});
+        }
       }
 
       if (isCreateMode && user?.id) {

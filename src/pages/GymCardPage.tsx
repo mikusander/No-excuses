@@ -96,6 +96,12 @@ import {
   type FolderAssignmentMap,
 } from '../utils/folderManager';
 import {
+  getOfflineSchede,
+  saveSchedeToOfflineCache,
+  removeSchedaFromOfflineCache,
+  SCHEDA_FULL_SELECT_QUERY,
+} from '../lib/offlineSchedeManager';
+import {
   getValidWorkoutProgressCheckpoints,
   subscribeToWorkoutProgress,
   type WorkoutProgressCheckpointMeta,
@@ -163,8 +169,16 @@ interface ExerciseQuickEditDraft {
 const GymCardPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [workouts, setWorkouts] = useState<Workout[]>(() => {
+    const cached = getOfflineSchede(user?.id);
+    return cached.map((c) => ({
+      id: String(c.id_scheda),
+      name: c.nome,
+      created_at: c.data_creazione,
+      exercises: c.exercises as Exercise[],
+    }));
+  });
+  const [loading, setLoading] = useState(() => getOfflineSchede(user?.id).length === 0);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [editingExerciseIndex, setEditingExerciseIndex] = useState<number | null>(null);
   const [exerciseQuickEditDraft, setExerciseQuickEditDraft] = useState<ExerciseQuickEditDraft | null>(null);
@@ -458,35 +472,28 @@ const GymCardPage: React.FC = () => {
   }, [user]);
 
   const fetchWorkouts = async () => {
-    try {
+    const cached = getOfflineSchede(user?.id);
+    if (cached.length > 0) {
+      setWorkouts(cached.map((c) => ({
+        id: String(c.id_scheda),
+        name: c.nome,
+        created_at: c.data_creazione,
+        exercises: c.exercises as Exercise[],
+      })));
+      setLoading(false);
+    } else {
       setLoading(true);
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setLoading(false);
+      return;
+    }
+
+    try {
       const { data, error } = await supabase
         .from('schede')
-        .select(`
-          id_scheda,
-          nome,
-          data_creazione,
-          esecuzioni (
-            id_esecuzione,
-            ordine,
-            set_num,
-            rest_secondi,
-            rest_tra_esercizi,
-            peso_kg,
-            note_esercizio,
-            tipo,
-            reps,
-            durata_secondi,
-            id_superset,
-            id_piramide,
-            stepindex_piramide,
-            id_emom,
-            stepindex_emom,
-            superset ( round_totali ),
-            emom ( round_totali, durata_round_secondi ),
-            esercizi ( nome )
-          )
-        `)
+        .select(SCHEDA_FULL_SELECT_QUERY)
         .order('data_creazione', { ascending: false });
 
       if (error) throw error;
@@ -496,10 +503,22 @@ const GymCardPage: React.FC = () => {
         created_at: w.data_creazione,
         exercises: parseDbExerciseRows(w.esecuzioni || []) as Exercise[],
       }));
-      
+
       setWorkouts(parsedWorkouts);
+      if (user?.id && Array.isArray(data)) {
+        saveSchedeToOfflineCache(user.id, data);
+      }
     } catch (error) {
-      console.error('Error fetching workouts:', error);
+      console.warn('[GymCardPage] Errore caricamento schede dal cloud (fallback su cache locale):', error);
+      const fallbackCached = getOfflineSchede(user?.id);
+      if (fallbackCached.length > 0) {
+        setWorkouts(fallbackCached.map((c) => ({
+          id: String(c.id_scheda),
+          name: c.nome,
+          created_at: c.data_creazione,
+          exercises: c.exercises as Exercise[],
+        })));
+      }
     } finally {
       setLoading(false);
     }
@@ -561,6 +580,9 @@ const GymCardPage: React.FC = () => {
       if (error) throw error;
       setWorkouts((prev) => prev.filter((w) => w.id !== id));
       setSelectedWorkout((prev) => (prev?.id === id ? null : prev));
+      if (user?.id) {
+        removeSchedaFromOfflineCache(user.id, id);
+      }
     } catch (error) {
       console.error('Error deleting workout:', error);
     }

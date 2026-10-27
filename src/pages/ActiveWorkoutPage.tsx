@@ -147,7 +147,13 @@ import {
   clearActiveWorkoutDraft,
   enqueueCompletedWorkout,
   processSyncQueue,
+  getSyncQueue,
 } from '../lib/workoutSyncManager';
+import {
+  getOfflineSchedaById,
+  updateSingleSchedaInOfflineCache,
+  SCHEDA_FULL_SELECT_QUERY,
+} from '../lib/offlineSchedeManager';
 import { WorkoutCelebrationModal } from '../components/WorkoutCelebrationModal';
 import {
   lockAppToPortrait,
@@ -2629,61 +2635,71 @@ const ActiveWorkoutPage: React.FC = () => {
     };
 
     const fetchSchedaById = async (schedaId: number) => {
-      const { data, error } = await supabase
-        .from('schede')
-        .select(`
-          id_scheda,
-          nome,
-          esecuzioni (
-            id_esecuzione,
-            ordine,
-            set_num,
-            rest_secondi,
-            rest_tra_esercizi,
-            peso_kg,
-            note_esercizio,
-            tipo,
-            reps,
-            durata_secondi,
-            id_superset,
-            id_piramide,
-            stepindex_piramide,
-            id_emom,
-            stepindex_emom,
-            superset ( round_totali ),
-            emom ( round_totali, durata_round_secondi ),
-            esercizi ( nome )
-          )
-        `)
-        .eq('id_scheda', schedaId)
-        .maybeSingle();
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return null;
+      }
+      try {
+        const { data, error } = await supabase
+          .from('schede')
+          .select(SCHEDA_FULL_SELECT_QUERY)
+          .eq('id_scheda', schedaId)
+          .maybeSingle();
 
-      if (error) throw error;
-      return data;
+        if (error) throw error;
+        return data;
+      } catch (err) {
+        console.warn('[ActiveWorkoutPage] Chiamata cloud non riuscita, provo cache offline:', err);
+        return null;
+      }
     };
 
     try {
       setLoading(true);
       if (workoutRunId) {
         const workoutRunNumericId = Number(workoutRunId);
-        if (!Number.isFinite(workoutRunNumericId)) {
-          throw new Error('Invalid workout history id.');
+        let runData: any = null;
+
+        if (Number.isFinite(workoutRunNumericId) && (typeof navigator === 'undefined' || navigator.onLine)) {
+          try {
+            const { data, error } = await supabase
+              .from('workout_run')
+              .select(`
+                id_workout,
+                id_scheda,
+                workout_name_snapshot,
+                exercises_snapshot,
+                schede ( id_scheda, nome )
+              `)
+              .eq('id_workout', workoutRunNumericId)
+              .eq('id_utente', user.id)
+              .maybeSingle();
+
+            if (!error && data) runData = data;
+          } catch {
+            // offline
+          }
         }
 
-        const { data: runData, error: runError } = await supabase
-          .from('workout_run')
-          .select(`
-            id_workout,
-            id_scheda,
-            workout_name_snapshot,
-            exercises_snapshot,
-            schede ( id_scheda, nome )
-          `)
-          .eq('id_workout', workoutRunNumericId)
-          .eq('id_utente', user.id)
-          .maybeSingle();
+        // Se offline o non trovato sul cloud, cerca nella coda locale offline
+        if (!runData && user?.id) {
+          const localQueue = getSyncQueue(user.id);
+          const matched = localQueue.find(
+            (item) => item.workout_uuid === workoutRunId || String(item.remote_workout_run_id) === String(workoutRunId)
+          );
+          if (matched) {
+            const snapshotExercises = toSnapshotExercises(matched.exercises_snapshot);
+            initializeWorkoutState(
+              {
+                id: `history-${matched.workout_uuid}`,
+                name: matched.workout_name_snapshot || 'Allenamento',
+                exercises: snapshotExercises,
+              },
+              matched.id_scheda != null ? Number(matched.id_scheda) : null
+            );
+            return;
+          }
+        }
 
-        if (runError) throw runError;
         if (!runData) {
           throw new Error('Workout history entry not found.');
         }
@@ -2741,15 +2757,42 @@ const ActiveWorkoutPage: React.FC = () => {
       }
 
       const data = await fetchSchedaById(schedaId);
-      if (!data) {
-        throw new Error('Workout not found.');
+
+      if (data) {
+        const sortedExercises = parseDbExerciseRows(data.esecuzioni || []) as Exercise[];
+        if (user?.id) {
+          updateSingleSchedaInOfflineCache(user.id, {
+            id_scheda: data.id_scheda,
+            nome: data.nome,
+            data_creazione: data.data_creazione,
+            raw_esecuzioni: data.esecuzioni || [],
+            exercises: sortedExercises,
+          });
+        }
+        initializeWorkoutState(
+          { id: String(data.id_scheda), name: data.nome, exercises: sortedExercises },
+          Number(data.id_scheda),
+        );
+        return;
       }
 
-      const sortedExercises = parseDbExerciseRows(data.esecuzioni || []) as Exercise[];
-      initializeWorkoutState(
-        { id: String(data.id_scheda), name: data.nome, exercises: sortedExercises },
-        Number(data.id_scheda),
-      );
+      // Fallback OFFLINE dalla cache locale
+      if (user?.id) {
+        const cached = getOfflineSchedaById(user.id, schedaId);
+        if (cached) {
+          const sortedExercises = (cached.exercises && cached.exercises.length > 0)
+            ? (cached.exercises as Exercise[])
+            : (cached.raw_esecuzioni ? parseDbExerciseRows(cached.raw_esecuzioni) as Exercise[] : []);
+
+          initializeWorkoutState(
+            { id: String(cached.id_scheda), name: cached.nome, exercises: sortedExercises },
+            Number(cached.id_scheda),
+          );
+          return;
+        }
+      }
+
+      throw new Error('Workout not found.');
     } catch (error) {
       console.error('Error fetching workout:', error);
     } finally {

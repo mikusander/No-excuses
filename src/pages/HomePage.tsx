@@ -35,6 +35,8 @@ import {
   getNextSchedaInFolder,
   subscribeToFolderChanges,
 } from '../utils/folderManager';
+import { getSyncQueue, subscribeToSyncQueue } from '../lib/workoutSyncManager';
+import { getOfflineSchede, subscribeToOfflineSchede } from '../lib/offlineSchedeManager';
 
 const toLocalDateKey = (dateStr: string | Date): string => {
   const d = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
@@ -75,10 +77,10 @@ const HomePage: React.FC = () => {
 
   useEffect(() => {
     refreshCheckpoint();
-    const unsubscribe = subscribeToWorkoutProgress(() => {
+    const unsubProgress = subscribeToWorkoutProgress(() => {
       refreshCheckpoint();
     });
-    return unsubscribe;
+    return unsubProgress;
   }, [refreshCheckpoint]);
 
   // Carica i dati dell'utente, storico e schede con risoluzione del prossimo workout in sequenza
@@ -86,49 +88,87 @@ const HomePage: React.FC = () => {
     if (!user?.id) return;
 
     try {
-      // Caricamento in parallelo per massima reattività
-      const [profileRes, runsRes, schedeRes] = await Promise.all([
-        supabase
-          .from('profili')
-          .select('username')
-          .eq('id_utente', user.id)
-          .maybeSingle(),
-        supabase
-          .from('workout_run')
-          .select(`
-            id_workout,
-            id_scheda,
-            workout_name_snapshot,
-            exercises_snapshot,
-            data_esecuzione,
-            durata_totale_secondi,
-            schede ( id_scheda, nome ),
-            note_workout ( testo, created_at )
-          `)
-          .eq('id_utente', user.id)
-          .order('data_esecuzione', { ascending: false })
-          .limit(100),
-        supabase
-          .from('schede')
-          .select('id_scheda, nome, data_creazione', { count: 'exact' })
-          .eq('id_utente', user.id)
-          .order('data_creazione', { ascending: false }),
-      ]);
+      let profileRes: any = { data: null };
+      let runsRes: any = { data: [] };
+      let schedeRes: any = { data: [], count: null };
 
-      // 1. Profilo utente
-      if (profileRes.data?.username) {
-        setUserName(profileRes.data.username);
-      } else {
-        setUserName(user.email?.split('@')[0] || 'Atleta');
+      // Caricamento in parallelo per massima reattività se online
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        try {
+          const [p, r, s] = await Promise.all([
+          supabase
+            .from('profili')
+            .select('username')
+            .eq('id_utente', user.id)
+            .maybeSingle(),
+          supabase
+            .from('workout_run')
+            .select(`
+              id_workout,
+              id_scheda,
+              workout_name_snapshot,
+              exercises_snapshot,
+              data_esecuzione,
+              durata_totale_secondi,
+              schede ( id_scheda, nome ),
+              note_workout ( testo, created_at )
+            `)
+            .eq('id_utente', user.id)
+            .order('data_esecuzione', { ascending: false })
+            .limit(100),
+          supabase
+            .from('schede')
+            .select('id_scheda, nome, data_creazione', { count: 'exact' })
+            .eq('id_utente', user.id)
+            .order('data_creazione', { ascending: false }),
+        ]);
+        profileRes = p;
+        runsRes = r;
+        schedeRes = s;
+      } catch (cloudErr) {
+        console.warn('[HomePage] Chiamate cloud non disponibili (offline):', cloudErr);
       }
+    }
 
-      const runs = (runsRes.data as MonthlyWorkoutRun[]) || [];
-      const schede = schedeRes.data || [];
-      setAllRuns(runs);
+    // 1. Profilo utente
+    if (profileRes.data?.username) {
+      setUserName(profileRes.data.username);
+    } else {
+      setUserName(user.email?.split('@')[0] || 'Atleta');
+    }
 
-      if (schedeRes.count !== null && schedeRes.count !== undefined) {
-        setSchedeCount(schedeRes.count);
-      }
+    const cloudRuns = (runsRes.data as MonthlyWorkoutRun[]) || [];
+    // Integra le sessioni completate offline presenti nella coda locale
+    const localQueue = getSyncQueue(user.id);
+    const offlineRuns: MonthlyWorkoutRun[] = localQueue
+      .filter((q) => q.status === 'completed')
+      .map((q) => ({
+        id_workout: q.remote_workout_run_id || 0,
+        id_scheda: q.id_scheda,
+        workout_name_snapshot: q.workout_name_snapshot,
+        exercises_snapshot: q.exercises_snapshot,
+        data_esecuzione: q.executed_at,
+        durata_totale_secondi: q.durata_totale_secondi,
+        schede: q.id_scheda ? { id_scheda: q.id_scheda, nome: q.workout_name_snapshot } : null,
+        note_workout: (q.notes || []).map((n) => ({ testo: n.text, created_at: q.executed_at })),
+      }));
+
+    // Combina senza duplicazioni se una run è già sincronizzata con ID remoto
+    const mergedRuns = [
+      ...offlineRuns.filter((o) => !cloudRuns.some((c) => c.id_workout && c.id_workout === o.id_workout)),
+      ...cloudRuns,
+    ];
+    setAllRuns(mergedRuns);
+
+    const offlineSchedeList = getOfflineSchede(user.id);
+    if (schedeRes.count !== null && schedeRes.count !== undefined) {
+      setSchedeCount(schedeRes.count);
+    } else if (offlineSchedeList.length > 0) {
+      setSchedeCount(offlineSchedeList.length);
+    }
+
+    const runs = mergedRuns;
+    const schede = schedeRes.data?.length ? schedeRes.data : offlineSchedeList;
 
       // 2. Filtro sessioni valide (durata >= 15s per evitare avviamenti rapidi o test annullati)
       const validCompletedRuns = runs.filter((r) => {
@@ -184,15 +224,24 @@ const HomePage: React.FC = () => {
           if (folderId) {
             const folder = currentFolders.find((f) => f.id === folderId);
             // Tutte le schede dell'utente attualmente appartenenti a questa cartella
-            const folderSchede = schede
-              .filter((s) => currentAssignments[s.id_scheda] === folderId)
-              .map((s) => ({ id: s.id_scheda, id_scheda: s.id_scheda, nome: s.nome }));
+            const folderSchede = (schede as any[])
+              .filter((s: any) => currentAssignments[s.id_scheda] === folderId)
+              .map((s: any) => ({
+                id: s.id_scheda,
+                id_scheda: s.id_scheda,
+                nome: String(s.nome || ''),
+              }));
 
             if (folderSchede.length > 0) {
-              const nextResult = getNextSchedaInFolder(folderId, lastRunSchedaId, folderSchede, user.id);
+              const nextResult = getNextSchedaInFolder<{ id: any; id_scheda: any; nome: string }>(
+                folderId,
+                lastRunSchedaId,
+                folderSchede,
+                user.id
+              );
               if (nextResult) {
                 nextCandidate = {
-                  id_scheda: nextResult.nextScheda.id_scheda,
+                  id_scheda: Number(nextResult.nextScheda.id_scheda),
                   nome: nextResult.nextScheda.nome,
                   folderName: folder?.name,
                   folderColor: folder?.color,
@@ -238,7 +287,17 @@ const HomePage: React.FC = () => {
     const unsubscribeFolders = subscribeToFolderChanges(() => {
       void loadDashboardData();
     });
-    return unsubscribeFolders;
+    const unsubSync = subscribeToSyncQueue(() => {
+      void loadDashboardData();
+    });
+    const unsubSchede = subscribeToOfflineSchede(() => {
+      void loadDashboardData();
+    });
+    return () => {
+      unsubscribeFolders();
+      unsubSync();
+      unsubSchede();
+    };
   }, [loadDashboardData]);
 
   return (

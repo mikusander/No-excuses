@@ -29,6 +29,11 @@ import {
   type WorkoutProgressCheckpointMeta,
 } from '../lib/workoutProgressStorage';
 import { getSyncQueue } from '../lib/workoutSyncManager';
+import {
+  getOfflineSchedaById,
+  updateSingleSchedaInOfflineCache,
+  SCHEDA_FULL_SELECT_QUERY,
+} from '../lib/offlineSchedeManager';
 import { hapticLight, hapticMedium } from '../utils/haptics';
 import { generateUUID } from '../utils/uuid';
 
@@ -604,60 +609,76 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
           return;
         }
 
-        const { data, error } = await supabase
-          .from('schede')
-          .select(`
-            id_scheda,
-            nome,
-            data_creazione,
-            esecuzioni (
-              id_esecuzione,
-              ordine,
-              set_num,
-              rest_secondi,
-              rest_tra_esercizi,
-              peso_kg,
-              note_esercizio,
-              tipo,
-              reps,
-              durata_secondi,
-              id_superset,
-              id_piramide,
-              stepindex_piramide,
-              id_emom,
-              stepindex_emom,
-              superset ( round_totali ),
-              emom ( round_totali, durata_round_secondi ),
-              esercizi ( nome )
-            )
-          `)
-          .eq('id_scheda', numId)
-          .maybeSingle();
+        let data: any = null;
 
-        if (isCancelled) return;
-        if (error) throw error;
+        if (typeof navigator === 'undefined' || navigator.onLine) {
+          try {
+            const { data: cloudData, error: cloudError } = await supabase
+              .from('schede')
+              .select(SCHEDA_FULL_SELECT_QUERY)
+              .eq('id_scheda', numId)
+              .maybeSingle();
 
-        if (!data) {
-          setPreviewError('Scheda non trovata.');
-          setWorkoutPreview({
-            id: String(numId),
-            name: initialWorkoutName || 'Scheda',
-            created_at: initialWorkoutCreatedAt || new Date().toISOString(),
-            exercises: [],
-          });
-          return;
+            if (!cloudError && cloudData) {
+              data = cloudData;
+              if (user?.id) {
+                updateSingleSchedaInOfflineCache(user.id, {
+                  id_scheda: data.id_scheda,
+                  nome: data.nome,
+                  data_creazione: data.data_creazione,
+                  raw_esecuzioni: data.esecuzioni || [],
+                  exercises: parseDbExerciseRows(data.esecuzioni || []),
+                });
+              }
+            }
+          } catch (cloudErr) {
+            console.warn('[WorkoutPreviewModal] Chiamata cloud fallita, controllo memoria offline:', cloudErr);
+          }
         }
 
-        const parsedExercises = parseDbExerciseRows(data.esecuzioni || []) as PreviewExercise[];
-        initialExercisesJsonRef.current = JSON.stringify(parsedExercises);
+        if (isCancelled) return;
 
-        setWorkoutPreview({
-          id: String(data.id_scheda),
-          name: String(data.nome || initialWorkoutName || 'Scheda'),
-          created_at: String(data.data_creazione || initialWorkoutCreatedAt || new Date().toISOString()),
-          exercises: parsedExercises,
-        });
-        setEditableExercises(JSON.parse(JSON.stringify(parsedExercises)));
+        let parsedExercises: PreviewExercise[] = [];
+
+        if (data) {
+          parsedExercises = parseDbExerciseRows(data.esecuzioni || []) as PreviewExercise[];
+          initialExercisesJsonRef.current = JSON.stringify(parsedExercises);
+
+          setWorkoutPreview({
+            id: String(data.id_scheda),
+            name: String(data.nome || initialWorkoutName || 'Scheda'),
+            created_at: String(data.data_creazione || initialWorkoutCreatedAt || new Date().toISOString()),
+            exercises: parsedExercises,
+          });
+          setEditableExercises(JSON.parse(JSON.stringify(parsedExercises)));
+        } else {
+          // Fallback memoria offline
+          const cached = getOfflineSchedaById(user?.id, numId);
+          if (cached) {
+            parsedExercises = (cached.exercises && cached.exercises.length > 0)
+              ? (cached.exercises as PreviewExercise[])
+              : (cached.raw_esecuzioni ? parseDbExerciseRows(cached.raw_esecuzioni) as PreviewExercise[] : []);
+
+            initialExercisesJsonRef.current = JSON.stringify(parsedExercises);
+
+            setWorkoutPreview({
+              id: String(cached.id_scheda),
+              name: cached.nome,
+              created_at: cached.data_creazione,
+              exercises: parsedExercises,
+            });
+            setEditableExercises(JSON.parse(JSON.stringify(parsedExercises)));
+          } else {
+            setPreviewError('Scheda non trovata né online né nella memoria offline.');
+            setWorkoutPreview({
+              id: String(numId),
+              name: initialWorkoutName || 'Scheda',
+              created_at: initialWorkoutCreatedAt || new Date().toISOString(),
+              exercises: [],
+            });
+            return;
+          }
+        }
 
         if (user?.id) {
           // 1. Controlla la coda di sincronizzazione locale offline per sessioni recenti
@@ -923,7 +944,20 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
       const hasChanged = JSON.stringify(editableExercises) !== initialExercisesJsonRef.current;
       if (hasChanged) {
         const sanitized = sanitizeExercisesBeforeSave(editableExercises);
-        await saveExercisesToDb(schedaId, sanitized);
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          try {
+            await saveExercisesToDb(schedaId, sanitized);
+          } catch (cloudErr) {
+            console.warn('[WorkoutPreviewModal] Salvataggio cloud non riuscito, salvato in cache locale:', cloudErr);
+          }
+        }
+        if (user?.id) {
+          updateSingleSchedaInOfflineCache(user.id, {
+            id_scheda: schedaId,
+            nome: currentWorkoutName,
+            exercises: sanitized,
+          });
+        }
         initialExercisesJsonRef.current = JSON.stringify(sanitized);
       }
 

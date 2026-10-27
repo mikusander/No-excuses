@@ -76,6 +76,11 @@ import {
 } from '../utils/folderManager';
 import { hapticLight, hapticMedium } from '../utils/haptics';
 import WorkoutPreviewModal from '../components/WorkoutPreviewModal';
+import {
+  getOfflineSchede,
+  syncOfflineSchedeWithCloud,
+  subscribeToOfflineSchede,
+} from '../lib/offlineSchedeManager';
 
 interface Workout {
   id: string;
@@ -86,8 +91,15 @@ interface Workout {
 const SelectWorkoutPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [workouts, setWorkouts] = useState<Workout[]>(() => {
+    const cached = getOfflineSchede(user?.id);
+    return cached.map((w) => ({
+      id: String(w.id_scheda),
+      name: w.nome,
+      created_at: w.data_creazione,
+    }));
+  });
+  const [loading, setLoading] = useState(() => getOfflineSchede(user?.id).length === 0);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [activeCheckpoints, setActiveCheckpoints] = useState<WorkoutProgressCheckpointMeta[]>([]);
 
@@ -134,9 +146,52 @@ const SelectWorkoutPage: React.FC = () => {
     return unsub;
   }, [user?.id]);
 
+  // Sottoscrizione reattiva alle modifiche della memoria offline schede
+  useEffect(() => {
+    const unsub = subscribeToOfflineSchede(() => {
+      const cached = getOfflineSchede(user?.id);
+      if (cached.length > 0) {
+        setWorkouts(cached.map((w) => ({
+          id: String(w.id_scheda),
+          name: w.nome,
+          created_at: w.data_creazione,
+        })));
+      }
+    });
+    return unsub;
+  }, [user?.id]);
+
   const fetchWorkouts = useCallback(async () => {
+    // 1. Lettura immediata da cache offline per visualizzazione istantanea (stale-while-revalidate / offline)
+    const cached = getOfflineSchede(user?.id);
+    if (cached.length > 0) {
+      setWorkouts(cached.map((w) => ({
+        id: String(w.id_scheda),
+        name: w.nome,
+        created_at: w.data_creazione,
+      })));
+      setLoading(false);
+    }
+
+    // 2. Se offline, mantieni la lista locale
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      setLoading(true);
+      if (user?.id) {
+        const synced = await syncOfflineSchedeWithCloud(user.id);
+        if (synced && synced.length > 0) {
+          setWorkouts(synced.map((w) => ({
+            id: String(w.id_scheda),
+            name: w.nome,
+            created_at: w.data_creazione,
+          })));
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from('schede')
         .select('id_scheda, nome, data_creazione')
@@ -150,11 +205,19 @@ const SelectWorkoutPage: React.FC = () => {
         created_at: w.data_creazione,
       })));
     } catch (error) {
-      console.error('Error fetching workouts:', error);
+      console.warn('[SelectWorkoutPage] Errore caricamento schede dal cloud (fallback su cache locale):', error);
+      const fallbackCached = getOfflineSchede(user?.id);
+      if (fallbackCached.length > 0) {
+        setWorkouts(fallbackCached.map((w) => ({
+          id: String(w.id_scheda),
+          name: w.nome,
+          created_at: w.data_creazione,
+        })));
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     void fetchWorkouts();

@@ -309,6 +309,7 @@ export const processSyncQueue = async (
                 durata_totale_secondi: item.durata_totale_secondi,
                 workout_name_snapshot: item.workout_name_snapshot,
                 exercises_snapshot: stampedExercisesSnapshot,
+                data_esecuzione: item.executed_at || new Date().toISOString(),
               },
             ])
             .select('id_workout')
@@ -332,6 +333,7 @@ export const processSyncQueue = async (
                   durata_totale_secondi: item.durata_totale_secondi,
                   workout_name_snapshot: item.workout_name_snapshot,
                   exercises_snapshot: stampedExercisesSnapshot,
+                  data_esecuzione: item.executed_at || new Date().toISOString(),
                 },
               ])
               .select('id_workout')
@@ -347,6 +349,7 @@ export const processSyncQueue = async (
                     id_scheda: null,
                     workout_name_snapshot: item.workout_name_snapshot,
                     exercises_snapshot: stampedExercisesSnapshot,
+                    data_esecuzione: item.executed_at || new Date().toISOString(),
                   },
                 ])
                 .select('id_workout')
@@ -427,31 +430,45 @@ export const processSyncQueue = async (
 /*  4. NETWORK LISTENER & APP LAUNCH HOOKS                                    */
 /* -------------------------------------------------------------------------- */
 
-let hasInitializedNetworkListener = false;
-
 /**
  * Inizializza i listener di rete per l'invio automatico appena la connessione torna attiva.
+ * Riconosce la riconnessione da eventi di rete, ritorno in primo piano e focus della finestra.
  */
 export const initSyncNetworkListeners = (userId: string): (() => void) => {
   if (typeof window === 'undefined' || !userId) return () => {};
 
-  // Esegui subito un ciclo di sincronizzazione all'avvio
-  void processSyncQueue(userId);
+  const triggerFullSync = () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    void processSyncQueue(userId);
+    // Sincronizza proattivamente anche le schede dal cloud
+    import('./offlineSchedeManager').then(({ syncOfflineSchedeWithCloud }) => {
+      void syncOfflineSchedeWithCloud(userId);
+    }).catch(() => {
+      // ignore
+    });
+  };
 
-  if (hasInitializedNetworkListener) {
-    return () => {};
-  }
-  hasInitializedNetworkListener = true;
+  // Esegui subito un ciclo di sincronizzazione all'avvio
+  triggerFullSync();
 
   const handleOnline = () => {
-    console.debug('[SyncManager] Connessione ripristinata: avvio sincronizzazione coda offline...');
-    void processSyncQueue(userId);
+    console.debug('[SyncManager] Rete disponibile: avvio sincronizzazione automatica...');
+    triggerFullSync();
+  };
+
+  const handleVisibility = () => {
+    if (document.visibilityState === 'visible') {
+      triggerFullSync();
+    }
   };
 
   window.addEventListener('online', handleOnline);
+  window.addEventListener('focus', handleOnline);
+  document.addEventListener('visibilitychange', handleVisibility);
 
   return () => {
     window.removeEventListener('online', handleOnline);
-    hasInitializedNetworkListener = false;
+    window.removeEventListener('focus', handleOnline);
+    document.removeEventListener('visibilitychange', handleVisibility);
   };
 };
