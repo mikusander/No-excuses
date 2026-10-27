@@ -37,6 +37,9 @@ export interface WorkoutProgressCheckpointMeta {
   currentExerciseName?: string;
   currentSetIdx?: number;
   totalSets?: number;
+  isResting?: boolean;
+  restEndsAtMs?: number | null;
+  pendingExerciseAdvance?: boolean;
 }
 
 /** Prefisso comune per tutte le chiavi di checkpoint nell'app */
@@ -209,6 +212,9 @@ export const getValidWorkoutProgressCheckpoints = (userId: string): WorkoutProgr
     const currentExerciseName = state?.currentExerciseName ? String(state.currentExerciseName) : undefined;
     const currentSetIdx = typeof state?.currentSetIdx === 'number' ? state.currentSetIdx : undefined;
     const totalSets = typeof state?.totalSets === 'number' ? state.totalSets : undefined;
+    const isResting = Boolean(state?.isResting);
+    const restEndsAtMs = typeof state?.restEndsAtMs === 'number' ? state.restEndsAtMs : undefined;
+    const pendingExerciseAdvance = Boolean(state?.pendingExerciseAdvance);
 
     checkpoints.push({
       key,
@@ -218,6 +224,9 @@ export const getValidWorkoutProgressCheckpoints = (userId: string): WorkoutProgr
       currentExerciseName,
       currentSetIdx,
       totalSets,
+      isResting,
+      restEndsAtMs,
+      pendingExerciseAdvance,
     });
   }
 

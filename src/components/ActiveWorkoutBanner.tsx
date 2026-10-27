@@ -23,6 +23,7 @@ import {
 } from '../lib/workoutProgressStorage';
 import { clearActiveWorkoutDraft } from '../lib/workoutSyncManager';
 import { hapticLight, hapticMedium, hapticSuccess } from '../utils/haptics';
+import { closeActiveRestNotifications } from '../utils/workoutNotifications';
 
 export const ActiveWorkoutBanner: React.FC = () => {
   const { user } = useAuth();
@@ -32,6 +33,7 @@ export const ActiveWorkoutBanner: React.FC = () => {
 
   const [checkpoint, setCheckpoint] = useState<WorkoutProgressCheckpointMeta | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [restSecondsRemaining, setRestSecondsRemaining] = useState<number | null>(null);
 
   // Aggiorna lo stato del checkpoint attivo
   const refreshCheckpoint = () => {
@@ -50,6 +52,23 @@ export const ActiveWorkoutBanner: React.FC = () => {
     });
     return unsubscribe;
   }, [user?.id]);
+
+  // Timer live per il conto alla rovescia del recupero mentre si è nella Home
+  useEffect(() => {
+    if (!checkpoint?.isResting || !checkpoint.restEndsAtMs) {
+      setRestSecondsRemaining(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((checkpoint.restEndsAtMs! - Date.now()) / 1000));
+      setRestSecondsRemaining(remaining);
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 500);
+    return () => clearInterval(timer);
+  }, [checkpoint?.isResting, checkpoint?.restEndsAtMs]);
 
   // Mostra il banner ESCLUSIVAMENTE nella Home Page ('/')
   if (!checkpoint || location.pathname !== '/') {
@@ -78,6 +97,7 @@ export const ActiveWorkoutBanner: React.FC = () => {
     e.stopPropagation();
     if (!user?.id) return;
     void hapticSuccess();
+    void closeActiveRestNotifications();
     clearWorkoutProgressCheckpointByIdentity(user.id, checkpoint.identity);
     clearAllWorkoutProgressCheckpoints(user.id);
     clearActiveWorkoutDraft(user.id);
@@ -85,10 +105,29 @@ export const ActiveWorkoutBanner: React.FC = () => {
     setCheckpoint(null);
   };
 
+  const formatCountdown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const workoutDisplayName = checkpoint.workoutName || `Allenamento #${checkpoint.identity.id}`;
-  const exerciseDetail = checkpoint.currentExerciseName
+
+  let exerciseDetail = checkpoint.currentExerciseName
     ? `${checkpoint.currentExerciseName}${checkpoint.currentSetIdx != null ? ` • Set ${checkpoint.currentSetIdx + 1}${checkpoint.totalSets ? `/${checkpoint.totalSets}` : ''}` : ''}`
     : 'In pausa in background';
+
+  if (checkpoint.isResting) {
+    const nextTarget = checkpoint.pendingExerciseAdvance
+      ? 'Prossimo esercizio'
+      : `Set ${(checkpoint.currentSetIdx ?? 0) + 2}${checkpoint.totalSets ? `/${checkpoint.totalSets}` : ''}`;
+
+    if (restSecondsRemaining != null && restSecondsRemaining > 0) {
+      exerciseDetail = `Recupero in corso (${formatCountdown(restSecondsRemaining)}) • Prossimo: ${nextTarget}`;
+    } else {
+      exerciseDetail = `Recupero completato! • Prossimo: ${nextTarget}`;
+    }
+  }
 
   return (
     <>

@@ -253,6 +253,7 @@ interface PersistedWorkoutProgressState {
   restWasRunning: boolean;
   restRemaining: number;
   restInitialDuration: number;
+  restEndsAtMs?: number | null;
   isometryWasRunning: boolean;
   isometryRemaining: number;
   emomWasRunning: boolean;
@@ -423,6 +424,10 @@ const ActiveWorkoutPage: React.FC = () => {
   const [restRemaining, setRestRemaining] = useState(0);
   const [restInitialDuration, setRestInitialDuration] = useState(0);
   const [restEndsAtMs, setRestEndsAtMs] = useState<number | null>(null);
+  const isRestingRef = useRef(false);
+  isRestingRef.current = isResting;
+  const restEndsAtMsRef = useRef<number | null>(null);
+  restEndsAtMsRef.current = restEndsAtMs;
 
   // Timer State for Isometry
   const [isometryActive, setIsometryActive] = useState(false);
@@ -1523,6 +1528,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const clearPersistedWorkoutProgress = (nextSourceSchedaId?: number | null) => {
+    void closeActiveRestNotifications();
     if (!user?.id) return;
 
     try {
@@ -1634,6 +1640,7 @@ const ActiveWorkoutPage: React.FC = () => {
         restWasRunning: restEndsAtMs != null,
         restRemaining: restEndsAtMs != null ? computeRemainingFromEndsAt(restEndsAtMs) : Math.max(0, normalizeDurationSeconds(restRemaining)),
         restInitialDuration: Math.max(0, normalizeDurationSeconds(restInitialDuration)),
+        restEndsAtMs: restEndsAtMs != null ? restEndsAtMs : null,
         isometryWasRunning: isometryEndsAtMs != null,
         isometryRemaining: isometryEndsAtMs != null
           ? computeRemainingFromEndsAt(isometryEndsAtMs)
@@ -1758,7 +1765,9 @@ const ActiveWorkoutPage: React.FC = () => {
       const effectiveRestInitial = safeRestInitial > 0 ? safeRestInitial : safeRestRemaining;
       const effectiveRestRemainingBase = safeRestRemaining > 0 ? safeRestRemaining : effectiveRestInitial;
       const effectiveRestRemaining = Boolean(state.restWasRunning)
-        ? Math.max(0, effectiveRestRemainingBase - elapsedSinceSaveSeconds)
+        ? (typeof state.restEndsAtMs === 'number'
+            ? Math.max(0, Math.ceil((state.restEndsAtMs - Date.now()) / 1000))
+            : Math.max(0, effectiveRestRemainingBase - elapsedSinceSaveSeconds))
         : effectiveRestRemainingBase;
 
       // Rileva se il recupero era in corso ed è scaduto mentre l'app era chiusa
@@ -1792,6 +1801,11 @@ const ActiveWorkoutPage: React.FC = () => {
           targetSubExerciseIdx = 0;
           if (safeExercise.type === 'emom') {
             targetEmomRoundIdx = 0;
+          }
+          // Se la serie incrementata supera il totale delle serie dell'esercizio, avanza all'esercizio successivo
+          if (targetSetIdx >= (safeExercise.sets || 1) && safeExerciseIdx < totalExercises - 1) {
+            targetExerciseIdx = safeExerciseIdx + 1;
+            targetSetIdx = 0;
           }
         }
       }
@@ -1970,7 +1984,25 @@ const ActiveWorkoutPage: React.FC = () => {
       setIsResting(shouldRestoreRest);
       setRestRemaining(shouldRestoreRest ? effectiveRestRemaining : 0);
       setRestInitialDuration(shouldRestoreRest ? effectiveRestInitial : 0);
-      setRestEndsAtMs(resumeRestRunning ? Date.now() + (effectiveRestRemaining * 1000) : null);
+      const targetRestEndsAtMs = resumeRestRunning
+        ? (typeof state.restEndsAtMs === 'number' && state.restEndsAtMs > Date.now()
+            ? state.restEndsAtMs
+            : Date.now() + (effectiveRestRemaining * 1000))
+        : null;
+      setRestEndsAtMs(targetRestEndsAtMs);
+
+      if (resumeRestRunning && targetRestEndsAtMs) {
+        const upcomingEx = targetPendingExerciseAdvance ? nextWorkout.exercises[safeExerciseIdx + 1] : safeExercise;
+        const nextExName = upcomingEx?.name || 'Prossimo Esercizio';
+        const nextSetInfo = targetPendingExerciseAdvance
+          ? `Set 1 di ${upcomingEx?.sets || 1}`
+          : `Set ${safeSetIdx + 2} di ${safeExercise.sets || 1}`;
+        void scheduleBackgroundRestNotification({
+          endsAtMs: targetRestEndsAtMs,
+          nextExerciseName: nextExName,
+          nextSetInfo,
+        });
+      }
 
       setIsometryRemaining(finalIsometryRemaining);
       setIsometryActive(finalIsometryActive);
@@ -1981,9 +2013,33 @@ const ActiveWorkoutPage: React.FC = () => {
       setEmomRoundEndsAtMs(finalEmomEndsAtMs);
 
       if (restExpiredWhileClosed) {
+        void closeActiveRestNotifications();
+        if (voiceAssistanceEnabled && isAudioFeedbackEnabled()) {
+          playRestFinishedSound();
+        }
+        void hapticSuccess();
         setTimeout(() => {
           speakCue(buildSetAnnouncementCue(effectiveExercise, effectiveSetIdx, effectivePyramidStepIdx));
         }, 500);
+
+        try {
+          parsedPayload.state.currentExerciseIdx = targetExerciseIdx;
+          parsedPayload.state.currentSetIdx = effectiveSetIdx;
+          parsedPayload.state.currentSubExerciseIdx = effectiveSubIdx;
+          parsedPayload.state.currentPyramidStepIdx = effectivePyramidStepIdx;
+          parsedPayload.state.currentEmomRoundIdx = effectiveEmomRoundIdx;
+          parsedPayload.state.pendingExerciseAdvance = false;
+          parsedPayload.state.pendingPyramidAdvance = false;
+          parsedPayload.state.isResting = false;
+          parsedPayload.state.restWasRunning = false;
+          parsedPayload.state.restRemaining = 0;
+          parsedPayload.state.restEndsAtMs = null;
+          parsedPayload.savedAtMs = Date.now();
+          localStorage.setItem(storageKey, JSON.stringify(parsedPayload));
+          notifyWorkoutProgressChanged();
+        } catch (e) {
+          console.error('Error updating expired rest checkpoint in storage:', e);
+        }
       }
 
       if (state.circuitStopwatchElapsed != null) {
@@ -2143,7 +2199,9 @@ const ActiveWorkoutPage: React.FC = () => {
     return () => {
       void releaseScreenWakeLock();
       stopRestMediaSession();
-      void closeActiveRestNotifications();
+      if (!isRestingRef.current || restEndsAtMsRef.current == null || restEndsAtMsRef.current <= Date.now()) {
+        void closeActiveRestNotifications();
+      }
       if (voiceHelpTimeoutRef.current) {
         clearTimeout(voiceHelpTimeoutRef.current);
         voiceHelpTimeoutRef.current = null;
@@ -2508,7 +2566,6 @@ const ActiveWorkoutPage: React.FC = () => {
     }
 
     const initializeWorkoutState = (nextWorkout: Workout, nextSourceSchedaId: number | null) => {
-      void closeActiveRestNotifications();
       setWorkout(nextWorkout);
       setSourceSchedaId(nextSourceSchedaId);
 
@@ -2551,6 +2608,8 @@ const ActiveWorkoutPage: React.FC = () => {
         lastProgressPersistAtMsRef.current = Date.now();
         return;
       }
+
+      void closeActiveRestNotifications();
 
       const firstEx = nextWorkout.exercises[0];
       if (firstEx) {
@@ -4289,8 +4348,8 @@ const ActiveWorkoutPage: React.FC = () => {
 
   const handleLeaveWorkout = () => {
     freezeForegroundWorkoutTime();
-    stopRestCountdown();
     stopRestMediaSession();
+    pipManager.closePiP();
     void releaseScreenWakeLock();
     persistWorkoutProgress(true);
     void lockAppToPortrait();
