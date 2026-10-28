@@ -914,21 +914,9 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
     }
   };
 
-  const handleClose = async () => {
+  const handleClose = () => {
     void hapticLight();
-    const hasChanged = JSON.stringify(editableExercises) !== initialExercisesJsonRef.current;
-    if (hasChanged && workoutPreview) {
-      const schedaId = Number(workoutPreview.id);
-      if (Number.isFinite(schedaId)) {
-        try {
-          const sanitized = sanitizeExercisesBeforeSave(editableExercises);
-          await saveExercisesToDb(schedaId, sanitized);
-          initialExercisesJsonRef.current = JSON.stringify(sanitized);
-        } catch (err) {
-          console.error('Error auto-saving workout edits on close:', err);
-        }
-      }
-    }
+    // La chiusura tramite pulsante X o backdrop non deve salvare le modifiche temporanee non confermate
     onClose();
   };
 
