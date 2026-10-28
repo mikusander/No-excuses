@@ -87,6 +87,25 @@
     height: 0px;
   }
 
+  /* Utility per barra di scorrimento sottile e satinata (Apple Dark Mode) */
+  .custom-scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 94, 0, 0.4) transparent;
+    -webkit-overflow-scrolling: touch;
+  }
+  .custom-scroll-area::-webkit-scrollbar {
+    display: block !important;
+    width: 4px;
+  }
+  .custom-scroll-area::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 9999px;
+  }
+  .custom-scroll-area::-webkit-scrollbar-thumb {
+    background: rgba(255, 94, 0, 0.45);
+    border-radius: 9999px;
+  }
+
   @keyframes homeCardEnter {
     from {
       opacity: 0;

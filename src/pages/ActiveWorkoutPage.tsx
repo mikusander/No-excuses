@@ -4921,7 +4921,6 @@ const ActiveWorkoutPage: React.FC = () => {
       targetRestSeconds,
       targetSubExercises,
       targetInstruction,
-      restTotalDuration,
       restProgressRatio,
     };
   };
@@ -5036,7 +5035,7 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="flex-1 min-h-0 grid grid-cols-2 gap-3 sm:gap-4 my-0.5 items-stretch">
           {/* Metà Sinistra — Scheda Completa Prossimo Set / Prossimo Esercizio */}
           <div className="flex flex-col justify-between bg-[#1C1C1E]/85 backdrop-blur-md border border-white/10 rounded-3xl p-3 sm:p-3.5 min-h-0 shadow-xl overflow-hidden">
-            <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scroll-area space-y-2 pr-1">
               {/* Header indicatore chiaro */}
               <div className="flex items-center justify-between shrink-0">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-brand-orange/20 border border-brand-orange/40 text-brand-orange">
@@ -5237,7 +5236,7 @@ const ActiveWorkoutPage: React.FC = () => {
             {/* Grande Timer Circolare Satinato */}
             <div className="flex-1 min-h-0 flex flex-col items-center justify-center my-auto">
               <div
-                className={`relative w-32 h-32 sm:w-40 sm:h-40 rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
+                className={`relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
                   restRemaining <= 3 && restRemaining > 0
                     ? 'border-4 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_50px_rgba(255,107,0,0.6)] animate-pulse'
                     : 'border-4 border-white/10 shadow-[0_0_35px_rgba(255,94,0,0.15)] bg-black/40'
@@ -5272,7 +5271,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   }`}
                 />
                 <span
-                  className={`text-4xl sm:text-5xl font-black z-10 font-mono tracking-tighter leading-none ${
+                  className={`text-5xl sm:text-6xl md:text-7xl font-black z-10 font-mono tracking-tighter leading-none ${
                     restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-105' : 'text-white'
                   }`}
                 >
@@ -6003,7 +6002,7 @@ const ActiveWorkoutPage: React.FC = () => {
       targetRestSeconds,
       targetSubExercises,
       targetInstruction,
-      restTotalDuration,
+      restProgressRatio,
     } = getRestTargetDetails();
 
     return (
@@ -6084,296 +6083,355 @@ const ActiveWorkoutPage: React.FC = () => {
           />
         </div>
 
-        {/* Central Scrollable Rest Area (Timer + Next Target Dossier) */}
-        <div className="flex-1 min-h-0 flex flex-col gap-2.5 sm:gap-3 overflow-y-auto no-scrollbar py-0.5 w-full max-w-md mx-auto">
-          {/* Circular Countdown Timer (Proportioned, Elegant, High-Readability) */}
-          <div className="flex flex-col items-center shrink-0 w-full pt-1 pb-0.5">
+        {/* Central Rest Area: Big Fixed Hero Timer + Scrollable Target Dossier Card */}
+        <div className="flex-1 min-h-0 flex flex-col items-center w-full max-w-md mx-auto gap-2 py-0.5 overflow-hidden">
+          {/* Hero Countdown Timer — Prominent & High-Readability from a Distance */}
+          <div className="shrink-0 flex flex-col items-center w-full pt-0.5 pb-1">
             <div
-              className={`w-36 h-36 sm:w-44 sm:h-44 rounded-full flex flex-col justify-center items-center relative overflow-hidden cursor-pointer select-none transition-all duration-300 ${
+              className={`relative w-44 h-44 xs:w-52 xs:h-52 sm:w-60 sm:h-60 rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
                 restRemaining <= 3 && restRemaining > 0
-                  ? 'border-[7px] border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_50px_rgba(255,107,0,0.6)] animate-pulse'
-                  : 'border-[6px] border-brand-darkGrey shadow-[0_0_35px_rgba(255,94,0,0.18)] bg-black/50'
+                  ? 'border-4 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_60px_rgba(255,94,0,0.7)] animate-pulse bg-brand-orange/10'
+                  : 'border border-white/10 shadow-[0_0_40px_rgba(255,94,0,0.20)] bg-gradient-to-b from-black/85 via-black/70 to-zinc-950/90'
               }`}
               onPointerDown={(event) => handleTimerPointerDown(event, resetRestCountdown)}
               onPointerUp={(event) => handleTimerPointerUp(event, handleRestTimerTap)}
               onPointerCancel={handleTimerPointerAbort}
               onPointerLeave={handleTimerPointerAbort}
+              title="Tocca per pausa/avvio • Tieni premuto per azzerare"
             >
-              {/* Fill animation */}
-              <div
-                className="absolute bottom-0 left-0 right-0 bg-brand-orange/20 transition-all duration-1000 ease-linear pointer-events-none"
-                style={{
-                  height: `${(restRemaining / restTotalDuration) * 100}%`,
-                }}
-              />
+              {/* Circular SVG Progress Ring */}
+              <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none p-1.5" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="44"
+                  stroke="rgba(255, 255, 255, 0.08)"
+                  strokeWidth="5"
+                  fill="transparent"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="44"
+                  stroke={restRemaining <= 3 && restRemaining > 0 ? '#FF7724' : '#FF5E00'}
+                  strokeWidth="5.5"
+                  strokeDasharray={2 * Math.PI * 44}
+                  strokeDashoffset={2 * Math.PI * 44 * (1 - restProgressRatio)}
+                  strokeLinecap="round"
+                  fill="transparent"
+                  className="transition-[stroke-dashoffset] duration-1000 ease-linear shadow-[0_0_14px_rgba(255,94,0,0.8)]"
+                />
+              </svg>
 
-              <Timer
-                size={22}
-                className={`mb-0.5 transition-transform duration-300 ${
-                  restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-110' : 'text-brand-orange'
-                }`}
-              />
+              {/* Status Pill inside Circle */}
+              <div className="flex items-center gap-1.5 mb-0.5 sm:mb-1 z-10 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10">
+                <Timer
+                  size={13}
+                  className={`transition-transform duration-300 ${
+                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-110' : 'text-brand-orange'
+                  }`}
+                />
+                <span className="text-zinc-300 font-bold uppercase tracking-widest text-[9px] xs:text-[10px] font-mono">
+                  {restEndsAtMs != null ? 'RECUPERO' : 'IN PAUSA'}
+                </span>
+              </div>
+
+              {/* Countdown Digits — Extra Large for Distance Visibility */}
               <span
-                className={`text-5xl sm:text-6xl font-black z-10 font-mono tracking-tighter transition-all duration-300 leading-none ${
-                  restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-105' : 'text-white'
+                className={`text-6xl xs:text-7xl sm:text-8xl font-black z-10 font-mono tracking-tighter tabular-nums leading-none transition-all duration-300 ${
+                  restRemaining <= 3 && restRemaining > 0
+                    ? 'text-brand-orange scale-105'
+                    : restEndsAtMs != null
+                      ? 'text-white drop-shadow-[0_2px_14px_rgba(255,94,0,0.4)]'
+                      : 'text-zinc-300'
                 }`}
               >
                 {formatTime(restRemaining)}
               </span>
-              <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] sm:text-[10px] mt-1 z-10 font-mono">
-                {restEndsAtMs != null ? 'RECUPERO' : 'IN PAUSA'}
+
+              {/* Sub-label inside Circle */}
+              <span className="text-[10px] xs:text-[11px] text-zinc-400 font-mono font-bold mt-1 z-10">
+                {restRemaining > 0 ? `${restRemaining}s rimanenti` : 'Tempo scaduto'}
               </span>
             </div>
 
-            {/* Clear Tool Instructions */}
-            <p className="text-[10px] sm:text-[11px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-2">
-              Tocca per {restEndsAtMs != null ? 'mettere in pausa' : 'avviare'} • Tieni premuto per azzerare
-            </p>
+            {/* Clear Tool Instructions & PiP */}
+            <div className="flex items-center justify-center gap-2 mt-1.5 flex-wrap">
+              <p className="text-[10px] sm:text-[11px] text-zinc-400 font-bold uppercase tracking-wider text-center">
+                Tocca per {restEndsAtMs != null ? 'mettere in pausa' : 'avviare'} • Tieni premuto per azzerare
+              </p>
 
-            {/* PiP Mini-Timer Button */}
-            {pipManager.isSupported() && (
-              <button
-                type="button"
-                onClick={handleTogglePiP}
-                className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-brand-orange/30 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-[10px] font-bold transition-all shadow-sm cursor-pointer"
-                title="Mostra timer flottante sopra altre app (PiP)"
-              >
-                <Layers size={11} />
-                <span>{pipManager.isActive() ? 'Chiudi Overlay PiP' : 'Mini-Timer PiP'}</span>
-              </button>
-            )}
-          </div>
-
-          {/* Next Target Dossier Card */}
-          <div className="w-full bg-gradient-to-b from-[#1C1C1E] to-[#141416] border border-white/10 rounded-3xl p-3.5 sm:p-4 shadow-xl flex flex-col gap-2.5 shrink-0">
-            {/* Header: Prossimo Set vs Prossimo Esercizio */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-wider text-brand-orange flex items-center gap-1.5">
-                <ArrowRight size={13} className="text-brand-orange shrink-0" />
-                {isTransitioning ? 'Prossimo Esercizio' : 'Prossimo Set'}
-              </span>
-              <span className="text-[10px] sm:text-[11px] font-mono font-bold text-zinc-300 uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
-                {isTransitioning
-                  ? `Es. ${currentExerciseIdx + 2} di ${workout.exercises.length}`
-                  : isTargetPyramid
-                    ? `Step ${upcomingStepNumber} di ${totalStepsNumber}`
-                    : isTargetEmom
-                      ? `Round ${upcomingRoundNumber} di ${totalEmomRoundsNumber}`
-                      : `${isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'} ${upcomingSetNumber} di ${totalSetsNumber}`}
-              </span>
-            </div>
-
-            {/* Exercise Name & Type Badge */}
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-tight truncate">
-                {targetExerciseName}
-              </h3>
-              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 shrink-0 font-mono">
-                {targetType.toUpperCase()}
-              </span>
-            </div>
-
-            {/* 3-Box KPI Feature Grid */}
-            <div className="grid grid-cols-3 gap-1.5">
-              {/* Box 1: Target / Reps */}
-              <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                  {isTargetIsometry ? 'Tenuta' : 'Target'}
-                </span>
-                <span className="text-xs sm:text-sm font-black text-white font-mono mt-0.5 truncate">
-                  {targetGoalText}
-                </span>
-              </div>
-
-              {/* Box 2: Carico */}
-              <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
-                <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
-                  {targetWeightText}
-                </span>
-              </div>
-
-              {/* Box 3: Serie Totali o Recupero */}
-              <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                  {isTransitioning ? 'Serie Totali' : 'Recupero'}
-                </span>
-                <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
-                  {isTransitioning
-                    ? (isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`)
-                    : `${targetRestSeconds}s`}
-                </span>
-              </div>
-            </div>
-
-            {/* Timeline Grafica Serie */}
-            <div className="pt-0.5">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
-                {isTransitioning ? 'Serie Prossimo Esercizio:' : 'Progressione Serie:'}
-              </span>
-              <div className="flex gap-1.5 items-center overflow-x-auto no-scrollbar py-0.5">
-                {isTargetPyramid && targetExercise.pyramid_steps ? (
-                  targetExercise.pyramid_steps.map((step, sIdx) => {
-                    const isUpcoming = isTransitioning ? sIdx === 0 : sIdx === nextStepIdx;
-                    const isDone = isTransitioning ? false : sIdx <= currentPyramidStepIdx;
-                    return (
-                      <div
-                        key={sIdx}
-                        className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
-                          isUpcoming
-                            ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
-                            : isDone
-                              ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                              : 'bg-white/5 border-white/5 text-zinc-500'
-                        }`}
-                      >
-                        <span className="text-[10px] opacity-75">S{sIdx + 1}</span>
-                        <span>{isDone ? '✓' : isUpcoming ? '⏳' : `${step.reps}r`}</span>
-                      </div>
-                    );
-                  })
-                ) : isTargetCircuit ? (
-                  Array.from({ length: targetExercise.sets || 1 }, (_, sIdx) => {
-                    const isUpcoming = isTransitioning ? sIdx === 0 : sIdx === nextSetIdx;
-                    const isDone = isTransitioning ? false : sIdx <= currentSetIdx;
-                    return (
-                      <div
-                        key={sIdx}
-                        className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
-                          isUpcoming
-                            ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
-                            : isDone
-                              ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                              : 'bg-white/5 border-white/5 text-zinc-500'
-                        }`}
-                      >
-                        <span className="text-[10px] opacity-75">G{sIdx + 1}</span>
-                        <span>{isDone ? '✓' : isUpcoming ? '⏳' : ''}</span>
-                      </div>
-                    );
-                  })
-                ) : isTargetEmom ? (
-                  Array.from({ length: targetExercise.emom_rounds || totalEmomRoundsNumber || 1 }, (_, rIdx) => {
-                    const isUpcoming = isTransitioning ? rIdx === 0 : rIdx === nextEmomRoundIdx;
-                    const isDone = isTransitioning ? false : rIdx <= currentEmomRoundIdx;
-                    return (
-                      <div
-                        key={rIdx}
-                        className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
-                          isUpcoming
-                            ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
-                            : isDone
-                              ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                              : 'bg-white/5 border-white/5 text-zinc-500'
-                        }`}
-                      >
-                        <span className="text-[10px] opacity-75">R{rIdx + 1}</span>
-                        <span>{isDone ? '✓' : isUpcoming ? '⏳' : ''}</span>
-                      </div>
-                    );
-                  })
-                ) : (
-                  Array.from({ length: targetExercise.sets || 1 }, (_, sIdx) => {
-                    const isUpcoming = isTransitioning ? sIdx === 0 : sIdx === nextSetIdx;
-                    const isDone = isTransitioning ? false : sIdx <= currentSetIdx;
-                    const logged = !isTransitioning ? getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx) : null;
-                    return (
-                      <button
-                        key={sIdx}
-                        type="button"
-                        disabled={isTransitioning || !isDone}
-                        onClick={() => {
-                          if (!isTransitioning && isDone) {
-                            openEditSpecificSetModal(sIdx);
-                          }
-                        }}
-                        className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
-                          isUpcoming
-                            ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
-                            : isDone
-                              ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300 cursor-pointer active:scale-95'
-                              : 'bg-white/5 border-white/5 text-zinc-500'
-                        }`}
-                        title={isDone ? `Modifica reps set ${sIdx + 1}` : `Set ${sIdx + 1}`}
-                      >
-                        <span className="text-[10px] opacity-75">S{sIdx + 1}</span>
-                        <span>
-                          {isDone ? '✓' : isUpcoming ? '⏳' : ''}
-                          {logged != null && logged > 0 ? ` (${logged})` : ''}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Elenco Completo Sub-Esercizi se Superset / Circuito / EMOM */}
-            {targetSubExercises.length > 0 && (
-              <div className="bg-black/50 border border-white/5 rounded-2xl p-2.5 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-                    Sequenza Round ({targetSubExercises.length} Esercizi):
-                  </span>
-                  <span className="text-[9px] font-mono text-brand-orange font-bold">
-                    Senza recupero tra es.
-                  </span>
-                </div>
-                {targetSubExercises.map((sub, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-white/5 last:border-0">
-                    <div className="flex items-center gap-1.5 min-w-0 pr-2">
-                      <span className="w-4 h-4 rounded-full bg-white/10 text-zinc-300 font-mono text-[9px] flex items-center justify-center font-bold shrink-0">
-                        {idx + 1}
-                      </span>
-                      <span className="text-white font-bold truncate text-[11px] sm:text-xs">{sub.name}</span>
-                    </div>
-                    <span className="text-brand-orange font-mono font-bold text-[10px] sm:text-[11px] shrink-0">
-                      {sub.type === 'isometry'
-                        ? (isMaxTarget(sub.duration_seconds) ? 'MAX' : `${sub.duration_seconds}s`)
-                        : (isMaxTarget(sub.reps) ? 'MAX' : `${sub.reps} reps`)} • {formatWeightLabel(sub.weight_kg)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Note di esecuzione se presenti */}
-            {targetInstruction && (
-              <div className="bg-brand-orange/10 border border-brand-orange/25 rounded-2xl p-2.5 flex items-start gap-2">
-                <Info size={14} className="text-brand-orange shrink-0 mt-0.5" />
-                <div className="text-[11px] text-zinc-200 leading-snug">
-                  <span className="font-bold text-brand-orange block text-[9px] uppercase tracking-wider mb-0.5">
-                    Note Esecuzione:
-                  </span>
-                  {targetInstruction}
-                </div>
-              </div>
-            )}
-
-            {/* Riepilogo prestazione per MAX se applicabile */}
-            {!isTransitioning && isMaxPerformance(currentExercise) && (
-              <div className="bg-black/50 border border-brand-orange/30 rounded-2xl p-2.5 flex items-center justify-between">
-                <div>
-                  <span className="text-[9px] uppercase font-bold text-zinc-400 block">
-                    Ultimo Set {currentSetIdx + 1} (A Sfinimento)
-                  </span>
-                  <span className="text-sm font-black text-brand-orange font-mono">
-                    {getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) != null &&
-                    (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
-                      ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)} ${getPerformanceUnit(currentExercise) === 'sec' ? 's' : 'reps'}`
-                      : 'MAX'}
-                  </span>
-                </div>
+              {pipManager.isSupported() && (
                 <button
                   type="button"
-                  onClick={() => openEditSpecificSetModal(currentSetIdx)}
-                  className="px-2.5 py-1 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
+                  onClick={handleTogglePiP}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-brand-orange/30 bg-brand-darkGrey/60 hover:bg-brand-orange/20 text-brand-orange text-[10px] font-bold transition-all shadow-sm cursor-pointer"
+                  title="Mostra timer flottante sopra altre app (PiP)"
                 >
-                  <Pencil size={11} />
-                  <span>Modifica</span>
+                  <Layers size={11} />
+                  <span>{pipManager.isActive() ? 'Chiudi PiP' : 'PiP'}</span>
                 </button>
+              )}
+            </div>
+          </div>
+
+          {/* Next Target Dossier Card (Independently Scrollable to inspect all exercise/step characteristics) */}
+          <div className="flex-1 min-h-0 w-full bg-gradient-to-b from-[#1C1C1E] to-[#141416] border border-white/10 rounded-3xl p-3 sm:p-3.5 shadow-xl flex flex-col overflow-hidden">
+            {/* Header: Prossimo Set vs Prossimo Esercizio (Pinned at top of card) */}
+            <div className="shrink-0 pb-2 border-b border-white/5 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-brand-orange flex items-center gap-1.5">
+                  <ArrowRight size={13} className="text-brand-orange shrink-0" />
+                  {isTransitioning ? 'Prossimo Esercizio' : 'Prossimo Set'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] sm:text-[11px] font-mono font-bold text-zinc-300 uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                    {isTransitioning
+                      ? `Es. ${currentExerciseIdx + 2} di ${workout.exercises.length}`
+                      : isTargetPyramid
+                        ? `Step ${upcomingStepNumber} di ${totalStepsNumber}`
+                        : isTargetEmom
+                          ? `Round ${upcomingRoundNumber} di ${totalEmomRoundsNumber}`
+                          : `${isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'} ${upcomingSetNumber} di ${totalSetsNumber}`}
+                  </span>
+                </div>
               </div>
-            )}
+
+              {/* Exercise Name & Type Badge */}
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-tight truncate">
+                  {targetExerciseName}
+                </h3>
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 shrink-0 font-mono">
+                  {targetType.toUpperCase()}
+                </span>
+              </div>
+            </div>
+
+            {/* Scrollable Body: All characteristics of the upcoming exercise/step */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-2 pr-0.5 space-y-2.5 custom-scroll-area">
+              {/* 3-Box KPI Feature Grid */}
+              <div className="grid grid-cols-3 gap-1.5 shrink-0">
+                {/* Box 1: Target / Reps */}
+                <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
+                    {isTargetIsometry ? 'Tenuta' : 'Target'}
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-white font-mono mt-0.5 truncate">
+                    {targetGoalText}
+                  </span>
+                </div>
+
+                {/* Box 2: Carico */}
+                <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
+                  <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
+                    {targetWeightText}
+                  </span>
+                </div>
+
+                {/* Box 3: Serie Totali o Recupero */}
+                <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
+                    {isTransitioning ? 'Serie Totali' : 'Recupero'}
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
+                    {isTransitioning
+                      ? (isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`)
+                      : `${targetRestSeconds}s`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Timeline Grafica Serie */}
+              <div className="pt-0.5 shrink-0">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
+                  {isTransitioning ? 'Serie Prossimo Esercizio:' : 'Progressione Serie:'}
+                </span>
+                <div className="flex gap-1.5 items-center overflow-x-auto no-scrollbar py-0.5">
+                  {isTargetPyramid && targetExercise.pyramid_steps ? (
+                    targetExercise.pyramid_steps.map((step, sIdx) => {
+                      const isUpcoming = isTransitioning ? sIdx === 0 : sIdx === nextStepIdx;
+                      const isDone = isTransitioning ? false : sIdx <= currentPyramidStepIdx;
+                      return (
+                        <div
+                          key={sIdx}
+                          className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
+                            isUpcoming
+                              ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
+                              : isDone
+                                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                                : 'bg-white/5 border-white/5 text-zinc-500'
+                          }`}
+                        >
+                          <span className="text-[10px] opacity-75">S${sIdx + 1}</span>
+                          <span>
+                            {isDone ? '✓' : isUpcoming ? '⏳' : ''} {step.reps === 0 ? 'MAX' : `${step.reps}r`}
+                            {step.weight_kg != null && step.weight_kg > 0 ? ` @ ${step.weight_kg}kg` : ''}
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : isTargetCircuit ? (
+                    Array.from({ length: targetExercise.sets || 1 }, (_, sIdx) => {
+                      const isUpcoming = isTransitioning ? sIdx === 0 : sIdx === nextSetIdx;
+                      const isDone = isTransitioning ? false : sIdx <= currentSetIdx;
+                      return (
+                        <div
+                          key={sIdx}
+                          className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
+                            isUpcoming
+                              ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
+                              : isDone
+                                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                                : 'bg-white/5 border-white/5 text-zinc-500'
+                          }`}
+                        >
+                          <span className="text-[10px] opacity-75">G${sIdx + 1}</span>
+                          <span>{isDone ? '✓' : isUpcoming ? '⏳' : ''}</span>
+                        </div>
+                      );
+                    })
+                  ) : isTargetEmom ? (
+                    Array.from({ length: targetExercise.emom_rounds || totalEmomRoundsNumber || 1 }, (_, rIdx) => {
+                      const isUpcoming = isTransitioning ? rIdx === 0 : rIdx === nextEmomRoundIdx;
+                      const isDone = isTransitioning ? false : rIdx <= currentEmomRoundIdx;
+                      return (
+                        <div
+                          key={rIdx}
+                          className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
+                            isUpcoming
+                              ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
+                              : isDone
+                                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                                : 'bg-white/5 border-white/5 text-zinc-500'
+                          }`}
+                        >
+                          <span className="text-[10px] opacity-75">R${rIdx + 1}</span>
+                          <span>{isDone ? '✓' : isUpcoming ? '⏳' : ''}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    Array.from({ length: targetExercise.sets || 1 }, (_, sIdx) => {
+                      const isUpcoming = isTransitioning ? sIdx === 0 : sIdx === nextSetIdx;
+                      const isDone = isTransitioning ? false : sIdx <= currentSetIdx;
+                      const logged = !isTransitioning ? getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, sIdx) : null;
+                      return (
+                        <button
+                          key={sIdx}
+                          type="button"
+                          disabled={isTransitioning || !isDone}
+                          onClick={() => {
+                            if (!isTransitioning && isDone) {
+                              openEditSpecificSetModal(sIdx);
+                            }
+                          }}
+                          className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
+                            isUpcoming
+                              ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
+                              : isDone
+                                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300 cursor-pointer active:scale-95'
+                                : 'bg-white/5 border-white/5 text-zinc-500'
+                          }`}
+                          title={isDone ? `Modifica reps set ${sIdx + 1}` : `Set ${sIdx + 1}`}
+                        >
+                          <span className="text-[10px] opacity-75">S${sIdx + 1}</span>
+                          <span>
+                            {isDone ? '✓' : isUpcoming ? '⏳' : ''}
+                            {logged != null && logged > 0 ? ` (${logged})` : ''}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Elenco Completo Sub-Esercizi se Superset / Circuito / EMOM */}
+              {targetSubExercises.length > 0 && (
+                <div className="bg-black/50 border border-white/5 rounded-2xl p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                      Sequenza Round ({targetSubExercises.length} Esercizi):
+                    </span>
+                    <span className="text-[9px] font-mono text-brand-orange font-bold">
+                      Senza recupero tra es.
+                    </span>
+                  </div>
+                  {targetSubExercises.map((sub, idx) => (
+                    <div key={idx} className="flex flex-col py-1 border-b border-white/5 last:border-0 gap-0.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                          <span className="w-4 h-4 rounded-full bg-white/10 text-zinc-300 font-mono text-[9px] flex items-center justify-center font-bold shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="text-white font-bold truncate text-[11px] sm:text-xs">{sub.name}</span>
+                        </div>
+                        <span className="text-brand-orange font-mono font-bold text-[10px] sm:text-[11px] shrink-0">
+                          {sub.type === 'isometry'
+                            ? (isMaxTarget(sub.duration_seconds) ? 'MAX' : `${sub.duration_seconds}s`)
+                            : (isMaxTarget(sub.reps) ? 'MAX' : `${sub.reps} reps`)} • {formatWeightLabel(sub.weight_kg)}
+                        </span>
+                      </div>
+                      {sub.instruction_note && (
+                        <p className="text-[10px] text-zinc-400 italic pl-5">
+                          {sub.instruction_note}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Note di esecuzione se presenti */}
+              {targetInstruction && (
+                <div className="bg-brand-orange/10 border border-brand-orange/25 rounded-2xl p-2.5 flex items-start gap-2">
+                  <Info size={14} className="text-brand-orange shrink-0 mt-0.5" />
+                  <div className="text-[11px] text-zinc-200 leading-snug">
+                    <span className="font-bold text-brand-orange block text-[9px] uppercase tracking-wider mb-0.5">
+                      Note Esecuzione:
+                    </span>
+                    {targetInstruction}
+                  </div>
+                </div>
+              )}
+
+              {/* Badge Contatore Automatico Camera se supportato */}
+              {targetExercise.auto_count_type && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 flex items-center gap-2">
+                  <Video size={14} className="text-brand-orange shrink-0" />
+                  <span className="text-[11px] text-zinc-300 font-medium">
+                    Contatore automatico fotocamera disponibile ({targetExercise.auto_count_type === 'pushups' ? 'Piegamenti' : 'Trazioni'})
+                  </span>
+                </div>
+              )}
+
+              {/* Riepilogo prestazione per MAX se applicabile */}
+              {!isTransitioning && isMaxPerformance(currentExercise) && (
+                <div className="bg-black/50 border border-brand-orange/30 rounded-2xl p-2.5 flex items-center justify-between">
+                  <div>
+                    <span className="text-[9px] uppercase font-bold text-zinc-400 block">
+                      Ultimo Set {currentSetIdx + 1} (A Sfinimento)
+                    </span>
+                    <span className="text-sm font-black text-brand-orange font-mono">
+                      {getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) != null &&
+                      (getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx) || 0) > 0
+                        ? `${getLoggedPerformanceForSet(currentExerciseIdx, currentExercise, currentSetIdx)} ${getPerformanceUnit(currentExercise) === 'sec' ? 's' : 'reps'}`
+                        : 'MAX'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openEditSpecificSetModal(currentSetIdx)}
+                    className="px-2.5 py-1 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange text-xs font-bold transition-all border border-brand-orange/30 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Pencil size={11} />
+                    <span>Modifica</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
