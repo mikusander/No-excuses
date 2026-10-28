@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   PlayCircle,
@@ -537,6 +537,11 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [activeCheckpoints, setActiveCheckpoints] = useState<WorkoutProgressCheckpointMeta[]>([]);
   const [editingNameIdx, setEditingNameIdx] = useState<number | null>(null);
+  const [reorderingInfo, setReorderingInfo] = useState<{ activeId: string; targetId: string } | null>(null);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const prevRectsRef = useRef<Map<string, DOMRect>>(new Map());
+  const animationTimeoutRef = useRef<number | null>(null);
+  const animFrameRef = useRef<number | null>(null);
 
   const initialExercisesJsonRef = useRef<string>('');
 
@@ -821,6 +826,10 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
       return;
     }
     void hapticLight();
+    const removedId = editableExercises[index]?.id;
+    if (removedId) {
+      cardRefs.current.delete(removedId);
+    }
     setEditableExercises((prev) => {
       const next = prev.filter((_, idx) => idx !== index);
       return next.map((ex, idx) => ({ ...ex, order_index: idx }));
@@ -833,9 +842,31 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
   };
 
   const moveExercise = (index: number, direction: -1 | 1) => {
+    if (reorderingInfo) return;
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= editableExercises.length) return;
+
     void hapticLight();
+
+    const activeEx = editableExercises[index];
+    const targetEx = editableExercises[targetIndex];
+    if (!activeEx || !targetEx) return;
+
+    // Cattura le posizioni correnti delle card prima del riordino DOM per la tecnica FLIP
+    const rects = new Map<string, DOMRect>();
+    editableExercises.forEach((ex) => {
+      const el = cardRefs.current.get(ex.id);
+      if (el) {
+        rects.set(ex.id, el.getBoundingClientRect());
+      }
+    });
+    prevRectsRef.current = rects;
+
+    setReorderingInfo({
+      activeId: activeEx.id,
+      targetId: targetEx.id,
+    });
+
     setEditableExercises((prev) => {
       const next = [...prev];
       const temp = next[index];
@@ -843,12 +874,91 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
       next[targetIndex] = temp;
       return next.map((ex, idx) => ({ ...ex, order_index: idx }));
     });
+
     if (editingNameIdx === index) {
       setEditingNameIdx(targetIndex);
     } else if (editingNameIdx === targetIndex) {
       setEditingNameIdx(index);
     }
   };
+
+  // Pulizia timer/frame all'unmount
+  useEffect(() => {
+    return () => {
+      if (animationTimeoutRef.current) clearTimeout(animationTimeoutRef.current);
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, []);
+
+  // Animazione fluida di cambio ordine (FLIP: First, Last, Invert, Play)
+  useLayoutEffect(() => {
+    const prevRects = prevRectsRef.current;
+    if (!prevRects || prevRects.size === 0) return;
+
+    // Reset immediato per evitare esecuzioni multiple
+    prevRectsRef.current = new Map();
+
+    const movedElements: { el: HTMLDivElement; deltaY: number; isActive: boolean }[] = [];
+
+    editableExercises.forEach((ex) => {
+      const el = cardRefs.current.get(ex.id);
+      const oldRect = prevRects.get(ex.id);
+      if (el && oldRect) {
+        const newRect = el.getBoundingClientRect();
+        const deltaY = oldRect.top - newRect.top;
+        if (Math.abs(deltaY) > 0.5) {
+          movedElements.push({
+            el,
+            deltaY,
+            isActive: ex.id === reorderingInfo?.activeId,
+          });
+        }
+      }
+    });
+
+    if (movedElements.length === 0) {
+      setReorderingInfo(null);
+      return;
+    }
+
+    // 1. INVERT: posiziona istantaneamente le card nelle coordinate visuali precedenti (senza transizione)
+    movedElements.forEach(({ el, deltaY, isActive }) => {
+      el.style.transform = `translate3d(0, ${deltaY}px, 0)`;
+      el.style.transition = 'none';
+      el.style.zIndex = isActive ? '20' : '10';
+      el.style.willChange = 'transform';
+    });
+
+    // Forza il reflow sincrono
+    if (movedElements[0]) {
+      void movedElements[0].el.offsetHeight;
+    }
+
+    // 2. PLAY: anima con curva naturale decelerata stile Apple verso la nuova posizione (translate3d(0, 0, 0))
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    animFrameRef.current = requestAnimationFrame(() => {
+      movedElements.forEach(({ el }) => {
+        el.style.transition = 'transform 300ms cubic-bezier(0.2, 0, 0, 1)';
+        el.style.transform = 'translate3d(0, 0, 0)';
+      });
+    });
+
+    // 3. CLEANUP: al termine della transizione ripulisce gli stili inline e ripristina lo stato
+    if (animationTimeoutRef.current) clearTimeout(animationTimeoutRef.current);
+    animationTimeoutRef.current = window.setTimeout(() => {
+      movedElements.forEach(({ el }) => {
+        el.style.transform = '';
+        el.style.transition = '';
+        el.style.zIndex = '';
+        el.style.willChange = '';
+      });
+      setReorderingInfo(null);
+    }, 320);
+
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [editableExercises, reorderingInfo?.activeId]);
 
   const addExercise = (targetIndex: number) => {
     void hapticMedium();
@@ -1077,7 +1187,20 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                     <React.Fragment key={ex.id || i}>
                       <div
                         id={`preview-exercise-card-${ex.id}`}
-                        className="flex flex-col bg-black/40 px-4 sm:px-5 py-4 rounded-2xl border border-white/5 transition-all"
+                        ref={(el) => {
+                          if (el) {
+                            cardRefs.current.set(ex.id, el);
+                          } else {
+                            cardRefs.current.delete(ex.id);
+                          }
+                        }}
+                        className={`flex flex-col bg-black/40 px-4 sm:px-5 py-4 rounded-2xl border transition-[border-color,box-shadow] duration-300 ${
+                          reorderingInfo?.activeId === ex.id
+                            ? 'border-brand-orange ring-1 ring-brand-orange/60 shadow-[0_10px_30px_rgba(255,94,0,0.3)]'
+                            : reorderingInfo?.targetId === ex.id
+                            ? 'border-white/20'
+                            : 'border-white/5'
+                        }`}
                       >
                         {/* Header con frecce riordina, numero, nome editabile, badge tipo e pulsante elimina */}
                         <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-white/5">
@@ -1086,10 +1209,12 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                             <div className="flex flex-col gap-0.5">
                               <button
                                 type="button"
-                                disabled={i === 0}
+                                disabled={i === 0 || !!reorderingInfo}
                                 onClick={() => moveExercise(i, -1)}
                                 className={`p-1 rounded bg-white/5 hover:bg-white/10 transition-colors ${
-                                  i === 0 ? 'opacity-20 cursor-not-allowed' : 'text-zinc-300 hover:text-white cursor-pointer active:scale-95'
+                                  i === 0 || !!reorderingInfo
+                                    ? 'opacity-20 cursor-not-allowed'
+                                    : 'text-zinc-300 hover:text-white cursor-pointer active:scale-95'
                                 }`}
                                 title="Sposta su"
                               >
@@ -1097,10 +1222,12 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                               </button>
                               <button
                                 type="button"
-                                disabled={i === editableExercises.length - 1}
+                                disabled={i === editableExercises.length - 1 || !!reorderingInfo}
                                 onClick={() => moveExercise(i, 1)}
                                 className={`p-1 rounded bg-white/5 hover:bg-white/10 transition-colors ${
-                                  i === editableExercises.length - 1 ? 'opacity-20 cursor-not-allowed' : 'text-zinc-300 hover:text-white cursor-pointer active:scale-95'
+                                  i === editableExercises.length - 1 || !!reorderingInfo
+                                    ? 'opacity-20 cursor-not-allowed'
+                                    : 'text-zinc-300 hover:text-white cursor-pointer active:scale-95'
                                 }`}
                                 title="Sposta giù"
                               >
