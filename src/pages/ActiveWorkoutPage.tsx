@@ -6877,15 +6877,16 @@ const ActiveWorkoutPage: React.FC = () => {
 
                         if (isCompleted) {
                           return (
-                            <button
+                            <div
                               key={rIdx}
-                              type="button"
                               onClick={() => {
                                 void hapticLight();
+                                stopEmomCountdown();
                                 setCurrentEmomRoundIdx(rIdx);
+                                setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
                               }}
-                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-95"
-                              title={`Round ${rIdx + 1} completato - Tocca per rivedere`}
+                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-[0.98]"
+                              title={`Round ${rIdx + 1} completato - Tocca per tornare a questo round`}
                             >
                               <div className="flex items-center justify-between gap-1 pb-2 border-b border-emerald-500/20 shrink-0">
                                 <span className="text-xs sm:text-sm font-black font-mono text-zinc-300 uppercase tracking-wider">
@@ -6897,11 +6898,11 @@ const ActiveWorkoutPage: React.FC = () => {
                                 </span>
                               </div>
 
-                              <div className="my-auto py-2 flex flex-col items-center justify-center text-center">
+                              <div className="my-auto py-1 flex flex-col items-center justify-center text-center">
                                 <span className="text-4xl min-[390px]:text-5xl font-mono font-black text-emerald-400 leading-none">
                                   ✓
                                 </span>
-                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/90 mt-2">
+                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/90 mt-1.5">
                                   Completato
                                 </span>
                                 {hasEmomTasks ? (
@@ -6915,26 +6916,51 @@ const ActiveWorkoutPage: React.FC = () => {
                                 )}
                               </div>
 
-                              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs shrink-0">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                                  Durata
-                                </span>
-                                <span className="font-mono font-bold text-zinc-200">
-                                  {roundDuration}s
-                                </span>
+                              <div className="space-y-2 shrink-0 pt-2 border-t border-emerald-500/20">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                    Durata
+                                  </span>
+                                  <span className="font-mono font-bold text-zinc-200">
+                                    {roundDuration}s
+                                  </span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void hapticLight();
+                                    stopEmomCountdown();
+                                    setCurrentEmomRoundIdx(rIdx);
+                                    setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
+                                  }}
+                                  className="w-full py-1.5 px-2 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                  title={`Torna al Round ${rIdx + 1}`}
+                                >
+                                  <ArrowPrev size={13} strokeWidth={2.5} />
+                                  <span>Torna a questo round</span>
+                                </button>
                               </div>
-                            </button>
+                            </div>
                           );
                         }
 
-                        // Upcoming Round
+                        // Upcoming Round with Jump Button
                         return (
                           <div
                             key={rIdx}
-                            className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] text-left transition-all snap-center select-none flex flex-col justify-between opacity-65 shadow-sm"
+                            onClick={() => {
+                              void hapticLight();
+                              stopEmomCountdown();
+                              setCurrentEmomRoundIdx(rIdx);
+                              setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
+                            }}
+                            className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] hover:border-white/20 text-left transition-all snap-center select-none flex flex-col justify-between shadow-sm cursor-pointer active:scale-[0.98]"
+                            title={`Passa al Round ${rIdx + 1}`}
                           >
                             <div className="flex items-center justify-between gap-1 pb-2 border-b border-white/10 shrink-0">
-                              <span className="text-xs sm:text-sm font-black font-mono text-zinc-400 uppercase tracking-wider">
+                              <span className="text-xs sm:text-sm font-black font-mono text-zinc-300 uppercase tracking-wider">
                                 ROUND {rIdx + 1}
                               </span>
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 text-[9px] font-black uppercase tracking-wider">
@@ -6942,11 +6968,11 @@ const ActiveWorkoutPage: React.FC = () => {
                               </span>
                             </div>
 
-                            <div className="my-auto py-2 flex flex-col items-center justify-center text-center">
+                            <div className="my-auto py-1 flex flex-col items-center justify-center text-center">
                               <span className="text-4xl min-[390px]:text-5xl font-mono font-black text-zinc-400 leading-none">
                                 :{String(roundDuration).padStart(2, '0')}
                               </span>
-                              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-2">
+                              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-1.5">
                                 Ogni {roundDuration}s
                               </span>
                               {hasEmomTasks ? (
@@ -6960,13 +6986,31 @@ const ActiveWorkoutPage: React.FC = () => {
                               )}
                             </div>
 
-                            <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs shrink-0">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                                Stato
-                              </span>
-                              <span className="font-mono text-zinc-400 text-[11px]">
-                                Prossimo
-                              </span>
+                            <div className="space-y-2 shrink-0 pt-2 border-t border-white/10">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                                  Durata
+                                </span>
+                                <span className="font-mono text-zinc-400 text-[11px]">
+                                  {roundDuration}s
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void hapticLight();
+                                  stopEmomCountdown();
+                                  setCurrentEmomRoundIdx(rIdx);
+                                  setEmomRoundRemainingWithSync(currentExercise.emom_round_duration || 60);
+                                }}
+                                className="w-full py-1.5 px-2 rounded-2xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange border border-brand-orange/35 text-[11px] font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                title={`Passa al Round ${rIdx + 1}`}
+                              >
+                                <span>Passa a questo round</span>
+                                <ArrowRight size={13} strokeWidth={2.5} />
+                              </button>
                             </div>
                           </div>
                         );
@@ -7080,15 +7124,16 @@ const ActiveWorkoutPage: React.FC = () => {
 
                         if (isDone) {
                           return (
-                            <button
+                            <div
                               key={sIdx}
-                              type="button"
                               onClick={() => {
                                 void hapticLight();
-                                openEditSpecificSetModal(sIdx);
+                                setCurrentPyramidStepIdx(sIdx);
+                                setPendingPyramidAdvance(false);
+                                stopRestCountdown();
                               }}
-                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-95"
-                              title={`Step ${sIdx + 1} completato - Tocca per modificare`}
+                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-[0.98]"
+                              title={`Step ${sIdx + 1} completato - Tocca per tornare a questo step`}
                             >
                               <div className="flex items-center justify-between gap-1 pb-2 border-b border-emerald-500/20 shrink-0">
                                 <div className="flex items-center gap-1 shrink-0 whitespace-nowrap font-mono">
@@ -7105,37 +7150,62 @@ const ActiveWorkoutPage: React.FC = () => {
                                 </span>
                               </div>
 
-                              <div className="my-auto py-2 flex flex-col items-center justify-center">
+                              <div className="my-auto py-1 flex flex-col items-center justify-center">
                                 <span className="text-5xl sm:text-6xl font-mono font-black text-emerald-400 leading-none">
                                   {logged != null && logged > 0 ? logged : (isMax ? 'MAX' : step.reps)}
                                 </span>
-                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/80 mt-2 flex items-center gap-1">
-                                  <Pencil size={11} />
+                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/80 mt-1.5 flex items-center gap-1">
+                                  <Check size={11} strokeWidth={2.5} />
                                   Completate
                                 </span>
                               </div>
 
-                              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-center text-xs shrink-0">
-                                <div className="flex flex-col items-center text-center">
-                                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Carico</span>
-                                  <span className="font-mono font-bold text-zinc-200 truncate max-w-[120px]">
-                                    {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
-                                  </span>
+                              <div className="space-y-2 shrink-0 pt-2 border-t border-emerald-500/20">
+                                <div className="flex items-center justify-center text-xs">
+                                  <div className="flex flex-col items-center text-center">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Carico</span>
+                                    <span className="font-mono font-bold text-zinc-200 truncate max-w-[120px]">
+                                      {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                                    </span>
+                                  </div>
                                 </div>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void hapticLight();
+                                    setCurrentPyramidStepIdx(sIdx);
+                                    setPendingPyramidAdvance(false);
+                                    stopRestCountdown();
+                                  }}
+                                  className="w-full py-1.5 px-2 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                  title={`Torna allo Step ${sIdx + 1}`}
+                                >
+                                  <ArrowPrev size={13} strokeWidth={2.5} />
+                                  <span>Torna a questo step</span>
+                                </button>
                               </div>
-                            </button>
+                            </div>
                           );
                         }
 
-                        // Future Steps
+                        // Future Steps with Jump Button
                         return (
                           <div
                             key={sIdx}
-                            className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] text-left transition-all snap-center select-none flex flex-col justify-between opacity-65 shadow-sm"
+                            onClick={() => {
+                              void hapticLight();
+                              setCurrentPyramidStepIdx(sIdx);
+                              setPendingPyramidAdvance(false);
+                              stopRestCountdown();
+                            }}
+                            className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] hover:border-white/20 text-left transition-all snap-center select-none flex flex-col justify-between shadow-sm cursor-pointer active:scale-[0.98]"
+                            title={`Passa allo Step ${sIdx + 1}`}
                           >
                             <div className="flex items-center justify-between gap-1 pb-2 border-b border-white/10 shrink-0">
                               <div className="flex items-center gap-1 shrink-0 whitespace-nowrap font-mono">
-                                <span className="text-xs sm:text-sm font-black text-zinc-400 uppercase tracking-wider">
+                                <span className="text-xs sm:text-sm font-black text-zinc-300 uppercase tracking-wider">
                                   STEP {sIdx + 1}
                                 </span>
                                 <span className="text-[11px] sm:text-xs font-semibold text-zinc-400">
@@ -7147,25 +7217,40 @@ const ActiveWorkoutPage: React.FC = () => {
                               </span>
                             </div>
 
-                            <div className="my-auto py-2 flex flex-col items-center justify-center text-center">
+                            <div className="my-auto py-1 flex flex-col items-center justify-center text-center">
                               <span className="text-5xl sm:text-6xl font-mono font-black text-zinc-300 leading-none">
                                 {isMax ? 'MAX' : step.reps}
                               </span>
-                              <span className="text-[11px] font-mono font-black text-brand-lightOrange mt-2 bg-brand-orange/10 border border-brand-orange/20 px-2 py-0.5 rounded-lg">
+                              <span className="text-[11px] font-mono font-black text-brand-lightOrange mt-1.5 bg-brand-orange/10 border border-brand-orange/20 px-2 py-0.5 rounded-lg">
                                 {isMax ? 'MAX' : `${step.reps} reps`} @ {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
-                              </span>
-                              <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider mt-1">
-                                Anteprima carico
                               </span>
                             </div>
 
-                            <div className="pt-2 border-t border-white/10 flex items-center justify-center text-xs shrink-0">
-                              <div className="flex flex-col items-center text-center">
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Carico</span>
-                                <span className="font-mono text-zinc-400 truncate max-w-[120px]">
-                                  {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
-                                </span>
+                            <div className="space-y-2 shrink-0 pt-2 border-t border-white/10">
+                              <div className="flex items-center justify-center text-xs">
+                                <div className="flex flex-col items-center text-center">
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Carico</span>
+                                  <span className="font-mono text-zinc-400 truncate max-w-[120px]">
+                                    {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                                  </span>
+                                </div>
                               </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void hapticLight();
+                                  setCurrentPyramidStepIdx(sIdx);
+                                  setPendingPyramidAdvance(false);
+                                  stopRestCountdown();
+                                }}
+                                className="w-full py-1.5 px-2 rounded-2xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange border border-brand-orange/35 text-[11px] font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                title={`Passa allo Step ${sIdx + 1}`}
+                              >
+                                <span>Passa a questo step</span>
+                                <ArrowRight size={13} strokeWidth={2.5} />
+                              </button>
                             </div>
                           </div>
                         );
@@ -7693,15 +7778,15 @@ const ActiveWorkoutPage: React.FC = () => {
 
                           if (isCompleted) {
                             return (
-                              <button
+                              <div
                                 key={sIdx}
-                                type="button"
                                 onClick={() => {
                                   void hapticLight();
-                                  openEditSpecificSetModal(sIdx);
+                                  setCurrentSetIdx(sIdx);
+                                  resetCurrentExerciseTimerState();
                                 }}
-                                className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-95"
-                                title={`Set ${sIdx + 1} completato - Tocca per modificare`}
+                                className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] text-left transition-all snap-center cursor-pointer select-none flex flex-col justify-between shadow-sm active:scale-[0.98]"
+                                title={`Set ${sIdx + 1} completato - Tocca per tornare a questo set`}
                               >
                                 <div className="flex items-center justify-between gap-1 pb-2 border-b border-emerald-500/20 shrink-0">
                                   <span className="text-xs sm:text-sm font-black font-mono text-zinc-300 uppercase tracking-wider">
@@ -7713,36 +7798,59 @@ const ActiveWorkoutPage: React.FC = () => {
                                   </span>
                                 </div>
 
-                                <div className="my-auto py-2 flex flex-col items-center justify-center">
+                                <div className="my-auto py-1 flex flex-col items-center justify-center">
                                   <span className="text-5xl sm:text-6xl font-mono font-black text-emerald-400 leading-none">
                                     {logged != null && logged > 0 ? logged : repsValue}
                                   </span>
-                                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/80 mt-2 flex items-center gap-1">
-                                    <Pencil size={11} />
+                                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/80 mt-1.5 flex items-center gap-1">
+                                    <Check size={11} strokeWidth={2.5} />
                                     Completate
                                   </span>
                                 </div>
 
-                                <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs shrink-0">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                                    Carico
-                                  </span>
-                                  <span className="font-mono font-bold text-zinc-200 truncate max-w-[100px]">
-                                    {weightText}
-                                  </span>
+                                <div className="space-y-2 shrink-0 pt-2 border-t border-emerald-500/20">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                      Carico
+                                    </span>
+                                    <span className="font-mono font-bold text-zinc-200 truncate max-w-[100px]">
+                                      {weightText}
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void hapticLight();
+                                      setCurrentSetIdx(sIdx);
+                                      resetCurrentExerciseTimerState();
+                                    }}
+                                    className="w-full py-1.5 px-2 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                    title={`Torna al Set ${sIdx + 1}`}
+                                  >
+                                    <ArrowPrev size={13} strokeWidth={2.5} />
+                                    <span>Torna a questo set</span>
+                                  </button>
                                 </div>
-                              </button>
+                              </div>
                             );
                           }
 
-                          // Upcoming Sets (isUpcoming) - Static and Clean without Rep Edit Button
+                          // Upcoming Sets (isUpcoming) with Jump Button
                           return (
                             <div
                               key={sIdx}
-                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] text-left transition-all snap-center select-none flex flex-col justify-between opacity-65 shadow-sm"
+                              onClick={() => {
+                                void hapticLight();
+                                setCurrentSetIdx(sIdx);
+                                resetCurrentExerciseTimerState();
+                              }}
+                              className="shrink-0 w-[170px] min-[390px]:w-[185px] sm:w-[200px] h-[290px] min-[390px]:h-[320px] sm:h-[350px] p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] hover:border-white/20 text-left transition-all snap-center select-none flex flex-col justify-between shadow-sm cursor-pointer active:scale-[0.98]"
+                              title={`Passa al Set ${sIdx + 1}`}
                             >
                               <div className="flex items-center justify-between gap-1 pb-2 border-b border-white/10 shrink-0">
-                                <span className="text-xs sm:text-sm font-black font-mono text-zinc-400 uppercase tracking-wider">
+                                <span className="text-xs sm:text-sm font-black font-mono text-zinc-300 uppercase tracking-wider">
                                   SET {sIdx + 1}
                                 </span>
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 text-[9px] font-black uppercase tracking-wider">
@@ -7750,22 +7858,39 @@ const ActiveWorkoutPage: React.FC = () => {
                                 </span>
                               </div>
 
-                              <div className="my-auto py-2 flex flex-col items-center justify-center">
+                              <div className="my-auto py-1 flex flex-col items-center justify-center">
                                 <span className="text-5xl sm:text-6xl font-mono font-black text-zinc-300 leading-none">
                                   {isMax ? 'MAX' : repsValue}
                                 </span>
-                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-2">
+                                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-1.5">
                                   {isMax ? 'A cedimento' : 'Previste'}
                                 </span>
                               </div>
 
-                              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs shrink-0">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                                  Carico
-                                </span>
-                                <span className="font-mono font-bold text-zinc-400 truncate max-w-[100px]">
-                                  {weightText}
-                                </span>
+                              <div className="space-y-2 shrink-0 pt-2 border-t border-white/10">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                                    Carico
+                                  </span>
+                                  <span className="font-mono font-bold text-zinc-400 truncate max-w-[100px]">
+                                    {weightText}
+                                  </span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void hapticLight();
+                                    setCurrentSetIdx(sIdx);
+                                    resetCurrentExerciseTimerState();
+                                  }}
+                                  className="w-full py-1.5 px-2 rounded-2xl bg-brand-orange/15 hover:bg-brand-orange/25 text-brand-orange border border-brand-orange/35 text-[11px] font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                  title={`Passa al Set ${sIdx + 1}`}
+                                >
+                                  <span>Passa a questo set</span>
+                                  <ArrowRight size={13} strokeWidth={2.5} />
+                                </button>
                               </div>
                             </div>
                           );
