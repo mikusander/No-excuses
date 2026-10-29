@@ -691,11 +691,7 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                             <CheckCircle2 size={12} />
                             Completato
                           </span>
-                        ) : (
-                          <span className="text-zinc-400">
-                            Esercizio {index + 1} di {workout.exercises.length}
-                          </span>
-                        )}
+                        ) : null}
                       </span>
 
                       <div className="flex items-center gap-1.5 shrink-0">
