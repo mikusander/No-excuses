@@ -8018,7 +8018,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                   {isMax ? 'MAX' : repsValue}
                                 </span>
                                 <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-1.5">
-                                  {isMax ? 'A cedimento' : 'Previste'}
+                                  {isMax ? 'A cedimento' : 'Ripetizioni'}
                                 </span>
                               </div>
 
