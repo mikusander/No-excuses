@@ -5322,7 +5322,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                   : 'bg-white/5 border-white/5 text-zinc-500'
                             }`}
                           >
-                            <span className="text-[10px] opacity-75">S{sIdx + 1}</span>
+                            <span className="text-[10px] opacity-75">{sIdx + 1}</span>
                             <span>{isDone ? '✓' : isUpcoming ? '⏳' : `${step.reps}r`}</span>
                           </div>
                         );
@@ -5342,7 +5342,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                   : 'bg-white/5 border-white/5 text-zinc-500'
                             }`}
                           >
-                            <span className="text-[10px] opacity-75">S{sIdx + 1}</span>
+                            <span className="text-[10px] opacity-75">{sIdx + 1}</span>
                             <span>{isDone ? '✓' : isUpcoming ? '⏳' : ''}</span>
                           </div>
                         );
@@ -6422,7 +6422,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 : 'bg-white/5 border-white/5 text-zinc-500'
                           }`}
                         >
-                          <span className="text-[10px] opacity-75">S${sIdx + 1}</span>
+                          <span className="text-[10px] opacity-75">{sIdx + 1}</span>
                           <span>
                             {isDone ? '✓' : isUpcoming ? '⏳' : ''} {step.reps === 0 ? 'MAX' : `${step.reps}r`}
                             {step.weight_kg != null && step.weight_kg > 0 ? ` @ ${step.weight_kg}kg` : ''}
@@ -6445,7 +6445,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 : 'bg-white/5 border-white/5 text-zinc-500'
                           }`}
                         >
-                          <span className="text-[10px] opacity-75">G${sIdx + 1}</span>
+                          <span className="text-[10px] opacity-75">{sIdx + 1}</span>
                           <span>{isDone ? '✓' : isUpcoming ? '⏳' : ''}</span>
                         </div>
                       );
@@ -6465,7 +6465,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 : 'bg-white/5 border-white/5 text-zinc-500'
                           }`}
                         >
-                          <span className="text-[10px] opacity-75">R${rIdx + 1}</span>
+                          <span className="text-[10px] opacity-75">{rIdx + 1}</span>
                           <span>{isDone ? '✓' : isUpcoming ? '⏳' : ''}</span>
                         </div>
                       );
@@ -6494,7 +6494,7 @@ const ActiveWorkoutPage: React.FC = () => {
                           }`}
                           title={isDone ? `Modifica reps set ${sIdx + 1}` : `Set ${sIdx + 1}`}
                         >
-                          <span className="text-[10px] opacity-75">S${sIdx + 1}</span>
+                          <span className="text-[10px] opacity-75">{sIdx + 1}</span>
                           <span>
                             {isDone ? '✓' : isUpcoming ? '⏳' : ''}
                             {logged != null && logged > 0 ? ` (${logged})` : ''}
