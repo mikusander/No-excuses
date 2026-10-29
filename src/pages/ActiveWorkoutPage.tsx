@@ -3539,6 +3539,173 @@ const ActiveWorkoutPage: React.FC = () => {
     void hapticSuccess();
   };
 
+  const handleSaveExerciseFromOverview = async (exerciseIndex: number, updatedExercise: Exercise) => {
+    if (!workout?.exercises) return;
+
+    // 1. Aggiorna in memoria workout.exercises
+    setWorkout((prev) => {
+      if (!prev) return prev;
+      const exercises = [...prev.exercises];
+      exercises[exerciseIndex] = updatedExercise;
+      return { ...prev, exercises };
+    });
+
+    // 2. Se stiamo modificando l'esercizio corrente in esecuzione
+    if (exerciseIndex === currentExerciseIdx) {
+      if (updatedExercise.type === 'isometry' || updatedExercise.type === 'cardio') {
+        if (updatedExercise.duration_seconds > 0) {
+          setIsometryRemainingWithSync(Math.min(isometryRemaining, updatedExercise.duration_seconds));
+        }
+      }
+      if (updatedExercise.type === 'emom' && updatedExercise.emom_round_duration) {
+        setEmomRoundRemainingWithSync(Math.min(emomRoundRemaining, updatedExercise.emom_round_duration));
+      }
+    }
+
+    // 3. Se stiamo modificando la pausa di transizione corrente
+    if (isResting && pendingExerciseAdvance && currentExerciseIdx === exerciseIndex) {
+      const safeTrans = updatedExercise.transition_rest_seconds || 0;
+      if (safeTrans === 0) {
+        skipRest();
+      } else {
+        setRestInitialDuration(safeTrans);
+        setRestRemaining(safeTrans);
+        setRestEndsAtMs(Date.now() + safeTrans * 1000);
+      }
+    }
+
+    // 4. Salva checkpoint persistente in memoria locale
+    setTimeout(() => {
+      persistWorkoutProgress(true);
+    }, 50);
+
+    // 5. Salva su Supabase se id_scheda è presente
+    try {
+      const schedaId = sourceSchedaId;
+      if (schedaId != null && updatedExercise.id) {
+        if (updatedExercise.type === 'superset' || updatedExercise.type === 'circuit') {
+          const supersetId = Number(updatedExercise.id);
+          await supabase
+            .from('superset')
+            .update({ round_totali: Math.max(1, updatedExercise.sets || 1) })
+            .eq('id_superset', supersetId);
+
+          const { data: rows } = await supabase
+            .from('esecuzioni')
+            .select('id_esecuzione, ordine')
+            .eq('id_scheda', schedaId)
+            .eq('id_superset', supersetId)
+            .order('ordine', { ascending: true });
+
+          if (rows && updatedExercise.subExercises) {
+            await Promise.all(
+              rows.slice(0, updatedExercise.subExercises.length).map(async (row, sIdx) => {
+                const sub = updatedExercise.subExercises![sIdx];
+                if (!sub) return;
+                const isIso = sub.type === 'isometry';
+                await supabase
+                  .from('esecuzioni')
+                  .update({
+                    set_num: Math.max(1, updatedExercise.sets || 1),
+                    rest_secondi: updatedExercise.rest_seconds > 0 ? updatedExercise.rest_seconds : null,
+                    rest_tra_esercizi: (updatedExercise.transition_rest_seconds || 0) > 0 ? updatedExercise.transition_rest_seconds : null,
+                    reps: isIso ? null : (isMaxTarget(sub.reps) ? 0 : sub.reps),
+                    durata_secondi: isIso ? (isMaxTarget(sub.duration_seconds) ? 0 : sub.duration_seconds) : null,
+                    peso_kg: sub.weight_kg != null && sub.weight_kg > 0 ? sub.weight_kg : null,
+                  })
+                  .eq('id_scheda', schedaId)
+                  .eq('id_esecuzione', row.id_esecuzione);
+              })
+            );
+          }
+        } else if (updatedExercise.type === 'emom') {
+          const emomId = Number(updatedExercise.id);
+          await supabase
+            .from('emom')
+            .update({
+              round_totali: Math.max(1, updatedExercise.emom_rounds || 1),
+              durata_round_secondi: Math.max(1, updatedExercise.emom_round_duration || 60),
+            })
+            .eq('id_emom', emomId);
+
+          const { data: rows } = await supabase
+            .from('esecuzioni')
+            .select('id_esecuzione, ordine')
+            .eq('id_scheda', schedaId)
+            .eq('id_emom', emomId)
+            .order('ordine', { ascending: true });
+
+          if (rows && updatedExercise.subExercises) {
+            await Promise.all(
+              rows.slice(0, updatedExercise.subExercises.length).map(async (row, sIdx) => {
+                const sub = updatedExercise.subExercises![sIdx];
+                if (!sub) return;
+                const isIso = sub.type === 'isometry';
+                await supabase
+                  .from('esecuzioni')
+                  .update({
+                    set_num: Math.max(1, updatedExercise.sets || 1),
+                    rest_secondi: updatedExercise.rest_seconds > 0 ? updatedExercise.rest_seconds : null,
+                    rest_tra_esercizi: (updatedExercise.transition_rest_seconds || 0) > 0 ? updatedExercise.transition_rest_seconds : null,
+                    reps: isIso ? null : (isMaxTarget(sub.reps) ? 0 : sub.reps),
+                    durata_secondi: isIso ? (isMaxTarget(sub.duration_seconds) ? 0 : sub.duration_seconds) : null,
+                    peso_kg: sub.weight_kg != null && sub.weight_kg > 0 ? sub.weight_kg : null,
+                  })
+                  .eq('id_scheda', schedaId)
+                  .eq('id_esecuzione', row.id_esecuzione);
+              })
+            );
+          }
+        } else if (updatedExercise.type === 'pyramid') {
+          const pyramidId = Number(updatedExercise.id);
+          const { data: rows } = await supabase
+            .from('esecuzioni')
+            .select('id_esecuzione, ordine, stepindex_piramide')
+            .eq('id_scheda', schedaId)
+            .eq('id_piramide', pyramidId)
+            .order('ordine', { ascending: true });
+
+          if (rows && updatedExercise.pyramid_steps) {
+            await Promise.all(
+              rows.slice(0, updatedExercise.pyramid_steps.length).map(async (row, stIdx) => {
+                const step = updatedExercise.pyramid_steps![stIdx];
+                if (!step) return;
+                await supabase
+                  .from('esecuzioni')
+                  .update({
+                    reps: isMaxTarget(step.reps) ? 0 : step.reps,
+                    rest_secondi: step.rest_seconds > 0 ? step.rest_seconds : null,
+                    rest_tra_esercizi: (updatedExercise.transition_rest_seconds || 0) > 0 ? updatedExercise.transition_rest_seconds : null,
+                    peso_kg: step.weight_kg != null && step.weight_kg > 0 ? step.weight_kg : null,
+                  })
+                  .eq('id_scheda', schedaId)
+                  .eq('id_esecuzione', row.id_esecuzione);
+              })
+            );
+          }
+        } else {
+          // Standard reps, isometry, cardio
+          const isIso = updatedExercise.type === 'isometry' || updatedExercise.type === 'cardio';
+          await supabase
+            .from('esecuzioni')
+            .update({
+              set_num: Math.max(1, updatedExercise.sets || 1),
+              reps: isIso ? null : (isMaxTarget(updatedExercise.reps) ? 0 : updatedExercise.reps),
+              durata_secondi: isIso ? (isMaxTarget(updatedExercise.duration_seconds) ? 0 : updatedExercise.duration_seconds) : null,
+              peso_kg: updatedExercise.weight_kg != null && updatedExercise.weight_kg > 0 ? updatedExercise.weight_kg : null,
+              rest_secondi: updatedExercise.rest_seconds > 0 ? updatedExercise.rest_seconds : null,
+              rest_tra_esercizi: (updatedExercise.transition_rest_seconds || 0) > 0 ? updatedExercise.transition_rest_seconds : null,
+              note_esercizio: updatedExercise.instruction_note || null,
+            })
+            .eq('id_scheda', schedaId)
+            .eq('id_esecuzione', Number(updatedExercise.id));
+        }
+      }
+    } catch (err) {
+      console.warn('Could not sync updated exercise to Supabase:', err);
+    }
+  };
+
   const closeCurrentInstructionModal = () => {
     setIsInstructionModalOpen(false);
     setInstructionModalContext(null);
@@ -4679,6 +4846,7 @@ const ActiveWorkoutPage: React.FC = () => {
         onUpdateTransitionRest={updateTransitionRestSeconds}
         onOpenExerciseNote={openExerciseNoteModal}
         onOpenEditExercise={openEditExerciseModal}
+        onSaveExercise={handleSaveExerciseFromOverview}
         getExerciseNoteEntry={getExerciseNoteEntry}
       />
     );

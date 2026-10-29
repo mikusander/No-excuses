@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { Exercise, Workout } from './types';
 import { hapticLight } from '../../utils/haptics';
+import { ExerciseParameterEditModal } from './ExerciseParameterEditModal';
 
 export interface WorkoutOverviewModalProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ export interface WorkoutOverviewModalProps {
   onUpdateTransitionRest: (exerciseIndex: number, newSeconds: number) => void;
   onOpenExerciseNote: (exerciseIndex: number) => void;
   onOpenEditExercise: (exerciseIndex: number) => void;
+  onSaveExercise?: (exerciseIndex: number, updatedExercise: Exercise) => Promise<void> | void;
   getExerciseNoteEntry: (index: number, exercise: Exercise) => { note?: string } | undefined;
 }
 
@@ -186,9 +188,11 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
   onUpdateTransitionRest,
   onOpenExerciseNote,
   onOpenEditExercise,
+  onSaveExercise,
   getExerciseNoteEntry,
 }) => {
   const [editingTransitionIdx, setEditingTransitionIdx] = useState<number | null>(null);
+  const [editingParamExerciseIdx, setEditingParamExerciseIdx] = useState<number | null>(null);
   const [transitionDraftMinutes, setTransitionDraftMinutes] = useState<string>('0');
   const [transitionDraftSeconds, setTransitionDraftSeconds] = useState<string>('0');
   const [isEditingGeneralNote, setIsEditingGeneralNote] = useState<boolean>(false);
@@ -746,7 +750,11 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
 
                         <button
                           type="button"
-                          onClick={() => onOpenEditExercise(index)}
+                          onClick={() => {
+                            void hapticLight();
+                            setEditingParamExerciseIdx(index);
+                            onOpenEditExercise(index);
+                          }}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${
                             isCurrentExercise
                               ? 'bg-brand-orange text-black hover:bg-brand-lightOrange shadow-brand-orange/20 font-black'
@@ -1009,6 +1017,23 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
           </button>
         </div>
       </div>
+
+      {editingParamExerciseIdx !== null && workout.exercises[editingParamExerciseIdx] && (
+        <ExerciseParameterEditModal
+          isOpen={true}
+          onClose={() => setEditingParamExerciseIdx(null)}
+          exercise={workout.exercises[editingParamExerciseIdx]}
+          exerciseIndex={editingParamExerciseIdx}
+          totalExercises={workout.exercises.length}
+          isCurrentExercise={editingParamExerciseIdx === currentExerciseIdx}
+          currentSetIdx={currentSetIdx}
+          onSave={async (updatedExercise) => {
+            if (onSaveExercise) {
+              await onSaveExercise(editingParamExerciseIdx, updatedExercise);
+            }
+          }}
+        />
+      )}
     </div>
   );
 });
