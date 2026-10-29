@@ -5340,13 +5340,9 @@ const ActiveWorkoutPage: React.FC = () => {
               type="button"
               onClick={openWorkoutOverviewModal}
               className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[280px] shadow-sm cursor-pointer"
-              title="Panoramica allenamento"
+              title="Lista esercizi"
             >
-              <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">
-                {currentExerciseIdx + 1}/{workout.exercises.length}
-              </span>
-              <span className="text-zinc-500">•</span>
-              <span className="truncate text-zinc-200">{workout.name}</span>
+              <span className="truncate text-zinc-200">Lista esercizi</span>
               {hasGeneralWorkoutNote && (
                 <span className="w-1.5 h-1.5 rounded-full bg-brand-orange shrink-0" title="Note generali scheda presenti" />
               )}
@@ -6467,13 +6463,9 @@ const ActiveWorkoutPage: React.FC = () => {
             type="button"
             onClick={openWorkoutOverviewModal}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[200px] shadow-sm cursor-pointer"
-            title="Panoramica allenamento"
+            title="Lista esercizi"
           >
-            <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">
-              {currentExerciseIdx + 1}/{workout.exercises.length}
-            </span>
-            <span className="text-zinc-500">•</span>
-            <span className="truncate text-zinc-200">{workout.name}</span>
+            <span className="truncate text-zinc-200">Lista esercizi</span>
             {hasGeneralWorkoutNote && (
               <span className="w-1.5 h-1.5 rounded-full bg-brand-orange shrink-0" title="Note generali scheda presenti" />
             )}
