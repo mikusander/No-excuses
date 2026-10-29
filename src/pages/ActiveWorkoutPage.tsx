@@ -6814,7 +6814,7 @@ const ActiveWorkoutPage: React.FC = () => {
           ) : null}
 
           {/* DYNAMIC MODE VIEW (Fills the center of the card richly) */}
-          <div className="flex-1 min-h-0 flex flex-col items-center justify-center">
+          <div className="w-full flex-1 min-h-0 flex flex-col items-center justify-center">
             {currentExercise.type === 'emom' ? (
               (() => {
                 const hasEmomTasks = Boolean(currentExercise.subExercises && currentExercise.subExercises.length > 0);
@@ -7548,12 +7548,14 @@ const ActiveWorkoutPage: React.FC = () => {
             ) : isSuperset ? (
               (() => {
                 const subExercises = currentExercise.subExercises || [];
-                const isTwoExercises = subExercises.length === 2;
+                const count = subExercises.length;
+                const isTwo = count <= 2;
+                const isThree = count === 3;
 
                 return (
                   <div className="w-full h-full flex flex-col justify-between py-0.5 min-h-0">
-                    {/* The Athletic Chain Container */}
-                    <div className={`w-full flex-1 min-h-0 overflow-y-auto px-0.5 ${isTwoExercises ? 'flex flex-col justify-center gap-1.5' : 'space-y-1.5 my-auto'}`}>
+                    {/* The Athletic Chain Container - Dynamically proportioned to available height */}
+                    <div className="w-full flex-1 min-h-0 flex flex-col justify-between overflow-y-auto no-scrollbar px-0.5">
                       {subExercises.map((sub, idx) => {
                         const isIsoSub = sub.type === 'isometry';
                         const isClickableIsoTimer = isIsoSub && sub.duration_seconds > 0;
@@ -7593,10 +7595,14 @@ const ActiveWorkoutPage: React.FC = () => {
 
                         return (
                           <React.Fragment key={`${currentExercise.id}:superset:${idx}`}>
-                            {/* Athletic Card */}
+                            {/* Athletic Card - Flex-1 stretches to proportionally fill available vertical space */}
                             <div
-                              className={`relative overflow-hidden rounded-2xl border flex items-center justify-between gap-3 select-none transition-all shadow-md ${
-                                isTwoExercises ? 'p-3.5 sm:p-4' : 'p-3'
+                              className={`relative overflow-hidden border flex items-center justify-between select-none transition-all shadow-md flex-1 min-h-0 ${
+                                isTwo
+                                  ? 'p-4 sm:p-5 gap-3.5 sm:gap-4 rounded-3xl min-h-[110px]'
+                                  : isThree
+                                    ? 'p-3.5 sm:p-4 gap-3 rounded-2xl min-h-[85px]'
+                                    : 'p-2.5 sm:p-3 gap-2.5 rounded-2xl min-h-[58px]'
                               } ${
                                 isThisTimerActive
                                   ? 'border-brand-orange bg-brand-orange/15 shadow-[0_0_25px_rgba(255,94,0,0.25)] ring-1 ring-brand-orange/60'
@@ -7619,21 +7625,35 @@ const ActiveWorkoutPage: React.FC = () => {
                               )}
 
                               {/* Left: Step Number + Exercise info */}
-                              <div className="text-left min-w-0 relative z-10 flex items-center gap-3">
-                                <div className={`rounded-xl bg-brand-orange/15 border border-brand-orange/40 text-brand-orange flex items-center justify-center font-mono font-black shrink-0 shadow-inner ${
-                                  isTwoExercises ? 'w-9 h-9 sm:w-10 sm:h-10 text-xs sm:text-sm' : 'w-8 h-8 text-xs'
+                              <div className="text-left min-w-0 relative z-10 flex items-center gap-3 sm:gap-3.5">
+                                <div className={`bg-brand-orange/15 border border-brand-orange/40 text-brand-orange flex items-center justify-center font-mono font-black shrink-0 shadow-inner ${
+                                  isTwo
+                                    ? 'w-11 h-11 sm:w-13 sm:h-13 text-sm sm:text-base rounded-2xl'
+                                    : isThree
+                                      ? 'w-9 h-9 sm:w-10 sm:h-10 text-xs sm:text-sm rounded-xl'
+                                      : 'w-7 h-7 sm:w-8 sm:h-8 text-[11px] rounded-lg'
                                 }`}>
                                   {String(idx + 1).padStart(2, '0')}
                                 </div>
                                 <div className="min-w-0">
                                   <p className={`text-white font-black leading-snug truncate ${
-                                    isTwoExercises ? 'text-base sm:text-lg' : 'text-sm sm:text-base'
+                                    isTwo
+                                      ? 'text-base sm:text-xl'
+                                      : isThree
+                                        ? 'text-sm sm:text-base'
+                                        : 'text-xs sm:text-sm'
                                   }`}>
                                     {sub.name || `Esercizio ${idx + 1}`}
                                   </p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-zinc-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
-                                      <Dumbbell size={10} className="text-brand-orange shrink-0" />
+                                  <div className={`flex items-center gap-2 ${isTwo ? 'mt-1.5' : 'mt-1'}`}>
+                                    <span className={`inline-flex items-center gap-1 font-mono font-semibold text-zinc-300 bg-white/5 border border-white/10 ${
+                                      isTwo
+                                        ? 'text-xs sm:text-sm px-2.5 py-1 rounded-xl'
+                                        : isThree
+                                          ? 'text-[11px] sm:text-xs px-2 py-0.5 rounded-lg'
+                                          : 'text-[10px] px-1.5 py-0.5 rounded-md'
+                                    }`}>
+                                      <Dumbbell size={isTwo ? 12 : 10} className="text-brand-orange shrink-0" />
                                       <span>{formatWeightLabel(sub.weight_kg)}</span>
                                     </span>
                                     {isClickableIsoTimer && (
@@ -7648,11 +7668,21 @@ const ActiveWorkoutPage: React.FC = () => {
                               {/* Right: Big Target Number */}
                               <div className="text-right shrink-0 relative z-10 pl-2">
                                 <span className={`font-mono font-black text-brand-orange block leading-none drop-shadow-sm ${
-                                  isTwoExercises ? 'text-3xl sm:text-4xl' : 'text-2xl sm:text-3xl'
+                                  isTwo
+                                    ? 'text-4xl min-[390px]:text-5xl sm:text-6xl'
+                                    : isThree
+                                      ? 'text-3xl min-[390px]:text-4xl sm:text-4xl'
+                                      : 'text-2xl sm:text-3xl'
                                 }`}>
                                   {targetVal}
                                 </span>
-                                <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-zinc-400 block mt-1">
+                                <span className={`uppercase font-bold text-zinc-400 block ${
+                                  isTwo
+                                    ? 'text-[10px] sm:text-xs tracking-widest mt-1.5'
+                                    : isThree
+                                      ? 'text-[9px] sm:text-[10px] tracking-widest mt-1'
+                                      : 'text-[8px] sm:text-[9px] tracking-wider mt-0.5'
+                                }`}>
                                   {targetUnit}
                                 </span>
                               </div>
@@ -7661,7 +7691,13 @@ const ActiveWorkoutPage: React.FC = () => {
                             {/* Neon Athletic Connector between exercises */}
                             {idx < subExercises.length - 1 && (
                               <div className="flex flex-col items-center justify-center shrink-0 select-none py-0.5">
-                                <div className={`w-0.5 ${isTwoExercises ? 'h-5 sm:h-6' : 'h-3.5 sm:h-4'} bg-gradient-to-b from-brand-orange/70 via-brand-orange to-brand-orange/70 rounded-full shadow-[0_0_8px_rgba(255,94,0,0.4)]`} />
+                                <div className={`w-0.5 ${
+                                  isTwo
+                                    ? 'h-4 sm:h-5'
+                                    : isThree
+                                      ? 'h-2.5 sm:h-3'
+                                      : 'h-1.5 sm:h-2'
+                                } bg-gradient-to-b from-brand-orange/70 via-brand-orange to-brand-orange/70 rounded-full shadow-[0_0_8px_rgba(255,94,0,0.4)]`} />
                               </div>
                             )}
                           </React.Fragment>
