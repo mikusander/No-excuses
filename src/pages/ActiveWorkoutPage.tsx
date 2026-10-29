@@ -5098,6 +5098,7 @@ const ActiveWorkoutPage: React.FC = () => {
       nextSetIdx,
       targetType,
       isTargetPyramid,
+      isTargetEmom,
       isTargetSuperset,
       isTargetCircuit,
       isTargetIsometry,
@@ -5225,7 +5226,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 <h2 className="text-base sm:text-lg font-black text-white uppercase tracking-tight truncate">
                   {targetExerciseName}
                 </h2>
-                {!isTargetSuperset && (
+                {!isTargetSuperset && !isTargetEmom && (
                   <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 shrink-0 font-mono">
                     {targetType.toUpperCase()}
                   </span>
@@ -5234,7 +5235,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
               {/* Griglia Caratteristiche Prossimo Set / Esercizio */}
               {!isGroupType ? (
-                <div className={`grid ${isTransitioning ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
+                <div className={`grid ${isTargetEmom ? (isTransitioning ? 'grid-cols-2' : 'grid-cols-1') : (isTransitioning ? 'grid-cols-3' : 'grid-cols-2')} gap-1.5`}>
                   {/* Box 1: Obiettivo / Reps */}
                   <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                     <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
@@ -5246,21 +5247,27 @@ const ActiveWorkoutPage: React.FC = () => {
                   </div>
 
                   {/* Box 2: Carico */}
-                  <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                    <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
-                    <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
-                      {targetWeightText}
-                    </span>
-                  </div>
+                  {!isTargetEmom && (
+                    <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                      <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
+                      <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
+                        {targetWeightText}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
                   {isTransitioning && (
                     <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                       <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                        Serie Totali
+                        {isTargetEmom ? 'Round Totali' : 'Serie Totali'}
                       </span>
                       <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
-                        {isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`}
+                        {isTargetPyramid
+                          ? `${targetExercise.pyramid_steps?.length || 0} Step`
+                          : isTargetEmom
+                            ? `${targetExercise.emom_rounds || 10} Round`
+                            : `${targetExercise.sets} Serie`}
                       </span>
                     </div>
                   )}
@@ -5279,7 +5286,7 @@ const ActiveWorkoutPage: React.FC = () => {
               {/* Sub-esercizi se Superset / Circuito / EMOM */}
               {targetSubExercises.length > 0 && (
                 <div className="bg-black/40 border border-white/5 rounded-2xl p-2 space-y-1">
-                  {!isTargetSuperset && (
+                  {!isTargetSuperset && !isTargetEmom && (
                     <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
                       Sequenza Round:
                     </span>
@@ -6354,7 +6361,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-tight truncate">
                   {targetExerciseName}
                 </h3>
-                {!isTargetSuperset && (
+                {!isTargetSuperset && !isTargetEmom && (
                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 shrink-0 font-mono">
                     {targetType.toUpperCase()}
                   </span>
@@ -6366,7 +6373,7 @@ const ActiveWorkoutPage: React.FC = () => {
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-2 pr-0.5 space-y-2.5 custom-scroll-area">
               {/* Caratteristiche Prossimo Set / Esercizio */}
               {!isGroupType ? (
-                <div className={`grid ${isTransitioning ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5 shrink-0`}>
+                <div className={`grid ${isTargetEmom ? (isTransitioning ? 'grid-cols-2' : 'grid-cols-1') : (isTransitioning ? 'grid-cols-3' : 'grid-cols-2')} gap-1.5 shrink-0`}>
                   {/* Box 1: Target / Reps */}
                   <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                     <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
@@ -6378,21 +6385,27 @@ const ActiveWorkoutPage: React.FC = () => {
                   </div>
 
                   {/* Box 2: Carico */}
-                  <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                    <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
-                    <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
-                      {targetWeightText}
-                    </span>
-                  </div>
+                  {!isTargetEmom && (
+                    <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                      <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
+                      <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
+                        {targetWeightText}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
                   {isTransitioning && (
                     <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                       <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                        Serie Totali
+                        {isTargetEmom ? 'Round Totali' : 'Serie Totali'}
                       </span>
                       <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
-                        {isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`}
+                        {isTargetPyramid
+                          ? `${targetExercise.pyramid_steps?.length || 0} Step`
+                          : isTargetEmom
+                            ? `${targetExercise.emom_rounds || totalEmomRoundsNumber || 1} Round`
+                            : `${targetExercise.sets} Serie`}
                       </span>
                     </div>
                   )}
@@ -6409,6 +6422,7 @@ const ActiveWorkoutPage: React.FC = () => {
               ) : null}
 
               {/* Timeline Grafica Serie */}
+              {!isTargetEmom && (
               <div className="pt-0.5 shrink-0">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
                   {isTransitioning ? 'Serie Prossimo Esercizio:' : 'Progressione Serie:'}
@@ -6512,11 +6526,12 @@ const ActiveWorkoutPage: React.FC = () => {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Elenco Completo Sub-Esercizi se Superset / Circuito / EMOM */}
               {targetSubExercises.length > 0 && (
                 <div className="bg-black/50 border border-white/5 rounded-2xl p-2.5 space-y-1.5">
-                  {!isTargetSuperset && (
+                  {!isTargetSuperset && !isTargetEmom && (
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
                         Sequenza Round ({targetSubExercises.length} Esercizi):
