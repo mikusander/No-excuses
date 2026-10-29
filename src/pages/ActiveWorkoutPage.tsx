@@ -4926,14 +4926,7 @@ const ActiveWorkoutPage: React.FC = () => {
       nextSetIdx,
       targetType,
       isTargetPyramid,
-      isTargetEmom,
       isTargetIsometry,
-      upcomingSetNumber,
-      totalSetsNumber,
-      upcomingStepNumber,
-      totalStepsNumber,
-      upcomingRoundNumber,
-      totalEmomRoundsNumber,
       targetGoalText,
       targetWeightText,
       targetSubExercises,
@@ -5035,15 +5028,11 @@ const ActiveWorkoutPage: React.FC = () => {
                     {isTransitioning ? 'Prossimo Esercizio' : 'Prossimo Set'}
                   </span>
                 </div>
-                <span className="text-[10px] sm:text-[11px] font-mono font-bold text-zinc-300 uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
-                  {isTransitioning
-                    ? `Es. ${currentExerciseIdx + 2} di ${workout.exercises.length}`
-                    : isPyramid
-                      ? `Step ${upcomingStepNumber} di ${totalStepsNumber}`
-                      : isTargetEmom
-                        ? `Round ${upcomingRoundNumber} di ${totalEmomRoundsNumber}`
-                        : `${isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'} ${upcomingSetNumber} di ${totalSetsNumber}`}
-                </span>
+                {isTransitioning && (
+                  <span className="text-[10px] sm:text-[11px] font-mono font-bold text-zinc-300 uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                    Es. {currentExerciseIdx + 2} di {workout.exercises.length}
+                  </span>
+                )}
               </div>
 
               {/* Avviso esplicito che le informazioni appartengono al prossimo esercizio o prossimo set */}
@@ -5983,11 +5972,6 @@ const ActiveWorkoutPage: React.FC = () => {
       isTargetEmom,
       isTargetCircuit,
       isTargetIsometry,
-      upcomingSetNumber,
-      totalSetsNumber,
-      upcomingStepNumber,
-      totalStepsNumber,
-      upcomingRoundNumber,
       totalEmomRoundsNumber,
       targetGoalText,
       targetWeightText,
@@ -6166,17 +6150,13 @@ const ActiveWorkoutPage: React.FC = () => {
                   <ArrowRight size={13} className="text-brand-orange shrink-0" />
                   {isTransitioning ? 'Prossimo Esercizio' : 'Prossimo Set'}
                 </span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] sm:text-[11px] font-mono font-bold text-zinc-300 uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
-                    {isTransitioning
-                      ? `Es. ${currentExerciseIdx + 2} di ${workout.exercises.length}`
-                      : isTargetPyramid
-                        ? `Step ${upcomingStepNumber} di ${totalStepsNumber}`
-                        : isTargetEmom
-                          ? `Round ${upcomingRoundNumber} di ${totalEmomRoundsNumber}`
-                          : `${isSuperset ? 'Round' : isCircuit ? 'Giro' : 'Set'} ${upcomingSetNumber} di ${totalSetsNumber}`}
-                  </span>
-                </div>
+                {isTransitioning && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] sm:text-[11px] font-mono font-bold text-zinc-300 uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                      Es. {currentExerciseIdx + 2} di {workout.exercises.length}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Exercise Name & Type Badge */}
