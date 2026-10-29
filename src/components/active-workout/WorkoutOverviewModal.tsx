@@ -344,23 +344,6 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
     setEditingTransitionIdx(null);
   };
 
-  const adjustTransitionDraft = (deltaSeconds: number) => {
-    void hapticLight();
-    const m = Math.max(0, parseInt(transitionDraftMinutes, 10) || 0);
-    const s = Math.max(0, parseInt(transitionDraftSeconds, 10) || 0);
-    const total = Math.max(0, m * 60 + s + deltaSeconds);
-    setTransitionDraftMinutes(String(Math.floor(total / 60)));
-    setTransitionDraftSeconds(String(total % 60));
-  };
-
-  const handleApplyTransitionPreset = (presetSeconds: number) => {
-    void hapticLight();
-    const m = Math.floor(presetSeconds / 60);
-    const s = presetSeconds % 60;
-    setTransitionDraftMinutes(String(m));
-    setTransitionDraftSeconds(String(s));
-  };
-
   const handleSaveTransitionRest = (exerciseIndex: number) => {
     const m = Math.max(0, parseInt(transitionDraftMinutes, 10) || 0);
     const s = Math.max(0, parseInt(transitionDraftSeconds, 10) || 0);
@@ -779,102 +762,31 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                           </button>
                         </div>
 
-                        <div>
-                          <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 mb-1.5">
-                            Preset Rapidi
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {[
-                              { label: '30s', secs: 30 },
-                              { label: '45s', secs: 45 },
-                              { label: '60s', secs: 60 },
-                              { label: '90s', secs: 90 },
-                              { label: '2 min', secs: 120 },
-                              { label: '3 min', secs: 180 },
-                            ].map((preset) => {
-                              const draftTotal =
-                                (Math.max(0, parseInt(transitionDraftMinutes, 10) || 0) * 60) +
-                                Math.max(0, parseInt(transitionDraftSeconds, 10) || 0);
-                              const isActive = draftTotal === preset.secs;
-                              return (
-                                <button
-                                  key={preset.secs}
-                                  type="button"
-                                  onClick={() => handleApplyTransitionPreset(preset.secs)}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${isActive
-                                      ? 'bg-brand-orange text-black font-black shadow-sm shadow-brand-orange/30'
-                                      : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
-                                    }`}
-                                >
-                                  {preset.label}
-                                </button>
-                              );
-                            })}
+                        <div className="flex items-center justify-center gap-2 py-1">
+                          <div className="flex flex-col items-center">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={transitionDraftMinutes}
+                              onChange={(e) => setTransitionDraftMinutes(e.target.value.replace(/\D/g, ''))}
+                              className="w-16 h-11 bg-black/60 border border-white/20 focus:border-brand-orange rounded-xl text-center font-mono font-black text-white text-lg outline-none transition-colors"
+                              placeholder="0"
+                            />
+                            <span className="text-[9px] font-bold text-zinc-400 mt-0.5 uppercase tracking-wider">min</span>
                           </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                          <div className="flex items-center gap-1.5">
-                            <div className="flex flex-col items-center">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                value={transitionDraftMinutes}
-                                onChange={(e) => setTransitionDraftMinutes(e.target.value.replace(/\D/g, ''))}
-                                className="w-13 h-9 bg-black/60 border border-white/20 focus:border-brand-orange rounded-xl text-center font-mono font-black text-white text-base outline-none transition-colors"
-                                placeholder="0"
-                              />
-                              <span className="text-[9px] font-bold text-zinc-400 mt-0.5 uppercase tracking-wider">min</span>
-                            </div>
-                            <span className="text-lg font-bold text-zinc-500 font-mono -mt-3">:</span>
-                            <div className="flex flex-col items-center">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                value={transitionDraftSeconds}
-                                onChange={(e) => setTransitionDraftSeconds(e.target.value.replace(/\D/g, ''))}
-                                className="w-13 h-9 bg-black/60 border border-white/20 focus:border-brand-orange rounded-xl text-center font-mono font-black text-white text-base outline-none transition-colors"
-                                placeholder="0"
-                              />
-                              <span className="text-[9px] font-bold text-zinc-400 mt-0.5 uppercase tracking-wider">sec</span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => adjustTransitionDraft(-15)}
-                              className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-zinc-300 border border-white/10 transition-colors cursor-pointer"
-                              title="-15 secondi"
-                            >
-                              -15s
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => adjustTransitionDraft(-5)}
-                              className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-zinc-300 border border-white/10 transition-colors cursor-pointer"
-                              title="-5 secondi"
-                            >
-                              -5s
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => adjustTransitionDraft(5)}
-                              className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-zinc-300 border border-white/10 transition-colors cursor-pointer"
-                              title="+5 secondi"
-                            >
-                              +5s
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => adjustTransitionDraft(15)}
-                              className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-zinc-300 border border-white/10 transition-colors cursor-pointer"
-                              title="+15 secondi"
-                            >
-                              +15s
-                            </button>
+                          <span className="text-xl font-bold text-zinc-500 font-mono -mt-3">:</span>
+                          <div className="flex flex-col items-center">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={transitionDraftSeconds}
+                              onChange={(e) => setTransitionDraftSeconds(e.target.value.replace(/\D/g, ''))}
+                              className="w-16 h-11 bg-black/60 border border-white/20 focus:border-brand-orange rounded-xl text-center font-mono font-black text-white text-lg outline-none transition-colors"
+                              placeholder="0"
+                            />
+                            <span className="text-[9px] font-bold text-zinc-400 mt-0.5 uppercase tracking-wider">sec</span>
                           </div>
                         </div>
 
