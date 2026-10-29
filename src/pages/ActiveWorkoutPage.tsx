@@ -368,6 +368,16 @@ const formatTime = (secs: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+const formatEmomTimer = (seconds: number) => {
+  const normalized = Math.max(0, Math.trunc(Number(seconds) || 0));
+  if (normalized >= 60) {
+    const m = Math.floor(normalized / 60);
+    const s = normalized % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+  return normalized.toString().padStart(2, '0');
+};
+
 
 const getEffectiveEmomRounds = (ex?: Exercise | null): number => {
   if (!ex) return 1;
@@ -5981,7 +5991,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             : 'text-zinc-400'
                       }`}
                     >
-                      {emomRoundRemaining >= 60 ? formatTime(emomRoundRemaining) : emomRoundRemaining}
+                      {formatEmomTimer(emomRoundRemaining)}
                     </span>
 
                     <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-zinc-400 mt-1 z-10 flex items-center gap-1 font-mono">
@@ -6904,9 +6914,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                           : 'text-zinc-400'
                                   }`}
                                 >
-                                  {emomRoundRemaining >= 60
-                                    ? formatTime(emomRoundRemaining)
-                                    : emomRoundRemaining}
+                                  {formatEmomTimer(emomRoundRemaining)}
                                 </span>
 
                                 {/* Barra di avanzamento del minuto */}
@@ -7094,10 +7102,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
                             <div className="my-auto py-1 flex flex-col items-center justify-center text-center">
                               <span className="text-4xl min-[390px]:text-5xl font-mono font-black text-zinc-400 leading-none">
-                                {roundDuration >= 60 ? formatTime(roundDuration) : roundDuration}
-                              </span>
-                              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-1.5">
-                                Ogni {roundDuration}s
+                                {formatEmomTimer(roundDuration)}
                               </span>
                               {hasEmomTasks ? (
                                 <span className="text-[10px] text-zinc-500 font-mono mt-1">
