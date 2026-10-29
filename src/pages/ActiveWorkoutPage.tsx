@@ -6995,33 +6995,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 )}
                               </div>
 
-                              {/* Pulsante Opzionale "Fatto prima del tempo" */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void hapticLight();
-                                  setIsEmomRoundWorkFinished((prev) => !prev);
-                                }}
-                                className={`w-full py-2 px-3 rounded-xl border font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 shrink-0 shadow-sm ${
-                                  isEmomRoundWorkFinished
-                                    ? 'bg-emerald-500/25 border-emerald-500/60 text-emerald-300 hover:bg-emerald-500/35 ring-1 ring-emerald-500/40'
-                                    : 'bg-white/10 hover:bg-white/15 border-white/15 text-zinc-200'
-                                }`}
-                                title={isEmomRoundWorkFinished ? 'Tocca per riprendere la modalità lavoro' : 'Hai finito gli esercizi del round? Tocca per attivare lo stato di riposo'}
-                              >
-                                {isEmomRoundWorkFinished ? (
-                                  <>
-                                    <Check size={14} className="text-emerald-400 shrink-0" strokeWidth={3} />
-                                    <span>In Riposo ({emomRoundRemaining}s)</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Check size={14} className="text-brand-orange shrink-0" strokeWidth={2.5} />
-                                    <span>Fatto prima del tempo</span>
-                                  </>
-                                )}
-                              </button>
+
                             </div>
                           );
                         }
