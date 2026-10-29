@@ -6920,13 +6920,11 @@ const ActiveWorkoutPage: React.FC = () => {
                                 onPointerLeave={handleTimerPointerAbort}
                                 title="Tocca per avviare/mettere in pausa • Tieni premuto per azzerare"
                               >
-                                {/* Area Cifra Timer con Capsula dinamica posizionata dietro */}
-                                <div className="relative flex items-center justify-center py-2 px-6">
-                                  {/* Capsula di progressione che diminuisce con lo scorrere del timer fino a svanire */}
+                                {/* Area Cifra Timer con Capsula dinamica posizionata dietro (leggermente piu grande delle cifre e cancellata da destra a sinistra) */}
+                                <div className="relative inline-flex items-center justify-center px-6 min-[390px]:px-7 py-2 min-[390px]:py-2.5 rounded-full select-none transition-all duration-300">
+                                  {/* Capsula di progressione che si adatta alle cifre e viene progressivamente cancellata da destra verso sinistra */}
                                   <div
-                                    className={`absolute w-[180px] min-[390px]:w-[210px] sm:w-[230px] h-[68px] min-[390px]:h-[76px] sm:h-[84px] rounded-full pointer-events-none transition-all ${
-                                      emomActive ? 'duration-1000 ease-linear' : 'duration-300 ease-out'
-                                    } ${
+                                    className={`absolute inset-0 rounded-full pointer-events-none ${
                                       isEmomRoundWorkFinished
                                         ? 'bg-emerald-500/20 border border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.35)]'
                                         : emomRoundRemaining <= 3 && emomRoundRemaining > 0
@@ -6936,13 +6934,14 @@ const ActiveWorkoutPage: React.FC = () => {
                                             : 'bg-white/[0.06] border border-white/10'
                                     }`}
                                     style={{
-                                      transform: `scale(${Math.max(0, emomRoundProgressRatio)})`,
-                                      opacity: emomRoundRemaining > 0 && emomRoundProgressRatio > 0 ? Math.max(0.25, emomRoundProgressRatio) : 0,
+                                      clipPath: `inset(0 ${Math.max(0, Math.min(100, (1 - emomRoundProgressRatio) * 100))}% 0 0)`,
+                                      WebkitClipPath: `inset(0 ${Math.max(0, Math.min(100, (1 - emomRoundProgressRatio) * 100))}% 0 0)`,
+                                      transition: emomActive ? 'clip-path 1s linear, -webkit-clip-path 1s linear' : 'clip-path 300ms ease-out, -webkit-clip-path 300ms ease-out',
                                     }}
                                   />
 
                                   <span
-                                    className={`relative z-10 text-6xl min-[390px]:text-7xl sm:text-8xl font-mono font-black tracking-tight leading-none transition-all ${
+                                    className={`relative z-10 text-6xl min-[390px]:text-7xl sm:text-8xl font-mono font-black tracking-tight leading-none transition-colors ${
                                       isEmomRoundWorkFinished
                                         ? 'text-emerald-400 drop-shadow-[0_0_25px_rgba(16,185,129,0.5)]'
                                         : emomRoundRemaining <= 3 && emomRoundRemaining > 0
