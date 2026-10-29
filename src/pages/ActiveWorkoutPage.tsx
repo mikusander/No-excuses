@@ -5949,46 +5949,25 @@ const ActiveWorkoutPage: React.FC = () => {
                   onPointerLeave={handleTimerPointerAbort}
                   title="Tocca per avviare/pausa • Tieni premuto per azzerare"
                 >
-                  {/* Riquadro intorno ai numeri del timer che si rimpicciolisce con il passare del tempo */}
-                  <div
-                    className={`relative w-52 h-28 sm:w-64 sm:h-32 rounded-3xl flex flex-col justify-center items-center select-none transition-all duration-300 overflow-hidden ${
-                      emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                        ? 'border-2 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_40px_rgba(255,94,0,0.8)] animate-pulse'
-                        : 'border-2 border-white/10 shadow-[0_0_25px_rgba(255,94,0,0.15)] bg-black/40'
-                    }`}
-                  >
-                    {/* SVG Rectangular Progress Track */}
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 240 120">
-                      <rect
-                        x="5"
-                        y="5"
-                        width="230"
-                        height="110"
-                        rx="20"
-                        stroke="rgba(255, 255, 255, 0.08)"
-                        strokeWidth="5"
-                        fill="transparent"
-                      />
-                      <rect
-                        x="5"
-                        y="5"
-                        width="230"
-                        height="110"
-                        rx="20"
-                        stroke={
-                          emomRoundRemaining <= 3 && emomRoundRemaining > 0 ? '#FF7724' : '#FF5E00'
-                        }
-                        strokeWidth="5"
-                        strokeDasharray="645.7"
-                        strokeDashoffset={645.7 * (1 - emomRoundProgressRatio)}
-                        strokeLinecap="round"
-                        fill="transparent"
-                        className="transition-[stroke-dashoffset] duration-1000 ease-linear"
-                      />
-                    </svg>
+                  {/* Area Cifra Timer con Capsula dinamica (leggermente piu grande delle cifre e cancellata da destra a sinistra) */}
+                  <div className="relative inline-flex items-center justify-center px-6 min-[390px]:px-7 py-2 min-[390px]:py-2.5 rounded-full select-none">
+                    <div
+                      className={`absolute inset-0 rounded-full pointer-events-none ${
+                        emomRoundRemaining <= 3 && emomRoundRemaining > 0
+                          ? 'bg-brand-orange/30 border-2 border-brand-orange animate-pulse'
+                          : emomActive
+                            ? 'bg-brand-orange/15 border border-brand-orange/35'
+                            : 'bg-white/[0.06] border border-white/10'
+                      }`}
+                      style={{
+                        clipPath: `inset(0 ${Math.max(0, Math.min(100, (1 - emomRoundProgressRatio) * 100))}% 0 0)`,
+                        WebkitClipPath: `inset(0 ${Math.max(0, Math.min(100, (1 - emomRoundProgressRatio) * 100))}% 0 0)`,
+                        transition: emomActive ? 'clip-path 1s linear, -webkit-clip-path 1s linear' : 'clip-path 300ms ease-out, -webkit-clip-path 300ms ease-out',
+                      }}
+                    />
 
                     <span
-                      className={`text-5xl sm:text-6xl font-black font-mono leading-none tracking-tight z-10 transition-all ${
+                      className={`relative z-10 text-5xl sm:text-6xl font-black font-mono leading-none tracking-tight transition-colors ${
                         emomRoundRemaining <= 3 && emomRoundRemaining > 0
                           ? 'text-brand-orange scale-105'
                           : emomActive
@@ -5998,12 +5977,12 @@ const ActiveWorkoutPage: React.FC = () => {
                     >
                       {formatEmomTimer(emomRoundRemaining)}
                     </span>
-
-                    <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-zinc-400 mt-1 z-10 flex items-center gap-1 font-mono">
-                      <Timer size={11} className="text-brand-orange" />
-                      {emomActive ? 'SECONDI RIMASTI' : 'IN PAUSA (TAP AVVIO)'}
-                    </span>
                   </div>
+
+                  <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-zinc-400 mt-2 z-10 flex items-center gap-1 font-mono">
+                    <Timer size={11} className="text-brand-orange" />
+                    {emomActive ? 'SECONDI RIMASTI' : 'IN PAUSA (TAP AVVIO)'}
+                  </span>
 
                   <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-2">
                     Tocca per {emomActive ? 'pausa' : 'avvio'} • Tieni premuto per azzerare
@@ -6921,16 +6900,16 @@ const ActiveWorkoutPage: React.FC = () => {
                                 title="Tocca per avviare/mettere in pausa • Tieni premuto per azzerare"
                               >
                                 {/* Area Cifra Timer con Capsula dinamica posizionata dietro (leggermente piu grande delle cifre e cancellata da destra a sinistra) */}
-                                <div className="relative inline-flex items-center justify-center px-6 min-[390px]:px-7 py-2 min-[390px]:py-2.5 rounded-full select-none transition-all duration-300">
+                                <div className="relative inline-flex items-center justify-center px-6 min-[390px]:px-7 py-2 min-[390px]:py-2.5 rounded-full select-none">
                                   {/* Capsula di progressione che si adatta alle cifre e viene progressivamente cancellata da destra verso sinistra */}
                                   <div
                                     className={`absolute inset-0 rounded-full pointer-events-none ${
                                       isEmomRoundWorkFinished
-                                        ? 'bg-emerald-500/20 border border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.35)]'
+                                        ? 'bg-emerald-500/20 border border-emerald-500/40'
                                         : emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                                          ? 'bg-brand-orange/30 border-2 border-brand-orange shadow-[0_0_35px_rgba(255,94,0,0.7)] animate-pulse'
+                                          ? 'bg-brand-orange/30 border-2 border-brand-orange animate-pulse'
                                           : emomActive
-                                            ? 'bg-brand-orange/15 border border-brand-orange/35 shadow-[0_0_25px_rgba(255,94,0,0.25)]'
+                                            ? 'bg-brand-orange/15 border border-brand-orange/35'
                                             : 'bg-white/[0.06] border border-white/10'
                                     }`}
                                     style={{
@@ -6943,11 +6922,11 @@ const ActiveWorkoutPage: React.FC = () => {
                                   <span
                                     className={`relative z-10 text-6xl min-[390px]:text-7xl sm:text-8xl font-mono font-black tracking-tight leading-none transition-colors ${
                                       isEmomRoundWorkFinished
-                                        ? 'text-emerald-400 drop-shadow-[0_0_25px_rgba(16,185,129,0.5)]'
+                                        ? 'text-emerald-400'
                                         : emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                                          ? 'text-brand-orange scale-105 drop-shadow-[0_0_30px_rgba(255,107,0,0.85)]'
+                                          ? 'text-brand-orange scale-105'
                                           : emomActive
-                                            ? 'text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                                            ? 'text-white'
                                             : 'text-zinc-400'
                                     }`}
                                   >
