@@ -740,11 +740,8 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                           <div className="flex items-center gap-2">
                             <Clock size={16} className="text-brand-orange animate-pulse" />
                             <div>
-                              <p className="text-[10px] uppercase font-black tracking-widest text-brand-orange">
+                              <p className="text-xs font-black uppercase tracking-wider text-brand-orange">
                                 Pausa tra Esercizi
-                              </p>
-                              <p className="text-xs font-bold text-white">
-                                Tra Es. {index + 1} e Es. {index + 2}
                               </p>
                             </div>
                           </div>
@@ -835,9 +832,6 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                                   {formatTime(transitionRestSecs)}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-zinc-400 truncate">
-                                Tra Es. {index + 1} e Es. {index + 2}
-                              </p>
                             </div>
                           </div>
 
@@ -871,7 +865,7 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                             </div>
                             <div className="min-w-0">
                               <p className="text-xs font-semibold text-zinc-400 truncate">
-                                Pausa tra Es. {index + 1} e Es. {index + 2}
+                                Pausa tra esercizi
                               </p>
                               <p className="text-[10px] text-zinc-500">
                                 Nessun recupero impostato
