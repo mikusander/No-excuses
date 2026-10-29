@@ -5870,10 +5870,6 @@ const ActiveWorkoutPage: React.FC = () => {
               </div>
             ) : isEmom && currentExercise.subExercises && currentExercise.subExercises.length > 0 ? (
               <div className="flex-1 min-h-0 bg-black/40 border border-white/5 rounded-2xl p-2 my-1 overflow-y-auto no-scrollbar space-y-1">
-                <div className="flex items-center justify-between pb-1 border-b border-white/5 text-[9px] font-black uppercase tracking-wider text-brand-orange">
-                  <span>Compito del Round</span>
-                  <span className="font-mono text-zinc-400 font-bold">{currentExercise.subExercises.length} es.</span>
-                </div>
                 {currentExercise.subExercises.map((sub, idx) => (
                   <div key={idx} className="flex items-center justify-between p-1.5 rounded-xl bg-white/5 text-xs">
                     <span className="font-bold text-white truncate text-xs">{idx + 1}. {sub.name}</span>
@@ -6942,10 +6938,6 @@ const ActiveWorkoutPage: React.FC = () => {
                                 {hasEmomTasks ? (
                                   /* Multi-esercizio: satin frosted box compatto */
                                   <div className="bg-black/50 border border-white/10 rounded-2xl p-2.5 sm:p-3 text-left shadow-sm">
-                                    <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-brand-orange mb-1.5">
-                                      <Zap size={11} className="text-brand-orange fill-brand-orange shrink-0" />
-                                      <span>Compito del Round</span>
-                                    </div>
                                     <div className="space-y-1.5 max-h-[82px] overflow-y-auto no-scrollbar">
                                       {currentExercise.subExercises!.map((sub, sIdx) => (
                                         <div key={sIdx} className="flex items-center justify-between gap-2 text-xs">
