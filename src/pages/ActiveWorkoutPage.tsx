@@ -4137,13 +4137,11 @@ const ActiveWorkoutPage: React.FC = () => {
   const specialExerciseLabel =
     currentExercise.type === 'circuit'
       ? 'CIRCUIT MODE'
-      : currentExercise.type === 'emom'
-        ? 'EMOM MODE'
-        : currentExercise.type === 'pyramid'
-          ? 'PYRAMID MODE'
-          : currentExercise.type === 'cardio'
-            ? 'CARDIO'
-            : null;
+      : currentExercise.type === 'pyramid'
+        ? 'PYRAMID MODE'
+        : currentExercise.type === 'cardio'
+          ? 'CARDIO'
+          : null;
   const specialExercisePillClass =
     currentExercise.type === 'cardio'
       ? 'border-rose-500/60 bg-rose-500/10 text-rose-400'
