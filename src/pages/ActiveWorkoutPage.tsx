@@ -5219,9 +5219,11 @@ const ActiveWorkoutPage: React.FC = () => {
                 <h2 className="text-base sm:text-lg font-black text-white uppercase tracking-tight truncate">
                   {targetExerciseName}
                 </h2>
-                <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 shrink-0 font-mono">
-                  {targetType.toUpperCase()}
-                </span>
+                {!isTargetSuperset && (
+                  <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 shrink-0 font-mono">
+                    {targetType.toUpperCase()}
+                  </span>
+                )}
               </div>
 
               {/* Griglia Caratteristiche Prossimo Set / Esercizio */}
@@ -6346,9 +6348,11 @@ const ActiveWorkoutPage: React.FC = () => {
                 <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-tight truncate">
                   {targetExerciseName}
                 </h3>
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 shrink-0 font-mono">
-                  {targetType.toUpperCase()}
-                </span>
+                {!isTargetSuperset && (
+                  <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-orange/15 text-brand-orange border border-brand-orange/30 shrink-0 font-mono">
+                    {targetType.toUpperCase()}
+                  </span>
+                )}
               </div>
             </div>
 
