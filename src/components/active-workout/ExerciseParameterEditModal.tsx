@@ -889,23 +889,48 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                 </div>
               )}
 
-              {/* Recupero tra le serie */}
+              {/* Recupero tra le serie (diviso in minuti e secondi) */}
               <div>
-                <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 mb-1 block">
-                  Recupero tra le Serie
-                </label>
-                <div className="flex items-center gap-2 mb-2">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={restSeconds}
-                    onChange={(e) => setRestSeconds(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-24 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl px-3 py-1.5 text-center text-white font-black text-sm outline-none"
-                  />
-                  <span className="text-xs text-zinc-400 font-bold">secondi</span>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 block">
+                    Recupero tra le Serie
+                  </label>
+                  <span className="text-xs font-mono font-bold text-brand-orange">
+                    {String(Math.floor(restSeconds / 60)).padStart(2, '0')}:{String(restSeconds % 60).padStart(2, '0')}
+                  </span>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-10">
+                  <div className="relative flex-1 border-r border-white/10 flex flex-col justify-center items-center">
+                    <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">MIN</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={Math.floor(restSeconds / 60)}
+                      onChange={(e) => {
+                        const m = Math.max(0, parseInt(e.target.value, 10) || 0);
+                        setRestSeconds(m * 60 + (restSeconds % 60));
+                      }}
+                      className="w-full h-full bg-transparent text-center text-white font-mono font-black text-base focus:outline-none"
+                    />
+                  </div>
+                  <div className="relative flex-1 flex flex-col justify-center items-center">
+                    <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">SEC</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={59}
+                      value={restSeconds % 60}
+                      onChange={(e) => {
+                        const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
+                        setRestSeconds(Math.floor(restSeconds / 60) * 60 + s);
+                      }}
+                      className="w-full h-full bg-transparent text-center text-white font-mono font-black text-base focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1.5">
                   {[
                     { label: '30s', secs: 30 },
                     { label: '45s', secs: 45 },
