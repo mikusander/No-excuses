@@ -5094,6 +5094,8 @@ const ActiveWorkoutPage: React.FC = () => {
       nextSetIdx,
       targetType,
       isTargetPyramid,
+      isTargetSuperset,
+      isTargetCircuit,
       isTargetIsometry,
       targetGoalText,
       targetWeightText,
@@ -5101,6 +5103,7 @@ const ActiveWorkoutPage: React.FC = () => {
       targetInstruction,
       restProgressRatio,
     } = getRestTargetDetails();
+    const isGroupType = isTargetSuperset || isTargetCircuit;
 
     return (
       <div
@@ -5224,37 +5227,48 @@ const ActiveWorkoutPage: React.FC = () => {
               </div>
 
               {/* Griglia Caratteristiche Prossimo Set / Esercizio */}
-              <div className={`grid ${isTransitioning ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
-                {/* Box 1: Obiettivo / Reps */}
-                <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                    {isTargetIsometry ? 'Tenuta' : 'Target'}
-                  </span>
-                  <span className="text-xs sm:text-sm font-black text-white font-mono mt-0.5 truncate">
-                    {targetGoalText}
-                  </span>
-                </div>
-
-                {/* Box 2: Carico */}
-                <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
-                  <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
-                    {targetWeightText}
-                  </span>
-                </div>
-
-                {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
-                {isTransitioning && (
+              {!isGroupType ? (
+                <div className={`grid ${isTransitioning ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
+                  {/* Box 1: Obiettivo / Reps */}
                   <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                     <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                      Serie Totali
+                      {isTargetIsometry ? 'Tenuta' : 'Target'}
                     </span>
-                    <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
-                      {isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`}
+                    <span className="text-xs sm:text-sm font-black text-white font-mono mt-0.5 truncate">
+                      {targetGoalText}
                     </span>
                   </div>
-                )}
-              </div>
+
+                  {/* Box 2: Carico */}
+                  <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                    <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
+                    <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
+                      {targetWeightText}
+                    </span>
+                  </div>
+
+                  {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
+                  {isTransitioning && (
+                    <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                      <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
+                        Serie Totali
+                      </span>
+                      <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
+                        {isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : isTransitioning ? (
+                <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex items-center justify-between">
+                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
+                    {isTargetCircuit ? 'Giri Totali' : 'Serie Totali'}
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono">
+                    {targetExercise.sets} {isTargetCircuit ? 'Giri' : 'Serie'}
+                  </span>
+                </div>
+              ) : null}
 
               {/* Sub-esercizi se Superset / Circuito / EMOM */}
               {targetSubExercises.length > 0 && (
@@ -6134,6 +6148,7 @@ const ActiveWorkoutPage: React.FC = () => {
       targetType,
       isTargetPyramid,
       isTargetEmom,
+      isTargetSuperset,
       isTargetCircuit,
       isTargetIsometry,
       totalEmomRoundsNumber,
@@ -6143,6 +6158,7 @@ const ActiveWorkoutPage: React.FC = () => {
       targetInstruction,
       restProgressRatio,
     } = getRestTargetDetails();
+    const isGroupType = isTargetSuperset || isTargetCircuit;
 
     return (
       <div
@@ -6337,37 +6353,48 @@ const ActiveWorkoutPage: React.FC = () => {
             {/* Scrollable Body: All characteristics of the upcoming exercise/step */}
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-2 pr-0.5 space-y-2.5 custom-scroll-area">
               {/* Caratteristiche Prossimo Set / Esercizio */}
-              <div className={`grid ${isTransitioning ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5 shrink-0`}>
-                {/* Box 1: Target / Reps */}
-                <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                    {isTargetIsometry ? 'Tenuta' : 'Target'}
-                  </span>
-                  <span className="text-xs sm:text-sm font-black text-white font-mono mt-0.5 truncate">
-                    {targetGoalText}
-                  </span>
-                </div>
-
-                {/* Box 2: Carico */}
-                <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
-                  <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
-                    {targetWeightText}
-                  </span>
-                </div>
-
-                {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
-                {isTransitioning && (
+              {!isGroupType ? (
+                <div className={`grid ${isTransitioning ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5 shrink-0`}>
+                  {/* Box 1: Target / Reps */}
                   <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                     <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                      Serie Totali
+                      {isTargetIsometry ? 'Tenuta' : 'Target'}
                     </span>
-                    <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
-                      {isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`}
+                    <span className="text-xs sm:text-sm font-black text-white font-mono mt-0.5 truncate">
+                      {targetGoalText}
                     </span>
                   </div>
-                )}
-              </div>
+
+                  {/* Box 2: Carico */}
+                  <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                    <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Carico</span>
+                    <span className="text-xs sm:text-sm font-black text-brand-orange font-mono mt-0.5 truncate">
+                      {targetWeightText}
+                    </span>
+                  </div>
+
+                  {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
+                  {isTransitioning && (
+                    <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                      <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
+                        Serie Totali
+                      </span>
+                      <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
+                        {isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : isTransitioning ? (
+                <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex items-center justify-between shrink-0">
+                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
+                    {isTargetCircuit ? 'Giri Totali' : 'Serie Totali'}
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono">
+                    {targetExercise.sets} {isTargetCircuit ? 'Giri' : 'Serie'}
+                  </span>
+                </div>
+              ) : null}
 
               {/* Timeline Grafica Serie */}
               <div className="pt-0.5 shrink-0">

@@ -346,7 +346,22 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
     setEditingTransitionIdx(null);
   };
 
+  const adjustTransitionDraft = (deltaSeconds: number) => {
+    void hapticLight();
+    const m = Math.max(0, parseInt(transitionDraftMinutes, 10) || 0);
+    const s = Math.max(0, parseInt(transitionDraftSeconds, 10) || 0);
+    const total = Math.max(0, m * 60 + s + deltaSeconds);
+    setTransitionDraftMinutes(String(Math.floor(total / 60)));
+    setTransitionDraftSeconds(String(total % 60));
+  };
 
+  const handleApplyTransitionPreset = (presetSeconds: number) => {
+    void hapticLight();
+    const m = Math.floor(presetSeconds / 60);
+    const s = presetSeconds % 60;
+    setTransitionDraftMinutes(String(m));
+    setTransitionDraftSeconds(String(s));
+  };
 
   const handleSaveTransitionRest = (exerciseIndex: number) => {
     const m = Math.max(0, parseInt(transitionDraftMinutes, 10) || 0);
@@ -476,13 +491,12 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
             return (
               <React.Fragment key={exercise.id}>
                 <div
-                  className={`relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 ${
-                    isCurrentExercise
+                  className={`relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 ${isCurrentExercise
                       ? 'border-2 border-brand-orange/80 bg-brand-darkGrey/95 shadow-[0_0_24px_rgba(255,94,0,0.22)] ring-1 ring-brand-orange/40'
                       : isCompleted
                         ? 'border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 via-emerald-900/15 to-black/50 shadow-[0_0_15px_rgba(16,185,129,0.06)]'
                         : 'border-white/10 bg-black/30 opacity-75 hover:opacity-100'
-                  }`}
+                    }`}
                 >
                   {isCompleted && (
                     <div className="absolute inset-0 bg-emerald-500/15 pointer-events-none" />
@@ -519,24 +533,22 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                           )}
                         </p>
                         <h4 className="text-white font-black text-lg leading-tight truncate">{exerciseTitle}</h4>
-                        <p className={`text-[10px] uppercase tracking-widest font-bold mt-1 ${
-                          isCompleted
+                        <p className={`text-[10px] uppercase tracking-widest font-bold mt-1 ${isCompleted
                             ? 'text-emerald-400/90'
                             : isCurrentExercise
                               ? 'text-brand-orange font-black'
                               : 'text-zinc-400'
-                        }`}>
+                          }`}>
                           {getWorkoutOverviewDisplayLabel(exercise)}
                         </p>
                       </div>
 
-                      <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${
-                        isCompleted
+                      <div className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${isCompleted
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm'
                           : isCurrentExercise
                             ? 'bg-brand-orange text-black shadow-md shadow-brand-orange/20'
                             : 'bg-white/5 text-brand-grey border border-white/5'
-                      }`}>
+                        }`}>
                         {isCompleted ? (
                           <>
                             <CheckCircle2 size={12} className="text-emerald-400" />
@@ -554,13 +566,12 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                       {summary.map((item, summaryIndex) => (
                         <span
                           key={`${exercise.id}:summary:${summaryIndex}`}
-                          className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${
-                            isCompleted
+                          className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${isCompleted
                               ? 'border-emerald-500/20 bg-emerald-950/30 text-emerald-200'
                               : isCurrentExercise
                                 ? 'border-brand-orange/30 bg-black/40 text-brand-orange/95'
                                 : 'border-white/10 bg-black/25 text-white/85'
-                          }`}
+                            }`}
                         >
                           {item}
                         </span>
@@ -576,24 +587,21 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                           return (
                             <div
                               key={`${exercise.id}:sub:${subIndex}`}
-                              className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-3 transition-colors ${
-                                isSubActive
+                              className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-3 transition-colors ${isSubActive
                                   ? 'border-brand-orange/60 bg-brand-orange/15 shadow-[0_0_10px_rgba(255,94,0,0.15)]'
                                   : isSubDone
                                     ? 'border-emerald-500/20 bg-emerald-950/20'
                                     : 'border-white/5 bg-black/25'
-                              }`}
+                                }`}
                             >
                               <div className="min-w-0">
-                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${
-                                  isSubActive ? 'text-white font-black' : isSubDone ? 'text-emerald-100' : 'text-zinc-300'
-                                }`}>
+                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${isSubActive ? 'text-white font-black' : isSubDone ? 'text-emerald-100' : 'text-zinc-300'
+                                  }`}>
                                   {isSubDone && <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />}
                                   {sub.name || `Esercizio ${subIndex + 1}`}
                                 </p>
-                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${
-                                  isSubActive ? 'text-brand-orange' : isSubDone ? 'text-emerald-400/90' : 'text-zinc-400'
-                                }`}>
+                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${isSubActive ? 'text-brand-orange' : isSubDone ? 'text-emerald-400/90' : 'text-zinc-400'
+                                  }`}>
                                   {formatSupersetTaskMetricLabel(sub)}
                                 </p>
                               </div>
@@ -615,24 +623,21 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                           return (
                             <div
                               key={`${exercise.id}:emom:${subIndex}`}
-                              className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-3 transition-colors ${
-                                isSubActive
+                              className={`rounded-xl border px-3 py-2 flex items-start justify-between gap-3 transition-colors ${isSubActive
                                   ? 'border-brand-orange/60 bg-brand-orange/15 shadow-[0_0_10px_rgba(255,94,0,0.15)]'
                                   : isSubDone
                                     ? 'border-emerald-500/20 bg-emerald-950/20'
                                     : 'border-white/5 bg-black/25'
-                              }`}
+                                }`}
                             >
                               <div className="min-w-0">
-                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${
-                                  isSubActive ? 'text-white font-black' : isSubDone ? 'text-emerald-100' : 'text-zinc-300'
-                                }`}>
+                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${isSubActive ? 'text-white font-black' : isSubDone ? 'text-emerald-100' : 'text-zinc-300'
+                                  }`}>
                                   {isSubDone && <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />}
                                   {sub.name || `Esercizio ${subIndex + 1}`}
                                 </p>
-                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${
-                                  isSubActive ? 'text-brand-orange' : isSubDone ? 'text-emerald-400/90' : 'text-zinc-400'
-                                }`}>
+                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${isSubActive ? 'text-brand-orange' : isSubDone ? 'text-emerald-400/90' : 'text-zinc-400'
+                                  }`}>
                                   {formatEmomTaskMetricLabel(sub)}
                                 </p>
                               </div>
@@ -656,24 +661,21 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                           return (
                             <div
                               key={`${exercise.id}:pyramid:${stepIndex}`}
-                              className={`rounded-xl border px-3 py-2 flex items-center justify-between gap-3 transition-colors ${
-                                isStepActive
+                              className={`rounded-xl border px-3 py-2 flex items-center justify-between gap-3 transition-colors ${isStepActive
                                   ? 'border-brand-orange/60 bg-brand-orange/15 shadow-[0_0_10px_rgba(255,94,0,0.15)]'
                                   : isStepDone
                                     ? 'border-emerald-500/20 bg-emerald-950/20'
                                     : 'border-white/5 bg-black/25'
-                              }`}
+                                }`}
                             >
                               <div className="min-w-0">
-                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${
-                                  isStepActive ? 'text-white font-black' : isStepDone ? 'text-emerald-100' : 'text-zinc-300'
-                                }`}>
+                                <p className={`font-bold text-sm truncate flex items-center gap-1.5 ${isStepActive ? 'text-white font-black' : isStepDone ? 'text-emerald-100' : 'text-zinc-300'
+                                  }`}>
                                   {isStepDone && <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />}
                                   Step {stepIndex + 1}
                                 </p>
-                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${
-                                  isStepActive ? 'text-brand-orange' : isStepDone ? 'text-emerald-400/90' : 'text-zinc-400'
-                                }`}>
+                                <p className={`text-[11px] font-black uppercase tracking-wide mt-1 ${isStepActive ? 'text-brand-orange' : isStepDone ? 'text-emerald-400/90' : 'text-zinc-400'
+                                  }`}>
                                   {isMaxTarget(step.reps) ? 'MAX reps' : `${step.reps} reps`} · {formatTime(step.rest_seconds)} rest
                                 </p>
                               </div>
@@ -719,11 +721,10 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                         <button
                           type="button"
                           onClick={() => onOpenExerciseNote(index)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm relative ${
-                            hasNote
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm relative ${hasNote
                               ? 'bg-brand-orange/20 border border-brand-orange/60 text-brand-orange shadow-[0_0_12px_rgba(255,107,0,0.3)]'
                               : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
-                          }`}
+                            }`}
                           title={`Note per ${exerciseTitle}`}
                         >
                           <FileText size={13} />
@@ -740,11 +741,10 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                             setEditingParamExerciseIdx(index);
                             onOpenEditExercise(index);
                           }}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${
-                            isCurrentExercise
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${isCurrentExercise
                               ? 'bg-brand-orange text-black hover:bg-brand-lightOrange shadow-brand-orange/20 font-black'
                               : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
-                          }`}
+                            }`}
                           title={`Modifica parametri di ${exerciseTitle}`}
                         >
                           <SlidersHorizontal size={13} />
@@ -782,31 +782,102 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                           </button>
                         </div>
 
-                        <div className="flex items-center justify-center gap-2 py-2">
-                          <div className="flex flex-col items-center">
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={transitionDraftMinutes}
-                              onChange={(e) => setTransitionDraftMinutes(e.target.value.replace(/\D/g, ''))}
-                              className="w-16 h-11 bg-black/60 border border-white/20 focus:border-brand-orange rounded-xl text-center font-mono font-black text-white text-lg outline-none transition-colors"
-                              placeholder="0"
-                            />
-                            <span className="text-[10px] font-bold text-zinc-400 mt-1 uppercase tracking-wider">min</span>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 mb-1.5">
+                            Preset Rapidi
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { label: '30s', secs: 30 },
+                              { label: '45s', secs: 45 },
+                              { label: '60s', secs: 60 },
+                              { label: '90s', secs: 90 },
+                              { label: '2 min', secs: 120 },
+                              { label: '3 min', secs: 180 },
+                            ].map((preset) => {
+                              const draftTotal =
+                                (Math.max(0, parseInt(transitionDraftMinutes, 10) || 0) * 60) +
+                                Math.max(0, parseInt(transitionDraftSeconds, 10) || 0);
+                              const isActive = draftTotal === preset.secs;
+                              return (
+                                <button
+                                  key={preset.secs}
+                                  type="button"
+                                  onClick={() => handleApplyTransitionPreset(preset.secs)}
+                                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${isActive
+                                      ? 'bg-brand-orange text-black font-black shadow-sm shadow-brand-orange/30'
+                                      : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
+                                    }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              );
+                            })}
                           </div>
-                          <span className="text-2xl font-bold text-zinc-500 font-mono -mt-4">:</span>
-                          <div className="flex flex-col items-center">
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={transitionDraftSeconds}
-                              onChange={(e) => setTransitionDraftSeconds(e.target.value.replace(/\D/g, ''))}
-                              className="w-16 h-11 bg-black/60 border border-white/20 focus:border-brand-orange rounded-xl text-center font-mono font-black text-white text-lg outline-none transition-colors"
-                              placeholder="0"
-                            />
-                            <span className="text-[10px] font-bold text-zinc-400 mt-1 uppercase tracking-wider">sec</span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex flex-col items-center">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={transitionDraftMinutes}
+                                onChange={(e) => setTransitionDraftMinutes(e.target.value.replace(/\D/g, ''))}
+                                className="w-13 h-9 bg-black/60 border border-white/20 focus:border-brand-orange rounded-xl text-center font-mono font-black text-white text-base outline-none transition-colors"
+                                placeholder="0"
+                              />
+                              <span className="text-[9px] font-bold text-zinc-400 mt-0.5 uppercase tracking-wider">min</span>
+                            </div>
+                            <span className="text-lg font-bold text-zinc-500 font-mono -mt-3">:</span>
+                            <div className="flex flex-col items-center">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={transitionDraftSeconds}
+                                onChange={(e) => setTransitionDraftSeconds(e.target.value.replace(/\D/g, ''))}
+                                className="w-13 h-9 bg-black/60 border border-white/20 focus:border-brand-orange rounded-xl text-center font-mono font-black text-white text-base outline-none transition-colors"
+                                placeholder="0"
+                              />
+                              <span className="text-[9px] font-bold text-zinc-400 mt-0.5 uppercase tracking-wider">sec</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => adjustTransitionDraft(-15)}
+                              className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-zinc-300 border border-white/10 transition-colors cursor-pointer"
+                              title="-15 secondi"
+                            >
+                              -15s
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => adjustTransitionDraft(-5)}
+                              className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-zinc-300 border border-white/10 transition-colors cursor-pointer"
+                              title="-5 secondi"
+                            >
+                              -5s
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => adjustTransitionDraft(5)}
+                              className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-zinc-300 border border-white/10 transition-colors cursor-pointer"
+                              title="+5 secondi"
+                            >
+                              +5s
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => adjustTransitionDraft(15)}
+                              className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-zinc-300 border border-white/10 transition-colors cursor-pointer"
+                              title="+15 secondi"
+                            >
+                              +15s
+                            </button>
                           </div>
                         </div>
 
