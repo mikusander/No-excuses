@@ -6578,11 +6578,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400/90 mt-1.5">
                                   Completato
                                 </span>
-                                {hasEmomTasks ? (
-                                  <span className="text-[10px] text-zinc-400 font-mono mt-1">
-                                    {currentExercise.subExercises?.length} esercizi
-                                  </span>
-                                ) : (
+                                {!hasEmomTasks && (
                                   <span className="text-[10px] text-zinc-400 font-mono mt-1">
                                     {currentExercise.reps === 0 ? 'MAX reps' : `${currentExercise.reps} reps`}
                                   </span>
@@ -6636,11 +6632,7 @@ const ActiveWorkoutPage: React.FC = () => {
                               <span className="text-4xl min-[390px]:text-5xl font-mono font-black text-zinc-400 leading-none">
                                 {formatEmomTimer(roundDuration)}
                               </span>
-                              {hasEmomTasks ? (
-                                <span className="text-[10px] text-zinc-500 font-mono mt-1">
-                                  {currentExercise.subExercises?.length} esercizi
-                                </span>
-                              ) : (
+                              {!hasEmomTasks && (
                                 <span className="text-[10px] text-zinc-500 font-mono mt-1">
                                   {currentExercise.reps === 0 ? 'MAX reps' : `${currentExercise.reps} reps`}
                                 </span>
