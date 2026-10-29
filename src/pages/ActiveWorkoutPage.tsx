@@ -7048,16 +7048,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 )}
                               </div>
 
-                              <div className="space-y-2 shrink-0 pt-2 border-t border-emerald-500/20">
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                                    Durata
-                                  </span>
-                                  <span className="font-mono font-bold text-zinc-200">
-                                    {roundDuration}s
-                                  </span>
-                                </div>
-
+                              <div className="shrink-0 pt-2 border-t border-emerald-500/20">
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -7115,16 +7106,7 @@ const ActiveWorkoutPage: React.FC = () => {
                               )}
                             </div>
 
-                            <div className="space-y-2 shrink-0 pt-2 border-t border-white/10">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                                  Durata
-                                </span>
-                                <span className="font-mono text-zinc-400 text-[11px]">
-                                  {roundDuration}s
-                                </span>
-                              </div>
-
+                            <div className="shrink-0 pt-2 border-t border-white/10">
                               <button
                                 type="button"
                                 onClick={(e) => {
