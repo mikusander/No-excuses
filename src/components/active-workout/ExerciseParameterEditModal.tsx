@@ -838,40 +838,22 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
 
           {/* Pausa di transizione (recupero dopo l'esercizio prima del successivo) */}
           <div className="pt-2 border-t border-white/10">
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1.5">
               <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 flex items-center gap-1.5">
                 <Clock size={13} className="text-brand-orange" />
                 Pausa Dopo Questo Esercizio (Transizione)
               </label>
-              <span className="text-xs font-bold text-brand-orange font-mono">
-                {transitionRestSeconds > 0 ? `${transitionRestSeconds}s` : 'Nessuna (0s)'}
-              </span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { label: '0s', secs: 0 },
-                { label: '30s', secs: 30 },
-                { label: '45s', secs: 45 },
-                { label: '60s', secs: 60 },
-                { label: '90s', secs: 90 },
-                { label: '2 min', secs: 120 },
-              ].map((preset) => (
-                <button
-                  key={`trans-${preset.secs}`}
-                  type="button"
-                  onClick={() => {
-                    void hapticLight();
-                    setTransitionRestSeconds(preset.secs);
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    transitionRestSeconds === preset.secs
-                      ? 'bg-brand-orange text-black font-black shadow-sm'
-                      : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={transitionRestSeconds}
+                onChange={(e) => setTransitionRestSeconds(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                className="w-24 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl px-3 py-1.5 text-center text-white font-black text-sm outline-none"
+              />
+              <span className="text-xs text-zinc-400 font-bold">secondi (0 = nessuna)</span>
             </div>
           </div>
 
@@ -928,3 +910,4 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
     </div>
   );
 };
+
