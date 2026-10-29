@@ -5,7 +5,6 @@ import {
   Flame,
   Plus,
   Trash2,
-  Clock,
   Dumbbell,
   FileText,
   AlertCircle,
@@ -68,9 +67,6 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
   const [isMaxDuration, setIsMaxDuration] = useState(isInitialDurationMax);
   const [weightKg, setWeightKg] = useState(formatWeightValue(exercise.weight_kg));
   const [restSeconds, setRestSeconds] = useState(Math.max(0, exercise.rest_seconds || 0));
-  const [transitionRestSeconds, setTransitionRestSeconds] = useState(
-    Math.max(0, exercise.transition_rest_seconds || 0)
-  );
   const [instructionNote, setInstructionNote] = useState(exercise.instruction_note || '');
 
   // Sub-exercises for superset / circuit / emom
@@ -126,7 +122,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
         duration_seconds: isMaxDuration ? 0 : Math.max(1, durationSeconds),
         weight_kg: finalWeight,
         rest_seconds: Math.max(0, restSeconds),
-        transition_rest_seconds: Math.max(0, transitionRestSeconds),
+        transition_rest_seconds: Math.max(0, exercise.transition_rest_seconds || 0),
         instruction_note: instructionNote.trim() || null,
         subExercises: subExercises.length > 0 ? subExercises : exercise.subExercises,
         pyramid_steps: pyramidSteps.length > 0 ? pyramidSteps : exercise.pyramid_steps,
@@ -167,7 +163,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150 select-none">
-      <div className="w-full max-w-lg bg-[#1C1C1E] border border-white/10 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-lg bg-black border border-white/15 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
           <div className="min-w-0 pr-2">
@@ -206,6 +202,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
             <input
               type="text"
               value={name}
+              onFocus={(e) => e.target.select()}
               onChange={(e) => setName(e.target.value)}
               className="w-full bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl px-3 py-2 text-white font-bold text-sm outline-none transition-colors"
               placeholder="Es. Panca Piana Bilanciere"
@@ -281,6 +278,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                               min={0}
                               disabled={isStepMax}
                               value={isStepMax ? '0' : step.reps}
+                              onFocus={(e) => e.target.select()}
                               onChange={(e) => {
                                 const val = Math.max(0, parseInt(e.target.value, 10) || 0);
                                 setPyramidSteps(
@@ -322,6 +320,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                             type="text"
                             inputMode="decimal"
                             value={step.weight_kg != null && step.weight_kg > 0 ? String(step.weight_kg).replace('.', ',') : ''}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => {
                               const parsed = parseWeightInput(e.target.value);
                               setPyramidSteps(
@@ -343,6 +342,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                             inputMode="numeric"
                             min={0}
                             value={step.rest_seconds}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => {
                               const val = Math.max(0, parseInt(e.target.value, 10) || 0);
                               setPyramidSteps(
@@ -367,36 +367,15 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                   <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 mb-1 block">
                     {exercise.type === 'circuit' ? 'Giri (Rounds)' : 'Serie (Sets)'}
                   </label>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void hapticLight();
-                        setSets((prev) => Math.max(minAllowedSets, prev - 1));
-                      }}
-                      className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold flex items-center justify-center cursor-pointer active:scale-95"
-                    >
-                      -
-                    </button>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={minAllowedSets}
-                      value={sets}
-                      onChange={(e) => setSets(Math.max(minAllowedSets, parseInt(e.target.value, 10) || minAllowedSets))}
-                      className="flex-1 h-9 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void hapticLight();
-                        setSets((prev) => prev + 1);
-                      }}
-                      className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold flex items-center justify-center cursor-pointer active:scale-95"
-                    >
-                      +
-                    </button>
-                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={minAllowedSets}
+                    value={sets}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setSets(Math.max(minAllowedSets, parseInt(e.target.value, 10) || minAllowedSets))}
+                    className="w-full h-11 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none transition-colors"
+                  />
                 </div>
 
                 {/* Recupero a fine giro */}
@@ -409,8 +388,9 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                     inputMode="numeric"
                     min={0}
                     value={restSeconds}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => setRestSeconds(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full h-9 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none"
+                    className="w-full h-11 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none"
                   />
                 </div>
               </div>
@@ -433,6 +413,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                         <input
                           type="text"
                           value={sub.name}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => {
                             setSubExercises(
                               subExercises.map((s, idx) => (idx === sIdx ? { ...s, name: e.target.value } : s))
@@ -470,6 +451,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                               min={0}
                               disabled={isSubMax}
                               value={isSubMax ? '0' : isSubIso ? sub.duration_seconds : sub.reps}
+                              onFocus={(e) => e.target.select()}
                               onChange={(e) => {
                                 const val = Math.max(0, parseInt(e.target.value, 10) || 0);
                                 setSubExercises(
@@ -520,6 +502,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                             type="text"
                             inputMode="decimal"
                             value={sub.weight_kg != null && sub.weight_kg > 0 ? String(sub.weight_kg).replace('.', ',') : ''}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => {
                               const parsed = parseWeightInput(e.target.value);
                               setSubExercises(
@@ -550,8 +533,9 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                     inputMode="numeric"
                     min={1}
                     value={emomRounds}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => setEmomRounds(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-full h-10 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none"
+                    className="w-full h-11 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none transition-colors"
                   />
                 </div>
 
@@ -565,7 +549,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                       {String(Math.floor(emomRoundDuration / 60)).padStart(2, '0')}:{String(emomRoundDuration % 60).padStart(2, '0')}
                     </span>
                   </div>
-                  <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-10">
+                  <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-11">
                     <div className="relative flex-1 border-r border-white/10 flex flex-col justify-center items-center">
                       <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">MIN</span>
                       <input
@@ -573,6 +557,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                         inputMode="numeric"
                         min={0}
                         value={Math.floor(emomRoundDuration / 60)}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) => {
                           const m = Math.max(0, parseInt(e.target.value, 10) || 0);
                           const total = m * 60 + (emomRoundDuration % 60);
@@ -589,6 +574,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                         min={0}
                         max={59}
                         value={emomRoundDuration % 60}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) => {
                           const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
                           const total = Math.floor(emomRoundDuration / 60) * 60 + s;
@@ -601,7 +587,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                 </div>
               </div>
 
-              {/* Recupero tra Serie (diviso in minuti e secondi) */}
+              {/* Recupero tra Serie (diviso in minuti e secondi, senza preset rapidi) */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 block">
@@ -611,7 +597,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                     {String(Math.floor(restSeconds / 60)).padStart(2, '0')}:{String(restSeconds % 60).padStart(2, '0')}
                   </span>
                 </div>
-                <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-10">
+                <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-11">
                   <div className="relative flex-1 border-r border-white/10 flex flex-col justify-center items-center">
                     <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">MIN</span>
                     <input
@@ -619,6 +605,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                       inputMode="numeric"
                       min={0}
                       value={Math.floor(restSeconds / 60)}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => {
                         const m = Math.max(0, parseInt(e.target.value, 10) || 0);
                         setRestSeconds(m * 60 + (restSeconds % 60));
@@ -634,6 +621,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                       min={0}
                       max={59}
                       value={restSeconds % 60}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => {
                         const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
                         setRestSeconds(Math.floor(restSeconds / 60) * 60 + s);
@@ -641,32 +629,6 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                       className="w-full h-full bg-transparent text-center text-white font-mono font-black text-base focus:outline-none"
                     />
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-1.5 pt-1.5">
-                  {[
-                    { label: '0s', secs: 0 },
-                    { label: '30s', secs: 30 },
-                    { label: '60s', secs: 60 },
-                    { label: '90s', secs: 90 },
-                    { label: '2m', secs: 120 },
-                    { label: '3m', secs: 180 },
-                  ].map((preset) => (
-                    <button
-                      key={preset.secs}
-                      type="button"
-                      onClick={() => {
-                        void hapticLight();
-                        setRestSeconds(preset.secs);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        restSeconds === preset.secs
-                          ? 'bg-brand-orange text-black font-black'
-                          : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
-                      }`}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
                 </div>
               </div>
 
@@ -680,6 +642,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                     <input
                       type="text"
                       value={sub.name}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => {
                         setSubExercises(
                           subExercises.map((s, idx) => (idx === sIdx ? { ...s, name: e.target.value } : s))
@@ -696,6 +659,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                           inputMode="numeric"
                           min={0}
                           value={sub.reps}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => {
                             const val = Math.max(0, parseInt(e.target.value, 10) || 0);
                             setSubExercises(
@@ -711,6 +675,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                           type="text"
                           inputMode="decimal"
                           value={sub.weight_kg != null && sub.weight_kg > 0 ? String(sub.weight_kg).replace('.', ',') : ''}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => {
                             const parsed = parseWeightInput(e.target.value);
                             setSubExercises(
@@ -729,58 +694,36 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
           ) : (
             /* ── ESERCIZIO STANDARD (REPS / ISOMETRY / CARDIO) ── */
             <div className="space-y-3.5">
-              <div className="grid grid-cols-2 gap-3">
-                {/* Serie (Sets) */}
-                <div>
-                  <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 mb-1 block">
-                    Serie (Sets)
-                  </label>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void hapticLight();
-                        setSets((prev) => Math.max(minAllowedSets, prev - 1));
-                      }}
-                      className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold flex items-center justify-center cursor-pointer active:scale-95"
-                    >
-                      -
-                    </button>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={minAllowedSets}
-                      value={sets}
-                      onChange={(e) => setSets(Math.max(minAllowedSets, parseInt(e.target.value, 10) || minAllowedSets))}
-                      className="flex-1 h-9 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void hapticLight();
-                        setSets((prev) => prev + 1);
-                      }}
-                      className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold flex items-center justify-center cursor-pointer active:scale-95"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+              {/* Serie (Sets) su riga separata, modificabile solo da tastiera */}
+              <div>
+                <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 mb-1 block">
+                  Serie (Sets)
+                </label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={minAllowedSets}
+                  value={sets}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setSets(Math.max(minAllowedSets, parseInt(e.target.value, 10) || minAllowedSets))}
+                  className="w-full h-11 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none transition-colors"
+                />
+              </div>
 
-                {/* Carico / Peso (kg) */}
-                <div>
-                  <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 mb-1 block">
-                    Carico (kg)
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={weightKg}
-                    onChange={(e) => setWeightKg(e.target.value)}
-                    placeholder="0 (Corpo Libero)"
-                    className="w-full h-9 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-sm outline-none"
-                  />
-                </div>
+              {/* Carico / Peso (kg) su riga separata, modificabile da tastiera */}
+              <div>
+                <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 mb-1 block">
+                  Carico (kg)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={weightKg}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setWeightKg(e.target.value)}
+                  placeholder="0 (Corpo Libero)"
+                  className="w-full h-11 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none transition-colors"
+                />
               </div>
 
               {/* Target: Reps oppure Durata con toggle MAX */}
@@ -819,8 +762,9 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                         inputMode="numeric"
                         min={1}
                         value={durationSeconds}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) => setDurationSeconds(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        className="flex-1 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl px-3 py-2 text-center text-white font-black text-base outline-none"
+                        className="flex-1 h-11 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl px-3 text-center text-white font-black text-base outline-none transition-colors"
                       />
                       <span className="text-xs font-bold text-zinc-400 uppercase">Secondi</span>
                     </div>
@@ -855,41 +799,20 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                       <span>Ripetizioni a Sfinimento (MAX)</span>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void hapticLight();
-                          setReps((prev) => Math.max(1, prev - 1));
-                        }}
-                        className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold flex items-center justify-center cursor-pointer active:scale-95"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min={1}
-                        value={reps}
-                        onChange={(e) => setReps(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        className="flex-1 h-10 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-lg outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void hapticLight();
-                          setReps((prev) => prev + 1);
-                        }}
-                        className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold flex items-center justify-center cursor-pointer active:scale-95"
-                      >
-                        +
-                      </button>
-                    </div>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      value={reps}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => setReps(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-full h-11 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-lg outline-none transition-colors"
+                    />
                   )}
                 </div>
               )}
 
-              {/* Recupero tra le serie (diviso in minuti e secondi) */}
+              {/* Recupero tra le serie (diviso in minuti e secondi, senza preset rapidi) */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 block">
@@ -899,7 +822,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                     {String(Math.floor(restSeconds / 60)).padStart(2, '0')}:{String(restSeconds % 60).padStart(2, '0')}
                   </span>
                 </div>
-                <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-10">
+                <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-11">
                   <div className="relative flex-1 border-r border-white/10 flex flex-col justify-center items-center">
                     <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">MIN</span>
                     <input
@@ -907,6 +830,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                       inputMode="numeric"
                       min={0}
                       value={Math.floor(restSeconds / 60)}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => {
                         const m = Math.max(0, parseInt(e.target.value, 10) || 0);
                         setRestSeconds(m * 60 + (restSeconds % 60));
@@ -922,6 +846,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                       min={0}
                       max={59}
                       value={restSeconds % 60}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => {
                         const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
                         setRestSeconds(Math.floor(restSeconds / 60) * 60 + s);
@@ -930,56 +855,9 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                     />
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5 pt-1.5">
-                  {[
-                    { label: '30s', secs: 30 },
-                    { label: '45s', secs: 45 },
-                    { label: '60s', secs: 60 },
-                    { label: '90s', secs: 90 },
-                    { label: '2m', secs: 120 },
-                    { label: '3m', secs: 180 },
-                  ].map((preset) => (
-                    <button
-                      key={preset.secs}
-                      type="button"
-                      onClick={() => {
-                        void hapticLight();
-                        setRestSeconds(preset.secs);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        restSeconds === preset.secs
-                          ? 'bg-brand-orange text-black font-black'
-                          : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
-                      }`}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           )}
-
-          {/* Pausa di transizione (recupero dopo l'esercizio prima del successivo) */}
-          <div className="pt-2 border-t border-white/10">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 flex items-center gap-1.5">
-                <Clock size={13} className="text-brand-orange" />
-                Pausa Dopo Questo Esercizio (Transizione)
-              </label>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={transitionRestSeconds}
-                onChange={(e) => setTransitionRestSeconds(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                className="w-24 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl px-3 py-1.5 text-center text-white font-black text-sm outline-none"
-              />
-              <span className="text-xs text-zinc-400 font-bold">secondi (0 = nessuna)</span>
-            </div>
-          </div>
 
           {/* Note / Istruzioni Esercizio */}
           <div className="pt-2 border-t border-white/10">
@@ -989,6 +867,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
             </label>
             <textarea
               value={instructionNote}
+              onFocus={(e) => e.target.select()}
               onChange={(e) => setInstructionNote(e.target.value)}
               placeholder="Scrivi eventuali note tecniche o personali per questo esercizio..."
               className="w-full min-h-[75px] bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl px-3 py-2 text-white text-xs leading-relaxed outline-none resize-none"
@@ -1034,4 +913,3 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
     </div>
   );
 };
-
