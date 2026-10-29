@@ -6967,7 +6967,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                               </span>
                                             ) : (
                                               <span className="text-[9px] text-zinc-500">
-                                                • Libero
+                                                • Bodyweight
                                               </span>
                                             )}
                                           </div>
