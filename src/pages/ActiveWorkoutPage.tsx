@@ -7302,7 +7302,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                   <div className="flex flex-col items-center text-center">
                                     <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Carico</span>
                                     <span className="font-mono font-bold text-zinc-200 truncate max-w-[120px]">
-                                      {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                                      {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Bodyweight'}
                                     </span>
                                   </div>
                                 </div>
@@ -7368,7 +7368,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 <div className="flex flex-col items-center text-center">
                                   <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Carico</span>
                                   <span className="font-mono text-zinc-400 truncate max-w-[120px]">
-                                    {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                                    {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Bodyweight'}
                                   </span>
                                 </div>
                               </div>
