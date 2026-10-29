@@ -7358,8 +7358,8 @@ const ActiveWorkoutPage: React.FC = () => {
                               <span className="text-5xl sm:text-6xl font-mono font-black text-zinc-300 leading-none">
                                 {isMax ? 'MAX' : step.reps}
                               </span>
-                              <span className="text-[11px] font-mono font-black text-brand-lightOrange mt-1.5 bg-brand-orange/10 border border-brand-orange/20 px-2 py-0.5 rounded-lg">
-                                {isMax ? 'MAX' : `${step.reps} reps`} @ {step.weight_kg != null && step.weight_kg > 0 ? formatWeightLabel(step.weight_kg) : 'Libero'}
+                              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-1.5">
+                                {isMax ? 'A cedimento' : 'Ripetizioni'}
                               </span>
                             </div>
 
