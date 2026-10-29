@@ -5314,16 +5314,31 @@ const ActiveWorkoutPage: React.FC = () => {
                         return (
                           <div
                             key={sIdx}
-                            className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
+                            className={`w-13 h-13 sm:w-14 sm:h-14 aspect-square rounded-2xl border text-center transition-all flex flex-col items-center justify-center relative shrink-0 select-none ${
                               isUpcoming
-                                ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
+                                ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_12px_rgba(255,94,0,0.45)] ring-1 ring-brand-orange/70'
                                 : isDone
                                   ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                                  : 'bg-white/5 border-white/5 text-zinc-500'
+                                  : 'bg-white/5 border-white/5 text-zinc-400'
                             }`}
+                            title={`Step ${sIdx + 1}: ${step.reps === 0 ? 'MAX' : step.reps} reps${step.weight_kg ? ` @ ${step.weight_kg}kg` : ''}`}
                           >
-                            <span className="text-[10px] opacity-75">{sIdx + 1}</span>
-                            <span>{isDone ? '✓' : isUpcoming ? '⏳' : `${step.reps}r`}</span>
+                            {isDone && (
+                              <span className="absolute top-1 right-1.5 text-[9px] font-black text-emerald-400 leading-none">
+                                ✓
+                              </span>
+                            )}
+                            {isUpcoming && (
+                              <span className="absolute top-1 right-1.5 text-[8px] leading-none">
+                                ⏳
+                              </span>
+                            )}
+                            <span className="text-sm sm:text-base font-black font-mono leading-none tracking-tight">
+                              {step.reps === 0 ? 'MAX' : step.reps}
+                            </span>
+                            <span className="text-[9px] uppercase font-bold tracking-wider leading-none mt-1 opacity-75">
+                              reps
+                            </span>
                           </div>
                         );
                       })
@@ -6414,18 +6429,30 @@ const ActiveWorkoutPage: React.FC = () => {
                       return (
                         <div
                           key={sIdx}
-                          className={`py-1 px-2.5 rounded-xl border text-center transition-all flex items-center gap-1 font-mono text-xs font-black shrink-0 ${
+                          className={`w-14 h-14 sm:w-16 sm:h-16 aspect-square rounded-2xl border text-center transition-all flex flex-col items-center justify-center relative shrink-0 select-none ${
                             isUpcoming
-                              ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_10px_rgba(255,94,0,0.4)] ring-1 ring-brand-orange/60'
+                              ? 'bg-brand-orange/25 border-brand-orange text-white shadow-[0_0_12px_rgba(255,94,0,0.45)] ring-1 ring-brand-orange/70'
                               : isDone
                                 ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                                : 'bg-white/5 border-white/5 text-zinc-500'
+                                : 'bg-white/5 border-white/5 text-zinc-400'
                           }`}
+                          title={`Step ${sIdx + 1}: ${step.reps === 0 ? 'MAX' : step.reps} reps${step.weight_kg ? ` @ ${step.weight_kg}kg` : ''}`}
                         >
-                          <span className="text-[10px] opacity-75">{sIdx + 1}</span>
-                          <span>
-                            {isDone ? '✓' : isUpcoming ? '⏳' : ''} {step.reps === 0 ? 'MAX' : `${step.reps}r`}
-                            {step.weight_kg != null && step.weight_kg > 0 ? ` @ ${step.weight_kg}kg` : ''}
+                          {isDone && (
+                            <span className="absolute top-1 right-1.5 text-[9px] font-black text-emerald-400 leading-none">
+                              ✓
+                            </span>
+                          )}
+                          {isUpcoming && (
+                            <span className="absolute top-1 right-1.5 text-[8px] leading-none">
+                              ⏳
+                            </span>
+                          )}
+                          <span className="text-base sm:text-lg font-black font-mono leading-none tracking-tight">
+                            {step.reps === 0 ? 'MAX' : step.reps}
+                          </span>
+                          <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-wider leading-none mt-1 opacity-75">
+                            reps
                           </span>
                         </div>
                       );
