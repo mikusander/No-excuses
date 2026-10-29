@@ -5235,7 +5235,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
               {/* Griglia Caratteristiche Prossimo Set / Esercizio */}
               {!isGroupType ? (
-                <div className={`grid ${isTargetEmom ? (isTransitioning ? 'grid-cols-2' : 'grid-cols-1') : (isTransitioning ? 'grid-cols-3' : 'grid-cols-2')} gap-1.5`}>
+                <div className={`grid ${isTargetEmom ? 'grid-cols-1' : (isTransitioning ? 'grid-cols-3' : 'grid-cols-2')} gap-1.5`}>
                   {/* Box 1: Obiettivo / Reps */}
                   <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                     <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
@@ -5257,17 +5257,15 @@ const ActiveWorkoutPage: React.FC = () => {
                   )}
 
                   {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
-                  {isTransitioning && (
+                  {isTransitioning && !isTargetEmom && (
                     <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                       <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                        {isTargetEmom ? 'Round Totali' : 'Serie Totali'}
+                        Serie Totali
                       </span>
                       <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
                         {isTargetPyramid
                           ? `${targetExercise.pyramid_steps?.length || 0} Step`
-                          : isTargetEmom
-                            ? `${targetExercise.emom_rounds || 10} Round`
-                            : `${targetExercise.sets} Serie`}
+                          : `${targetExercise.sets} Serie`}
                       </span>
                     </div>
                   )}
@@ -6356,7 +6354,7 @@ const ActiveWorkoutPage: React.FC = () => {
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-2 pr-0.5 space-y-2.5 custom-scroll-area">
               {/* Caratteristiche Prossimo Set / Esercizio */}
               {!isGroupType ? (
-                <div className={`grid ${isTargetEmom ? (isTransitioning ? 'grid-cols-2' : 'grid-cols-1') : (isTransitioning ? 'grid-cols-3' : 'grid-cols-2')} gap-1.5 shrink-0`}>
+                <div className={`grid ${isTargetEmom ? 'grid-cols-1' : (isTransitioning ? 'grid-cols-3' : 'grid-cols-2')} gap-1.5 shrink-0`}>
                   {/* Box 1: Target / Reps */}
                   <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                     <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
@@ -6378,17 +6376,15 @@ const ActiveWorkoutPage: React.FC = () => {
                   )}
 
                   {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
-                  {isTransitioning && (
+                  {isTransitioning && !isTargetEmom && (
                     <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                       <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                        {isTargetEmom ? 'Round Totali' : 'Serie Totali'}
+                        Serie Totali
                       </span>
                       <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
                         {isTargetPyramid
                           ? `${targetExercise.pyramid_steps?.length || 0} Step`
-                          : isTargetEmom
-                            ? `${targetExercise.emom_rounds || totalEmomRoundsNumber || 1} Round`
-                            : `${targetExercise.sets} Serie`}
+                          : `${targetExercise.sets} Serie`}
                       </span>
                     </div>
                   )}
