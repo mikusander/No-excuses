@@ -551,23 +551,122 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                     min={1}
                     value={emomRounds}
                     onChange={(e) => setEmomRounds(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-full h-9 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none"
+                    className="w-full h-10 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none"
                   />
                 </div>
 
-                {/* Durata round (sec) */}
+                {/* Durata round */}
                 <div>
-                  <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 mb-1 block">
-                    Durata Round (sec)
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 block truncate">
+                      Durata Round
+                    </label>
+                    <span className="text-xs font-mono font-bold text-amber-400">
+                      {String(Math.floor(emomRoundDuration / 60)).padStart(2, '0')}:{String(emomRoundDuration % 60).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-10">
+                    <div className="relative flex-1 border-r border-white/10 flex flex-col justify-center items-center">
+                      <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">MIN</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        value={Math.floor(emomRoundDuration / 60)}
+                        onChange={(e) => {
+                          const m = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          const total = m * 60 + (emomRoundDuration % 60);
+                          setEmomRoundDuration(Math.max(5, total));
+                        }}
+                        className="w-full h-full bg-transparent text-center text-white font-mono font-black text-base focus:outline-none"
+                      />
+                    </div>
+                    <div className="relative flex-1 flex flex-col justify-center items-center">
+                      <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">SEC</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={59}
+                        value={emomRoundDuration % 60}
+                        onChange={(e) => {
+                          const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
+                          const total = Math.floor(emomRoundDuration / 60) * 60 + s;
+                          setEmomRoundDuration(Math.max(5, total));
+                        }}
+                        className="w-full h-full bg-transparent text-center text-white font-mono font-black text-base focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recupero tra Serie (diviso in minuti e secondi) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 block">
+                    Recupero tra Serie
                   </label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={10}
-                    value={emomRoundDuration}
-                    onChange={(e) => setEmomRoundDuration(Math.max(10, parseInt(e.target.value, 10) || 60))}
-                    className="w-full h-9 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none"
-                  />
+                  <span className="text-xs font-mono font-bold text-brand-orange">
+                    {String(Math.floor(restSeconds / 60)).padStart(2, '0')}:{String(restSeconds % 60).padStart(2, '0')}
+                  </span>
+                </div>
+                <div className="flex bg-black/50 border border-white/15 rounded-xl overflow-hidden focus-within:border-brand-orange transition-colors h-10">
+                  <div className="relative flex-1 border-r border-white/10 flex flex-col justify-center items-center">
+                    <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">MIN</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={Math.floor(restSeconds / 60)}
+                      onChange={(e) => {
+                        const m = Math.max(0, parseInt(e.target.value, 10) || 0);
+                        setRestSeconds(m * 60 + (restSeconds % 60));
+                      }}
+                      className="w-full h-full bg-transparent text-center text-white font-mono font-black text-base focus:outline-none"
+                    />
+                  </div>
+                  <div className="relative flex-1 flex flex-col justify-center items-center">
+                    <span className="text-[8px] text-zinc-400 uppercase font-black tracking-wider leading-none pt-1 pointer-events-none">SEC</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={59}
+                      value={restSeconds % 60}
+                      onChange={(e) => {
+                        const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
+                        setRestSeconds(Math.floor(restSeconds / 60) * 60 + s);
+                      }}
+                      className="w-full h-full bg-transparent text-center text-white font-mono font-black text-base focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1.5">
+                  {[
+                    { label: '0s', secs: 0 },
+                    { label: '30s', secs: 30 },
+                    { label: '60s', secs: 60 },
+                    { label: '90s', secs: 90 },
+                    { label: '2m', secs: 120 },
+                    { label: '3m', secs: 180 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.secs}
+                      type="button"
+                      onClick={() => {
+                        void hapticLight();
+                        setRestSeconds(preset.secs);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        restSeconds === preset.secs
+                          ? 'bg-brand-orange text-black font-black'
+                          : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
