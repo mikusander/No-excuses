@@ -34,7 +34,6 @@ export interface WorkoutOverviewModalProps {
   onSaveGeneralNote: (note: string) => void;
   onUpdateTransitionRest: (exerciseIndex: number, newSeconds: number) => void;
   onOpenExerciseNote: (exerciseIndex: number) => void;
-  onOpenEditExercise: (exerciseIndex: number) => void;
   onSaveExercise?: (exerciseIndex: number, updatedExercise: Exercise) => Promise<void> | void;
   getExerciseNoteEntry: (index: number, exercise: Exercise) => { note?: string } | undefined;
 }
@@ -187,7 +186,6 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
   onSaveGeneralNote,
   onUpdateTransitionRest,
   onOpenExerciseNote,
-  onOpenEditExercise,
   onSaveExercise,
   getExerciseNoteEntry,
 }) => {
@@ -739,7 +737,6 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                           onClick={() => {
                             void hapticLight();
                             setEditingParamExerciseIdx(index);
-                            onOpenEditExercise(index);
                           }}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm ${isCurrentExercise
                               ? 'bg-brand-orange text-black hover:bg-brand-lightOrange shadow-brand-orange/20 font-black'

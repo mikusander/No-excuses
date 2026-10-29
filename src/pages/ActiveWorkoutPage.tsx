@@ -219,34 +219,6 @@ interface InstructionModalContext {
   items: InstructionModalItem[];
 }
 
-interface ExerciseEditDraft {
-  sets: string;
-  restSeconds: string;
-  reps: string;
-  durationSeconds: string;
-  weightKg: string;
-  emomRounds: string;
-  emomRoundDuration: string;
-  currentSubReps: string;
-  currentSubDuration: string;
-  currentSubWeightKg: string;
-  currentStepReps: string;
-  currentStepRestSeconds: string;
-  currentStepWeightKg: string;
-  subExerciseDrafts: Array<{
-    name: string;
-    type: 'reps' | 'isometry' | 'cardio';
-    reps: string;
-    durationSeconds: string;
-    weightKg: string;
-  }>;
-  pyramidStepDrafts: Array<{
-    reps: string;
-    restSeconds: string;
-    weightKg: string;
-  }>;
-}
-
 interface PersistedWorkoutProgressState {
   currentExerciseIdx: number;
   currentSetIdx: number;
@@ -599,27 +571,6 @@ const ActiveWorkoutPage: React.FC = () => {
   const [isWorkoutOverviewModalOpen, setIsWorkoutOverviewModalOpen] = useState(false);
   const [isWorkoutOverviewAdvancePending, setIsWorkoutOverviewAdvancePending] = useState(false);
   const [isAutoCountModalOpen, setIsAutoCountModalOpen] = useState(false);
-  const [isEditExerciseModalOpen, setIsEditExerciseModalOpen] = useState(false);
-  const [editingExerciseIdx, setEditingExerciseIdx] = useState<number | null>(null);
-  const [exerciseEditDraft, setExerciseEditDraft] = useState<ExerciseEditDraft>({
-    sets: '',
-    restSeconds: '',
-    reps: '',
-    durationSeconds: '',
-    weightKg: '',
-    emomRounds: '',
-    emomRoundDuration: '',
-    currentSubReps: '',
-    currentSubDuration: '',
-    currentSubWeightKg: '',
-    currentStepReps: '',
-    currentStepRestSeconds: '',
-    currentStepWeightKg: '',
-    subExerciseDrafts: [],
-    pyramidStepDrafts: [],
-  });
-  const [exerciseEditError, setExerciseEditError] = useState<string | null>(null);
-  const [isSavingExerciseEdit, setIsSavingExerciseEdit] = useState(false);
   const [isVoiceHelpVisible, setIsVoiceHelpVisible] = useState(false);
   const handleVoiceNextRef = useRef<(() => void) | null>(null);
   const handleVoicePrevRef = useRef<(() => void) | null>(null);
@@ -2609,9 +2560,6 @@ const ActiveWorkoutPage: React.FC = () => {
       setNoteModalContext(null);
       setIsInstructionModalOpen(false);
       setInstructionModalContext(null);
-      setIsEditExerciseModalOpen(false);
-      setExerciseEditError(null);
-      setIsSavingExerciseEdit(false);
       workoutCompletionHandledRef.current = false;
       workoutStartedAtMsRef.current = Date.now();
       workoutElapsedSecondsRef.current = 0;
@@ -3339,107 +3287,6 @@ const ActiveWorkoutPage: React.FC = () => {
   const currentInstructionContext = getCurrentInstructionContext();
   const hasCurrentInstructionNote = currentInstructionContext !== null;
 
-  const formatWeightDraft = (value?: number | null) => {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n <= 0) return '';
-    return String(Math.round(n * 100) / 100).replace('.', ',');
-  };
-
-  const formatTargetDraft = (value: unknown) => {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '0';
-    return String(Math.max(0, Math.trunc(n)));
-  };
-
-  const parseStrictInt = (raw: string, label: string, allowZero = false) => {
-    const n = Number(raw);
-    if (!Number.isFinite(n) || !Number.isInteger(n)) {
-      throw new Error(`${label} must be an integer value.`);
-    }
-    if (allowZero ? n < 0 : n <= 0) {
-      throw new Error(`${label} must be ${allowZero ? '>= 0' : '> 0'}.`);
-    }
-    return n;
-  };
-
-  const parseOptionalWeight = (raw: string) => {
-    const normalized = raw.trim().replace(',', '.');
-    if (!normalized) return null;
-    const n = Number(normalized);
-    if (!Number.isFinite(n)) {
-      throw new Error('Weight must be a valid number.');
-    }
-    if (n < 0) {
-      throw new Error('Weight must be >= 0.');
-    }
-    if (n === 0) {
-      return null;
-    }
-    return Math.round(n * 100) / 100;
-  };
-
-  const buildSubExerciseDrafts = (subExercises: Exercise['subExercises']) => {
-    return (subExercises || []).map((sub, index) => ({
-      name: String(sub?.name || '').trim() || `Exercise ${index + 1}`,
-      type: sub?.type || 'reps',
-      reps: formatTargetDraft(sub?.reps),
-      durationSeconds: formatTargetDraft(sub?.duration_seconds),
-      weightKg: formatWeightDraft(sub?.weight_kg),
-    }));
-  };
-
-  const buildPyramidStepDrafts = (steps: Exercise['pyramid_steps']) => {
-    return (steps || []).map((step) => ({
-      reps: formatTargetDraft(step?.reps),
-      restSeconds: String(Math.max(0, Math.trunc(step?.rest_seconds || 0))),
-      weightKg: formatWeightDraft(step?.weight_kg),
-    }));
-  };
-
-  const openEditExerciseModal = (targetIndex?: number) => {
-    if (!workout?.exercises) return;
-    const targetExIdx = targetIndex != null ? targetIndex : currentExerciseIdx;
-    const targetExercise = workout.exercises[targetExIdx];
-    if (!targetExercise) return;
-
-    setEditingExerciseIdx(targetExIdx);
-
-    const isCurrent = targetExIdx === currentExerciseIdx;
-    const currentSub = isCurrent
-      ? (isGroup ? subExercise : null)
-      : (targetExercise.subExercises?.[0] || null);
-    const currentStep = targetExercise.type === 'pyramid'
-      ? (isCurrent ? targetExercise.pyramid_steps?.[currentPyramidStepIdx] : targetExercise.pyramid_steps?.[0])
-      : null;
-
-    setExerciseEditDraft({
-      sets: String(targetExercise.sets || 1),
-      restSeconds: String(targetExercise.rest_seconds || 0),
-      reps: formatTargetDraft(targetExercise.reps),
-      durationSeconds: formatTargetDraft(targetExercise.duration_seconds),
-      weightKg: formatWeightDraft(targetExercise.weight_kg),
-      emomRounds: String(getEffectiveEmomRounds(targetExercise)),
-      emomRoundDuration: String(targetExercise.emom_round_duration || 60),
-      currentSubReps: formatTargetDraft(currentSub?.reps),
-      currentSubDuration: formatTargetDraft(currentSub?.duration_seconds),
-      currentSubWeightKg: formatWeightDraft(currentSub?.weight_kg),
-      currentStepReps: formatTargetDraft(currentStep?.reps),
-      currentStepRestSeconds: String(currentStep?.rest_seconds || 0),
-      currentStepWeightKg: formatWeightDraft(currentStep?.weight_kg),
-      subExerciseDrafts: buildSubExerciseDrafts(targetExercise.subExercises),
-      pyramidStepDrafts: buildPyramidStepDrafts(targetExercise.pyramid_steps),
-    });
-    setExerciseEditError(null);
-    setIsEditExerciseModalOpen(true);
-  };
-
-  const closeEditExerciseModal = () => {
-    if (isSavingExerciseEdit) return;
-    setIsEditExerciseModalOpen(false);
-    setEditingExerciseIdx(null);
-    setExerciseEditError(null);
-  };
-
   const openExerciseNoteModal = (targetIndex?: number) => {
     if (!workout?.exercises) return;
     const targetIdx = targetIndex != null ? targetIndex : currentExerciseIdx;
@@ -3772,323 +3619,6 @@ const ActiveWorkoutPage: React.FC = () => {
     closeCurrentExerciseNoteModal();
   };
 
-  const saveCurrentExerciseEdits = async () => {
-    if (!workout) return;
-
-    const targetExIdx = editingExerciseIdx != null ? editingExerciseIdx : currentExerciseIdx;
-    const targetExercise = workout.exercises[targetExIdx];
-    if (!targetExercise) return;
-
-    setIsSavingExerciseEdit(true);
-    setExerciseEditError(null);
-
-    try {
-      const schedaId = sourceSchedaId;
-      const nextSubExerciseDrafts = exerciseEditDraft.subExerciseDrafts;
-      const nextPyramidStepDrafts = exerciseEditDraft.pyramidStepDrafts;
-
-      const isEditingCurrent = targetExIdx === currentExerciseIdx;
-      const minAllowedSets = isEditingCurrent ? currentSetIdx + 1 : 1;
-
-      if (targetExercise.type === 'emom') {
-        const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Sets');
-        const nextRounds = parseStrictInt(exerciseEditDraft.emomRounds, 'Rounds');
-        const nextRoundDuration = parseStrictInt(exerciseEditDraft.emomRoundDuration, 'Round duration');
-        const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
-
-        if (nextSets < minAllowedSets) {
-          throw new Error(`Sei attualmente al set ${minAllowedSets}. I set totali non possono essere inferiori.`);
-        }
-
-        const minAllowedRounds = isEditingCurrent ? currentEmomRoundIdx + 1 : 1;
-        if (nextRounds < minAllowedRounds) {
-          throw new Error(`Sei attualmente al round ${minAllowedRounds}. I round totali non possono essere inferiori.`);
-        }
-
-        if (schedaId != null) {
-          const { error: emomTableError } = await supabase
-            .from('emom')
-            .update({
-              round_totali: nextRounds,
-              durata_round_secondi: nextRoundDuration,
-            })
-            .eq('id_emom', Number(targetExercise.id));
-          if (emomTableError) throw emomTableError;
-
-          const { error: emomRowsError } = await supabase
-            .from('esecuzioni')
-            .update({
-              set_num: nextSets,
-              rest_secondi: nextRest > 0 ? nextRest : null,
-            })
-            .eq('id_scheda', schedaId)
-            .eq('id_emom', Number(targetExercise.id));
-          if (emomRowsError) throw emomRowsError;
-
-          const emomSubExercises = targetExercise.subExercises || [];
-          if (nextSubExerciseDrafts.length === emomSubExercises.length) {
-            const { data: emomRows, error: emomFetchError } = await supabase
-              .from('esecuzioni')
-              .select('id_esecuzione, ordine')
-              .eq('id_scheda', schedaId)
-              .eq('id_emom', Number(targetExercise.id))
-              .order('ordine', { ascending: true });
-            if (emomFetchError) throw emomFetchError;
-
-            if ((emomRows?.length || 0) >= nextSubExerciseDrafts.length) {
-              await Promise.all((emomRows || []).slice(0, nextSubExerciseDrafts.length).map(async (row, index) => {
-                const currentSub = emomSubExercises[index];
-                const draft = nextSubExerciseDrafts[index];
-                if (!currentSub || !draft) return;
-
-                const nextSubWeight = parseOptionalWeight(draft.weightKg);
-                const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'EMOM reps', true) : null;
-                const nextSubDuration = (currentSub.type === 'isometry' || currentSub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : null;
-
-                const { error: currentSubUpdateError } = await supabase
-                  .from('esecuzioni')
-                  .update({
-                    reps: nextSubReps,
-                    durata_secondi: nextSubDuration,
-                    peso_kg: nextSubWeight,
-                  })
-                  .eq('id_scheda', schedaId)
-                  .eq('id_esecuzione', row.id_esecuzione);
-                if (currentSubUpdateError) throw currentSubUpdateError;
-              }));
-            }
-          }
-        }
-
-        setWorkout((prev) => {
-          if (!prev) return prev;
-          const exercises = [...prev.exercises];
-          exercises[targetExIdx] = {
-            ...exercises[targetExIdx],
-            sets: nextSets,
-            rest_seconds: nextRest,
-            emom_rounds: nextRounds,
-            emom_round_duration: nextRoundDuration,
-            duration_seconds: nextRoundDuration,
-            subExercises: (exercises[targetExIdx].subExercises || []).map((sub, index) => {
-              const draft = nextSubExerciseDrafts[index];
-              if (!draft) return sub;
-              return {
-                ...sub,
-                reps: sub.type === 'reps' ? parseStrictInt(draft.reps, 'EMOM reps', true) : sub.reps,
-                duration_seconds: (sub.type === 'isometry' || sub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'EMOM duration', true) : sub.duration_seconds,
-                weight_kg: parseOptionalWeight(draft.weightKg),
-              };
-            }),
-          };
-          return { ...prev, exercises };
-        });
-
-        if (isEditingCurrent) {
-          setEmomRoundRemainingWithSync(Math.min(emomRoundRemaining, nextRoundDuration));
-        }
-      } else if (targetExercise.type === 'superset' || targetExercise.type === 'circuit') {
-        const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Rounds');
-        const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
-        if (nextSets < minAllowedSets) {
-          throw new Error(`Sei attualmente al round ${minAllowedSets}. I round totali non possono essere inferiori.`);
-        }
-
-        const currentSupersetExercises = targetExercise.subExercises || [];
-        if (nextSubExerciseDrafts.length !== currentSupersetExercises.length) {
-          throw new Error('Impossibile mappare tutti gli esercizi del superset.');
-        }
-
-        if (schedaId != null) {
-          const supersetId = Number(targetExercise.id);
-          const { error: supersetTableError } = await supabase
-            .from('superset')
-            .update({
-              round_totali: nextSets,
-            })
-            .eq('id_superset', supersetId);
-          if (supersetTableError) throw supersetTableError;
-
-          const { error: supersetRowsError } = await supabase
-            .from('esecuzioni')
-            .update({
-              set_num: nextSets,
-              rest_secondi: nextRest > 0 ? nextRest : null,
-            })
-            .eq('id_scheda', schedaId)
-            .eq('id_superset', supersetId);
-          if (supersetRowsError) throw supersetRowsError;
-
-          const { data: supersetRows, error: supersetFetchError } = await supabase
-            .from('esecuzioni')
-            .select('id_esecuzione, ordine')
-            .eq('id_scheda', schedaId)
-            .eq('id_superset', supersetId)
-            .order('ordine', { ascending: true });
-          if (supersetFetchError) throw supersetFetchError;
-
-          if ((supersetRows?.length || 0) >= nextSubExerciseDrafts.length) {
-            await Promise.all((supersetRows || []).slice(0, nextSubExerciseDrafts.length).map(async (row, index) => {
-              const currentSub = currentSupersetExercises[index];
-              const draft = nextSubExerciseDrafts[index];
-              if (!currentSub || !draft) return;
-
-              const nextSubWeight = parseOptionalWeight(draft.weightKg);
-              const nextSubReps = currentSub.type === 'reps' ? parseStrictInt(draft.reps, 'Superset reps', true) : null;
-              const nextSubDuration = (currentSub.type === 'isometry' || currentSub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : null;
-
-              const { error: currentSubUpdateError } = await supabase
-                .from('esecuzioni')
-                .update({
-                  reps: nextSubReps,
-                  durata_secondi: nextSubDuration,
-                  peso_kg: nextSubWeight,
-                })
-                .eq('id_scheda', schedaId)
-                .eq('id_esecuzione', row.id_esecuzione);
-              if (currentSubUpdateError) throw currentSubUpdateError;
-            }));
-          }
-        }
-
-        setWorkout((prev) => {
-          if (!prev) return prev;
-          const exercises = [...prev.exercises];
-          const updated = { ...exercises[targetExIdx] };
-          updated.sets = nextSets;
-          updated.rest_seconds = nextRest;
-          updated.subExercises = (updated.subExercises || []).map((sub, index) => {
-            const draft = nextSubExerciseDrafts[index];
-            if (!draft) return sub;
-            return {
-              ...sub,
-              reps: sub.type === 'reps' ? parseStrictInt(draft.reps, 'Superset reps', true) : sub.reps,
-              duration_seconds: (sub.type === 'isometry' || sub.type === 'cardio') ? parseStrictInt(draft.durationSeconds, 'Superset duration', true) : sub.duration_seconds,
-              weight_kg: parseOptionalWeight(draft.weightKg),
-            };
-          });
-          exercises[targetExIdx] = updated;
-          return { ...prev, exercises };
-        });
-      } else if (targetExercise.type === 'pyramid') {
-        const pyramidSteps = targetExercise.pyramid_steps || [];
-        if (nextPyramidStepDrafts.length !== pyramidSteps.length) {
-          throw new Error('Impossibile mappare tutti gli step della piramide.');
-        }
-
-        if (schedaId != null) {
-          const { data: pyramidRows, error: pyramidFetchError } = await supabase
-            .from('esecuzioni')
-            .select('id_esecuzione, ordine, stepindex_piramide')
-            .eq('id_scheda', schedaId)
-            .eq('id_piramide', Number(targetExercise.id))
-            .order('ordine', { ascending: true });
-          if (pyramidFetchError) throw pyramidFetchError;
-
-          if ((pyramidRows?.length || 0) >= nextPyramidStepDrafts.length) {
-            await Promise.all((pyramidRows || []).slice(0, nextPyramidStepDrafts.length).map(async (row, index) => {
-              const draft = nextPyramidStepDrafts[index];
-              if (!draft) return;
-
-              const nextStepReps = parseStrictInt(draft.reps, 'Step reps', true);
-              const nextStepRest = parseStrictInt(draft.restSeconds, 'Step rest', true);
-              const nextStepWeight = parseOptionalWeight(draft.weightKg);
-
-              const { error: rowUpdateError } = await supabase
-                .from('esecuzioni')
-                .update({
-                  reps: nextStepReps,
-                  rest_secondi: nextStepRest > 0 ? nextStepRest : null,
-                  peso_kg: nextStepWeight,
-                })
-                .eq('id_scheda', schedaId)
-                .eq('id_esecuzione', row.id_esecuzione);
-              if (rowUpdateError) throw rowUpdateError;
-            }));
-          }
-        }
-
-        setWorkout((prev) => {
-          if (!prev) return prev;
-          const exercises = [...prev.exercises];
-          const updated = { ...exercises[targetExIdx] };
-          updated.pyramid_steps = (updated.pyramid_steps || []).map((step, index) => {
-            const draft = nextPyramidStepDrafts[index];
-            if (!draft) return step;
-            return {
-              ...step,
-              reps: parseStrictInt(draft.reps, 'Step reps', true),
-              rest_seconds: parseStrictInt(draft.restSeconds, 'Step rest', true),
-              weight_kg: parseOptionalWeight(draft.weightKg),
-            };
-          });
-          exercises[targetExIdx] = updated;
-          return { ...prev, exercises };
-        });
-      } else {
-        const nextSets = parseStrictInt(exerciseEditDraft.sets, 'Sets');
-        const nextRest = parseStrictInt(exerciseEditDraft.restSeconds, 'Rest', true);
-        const nextWeight = parseOptionalWeight(exerciseEditDraft.weightKg);
-
-        if (nextSets < minAllowedSets) {
-          throw new Error(`Sei attualmente al set ${minAllowedSets}. I set totali non possono essere inferiori.`);
-        }
-
-        const isIso = targetExercise.type === 'isometry' || targetExercise.type === 'cardio';
-        const nextReps = isIso ? targetExercise.reps : parseStrictInt(exerciseEditDraft.reps, 'Reps', true);
-        const nextDuration = isIso
-          ? parseStrictInt(exerciseEditDraft.durationSeconds, 'Duration', true)
-          : targetExercise.duration_seconds;
-
-        if (schedaId != null) {
-          const basePayload = {
-            set_num: nextSets,
-            rest_secondi: nextRest > 0 ? nextRest : null,
-            peso_kg: nextWeight,
-            reps: isIso ? null : nextReps,
-            durata_secondi: isIso ? nextDuration : null,
-          };
-          const { error: baseUpdateError } = await supabase
-            .from('esecuzioni')
-            .update(basePayload)
-            .eq('id_scheda', schedaId)
-            .eq('id_esecuzione', Number(targetExercise.id));
-          if (baseUpdateError) throw baseUpdateError;
-        }
-
-        setWorkout((prev) => {
-          if (!prev) return prev;
-          const exercises = [...prev.exercises];
-          exercises[targetExIdx] = {
-            ...exercises[targetExIdx],
-            sets: nextSets,
-            rest_seconds: nextRest,
-            weight_kg: nextWeight,
-            reps: nextReps,
-            duration_seconds: nextDuration,
-          };
-          return { ...prev, exercises };
-        });
-
-        if (isEditingCurrent && isIso) {
-          setIsometryRemainingWithSync(Math.min(isometryRemaining, nextDuration));
-        }
-      }
-
-      setIsEditExerciseModalOpen(false);
-      setEditingExerciseIdx(null);
-      void hapticSuccess();
-      setTimeout(() => {
-        persistWorkoutProgress(true);
-      }, 50);
-    } catch (error: any) {
-      console.error('Error saving live exercise edits:', error);
-      setExerciseEditError(error?.message || 'Impossibile salvare le modifiche.');
-    } finally {
-      setIsSavingExerciseEdit(false);
-    }
-  };
-
   const toSafeTargetInt = (value: unknown) => {
     const n = Number(value);
     if (!Number.isFinite(n)) return 0;
@@ -4357,7 +3887,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const advanceWithinCurrentExercise = () => {
-    if (isResting || isNoteModalOpen || isInstructionModalOpen || isEditExerciseModalOpen) return;
+    if (isResting || isNoteModalOpen || isInstructionModalOpen) return;
 
     if (currentExercise.type === 'emom') {
       const rounds = effectiveEmomRounds;
@@ -4398,7 +3928,7 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const rewindWithinCurrentExercise = () => {
-    if (isResting || isNoteModalOpen || isInstructionModalOpen || isEditExerciseModalOpen) return;
+    if (isResting || isNoteModalOpen || isInstructionModalOpen) return;
 
     if (currentExercise.type === 'emom') {
       if (currentEmomRoundIdx <= 0) return;
@@ -4845,7 +4375,6 @@ const ActiveWorkoutPage: React.FC = () => {
         }}
         onUpdateTransitionRest={updateTransitionRestSeconds}
         onOpenExerciseNote={openExerciseNoteModal}
-        onOpenEditExercise={openEditExerciseModal}
         onSaveExercise={handleSaveExerciseFromOverview}
         getExerciseNoteEntry={getExerciseNoteEntry}
       />
@@ -4853,10 +4382,6 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const renderActiveWorkoutModals = () => {
-    const targetExIdx = editingExerciseIdx != null ? editingExerciseIdx : currentExerciseIdx;
-    const targetEx = workout.exercises[targetExIdx] || currentExercise;
-    const isTargetCurrent = targetExIdx === currentExerciseIdx;
-
     return (
       <>
         {renderWorkoutOverviewModal()}
@@ -4872,16 +4397,6 @@ const ActiveWorkoutPage: React.FC = () => {
           isInstructionModalOpen={isInstructionModalOpen}
           instructionModalContext={instructionModalContext}
           onCloseInstructionModal={closeCurrentInstructionModal}
-
-          isEditExerciseModalOpen={isEditExerciseModalOpen}
-          editingExercise={targetEx}
-          isTargetExerciseCurrent={isTargetCurrent}
-          exerciseEditDraft={exerciseEditDraft}
-          setExerciseEditDraft={setExerciseEditDraft}
-          isSavingExerciseEdit={isSavingExerciseEdit}
-          exerciseEditError={exerciseEditError}
-          onCloseEditExerciseModal={closeEditExerciseModal}
-          onSaveExerciseEdits={saveCurrentExerciseEdits}
 
           isAutoCountModalOpen={isAutoCountModalOpen && Boolean(currentExercise) && !isSuperset}
           autoCountExerciseName={currentExercise?.name}
