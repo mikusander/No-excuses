@@ -4875,13 +4875,6 @@ const ActiveWorkoutPage: React.FC = () => {
       }
     }
 
-    // Rest seconds
-    const targetRestSeconds = isTransitioning
-      ? targetExercise.rest_seconds || 0
-      : isPyramid
-        ? (upcomingPyramidStep?.rest_seconds ?? currentExercise.rest_seconds ?? 60)
-        : currentExercise.rest_seconds || 0;
-
     // Sub-exercises list (for superset / circuit / emom)
     const targetSubExercises = isTransitioning
       ? targetExercise.subExercises || []
@@ -4918,7 +4911,6 @@ const ActiveWorkoutPage: React.FC = () => {
       totalEmomRoundsNumber,
       targetGoalText,
       targetWeightText,
-      targetRestSeconds,
       targetSubExercises,
       targetInstruction,
       restProgressRatio,
@@ -4944,7 +4936,6 @@ const ActiveWorkoutPage: React.FC = () => {
       totalEmomRoundsNumber,
       targetGoalText,
       targetWeightText,
-      targetRestSeconds,
       targetSubExercises,
       targetInstruction,
       restProgressRatio,
@@ -5076,7 +5067,7 @@ const ActiveWorkoutPage: React.FC = () => {
               </div>
 
               {/* Griglia Caratteristiche Prossimo Set / Esercizio */}
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className={`grid ${isTransitioning ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
                 {/* Box 1: Obiettivo / Reps */}
                 <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                   <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
@@ -5095,17 +5086,17 @@ const ActiveWorkoutPage: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Box 3: Serie Totali o Recupero */}
-                <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                    {isTransitioning ? 'Serie Totali' : 'Recupero'}
-                  </span>
-                  <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
-                    {isTransitioning
-                      ? (isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`)
-                      : `${targetRestSeconds}s`}
-                  </span>
-                </div>
+                {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
+                {isTransitioning && (
+                  <div className="bg-black/40 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                    <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
+                      Serie Totali
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
+                      {isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Sub-esercizi se Superset / Circuito / EMOM */}
@@ -5996,7 +5987,6 @@ const ActiveWorkoutPage: React.FC = () => {
       totalEmomRoundsNumber,
       targetGoalText,
       targetWeightText,
-      targetRestSeconds,
       targetSubExercises,
       targetInstruction,
       restProgressRatio,
@@ -6194,8 +6184,8 @@ const ActiveWorkoutPage: React.FC = () => {
 
             {/* Scrollable Body: All characteristics of the upcoming exercise/step */}
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-2 pr-0.5 space-y-2.5 custom-scroll-area">
-              {/* 3-Box KPI Feature Grid */}
-              <div className="grid grid-cols-3 gap-1.5 shrink-0">
+              {/* Caratteristiche Prossimo Set / Esercizio */}
+              <div className={`grid ${isTransitioning ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5 shrink-0`}>
                 {/* Box 1: Target / Reps */}
                 <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
                   <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
@@ -6214,17 +6204,17 @@ const ActiveWorkoutPage: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Box 3: Serie Totali o Recupero */}
-                <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
-                  <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
-                    {isTransitioning ? 'Serie Totali' : 'Recupero'}
-                  </span>
-                  <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
-                    {isTransitioning
-                      ? (isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`)
-                      : `${targetRestSeconds}s`}
-                  </span>
-                </div>
+                {/* Box 3: Serie Totali (solo quando si passa a un nuovo esercizio, nessun campo Recupero) */}
+                {isTransitioning && (
+                  <div className="bg-black/50 border border-white/5 rounded-2xl p-2 flex flex-col justify-center">
+                    <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">
+                      Serie Totali
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-zinc-200 font-mono mt-0.5 truncate">
+                      {isTargetPyramid ? `${targetExercise.pyramid_steps?.length || 0} Step` : `${targetExercise.sets} Serie`}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Timeline Grafica Serie */}
