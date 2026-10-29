@@ -4139,13 +4139,11 @@ const ActiveWorkoutPage: React.FC = () => {
       ? 'CIRCUIT MODE'
       : currentExercise.type === 'emom'
         ? 'EMOM MODE'
-        : currentExercise.type === 'superset'
-          ? 'SUPERSET MODE'
-          : currentExercise.type === 'pyramid'
-            ? 'PYRAMID MODE'
-            : currentExercise.type === 'cardio'
-              ? 'CARDIO'
-              : null;
+        : currentExercise.type === 'pyramid'
+          ? 'PYRAMID MODE'
+          : currentExercise.type === 'cardio'
+            ? 'CARDIO'
+            : null;
   const specialExercisePillClass =
     currentExercise.type === 'cardio'
       ? 'border-rose-500/60 bg-rose-500/10 text-rose-400'
@@ -6749,23 +6747,25 @@ const ActiveWorkoutPage: React.FC = () => {
                 {currentExercise.name}
               </h2>
 
-              <div className="flex items-center gap-1.5 mt-1 flex-wrap justify-center">
-                {specialExerciseLabel && (
-                  <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${specialExercisePillClass}`}>
-                    {specialExerciseLabel}
-                  </span>
-                )}
-                {!isSuperset && currentExercise.auto_count_type && (
-                  <button
-                    onClick={() => setIsAutoCountModalOpen(true)}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:text-white text-[10px] font-bold transition-colors"
-                    title="Auto-count con fotocamera"
-                  >
-                    <Video size={11} />
-                    <span>AI Count</span>
-                  </button>
-                )}
-              </div>
+              {(specialExerciseLabel || (!isSuperset && currentExercise.auto_count_type)) && (
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap justify-center">
+                  {specialExerciseLabel && (
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${specialExercisePillClass}`}>
+                      {specialExerciseLabel}
+                    </span>
+                  )}
+                  {!isSuperset && currentExercise.auto_count_type && (
+                    <button
+                      onClick={() => setIsAutoCountModalOpen(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:text-white text-[10px] font-bold transition-colors"
+                      title="Auto-count con fotocamera"
+                    >
+                      <Video size={11} />
+                      <span>AI Count</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <button
