@@ -5981,7 +5981,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             : 'text-zinc-400'
                       }`}
                     >
-                      {emomRoundRemaining >= 60 ? formatTime(emomRoundRemaining) : `:${String(emomRoundRemaining).padStart(2, '0')}s`}
+                      {emomRoundRemaining >= 60 ? formatTime(emomRoundRemaining) : emomRoundRemaining}
                     </span>
 
                     <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-zinc-400 mt-1 z-10 flex items-center gap-1 font-mono">
@@ -6906,7 +6906,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 >
                                   {emomRoundRemaining >= 60
                                     ? formatTime(emomRoundRemaining)
-                                    : `:${String(emomRoundRemaining).padStart(2, '0')}s`}
+                                    : emomRoundRemaining}
                                 </span>
 
                                 {/* Barra di avanzamento del minuto */}
@@ -7094,7 +7094,7 @@ const ActiveWorkoutPage: React.FC = () => {
 
                             <div className="my-auto py-1 flex flex-col items-center justify-center text-center">
                               <span className="text-4xl min-[390px]:text-5xl font-mono font-black text-zinc-400 leading-none">
-                                :{String(roundDuration).padStart(2, '0')}
+                                {roundDuration >= 60 ? formatTime(roundDuration) : roundDuration}
                               </span>
                               <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 mt-1.5">
                                 Ogni {roundDuration}s
