@@ -5255,7 +5255,7 @@ const ActiveWorkoutPage: React.FC = () => {
                   />
                 </svg>
 
-                {/* Countdown Digits — Extra Large, no extra labels inside */}
+                {/* Countdown Digits — Extra Large, perfectly centered */}
                 <span
                   className={`text-5xl sm:text-6xl md:text-7xl font-black z-10 font-mono tracking-tighter leading-none select-none transition-colors duration-300 ${
                     restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange drop-shadow-[0_0_20px_rgba(255,94,0,0.8)]' : 'text-white'
@@ -5263,14 +5263,18 @@ const ActiveWorkoutPage: React.FC = () => {
                 >
                   {formatTime(restRemaining)}
                 </span>
+
+                {/* Scritta "PAUSA" dentro al cerchio sotto i numeri, posizionata in modo assoluto per non spostare nessun elemento */}
+                {restEndsAtMs == null && (
+                  <div className="absolute bottom-[14%] left-0 right-0 flex justify-center z-10 pointer-events-none animate-in fade-in duration-200">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-mono font-black tracking-widest uppercase shadow-sm">
+                      PAUSA
+                    </span>
+                  </div>
+                )}
               </div>
 
               <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-2 flex items-center justify-center gap-1.5">
-                {restEndsAtMs == null && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-mono font-bold uppercase">
-                    In Pausa
-                  </span>
-                )}
                 <span>Tocca per {restEndsAtMs != null ? 'pausa' : 'avvio'} • Tieni premuto per azzerare</span>
               </p>
             </div>
@@ -6110,7 +6114,7 @@ const ActiveWorkoutPage: React.FC = () => {
                 />
               </svg>
 
-              {/* Countdown Digits — Extra Large Hero, Perfectly Centered, Zero Text Above or Below */}
+              {/* Countdown Digits — Extra Large Hero, Perfectly Centered */}
               <span
                 className={`text-6xl min-[380px]:text-7xl sm:text-8xl font-black z-10 font-mono tracking-tighter tabular-nums leading-none select-none transition-colors duration-300 ${
                   restRemaining <= 3 && restRemaining > 0
@@ -6122,15 +6126,19 @@ const ActiveWorkoutPage: React.FC = () => {
               >
                 {formatTime(restRemaining)}
               </span>
+
+              {/* Scritta "PAUSA" dentro al cerchio sotto i numeri, posizionata in modo assoluto per non spostare nessun elemento */}
+              {restEndsAtMs == null && (
+                <div className="absolute bottom-[16%] left-0 right-0 flex justify-center z-10 pointer-events-none animate-in fade-in duration-200">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] sm:text-xs font-mono font-black tracking-widest uppercase shadow-sm">
+                    PAUSA
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Clear Tool Instructions & PiP */}
             <div className="flex items-center justify-center gap-2 mt-1 sm:mt-1.5 flex-wrap">
-              {restEndsAtMs == null && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-bold tracking-wider uppercase">
-                  In Pausa
-                </span>
-              )}
               <p className="text-[10px] sm:text-[11px] text-zinc-400 font-bold uppercase tracking-wider text-center">
                 Tocca per {restEndsAtMs != null ? 'mettere in pausa' : 'avviare'} • Tieni premuto per azzerare
               </p>
