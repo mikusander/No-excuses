@@ -6862,10 +6862,11 @@ const ActiveWorkoutPage: React.FC = () => {
                                       / {effectiveEmomRounds}
                                     </span>
                                   </div>
-                                  <span className="text-[10px] text-zinc-400 font-mono font-medium">
-                                    Ogni {roundDuration}s
-                                    {currentExercise.sets && currentExercise.sets > 1 ? ` • Set ${currentSetIdx + 1}/${currentExercise.sets}` : ''}
-                                  </span>
+                                  {currentExercise.sets && currentExercise.sets > 1 ? (
+                                    <span className="text-[10px] text-zinc-400 font-mono font-medium">
+                                      Set {currentSetIdx + 1}/{currentExercise.sets}
+                                    </span>
+                                  ) : null}
                                 </div>
 
                                 {isEmomRoundWorkFinished ? (
