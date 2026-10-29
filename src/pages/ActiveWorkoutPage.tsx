@@ -5236,7 +5236,7 @@ const ActiveWorkoutPage: React.FC = () => {
             {/* Grande Timer Circolare Satinato */}
             <div className="flex-1 min-h-0 flex flex-col items-center justify-center my-auto">
               <div
-                className={`relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
+                className={`relative w-48 h-48 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
                   restRemaining <= 3 && restRemaining > 0
                     ? 'border-4 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_50px_rgba(255,107,0,0.6)] animate-pulse'
                     : 'border-4 border-white/10 shadow-[0_0_35px_rgba(255,94,0,0.15)] bg-black/40'
@@ -5271,8 +5271,8 @@ const ActiveWorkoutPage: React.FC = () => {
                   }`}
                 />
                 <span
-                  className={`text-5xl sm:text-6xl md:text-7xl font-black z-10 font-mono tracking-tighter leading-none ${
-                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-105' : 'text-white'
+                  className={`text-4xl sm:text-5xl md:text-6xl font-black z-10 font-mono tracking-tighter leading-none select-none transition-colors duration-300 ${
+                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange' : 'text-white'
                   }`}
                 >
                   {formatTime(restRemaining)}
@@ -6086,9 +6086,9 @@ const ActiveWorkoutPage: React.FC = () => {
         {/* Central Rest Area: Big Fixed Hero Timer + Scrollable Target Dossier Card */}
         <div className="flex-1 min-h-0 flex flex-col items-center w-full max-w-md mx-auto gap-2 py-0.5 overflow-hidden">
           {/* Hero Countdown Timer — Prominent & High-Readability from a Distance */}
-          <div className="shrink-0 flex flex-col items-center w-full pt-0.5 pb-1">
+          <div className="shrink-0 flex flex-col items-center w-full pt-1 pb-1">
             <div
-              className={`relative w-44 h-44 xs:w-52 xs:h-52 sm:w-60 sm:h-60 rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
+              className={`relative w-[min(82vw,37vh,290px)] h-[min(82vw,37vh,290px)] sm:w-[330px] sm:h-[330px] rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
                 restRemaining <= 3 && restRemaining > 0
                   ? 'border-4 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_60px_rgba(255,94,0,0.7)] animate-pulse bg-brand-orange/10'
                   : 'border border-white/10 shadow-[0_0_40px_rgba(255,94,0,0.20)] bg-gradient-to-b from-black/85 via-black/70 to-zinc-950/90'
@@ -6100,7 +6100,7 @@ const ActiveWorkoutPage: React.FC = () => {
               title="Tocca per pausa/avvio • Tieni premuto per azzerare"
             >
               {/* Circular SVG Progress Ring */}
-              <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none p-1.5" viewBox="0 0 100 100">
+              <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none p-1.5 sm:p-2" viewBox="0 0 100 100">
                 <circle
                   cx="50"
                   cy="50"
@@ -6124,25 +6124,25 @@ const ActiveWorkoutPage: React.FC = () => {
               </svg>
 
               {/* Status Pill inside Circle */}
-              <div className="flex items-center gap-1.5 mb-0.5 sm:mb-1 z-10 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10">
+              <div className="flex items-center gap-1.5 mb-1 sm:mb-1.5 z-10 px-3 py-0.5 rounded-full bg-white/5 border border-white/10 shadow-sm">
                 <Timer
-                  size={13}
+                  size={14}
                   className={`transition-transform duration-300 ${
-                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-110' : 'text-brand-orange'
+                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange animate-pulse' : 'text-brand-orange'
                   }`}
                 />
-                <span className="text-zinc-300 font-bold uppercase tracking-widest text-[9px] xs:text-[10px] font-mono">
+                <span className="text-zinc-300 font-bold uppercase tracking-widest text-[10px] sm:text-xs font-mono">
                   {restEndsAtMs != null ? 'RECUPERO' : 'IN PAUSA'}
                 </span>
               </div>
 
-              {/* Countdown Digits — Extra Large for Distance Visibility */}
+              {/* Countdown Digits — Extra Large for Distance Visibility, Perfectly Proportioned */}
               <span
-                className={`text-6xl xs:text-7xl sm:text-8xl font-black z-10 font-mono tracking-tighter tabular-nums leading-none transition-all duration-300 ${
+                className={`text-5xl sm:text-6xl md:text-7xl font-black z-10 font-mono tracking-tighter tabular-nums leading-none select-none transition-colors duration-300 ${
                   restRemaining <= 3 && restRemaining > 0
-                    ? 'text-brand-orange scale-105'
+                    ? 'text-brand-orange drop-shadow-[0_0_20px_rgba(255,94,0,0.8)]'
                     : restEndsAtMs != null
-                      ? 'text-white drop-shadow-[0_2px_14px_rgba(255,94,0,0.4)]'
+                      ? 'text-white drop-shadow-[0_2px_16px_rgba(255,94,0,0.35)]'
                       : 'text-zinc-300'
                 }`}
               >
@@ -6150,7 +6150,7 @@ const ActiveWorkoutPage: React.FC = () => {
               </span>
 
               {/* Sub-label inside Circle */}
-              <span className="text-[10px] xs:text-[11px] text-zinc-400 font-mono font-bold mt-1 z-10">
+              <span className="text-xs sm:text-sm text-zinc-400 font-mono font-bold mt-1.5 sm:mt-2 z-10">
                 {restRemaining > 0 ? `${restRemaining}s rimanenti` : 'Tempo scaduto'}
               </span>
             </div>
