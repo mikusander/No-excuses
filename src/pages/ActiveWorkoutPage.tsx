@@ -5264,26 +5264,23 @@ const ActiveWorkoutPage: React.FC = () => {
                   />
                 </svg>
 
-                <Timer
-                  size={18}
-                  className={`mb-0.5 z-10 transition-transform ${
-                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange scale-110' : 'text-brand-orange'
-                  }`}
-                />
+                {/* Countdown Digits — Extra Large, no extra labels inside */}
                 <span
-                  className={`text-4xl sm:text-5xl md:text-6xl font-black z-10 font-mono tracking-tighter leading-none select-none transition-colors duration-300 ${
-                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange' : 'text-white'
+                  className={`text-5xl sm:text-6xl md:text-7xl font-black z-10 font-mono tracking-tighter leading-none select-none transition-colors duration-300 ${
+                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange drop-shadow-[0_0_20px_rgba(255,94,0,0.8)]' : 'text-white'
                   }`}
                 >
                   {formatTime(restRemaining)}
                 </span>
-                <span className="text-zinc-400 font-bold uppercase tracking-widest text-[9px] mt-1 z-10">
-                  {restEndsAtMs != null ? 'RECUPERO' : 'IN PAUSA'}
-                </span>
               </div>
 
-              <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-2">
-                Tocca per {restEndsAtMs != null ? 'pausa' : 'avvio'} • Tieni premuto per azzerare
+              <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center mt-2 flex items-center justify-center gap-1.5">
+                {restEndsAtMs == null && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-mono font-bold uppercase">
+                    In Pausa
+                  </span>
+                )}
+                <span>Tocca per {restEndsAtMs != null ? 'pausa' : 'avvio'} • Tieni premuto per azzerare</span>
               </p>
             </div>
 
@@ -6088,7 +6085,7 @@ const ActiveWorkoutPage: React.FC = () => {
           {/* Hero Countdown Timer — Prominent & High-Readability from a Distance */}
           <div className="shrink-0 flex flex-col items-center w-full pt-1 pb-1">
             <div
-              className={`relative w-[min(82vw,37vh,290px)] h-[min(82vw,37vh,290px)] sm:w-[330px] sm:h-[330px] rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
+              className={`relative w-[min(84vw,38vh,300px)] h-[min(84vw,38vh,300px)] sm:w-[340px] sm:h-[340px] rounded-full flex flex-col justify-center items-center cursor-pointer select-none transition-all duration-300 overflow-hidden ${
                 restRemaining <= 3 && restRemaining > 0
                   ? 'border-4 border-brand-orange ring-4 ring-brand-orange/60 shadow-[0_0_60px_rgba(255,94,0,0.7)] animate-pulse bg-brand-orange/10'
                   : 'border border-white/10 shadow-[0_0_40px_rgba(255,94,0,0.20)] bg-gradient-to-b from-black/85 via-black/70 to-zinc-950/90'
@@ -6123,40 +6120,27 @@ const ActiveWorkoutPage: React.FC = () => {
                 />
               </svg>
 
-              {/* Status Pill inside Circle */}
-              <div className="flex items-center gap-1.5 mb-1 sm:mb-1.5 z-10 px-3 py-0.5 rounded-full bg-white/5 border border-white/10 shadow-sm">
-                <Timer
-                  size={14}
-                  className={`transition-transform duration-300 ${
-                    restRemaining <= 3 && restRemaining > 0 ? 'text-brand-orange animate-pulse' : 'text-brand-orange'
-                  }`}
-                />
-                <span className="text-zinc-300 font-bold uppercase tracking-widest text-[10px] sm:text-xs font-mono">
-                  {restEndsAtMs != null ? 'RECUPERO' : 'IN PAUSA'}
-                </span>
-              </div>
-
-              {/* Countdown Digits — Extra Large for Distance Visibility, Perfectly Proportioned */}
+              {/* Countdown Digits — Extra Large Hero, Perfectly Centered, Zero Text Above or Below */}
               <span
-                className={`text-5xl sm:text-6xl md:text-7xl font-black z-10 font-mono tracking-tighter tabular-nums leading-none select-none transition-colors duration-300 ${
+                className={`text-6xl min-[380px]:text-7xl sm:text-8xl font-black z-10 font-mono tracking-tighter tabular-nums leading-none select-none transition-colors duration-300 ${
                   restRemaining <= 3 && restRemaining > 0
-                    ? 'text-brand-orange drop-shadow-[0_0_20px_rgba(255,94,0,0.8)]'
+                    ? 'text-brand-orange drop-shadow-[0_0_24px_rgba(255,94,0,0.85)]'
                     : restEndsAtMs != null
-                      ? 'text-white drop-shadow-[0_2px_16px_rgba(255,94,0,0.35)]'
+                      ? 'text-white drop-shadow-[0_2px_18px_rgba(255,94,0,0.35)]'
                       : 'text-zinc-300'
                 }`}
               >
                 {formatTime(restRemaining)}
               </span>
-
-              {/* Sub-label inside Circle */}
-              <span className="text-xs sm:text-sm text-zinc-400 font-mono font-bold mt-1.5 sm:mt-2 z-10">
-                {restRemaining > 0 ? `${restRemaining}s rimanenti` : 'Tempo scaduto'}
-              </span>
             </div>
 
             {/* Clear Tool Instructions & PiP */}
-            <div className="flex items-center justify-center gap-2 mt-1.5 flex-wrap">
+            <div className="flex items-center justify-center gap-2 mt-1 sm:mt-1.5 flex-wrap">
+              {restEndsAtMs == null && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-bold tracking-wider uppercase">
+                  In Pausa
+                </span>
+              )}
               <p className="text-[10px] sm:text-[11px] text-zinc-400 font-bold uppercase tracking-wider text-center">
                 Tocca per {restEndsAtMs != null ? 'mettere in pausa' : 'avviare'} • Tieni premuto per azzerare
               </p>
