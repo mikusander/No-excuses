@@ -6771,23 +6771,13 @@ const ActiveWorkoutPage: React.FC = () => {
         <div className="flex-1 min-h-0 w-full max-w-lg mx-auto flex flex-col justify-between my-1 bg-gradient-to-b from-brand-darkGrey/90 via-brand-darkGrey/60 to-brand-darkGrey/40 border border-white/10 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-sm">
           {/* Top HUD Chips */}
           {isSuperset ? (
-            <div className="w-full grid grid-cols-2 gap-2.5 shrink-0 mb-2">
+            <div className="w-full shrink-0 mb-2">
               <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
                 <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
                   Round
                 </span>
                 <span className="text-brand-orange font-mono font-black text-base sm:text-lg">
                   {`${currentSetIdx + 1} / ${currentExercise.sets || 1}`}
-                </span>
-              </div>
-
-              <div className="bg-black/50 border border-white/5 rounded-2xl py-2 px-2 text-center">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-semibold">
-                  Sequenza
-                </span>
-                <span className="text-white font-mono font-black text-sm sm:text-base truncate flex items-center justify-center gap-1">
-                  <Zap size={13} className="text-brand-orange fill-brand-orange shrink-0" />
-                  <span>{currentExercise.subExercises?.length || 2} Esercizi</span>
                 </span>
               </div>
             </div>
@@ -7576,17 +7566,6 @@ const ActiveWorkoutPage: React.FC = () => {
 
                 return (
                   <div className="w-full h-full flex flex-col justify-between py-0.5 min-h-0">
-                    {/* Header Banner */}
-                    <div className="flex items-center justify-between gap-2 px-1 mb-2 shrink-0">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-orange/15 border border-brand-orange/40 text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-brand-orange shadow-sm">
-                        <Zap size={12} className="fill-brand-orange shrink-0 animate-pulse" />
-                        <span>SUPERSET · {subExercises.length} {subExercises.length === 1 ? 'ESERCIZIO' : 'ESERCIZI'} A RUOTA</span>
-                      </span>
-                      <span className="text-[10px] font-mono font-black text-zinc-400 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 uppercase tracking-widest">
-                        NO REST
-                      </span>
-                    </div>
-
                     {/* The Athletic Chain Container */}
                     <div className={`w-full flex-1 min-h-0 overflow-y-auto px-0.5 ${isTwoExercises ? 'flex flex-col justify-center gap-1.5' : 'space-y-1.5 my-auto'}`}>
                       {subExercises.map((sub, idx) => {
