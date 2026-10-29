@@ -104,7 +104,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Check, Mic, MicOff, FileText, X, Info, Video, Layers, Flame, Pencil, ChevronDown, Zap, Dumbbell, List } from 'lucide-react';
+import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Check, Mic, MicOff, FileText, X, Info, Video, Layers, Flame, Pencil, Zap, Dumbbell, List } from 'lucide-react';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis, speak } from '../utils/voice';
 import { WorkoutOverviewModal } from '../components/active-workout/WorkoutOverviewModal';
@@ -4139,9 +4139,6 @@ const ActiveWorkoutPage: React.FC = () => {
   };
 
   const currentExecutionWeightLabel = getCurrentExecutionWeightLabel();
-  const workoutOverviewExerciseNumber = currentExerciseIdx + 1;
-  const workoutOverviewExerciseLabel = `EXERCISE ${workoutOverviewExerciseNumber} OF ${workout.exercises.length}`;
-  const workoutRestOverviewExerciseLabel = `JUST FINISHED EXERCISE ${workoutOverviewExerciseNumber} OF ${workout.exercises.length}`;
 
 
   const specialExerciseLabel =
@@ -4761,7 +4758,6 @@ const ActiveWorkoutPage: React.FC = () => {
   const transitionNextExercise = pendingExerciseAdvance && !isLastExercise
     ? workout.exercises[currentExerciseIdx + 1]
     : null;
-  const restOverviewExerciseLabel = transitionNextExercise ? workoutRestOverviewExerciseLabel : workoutOverviewExerciseLabel;
   const getExerciseDisplayName = (exercise: Exercise, fallbackIndex: number) => {
     return String(exercise.name || '').trim() || `Exercise ${fallbackIndex + 1}`;
   };
@@ -5137,16 +5133,20 @@ const ActiveWorkoutPage: React.FC = () => {
             <button
               type="button"
               onClick={openWorkoutOverviewModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[280px] shadow-sm cursor-pointer"
-              title="Panoramica recupero"
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 hover:border-white/20 active:scale-95 transition-all shadow-[0_2px_10px_rgba(0,0,0,0.5)] cursor-pointer group"
+              title="Lista esercizi"
             >
-              <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">RECUPERO</span>
-              <span className="text-zinc-500">•</span>
-              <span className="truncate text-zinc-200">{restOverviewExerciseLabel}</span>
+              <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-orange opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-brand-orange shadow-[0_0_6px_rgba(255,94,0,0.9)]" />
+              </span>
+              <span className="text-xs font-mono font-bold text-zinc-200 tracking-tight">
+                {currentExerciseIdx + 1} di {workout.exercises.length}
+              </span>
               {hasGeneralWorkoutNote && (
                 <span className="w-1.5 h-1.5 rounded-full bg-brand-orange shrink-0" title="Note generali scheda presenti" />
               )}
-              <ChevronDown size={13} className="text-zinc-400 shrink-0" />
+              <List size={13} className="text-zinc-400 group-hover:text-white transition-colors shrink-0" />
             </button>
 
             <div className="flex items-center gap-2">
@@ -6202,16 +6202,20 @@ const ActiveWorkoutPage: React.FC = () => {
           <button
             type="button"
             onClick={openWorkoutOverviewModal}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-darkGrey/80 border border-brand-orange/30 text-white hover:border-brand-orange/60 active:scale-95 transition-all text-xs font-bold max-w-[210px] shadow-sm cursor-pointer"
-            title="Open workout overview"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 hover:border-white/20 active:scale-95 transition-all shadow-[0_2px_10px_rgba(0,0,0,0.5)] cursor-pointer group"
+            title="Lista esercizi"
           >
-            <span className="text-[10px] text-brand-orange uppercase tracking-wider font-mono font-black">RECUPERO</span>
-            <span className="text-zinc-500">•</span>
-            <span className="truncate text-zinc-200">{restOverviewExerciseLabel}</span>
+            <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-orange opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-brand-orange shadow-[0_0_6px_rgba(255,94,0,0.9)]" />
+            </span>
+            <span className="text-xs font-mono font-bold text-zinc-200 tracking-tight">
+              {currentExerciseIdx + 1} di {workout.exercises.length}
+            </span>
             {hasGeneralWorkoutNote && (
               <span className="w-1.5 h-1.5 rounded-full bg-brand-orange shrink-0" title="Note generali scheda presenti" />
             )}
-            <ChevronDown size={13} className="text-zinc-400 shrink-0" />
+            <List size={13} className="text-zinc-400 group-hover:text-white transition-colors shrink-0" />
           </button>
 
           <div className="flex items-center gap-1.5">
