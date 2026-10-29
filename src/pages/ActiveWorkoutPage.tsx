@@ -7687,14 +7687,7 @@ const ActiveWorkoutPage: React.FC = () => {
                             {/* Neon Athletic Connector between exercises */}
                             {idx < subExercises.length - 1 && (
                               <div className="flex flex-col items-center justify-center shrink-0 select-none py-0.5">
-                                <div className={`w-0.5 ${isTwoExercises ? 'h-2 sm:h-2.5' : 'h-1.5'} bg-gradient-to-b from-brand-orange to-brand-orange/60`} />
-                                <div className={`inline-flex items-center gap-1.5 rounded-full bg-[#1c0c02] border border-brand-orange/50 shadow-[0_0_12px_rgba(255,94,0,0.25)] text-brand-orange font-black uppercase tracking-wider ${
-                                  isTwoExercises ? 'px-3 py-0.5 text-[10px] sm:text-[11px]' : 'px-2.5 py-0.5 text-[9px]'
-                                }`}>
-                                  <Zap size={isTwoExercises ? 11 : 9} className="shrink-0 fill-brand-orange animate-pulse" />
-                                  <span>{isTwoExercises ? 'SENZA PAUSA · PASSA SUBITO AL PROSSIMO' : 'PASSA SUBITO SENZA PAUSA'}</span>
-                                </div>
-                                <div className={`w-0.5 ${isTwoExercises ? 'h-2 sm:h-2.5' : 'h-1.5'} bg-gradient-to-b from-brand-orange/60 to-brand-orange`} />
+                                <div className={`w-0.5 ${isTwoExercises ? 'h-5 sm:h-6' : 'h-3.5 sm:h-4'} bg-gradient-to-b from-brand-orange/70 via-brand-orange to-brand-orange/70 rounded-full shadow-[0_0_8px_rgba(255,94,0,0.4)]`} />
                               </div>
                             )}
                           </React.Fragment>
