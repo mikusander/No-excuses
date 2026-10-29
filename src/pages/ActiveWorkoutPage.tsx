@@ -5271,9 +5271,11 @@ const ActiveWorkoutPage: React.FC = () => {
               {/* Sub-esercizi se Superset / Circuito / EMOM */}
               {targetSubExercises.length > 0 && (
                 <div className="bg-black/40 border border-white/5 rounded-2xl p-2 space-y-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
-                    Sequenza Round:
-                  </span>
+                  {!isTargetSuperset && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">
+                      Sequenza Round:
+                    </span>
+                  )}
                   {targetSubExercises.map((sub, idx) => (
                     <div key={idx} className="flex items-center justify-between text-xs py-0.5 border-b border-white/5 last:border-0">
                       <span className="text-white font-bold truncate text-[11px]">{sub.name}</span>
@@ -6504,14 +6506,16 @@ const ActiveWorkoutPage: React.FC = () => {
               {/* Elenco Completo Sub-Esercizi se Superset / Circuito / EMOM */}
               {targetSubExercises.length > 0 && (
                 <div className="bg-black/50 border border-white/5 rounded-2xl p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-                      Sequenza Round ({targetSubExercises.length} Esercizi):
-                    </span>
-                    <span className="text-[9px] font-mono text-brand-orange font-bold">
-                      Senza recupero tra es.
-                    </span>
-                  </div>
+                  {!isTargetSuperset && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                        Sequenza Round ({targetSubExercises.length} Esercizi):
+                      </span>
+                      <span className="text-[9px] font-mono text-brand-orange font-bold">
+                        Senza recupero tra es.
+                      </span>
+                    </div>
+                  )}
                   {targetSubExercises.map((sub, idx) => (
                     <div key={idx} className="flex flex-col py-1 border-b border-white/5 last:border-0 gap-0.5">
                       <div className="flex items-center justify-between text-xs">
