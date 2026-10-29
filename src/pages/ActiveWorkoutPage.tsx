@@ -6894,7 +6894,7 @@ const ActiveWorkoutPage: React.FC = () => {
                                 )}
                               </div>
 
-                              {/* Timer integrato: Countdown maxi centrale (:42s) con micro-barra di avanzamento del minuto */}
+                              {/* Timer integrato: Countdown con Capsula dinamica di progressione posizionata dietro la cifra */}
                               <div
                                 className="my-auto py-1 flex flex-col items-center justify-center cursor-pointer select-none group"
                                 onPointerDown={(event) => handleTimerPointerDown(event, resetEmomCountdown)}
@@ -6903,35 +6903,43 @@ const ActiveWorkoutPage: React.FC = () => {
                                 onPointerLeave={handleTimerPointerAbort}
                                 title="Tocca per avviare/mettere in pausa • Tieni premuto per azzerare"
                               >
-                                <span
-                                  className={`text-6xl min-[390px]:text-7xl sm:text-8xl font-mono font-black tracking-tight leading-none transition-all ${
-                                    isEmomRoundWorkFinished
-                                      ? 'text-emerald-400 drop-shadow-[0_0_25px_rgba(16,185,129,0.5)]'
-                                      : emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                                        ? 'text-brand-orange scale-105 drop-shadow-[0_0_30px_rgba(255,107,0,0.85)]'
-                                        : emomActive
-                                          ? 'text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.25)]'
-                                          : 'text-zinc-400'
-                                  }`}
-                                >
-                                  {formatEmomTimer(emomRoundRemaining)}
-                                </span>
-
-                                {/* Barra di avanzamento del minuto */}
-                                <div className="w-36 min-[390px]:w-44 sm:w-52 bg-white/10 h-1.5 rounded-full overflow-hidden mt-2 mb-1.5">
+                                {/* Area Cifra Timer con Capsula dinamica posizionata dietro */}
+                                <div className="relative flex items-center justify-center py-2 px-6">
+                                  {/* Capsula di progressione che diminuisce con lo scorrere del timer fino a svanire */}
                                   <div
-                                    className={`h-full rounded-full transition-all duration-300 ease-linear ${
+                                    className={`absolute w-[180px] min-[390px]:w-[210px] sm:w-[230px] h-[68px] min-[390px]:h-[76px] sm:h-[84px] rounded-full pointer-events-none transition-all ${
+                                      emomActive ? 'duration-1000 ease-linear' : 'duration-300 ease-out'
+                                    } ${
                                       isEmomRoundWorkFinished
-                                        ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                                        ? 'bg-emerald-500/20 border border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.35)]'
                                         : emomRoundRemaining <= 3 && emomRoundRemaining > 0
-                                          ? 'bg-brand-orange shadow-[0_0_8px_rgba(255,107,0,0.8)]'
-                                          : 'bg-brand-orange shadow-[0_0_6px_rgba(255,94,0,0.5)]'
+                                          ? 'bg-brand-orange/30 border-2 border-brand-orange shadow-[0_0_35px_rgba(255,94,0,0.7)] animate-pulse'
+                                          : emomActive
+                                            ? 'bg-brand-orange/15 border border-brand-orange/35 shadow-[0_0_25px_rgba(255,94,0,0.25)]'
+                                            : 'bg-white/[0.06] border border-white/10'
                                     }`}
-                                    style={{ width: `${Math.max(0, Math.min(100, emomRoundProgressRatio * 100))}%` }}
+                                    style={{
+                                      transform: `scale(${Math.max(0, emomRoundProgressRatio)})`,
+                                      opacity: emomRoundRemaining > 0 && emomRoundProgressRatio > 0 ? Math.max(0.25, emomRoundProgressRatio) : 0,
+                                    }}
                                   />
+
+                                  <span
+                                    className={`relative z-10 text-6xl min-[390px]:text-7xl sm:text-8xl font-mono font-black tracking-tight leading-none transition-all ${
+                                      isEmomRoundWorkFinished
+                                        ? 'text-emerald-400 drop-shadow-[0_0_25px_rgba(16,185,129,0.5)]'
+                                        : emomRoundRemaining <= 3 && emomRoundRemaining > 0
+                                          ? 'text-brand-orange scale-105 drop-shadow-[0_0_30px_rgba(255,107,0,0.85)]'
+                                          : emomActive
+                                            ? 'text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.25)]'
+                                            : 'text-zinc-400'
+                                    }`}
+                                  >
+                                    {formatEmomTimer(emomRoundRemaining)}
+                                  </span>
                                 </div>
 
-                                <span className={`text-[10px] sm:text-xs font-black uppercase tracking-wider flex items-center gap-1 ${
+                                <span className={`text-[10px] sm:text-xs font-black uppercase tracking-wider flex items-center gap-1 mt-1 ${
                                   isEmomRoundWorkFinished
                                     ? 'text-emerald-400'
                                     : emomActive
