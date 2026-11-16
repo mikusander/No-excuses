@@ -117,7 +117,7 @@ jobs:
           name: NoExcuses-iOS-IPA
           path: build/NoExcuses.ipa
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload Dev Live Reload IPA Artifact
         uses: actions/upload-artifact@v4
@@ -125,4 +125,4 @@ jobs:
           name: NoExcuses-Dev-iOS-IPA
           path: build/NoExcuses-Dev.ipa
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
