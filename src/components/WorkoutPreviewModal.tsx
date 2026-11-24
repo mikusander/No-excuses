@@ -79,7 +79,7 @@ interface WorkoutPreviewModalProps {
 }
 
 const parseTaggedNote = (rawNote: string) => {
-  const match = /^\[(.*?)\]\s*(.*)$/.exec(rawNote.trim());
+  const match = /^\[(.*?)\]\s*([\s\S]*)$/.exec(rawNote.trim());
   if (!match) return null;
 
   const tag = match[1].trim();

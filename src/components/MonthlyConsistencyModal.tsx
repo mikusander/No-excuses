@@ -31,6 +31,10 @@ interface MonthlyConsistencyModalProps {
   isOpen: boolean;
   onClose: () => void;
   runs: MonthlyWorkoutRun[];
+  onRunNotesUpdated?: (
+    workoutId: string | number,
+    updatedNotes: Array<{ testo: string; created_at?: string }>
+  ) => void;
 }
 
 const WEEKDAY_NAMES = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
@@ -48,6 +52,7 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
   isOpen,
   onClose,
   runs = [],
+  onRunNotesUpdated,
 }) => {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [selectedDateIso, setSelectedDateIso] = useState<string>(() => toLocalDateKey(new Date()));
@@ -193,6 +198,24 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
       notes: notesList,
       schedaId: run.id_scheda,
     });
+  };
+
+  const handleRecapNotesUpdated = (
+    workoutId: string | number,
+    updatedNotes: Array<{ text: string; createdAt?: string }>
+  ) => {
+    setActiveRecapSession((prev) => {
+      if (!prev || String(prev.id) !== String(workoutId)) return prev;
+      return {
+        ...prev,
+        notes: updatedNotes,
+      };
+    });
+
+    onRunNotesUpdated?.(
+      workoutId,
+      updatedNotes.map((n) => ({ testo: n.text, created_at: n.createdAt }))
+    );
   };
 
   return (
@@ -405,6 +428,7 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
         workout={activeRecapSession}
         isOpen={Boolean(activeRecapSession)}
         onClose={() => setActiveRecapSession(null)}
+        onNotesUpdated={handleRecapNotesUpdated}
       />
     </>
   );

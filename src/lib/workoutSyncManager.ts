@@ -221,6 +221,44 @@ export const removeWorkoutFromQueue = (userId: string, workoutUuid: string): voi
   saveSyncQueue(userId, queue);
 };
 
+/**
+ * Aggiorna le note di un workout presente nella coda locale (ricerca per workout_uuid o remote_workout_run_id).
+ * Restituisce true se almeno un elemento nella coda è stato trovato e aggiornato.
+ */
+export const updateQueuedWorkoutNotes = (
+  userId: string,
+  workoutIdOrUuid: string | number,
+  notes: string[]
+): boolean => {
+  const targetStr = String(workoutIdOrUuid ?? '').trim();
+  if (!userId || !targetStr || targetStr === '0') return false;
+
+  const queue = getSyncQueue(userId);
+  let updated = false;
+
+  const nextQueue = queue.map((item) => {
+    const matchesUuid = item.workout_uuid === targetStr;
+    const matchesRemoteId =
+      item.remote_workout_run_id != null && String(item.remote_workout_run_id) === targetStr;
+
+    if (!matchesUuid && !matchesRemoteId) return item;
+
+    updated = true;
+    return {
+      ...item,
+      notes: notes
+        .map((text) => text.trim())
+        .filter((text) => text.length > 0)
+        .map((text) => ({ text })),
+    };
+  });
+
+  if (updated) {
+    saveSyncQueue(userId, nextQueue);
+  }
+  return updated;
+};
+
 /* -------------------------------------------------------------------------- */
 /*  3. MOTORE DI SINCRONIZZAZIONE CON IDEMPOTENZA ED EXPONENTIAL BACKOFF      */
 /* -------------------------------------------------------------------------- */

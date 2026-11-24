@@ -53,7 +53,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Calendar, Clock, Dumbbell, FileText, Loader2, PlayCircle, Repeat, Timer, Trash2, X, Flame, Activity } from 'lucide-react';
+import { Calendar, Clock, Dumbbell, FileText, Loader2, Pencil, PlayCircle, Repeat, Timer, Trash2, X, Flame, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
@@ -61,7 +61,7 @@ import AppHeader from '../components/AppHeader';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
 import type { UiExercise, UiSubExercise } from '../lib/workoutSchemaAdapter';
 import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
-import { getSyncQueue } from '../lib/workoutSyncManager';
+import { getSyncQueue, updateQueuedWorkoutNotes } from '../lib/workoutSyncManager';
 
 interface WorkoutHistoryDetail {
   id: string;
@@ -97,7 +97,7 @@ const parseTaggedNote = (raw: string) => {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  const match = trimmed.match(/^\[([^\]]+)\]\s*(.+)$/);
+  const match = trimmed.match(/^\[([^\]]+)\]\s*([\s\S]+)$/);
   if (!match) {
     return { orderIndex: null, exerciseName: '', text: trimmed };
   }
@@ -119,6 +119,11 @@ const parseTaggedNote = (raw: string) => {
     exerciseName: tag,
     text,
   };
+};
+
+const isGeneralNoteTag = (tagName: string) => {
+  const key = normalizeNoteKey(tagName);
+  return !key || key === 'scheda' || key === 'generale' || key === 'general' || key === 'workout';
 };
 
 const formatSecs = (totalSecs: number) => {
@@ -242,6 +247,9 @@ const WorkoutHistoryDetailPage: React.FC = () => {
   const [exerciseNoteModalContext, setExerciseNoteModalContext] = useState<ExerciseNoteModalContext | null>(null);
   const [exerciseNoteDraft, setExerciseNoteDraft] = useState('');
   const [isSavingExerciseNote, setIsSavingExerciseNote] = useState(false);
+  const [isGeneralNoteModalOpen, setIsGeneralNoteModalOpen] = useState(false);
+  const [generalNoteDraft, setGeneralNoteDraft] = useState('');
+  const [isSavingGeneralNote, setIsSavingGeneralNote] = useState(false);
 
   const clearRestartCheckpoint = () => {
     if (!user?.id) return;
@@ -445,15 +453,13 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         const current = notesMap.get(key) || [];
         current.push(parsed.text);
         notesMap.set(key, current);
+      } else if (isGeneralNoteTag(parsed.exerciseName)) {
+        genericNotes.push(parsed.text);
       } else {
         const key = normalizeNoteKey(parsed.exerciseName);
-        if (!key || key === 'scheda' || key === 'generale' || key === 'general' || key === 'workout') {
-          genericNotes.push(parsed.text);
-        } else {
-          const current = legacyMap.get(key) || [];
-          current.push(parsed.text);
-          legacyMap.set(key, current);
-        }
+        const current = legacyMap.get(key) || [];
+        current.push(parsed.text);
+        legacyMap.set(key, current);
       }
     });
 
@@ -509,34 +515,13 @@ const WorkoutHistoryDetailPage: React.FC = () => {
     setExerciseNoteDraft('');
   };
 
-  const saveExerciseNote = async () => {
-    if (!detail || !exerciseNoteModalContext || !user?.id || isSavingExerciseNote) return;
+  const persistUpdatedNotes = async (newSourceNotes: string[]) => {
+    if (!detail || !user?.id) return;
 
     const workoutRunNumericId = Number(detail.id);
-    if (Number.isNaN(workoutRunNumericId)) {
-      alert('Invalid workout id.');
-      return;
-    }
+    const hasRemoteId = !Number.isNaN(workoutRunNumericId) && workoutRunNumericId > 0;
 
-    try {
-      setIsSavingExerciseNote(true);
-      const targetKey = normalizeNoteKey(exerciseNoteModalContext.exerciseName);
-      const targetIndex = exerciseNoteModalContext.index;
-      
-      const newSourceNotes = (detail?.notes || []).filter((raw) => {
-        const parsed = parseTaggedNote(raw);
-        if (!parsed || !parsed.exerciseName) return true;
-        if (parsed.orderIndex !== null) {
-          return !(parsed.orderIndex === targetIndex && normalizeNoteKey(parsed.exerciseName) === targetKey);
-        }
-        return normalizeNoteKey(parsed.exerciseName) !== targetKey;
-      });
-
-      if (exerciseNoteDraft.trim()) {
-        const orderStr = `${targetIndex + 1}`;
-        newSourceNotes.push(`[${orderStr}. ${exerciseNoteModalContext.exerciseName}] ${exerciseNoteDraft.trim()}`);
-      }
-
+    if (hasRemoteId) {
       const { error: deleteNotesError } = await supabase
         .from('note_workout')
         .delete()
@@ -556,6 +541,42 @@ const WorkoutHistoryDetailPage: React.FC = () => {
 
         if (insertNotesError) throw insertNotesError;
       }
+    }
+
+    const updatedByDetailId = updateQueuedWorkoutNotes(user.id, detail.id, newSourceNotes);
+    const updatedByRouteId =
+      !updatedByDetailId && workoutRunId && workoutRunId !== detail.id
+        ? updateQueuedWorkoutNotes(user.id, workoutRunId, newSourceNotes)
+        : false;
+
+    if (!hasRemoteId && !updatedByDetailId && !updatedByRouteId) {
+      throw new Error('Invalid workout id.');
+    }
+  };
+
+  const saveExerciseNote = async () => {
+    if (!detail || !exerciseNoteModalContext || !user?.id || isSavingExerciseNote) return;
+
+    try {
+      setIsSavingExerciseNote(true);
+      const targetKey = normalizeNoteKey(exerciseNoteModalContext.exerciseName);
+      const targetIndex = exerciseNoteModalContext.index;
+
+      const newSourceNotes = (detail?.notes || []).filter((raw) => {
+        const parsed = parseTaggedNote(raw);
+        if (!parsed || !parsed.exerciseName || (parsed.orderIndex === null && isGeneralNoteTag(parsed.exerciseName))) return true;
+        if (parsed.orderIndex !== null) {
+          return !(parsed.orderIndex === targetIndex && normalizeNoteKey(parsed.exerciseName) === targetKey);
+        }
+        return normalizeNoteKey(parsed.exerciseName) !== targetKey;
+      });
+
+      if (exerciseNoteDraft.trim()) {
+        const orderStr = `${targetIndex + 1}`;
+        newSourceNotes.push(`[${orderStr}. ${exerciseNoteModalContext.exerciseName}] ${exerciseNoteDraft.trim()}`);
+      }
+
+      await persistUpdatedNotes(newSourceNotes);
 
       setDetail((prev) => {
         if (!prev) return prev;
@@ -573,6 +594,53 @@ const WorkoutHistoryDetailPage: React.FC = () => {
       alert('Unable to save exercise note.');
     } finally {
       setIsSavingExerciseNote(false);
+    }
+  };
+
+  const openGeneralNoteModal = () => {
+    setGeneralNoteDraft(notesGrouped.genericNotes.join('\n\n'));
+    setIsGeneralNoteModalOpen(true);
+  };
+
+  const closeGeneralNoteModal = () => {
+    if (isSavingGeneralNote) return;
+    setIsGeneralNoteModalOpen(false);
+    setGeneralNoteDraft('');
+  };
+
+  const saveGeneralNote = async () => {
+    if (!detail || !user?.id || isSavingGeneralNote) return;
+
+    try {
+      setIsSavingGeneralNote(true);
+      const exerciseNotesOnly = (detail.notes || []).filter((raw) => {
+        const parsed = parseTaggedNote(raw);
+        if (!parsed) return false;
+        return parsed.orderIndex !== null || !isGeneralNoteTag(parsed.exerciseName);
+      });
+
+      const trimmedDraft = generalNoteDraft.trim();
+      const newSourceNotes = trimmedDraft
+        ? [`[Scheda] ${trimmedDraft}`, ...exerciseNotesOnly]
+        : exerciseNotesOnly;
+
+      await persistUpdatedNotes(newSourceNotes);
+
+      setDetail((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          notes: newSourceNotes,
+        };
+      });
+
+      setIsGeneralNoteModalOpen(false);
+      setGeneralNoteDraft('');
+    } catch (saveError) {
+      console.error('Error saving general workout note:', saveError);
+      alert('Impossibile salvare le note generali della scheda.');
+    } finally {
+      setIsSavingGeneralNote(false);
     }
   };
 
@@ -701,20 +769,39 @@ const WorkoutHistoryDetailPage: React.FC = () => {
       </header>
 
       <main className="max-w-3xl mx-auto space-y-4">
-        {notesGrouped.genericNotes.length > 0 && (
-          <section className="bg-brand-darkGrey/40 border border-brand-grey/20 rounded-3xl p-5 shadow-lg">
-            <div className="flex items-center mb-3 text-brand-orange">
-              <FileText size={16} className="mr-2" />
-              <h2 className="text-sm font-black uppercase tracking-wide">Note generali</h2>
+        {notesGrouped.genericNotes.length > 0 ? (
+          <section className="bg-brand-orange/10 border border-brand-orange/30 rounded-3xl p-5 shadow-lg">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center text-brand-orange">
+                <FileText size={16} className="mr-2 shrink-0" />
+                <h2 className="text-sm font-black uppercase tracking-wide">Note Generali Scheda</h2>
+              </div>
+              <button
+                type="button"
+                onClick={openGeneralNoteModal}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wide bg-brand-orange/20 text-brand-orange border border-brand-orange/40 hover:bg-brand-orange/25 transition-colors cursor-pointer"
+              >
+                <Pencil size={11} />
+                Modifica
+              </button>
             </div>
             <div className="space-y-2">
               {notesGrouped.genericNotes.map((note, idx) => (
-                <p key={`generic-note:${idx}`} className="text-sm text-brand-grey break-words">
-                  - {note}
+                <p key={`generic-note:${idx}`} className="text-sm text-zinc-100 whitespace-pre-wrap break-words leading-relaxed">
+                  {note}
                 </p>
               ))}
             </div>
           </section>
+        ) : (
+          <button
+            type="button"
+            onClick={openGeneralNoteModal}
+            className="w-full flex items-center justify-center gap-2 py-3.5 px-5 rounded-3xl border border-dashed border-white/15 bg-brand-darkGrey/30 text-zinc-300 hover:text-white hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-all text-xs font-bold uppercase tracking-wide cursor-pointer"
+          >
+            <FileText size={15} className="text-brand-orange" />
+            <span>Aggiungi note alla scheda</span>
+          </button>
         )}
 
         {exercises.length === 0 ? (
@@ -1102,6 +1189,64 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         </div>
       )}
 
+
+      {isGeneralNoteModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="w-full max-w-md bg-brand-darkGrey/95 border border-brand-orange/30 rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Note Generali Scheda</h3>
+                <p className="text-xs text-brand-grey mt-1 break-words">{detail.workoutName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeGeneralNoteModal}
+                className="p-2 rounded-full text-brand-grey hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                title="Chiudi editor note"
+                disabled={isSavingGeneralNote}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <textarea
+              value={generalNoteDraft}
+              onChange={(event) => setGeneralNoteDraft(event.target.value)}
+              placeholder="Scrivi le note generali riferite all'intera scheda di allenamento..."
+              className="w-full min-h-[150px] bg-black/40 border border-brand-grey/20 rounded-xl px-4 py-3 text-white text-sm leading-relaxed focus:border-brand-orange outline-none resize-none"
+              autoFocus
+            />
+
+            <div className="mt-4 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeGeneralNoteModal}
+                className="px-4 py-2 rounded-xl border border-brand-grey/30 text-brand-grey hover:text-white hover:border-brand-grey/50 transition-colors text-sm font-bold cursor-pointer"
+                disabled={isSavingGeneralNote}
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void saveGeneralNote();
+                }}
+                className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-lightOrange text-black transition-colors text-sm font-black disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                disabled={isSavingGeneralNote}
+              >
+                {isSavingGeneralNote ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin" />
+                    Salvataggio...
+                  </span>
+                ) : (
+                  'Salva nota'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNavigation />
     </div>

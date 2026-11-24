@@ -143,7 +143,7 @@ const HomePage: React.FC = () => {
     const offlineRuns: MonthlyWorkoutRun[] = localQueue
       .filter((q) => q.status === 'completed')
       .map((q) => ({
-        id_workout: q.remote_workout_run_id || 0,
+        id_workout: q.remote_workout_run_id || q.workout_uuid,
         id_scheda: q.id_scheda,
         workout_name_snapshot: q.workout_name_snapshot,
         exercises_snapshot: q.exercises_snapshot,
@@ -155,7 +155,7 @@ const HomePage: React.FC = () => {
 
     // Combina senza duplicazioni se una run è già sincronizzata con ID remoto
     const mergedRuns = [
-      ...offlineRuns.filter((o) => !cloudRuns.some((c) => c.id_workout && c.id_workout === o.id_workout)),
+      ...offlineRuns.filter((o) => !cloudRuns.some((c) => c.id_workout && String(c.id_workout) === String(o.id_workout))),
       ...cloudRuns,
     ];
     setAllRuns(mergedRuns);
@@ -300,6 +300,22 @@ const HomePage: React.FC = () => {
     };
   }, [loadDashboardData]);
 
+  const handleRunNotesUpdated = useCallback(
+    (
+      workoutId: string | number,
+      updatedNotes: Array<{ testo: string; created_at?: string }>
+    ) => {
+      setAllRuns((prev) =>
+        prev.map((run) =>
+          String(run.id_workout) === String(workoutId)
+            ? { ...run, note_workout: updatedNotes }
+            : run
+        )
+      );
+    },
+    []
+  );
+
   return (
     <div className="safe-pb-nav flex flex-col items-center relative min-h-screen bg-black text-white selection:bg-brand-orange selection:text-black">
       {/* 1. Header con Saluto, Data, Streak & Logo */}
@@ -345,6 +361,7 @@ const HomePage: React.FC = () => {
         isOpen={isCalendarModalOpen}
         onClose={() => setIsCalendarModalOpen(false)}
         runs={allRuns}
+        onRunNotesUpdated={handleRunNotesUpdated}
       />
 
       {/* 5. Floating Bottom Navigation */}
