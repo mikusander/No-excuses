@@ -1194,7 +1194,7 @@ const ActiveWorkoutPage: React.FC = () => {
     if (
       currentExerciseForReset.type === 'isometry' ||
       currentExerciseForReset.type === 'cardio' ||
-      ((currentExerciseForReset.type === 'superset' || currentExerciseForReset.type === 'circuit') &&
+      (currentExerciseForReset.type === 'superset' &&
         (currentExerciseForReset.subExercises?.[currentSubExerciseIdx]?.type === 'isometry' ||
           currentExerciseForReset.subExercises?.[currentSubExerciseIdx]?.type === 'cardio'))
     ) {

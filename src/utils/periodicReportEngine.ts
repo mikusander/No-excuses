@@ -624,7 +624,7 @@ export const unpackExercise = (rawEx: UiExercise): UnpackedExerciseItem[] => {
           maxRepsInSingleSet: maxStepReps,
           maxHoldInSingleSet: 0,
           estimated1RMKg: bestE1rm,
-          weightedSetsCount,
+          weightedSetsCount: weightedStepsCount,
           weightedSumKg: weightedStepsSum,
         },
       ];
