@@ -11,6 +11,7 @@ import {
   Check,
   Flame,
   SlidersHorizontal,
+  ArrowRight,
 } from 'lucide-react';
 import type { Exercise, Workout } from './types';
 import { hapticLight } from '../../utils/haptics';
@@ -34,7 +35,9 @@ export interface WorkoutOverviewModalProps {
   onSaveGeneralNote: (note: string) => void;
   onUpdateTransitionRest: (exerciseIndex: number, newSeconds: number) => void;
   onOpenExerciseNote: (exerciseIndex: number) => void;
-  onSaveExercise?: (exerciseIndex: number, updatedExercise: Exercise) => Promise<void> | void;
+  onSaveExercise?: (exerciseIndex: number, updatedExercise: Exercise, persistToTemplate: boolean) => Promise<void> | void;
+  canUpdateTemplate?: boolean;
+  onJumpToExercise?: (exerciseIndex: number) => void;
   getExerciseNoteEntry: (index: number, exercise: Exercise) => { note?: string } | undefined;
 }
 
@@ -187,6 +190,8 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
   onUpdateTransitionRest,
   onOpenExerciseNote,
   onSaveExercise,
+  canUpdateTemplate = true,
+  onJumpToExercise,
   getExerciseNoteEntry,
 }) => {
   const [editingTransitionIdx, setEditingTransitionIdx] = useState<number | null>(null);
@@ -598,7 +603,7 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                     {exercise.type === 'emom' && exercise.subExercises && exercise.subExercises.length > 0 && (
                       <div className="mt-3 space-y-2">
                         {exercise.subExercises.map((sub, subIndex) => {
-                          const isSubActive = isCurrentExercise && subIndex === (currentEmomRoundIdx % (exercise.subExercises?.length || 1));
+                          const isSubActive = isCurrentExercise;
                           const isSubDone = isCompleted;
 
                           return (
@@ -694,7 +699,21 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
                         ) : null}
                       </span>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
+                        {!isCurrentExercise && onJumpToExercise && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void hapticLight();
+                              onJumpToExercise(index);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-brand-orange/15 hover:bg-brand-orange/25 border border-brand-orange/40 text-brand-orange text-xs font-black transition-all active:scale-95 cursor-pointer shadow-sm"
+                            title={`Vai a ${exerciseTitle}`}
+                          >
+                            <span>Vai</span>
+                            <ArrowRight size={13} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onOpenExerciseNote(index)}
@@ -910,9 +929,12 @@ export const WorkoutOverviewModal: React.FC<WorkoutOverviewModalProps> = memo(({
           totalExercises={workout.exercises.length}
           isCurrentExercise={editingParamExerciseIdx === currentExerciseIdx}
           currentSetIdx={currentSetIdx}
-          onSave={async (updatedExercise) => {
+          currentPyramidStepIdx={currentPyramidStepIdx}
+          currentEmomRoundIdx={currentEmomRoundIdx}
+          canUpdateTemplate={canUpdateTemplate}
+          onSave={async (updatedExercise, persistToTemplate) => {
             if (onSaveExercise) {
-              await onSaveExercise(editingParamExerciseIdx, updatedExercise);
+              await onSaveExercise(editingParamExerciseIdx, updatedExercise, persistToTemplate);
             }
           }}
         />

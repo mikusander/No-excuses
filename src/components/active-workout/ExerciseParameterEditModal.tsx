@@ -21,7 +21,10 @@ export interface ExerciseParameterEditModalProps {
   totalExercises: number;
   isCurrentExercise: boolean;
   currentSetIdx: number;
-  onSave: (updatedExercise: Exercise) => Promise<void> | void;
+  currentPyramidStepIdx?: number;
+  currentEmomRoundIdx?: number;
+  canUpdateTemplate?: boolean;
+  onSave: (updatedExercise: Exercise, persistToTemplate: boolean) => Promise<void> | void;
 }
 
 const isMaxTarget = (val: unknown): boolean => {
@@ -51,6 +54,9 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
   totalExercises,
   isCurrentExercise,
   currentSetIdx,
+  currentPyramidStepIdx = 0,
+  currentEmomRoundIdx = 0,
+  canUpdateTemplate = true,
   onSave,
 }) => {
   // Initial state setup based on exercise
@@ -80,6 +86,9 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
       instruction_note: sub.instruction_note || '',
     }));
   });
+  const [subWeightDrafts, setSubWeightDrafts] = useState<string[]>(() =>
+    (exercise.subExercises || []).map((sub) => formatWeightValue(sub.weight_kg))
+  );
 
   // Pyramid steps
   const [pyramidSteps, setPyramidSteps] = useState<ExercisePyramidStep[]>(() => {
@@ -89,20 +98,48 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
       weight_kg: step.weight_kg != null ? step.weight_kg : null,
     }));
   });
+  const [pyramidWeightDrafts, setPyramidWeightDrafts] = useState<string[]>(() =>
+    (exercise.pyramid_steps || []).map((step) => formatWeightValue(step.weight_kg))
+  );
 
   // EMOM specific
   const [emomRounds, setEmomRounds] = useState(Math.max(1, exercise.emom_rounds || exercise.sets || 1));
   const [emomRoundDuration, setEmomRoundDuration] = useState(Math.max(1, exercise.emom_round_duration || 60));
 
+  const [persistToTemplate, setPersistToTemplate] = useState<boolean>(canUpdateTemplate);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   if (!isOpen) return null;
 
   const minAllowedSets = isCurrentExercise ? currentSetIdx + 1 : 1;
+  const minAllowedPyramidSteps =
+    isCurrentExercise && exercise.type === 'pyramid' ? currentPyramidStepIdx + 1 : 1;
+  const minAllowedEmomRounds =
+    isCurrentExercise && exercise.type === 'emom' ? currentEmomRoundIdx + 1 : 1;
 
   const handleSave = async () => {
-    if (sets < minAllowedSets) {
+    if (exercise.type === 'pyramid') {
+      if (pyramidSteps.length < minAllowedPyramidSteps) {
+        setErrorMessage(
+          `Sei attualmente allo step ${currentPyramidStepIdx + 1}. Il numero di step non può essere inferiore a ${minAllowedPyramidSteps}.`
+        );
+        return;
+      }
+    } else if (exercise.type === 'emom') {
+      if (emomRounds < minAllowedEmomRounds) {
+        setErrorMessage(
+          `Sei attualmente al round ${currentEmomRoundIdx + 1}. Il numero totale di round non può essere inferiore a ${minAllowedEmomRounds}.`
+        );
+        return;
+      }
+      if (sets < minAllowedSets) {
+        setErrorMessage(
+          `Sei attualmente alla serie ${currentSetIdx + 1}. Il numero totale di serie non può essere inferiore a ${minAllowedSets}.`
+        );
+        return;
+      }
+    } else if (sets < minAllowedSets) {
       setErrorMessage(
         `Sei attualmente al set ${currentSetIdx + 1}. Il numero totale di serie non può essere inferiore a ${minAllowedSets}.`
       );
@@ -114,6 +151,15 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
 
     try {
       const finalWeight = parseWeightInput(weightKg);
+      const normalizedSubExercises = subExercises.map((sub, sIdx) => ({
+        ...sub,
+        weight_kg: parseWeightInput(subWeightDrafts[sIdx] ?? formatWeightValue(sub.weight_kg)),
+      }));
+      const normalizedPyramidSteps = pyramidSteps.map((step, pIdx) => ({
+        ...step,
+        weight_kg: parseWeightInput(pyramidWeightDrafts[pIdx] ?? formatWeightValue(step.weight_kg)),
+      }));
+
       const updatedExercise: Exercise = {
         ...exercise,
         name: name.trim() || exercise.name,
@@ -124,13 +170,14 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
         rest_seconds: Math.max(0, restSeconds),
         transition_rest_seconds: Math.max(0, exercise.transition_rest_seconds || 0),
         instruction_note: instructionNote.trim() || null,
-        subExercises: subExercises.length > 0 ? subExercises : exercise.subExercises,
-        pyramid_steps: pyramidSteps.length > 0 ? pyramidSteps : exercise.pyramid_steps,
+        subExercises: normalizedSubExercises.length > 0 ? normalizedSubExercises : exercise.subExercises,
+        pyramid_steps: normalizedPyramidSteps.length > 0 ? normalizedPyramidSteps : exercise.pyramid_steps,
         emom_rounds: emomRounds,
         emom_round_duration: emomRoundDuration,
       };
 
-      await onSave(updatedExercise);
+      const shouldPersistToTemplate = canUpdateTemplate ? persistToTemplate : false;
+      await onSave(updatedExercise, shouldPersistToTemplate);
       void hapticSuccess();
       onClose();
     } catch (err: any) {
@@ -222,6 +269,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                   onClick={() => {
                     void hapticLight();
                     const lastStep = pyramidSteps[pyramidSteps.length - 1];
+                    const lastDraft = pyramidWeightDrafts[pyramidWeightDrafts.length - 1] ?? '';
                     setPyramidSteps([
                       ...pyramidSteps,
                       {
@@ -230,6 +278,7 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                         rest_seconds: lastStep ? lastStep.rest_seconds : 60,
                       },
                     ]);
+                    setPyramidWeightDrafts([...pyramidWeightDrafts, lastDraft]);
                   }}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-orange/15 border border-brand-orange/40 text-brand-orange hover:bg-brand-orange/25 text-xs font-bold transition-all cursor-pointer"
                 >
@@ -241,6 +290,9 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
               <div className="space-y-2.5">
                 {pyramidSteps.map((step, idx) => {
                   const isStepMax = isMaxTarget(step.reps);
+                  const canDeleteStep =
+                    pyramidSteps.length > minAllowedPyramidSteps &&
+                    !(isCurrentExercise && idx <= currentPyramidStepIdx);
                   return (
                     <div
                       key={`step-${idx}`}
@@ -250,12 +302,13 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                         <span className="text-xs font-black uppercase text-brand-orange">
                           Step {idx + 1}
                         </span>
-                        {pyramidSteps.length > 1 && (
+                        {canDeleteStep && (
                           <button
                             type="button"
                             onClick={() => {
                               void hapticLight();
                               setPyramidSteps(pyramidSteps.filter((_, sIdx) => sIdx !== idx));
+                              setPyramidWeightDrafts(pyramidWeightDrafts.filter((_, sIdx) => sIdx !== idx));
                             }}
                             className="p-1 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                             title="Elimina questo step"
@@ -319,13 +372,15 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                           <input
                             type="text"
                             inputMode="decimal"
-                            value={step.weight_kg != null && step.weight_kg > 0 ? String(step.weight_kg).replace('.', ',') : ''}
+                            value={pyramidWeightDrafts[idx] ?? ''}
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => {
-                              const parsed = parseWeightInput(e.target.value);
-                              setPyramidSteps(
-                                pyramidSteps.map((s, sIdx) => (sIdx === idx ? { ...s, weight_kg: parsed } : s))
-                              );
+                              const raw = e.target.value;
+                              setPyramidWeightDrafts((prev) => {
+                                const next = [...prev];
+                                next[idx] = raw;
+                                return next;
+                              });
                             }}
                             placeholder="0 (Libero)"
                             className="w-full bg-black/60 border border-white/15 focus:border-brand-orange rounded-xl px-2 py-1.5 text-center text-sm font-bold text-white outline-none"
@@ -501,13 +556,15 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                           <input
                             type="text"
                             inputMode="decimal"
-                            value={sub.weight_kg != null && sub.weight_kg > 0 ? String(sub.weight_kg).replace('.', ',') : ''}
+                            value={subWeightDrafts[sIdx] ?? ''}
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => {
-                              const parsed = parseWeightInput(e.target.value);
-                              setSubExercises(
-                                subExercises.map((s, idx) => (idx === sIdx ? { ...s, weight_kg: parsed } : s))
-                              );
+                              const raw = e.target.value;
+                              setSubWeightDrafts((prev) => {
+                                const next = [...prev];
+                                next[sIdx] = raw;
+                                return next;
+                              });
                             }}
                             placeholder="0 (Libero)"
                             className="w-full bg-black/60 border border-white/15 focus:border-brand-orange rounded-xl px-2 py-1.5 text-center text-xs font-bold text-white outline-none"
@@ -531,10 +588,14 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                   <input
                     type="number"
                     inputMode="numeric"
-                    min={1}
+                    min={minAllowedEmomRounds}
                     value={emomRounds}
                     onFocus={(e) => e.target.select()}
-                    onChange={(e) => setEmomRounds(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    onChange={(e) =>
+                      setEmomRounds(
+                        Math.max(minAllowedEmomRounds, parseInt(e.target.value, 10) || minAllowedEmomRounds)
+                      )
+                    }
                     className="w-full h-11 bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl text-center text-white font-black text-base outline-none transition-colors"
                   />
                 </div>
@@ -674,13 +735,15 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
                         <input
                           type="text"
                           inputMode="decimal"
-                          value={sub.weight_kg != null && sub.weight_kg > 0 ? String(sub.weight_kg).replace('.', ',') : ''}
+                          value={subWeightDrafts[sIdx] ?? ''}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => {
-                            const parsed = parseWeightInput(e.target.value);
-                            setSubExercises(
-                              subExercises.map((s, idx) => (idx === sIdx ? { ...s, weight_kg: parsed } : s))
-                            );
+                            const raw = e.target.value;
+                            setSubWeightDrafts((prev) => {
+                              const next = [...prev];
+                              next[sIdx] = raw;
+                              return next;
+                            });
                           }}
                           placeholder="0 (Libero)"
                           className="w-full bg-black/60 border border-white/15 focus:border-brand-orange rounded-xl px-2 py-1.5 text-center text-xs font-bold text-white outline-none"
@@ -872,6 +935,56 @@ export const ExerciseParameterEditModal: React.FC<ExerciseParameterEditModalProp
               placeholder="Scrivi eventuali note tecniche o personali per questo esercizio..."
               className="w-full min-h-[75px] bg-black/50 border border-white/15 focus:border-brand-orange rounded-xl px-3 py-2 text-white text-xs leading-relaxed outline-none resize-none"
             />
+          </div>
+
+          {/* Scope Modifica: Solo Sessione vs Aggiorna Scheda */}
+          <div className="pt-2 border-t border-white/10 space-y-2">
+            <label className="text-[11px] uppercase tracking-wider font-bold text-zinc-400 block">
+              Ambito salvataggio
+            </label>
+            {canUpdateTemplate ? (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void hapticLight();
+                      setPersistToTemplate(false);
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      !persistToTemplate
+                        ? 'bg-brand-orange text-black border-brand-orange shadow-sm shadow-brand-orange/25 font-black'
+                        : 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'
+                    }`}
+                  >
+                    Solo questa sessione
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void hapticLight();
+                      setPersistToTemplate(true);
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      persistToTemplate
+                        ? 'bg-brand-orange text-black border-brand-orange shadow-sm shadow-brand-orange/25 font-black'
+                        : 'bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10'
+                    }`}
+                  >
+                    Aggiorna scheda
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  {persistToTemplate
+                    ? 'Le modifiche vengono salvate sia nella sessione in corso sia nella scheda originale.'
+                    : 'Le modifiche valgono solo per questa sessione (la scheda originale resta invariata).'}
+                </p>
+              </>
+            ) : (
+              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-zinc-300">
+                Replay da storico: le modifiche si applicano solo a questa sessione.
+              </div>
+            )}
           </div>
 
           {/* Errore eventuale */}

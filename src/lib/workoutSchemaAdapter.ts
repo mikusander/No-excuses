@@ -326,7 +326,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       if (jsonPayload?.steps && Array.isArray(jsonPayload.steps)) {
         const payloadWeight = toSafeDecimal((jsonPayload as { weight_kg?: unknown }).weight_kg, null);
         g.ex.pyramid_steps = (jsonPayload.steps as Array<{ reps?: unknown; rest_seconds?: unknown; weight_kg?: unknown }>).map((step) => ({
-          reps: Math.max(1, toSafeInt(step.reps, 1)),
+          reps: Math.max(0, toSafeInt(step.reps, 0)),
           rest_seconds: Math.max(0, toSafeInt(step.rest_seconds, 0)),
           weight_kg: toSafeDecimal(step.weight_kg, payloadWeight),
         }));
@@ -344,7 +344,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         g.steps.push({
           idx: Math.max(0, toSafeInt(row.stepindex_piramide, g.steps.length + 1)),
           item: {
-            reps: Math.max(1, toSafeInt(row.reps, 1)),
+            reps: Math.max(0, toSafeInt(row.reps, 0)),
             rest_seconds: Math.max(0, toSafeInt(row.rest_secondi, 0)),
             weight_kg: toSafeDecimal(row.peso_kg, null),
           },

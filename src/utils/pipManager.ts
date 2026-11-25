@@ -143,9 +143,11 @@ class PiPManager {
         try {
           this.video.pause();
           this.video.srcObject = null;
+          this.video.remove();
         } catch {
           // ignore
         }
+        this.video = null;
       }
       if (this.stream) {
         try {

@@ -1,10 +1,14 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import {
   X,
   FileText,
   Flame,
   Video,
   Smartphone,
+  LogOut,
+  PauseCircle,
+  CheckCircle2,
+  Trash2,
 } from 'lucide-react';
 import type {
   Exercise,
@@ -54,6 +58,14 @@ export interface ActiveWorkoutModalsProps {
   workoutDurationSeconds: number;
   exercisesCompletedCount?: number;
   onCelebrationComplete: () => void;
+
+  // Exit / Finish-Early Modal
+  isExitModalOpen: boolean;
+  workoutElapsedSeconds: number;
+  onCloseExitModal: () => void;
+  onPauseAndExitWorkout: () => void;
+  onFinishWorkoutEarly: () => void;
+  onAbandonWorkout: () => void;
 }
 
 const isMaxTarget = (val: unknown): boolean => {
@@ -64,7 +76,7 @@ const isMaxTarget = (val: unknown): boolean => {
 
 const getPerformanceUnit = (exercise?: Exercise | null): 'sec' | 'reps' => {
   if (!exercise) return 'reps';
-  return exercise.type === 'isometry' ? 'sec' : 'reps';
+  return exercise.type === 'isometry' || exercise.type === 'cardio' ? 'sec' : 'reps';
 };
 
 export const ActiveWorkoutModals: React.FC<ActiveWorkoutModalsProps> = memo(({
@@ -108,7 +120,26 @@ export const ActiveWorkoutModals: React.FC<ActiveWorkoutModalsProps> = memo(({
   workoutDurationSeconds,
   exercisesCompletedCount,
   onCelebrationComplete,
+
+  // Exit / Finish-Early Modal
+  isExitModalOpen,
+  workoutElapsedSeconds,
+  onCloseExitModal,
+  onPauseAndExitWorkout,
+  onFinishWorkoutEarly,
+  onAbandonWorkout,
 }) => {
+  const [confirmAbandon, setConfirmAbandon] = useState(false);
+
+  useEffect(() => {
+    if (!isExitModalOpen) {
+      setConfirmAbandon(false);
+    }
+  }, [isExitModalOpen]);
+
+  const elapsedMinutes = Math.floor(Math.max(0, workoutElapsedSeconds) / 60);
+  const elapsedRemainderSeconds = Math.max(0, workoutElapsedSeconds) % 60;
+
   return (
     <>
       {/* Exercise Note Modal */}
@@ -357,6 +388,125 @@ export const ActiveWorkoutModals: React.FC<ActiveWorkoutModalsProps> = memo(({
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exit / Finish-Early Confirmation Modal */}
+      {isExitModalOpen && (
+        <div
+          className="fixed inset-0 z-[95] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150"
+          onClick={onCloseExitModal}
+        >
+          <div
+            className="w-full max-w-md bg-[#1C1C1E] border border-white/10 rounded-3xl p-5 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <LogOut size={18} className="text-brand-orange" />
+                  <span>Gestisci sessione</span>
+                </h3>
+                <p className="text-xs text-zinc-400 mt-1">
+                  Tempo attivo: <span className="font-mono font-bold text-zinc-200">{elapsedMinutes}m {String(elapsedRemainderSeconds).padStart(2, '0')}s</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onCloseExitModal}
+                className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Chiudi"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onCloseExitModal();
+                  onPauseAndExitWorkout();
+                }}
+                className="w-full text-left p-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors cursor-pointer flex items-start gap-3"
+              >
+                <PauseCircle size={20} className="text-white shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-black text-white">Metti in pausa ed esci</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Salva il progresso attuale per riprendere più tardi dalla Home.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onCloseExitModal();
+                  onFinishWorkoutEarly();
+                }}
+                className="w-full text-left p-3.5 rounded-2xl bg-brand-orange/15 hover:bg-brand-orange/25 border border-brand-orange/40 transition-colors cursor-pointer flex items-start gap-3"
+              >
+                <CheckCircle2 size={20} className="text-brand-orange shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-black text-brand-orange">Termina e salva ora</p>
+                  <p className="text-xs text-zinc-300 mt-0.5">
+                    Chiude la sessione adesso registrando i set già completati nello storico.
+                  </p>
+                </div>
+              </button>
+
+              {!confirmAbandon ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmAbandon(true)}
+                  className="w-full text-left p-3.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 transition-colors cursor-pointer flex items-start gap-3"
+                >
+                  <Trash2 size={20} className="text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-black text-red-400">Abbandona senza salvare</p>
+                    <p className="text-xs text-red-300/80 mt-0.5">
+                      Elimina la bozza e scarta i set di questa sessione.
+                    </p>
+                  </div>
+                </button>
+              ) : (
+                <div className="p-3.5 rounded-2xl bg-red-500/15 border border-red-500/50 space-y-2.5">
+                  <p className="text-xs font-bold text-red-200 leading-relaxed">
+                    Confermi l&apos;abbandono? Tutti i set e il tempo registrati in questa sessione andranno persi definitivamente.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmAbandon(false)}
+                      className="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmAbandon(false);
+                        onCloseExitModal();
+                        onAbandonWorkout();
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-400 text-black text-xs font-black transition-colors cursor-pointer"
+                    >
+                      Conferma abbandono
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={onCloseExitModal}
+              className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+            >
+              Continua allenamento
+            </button>
           </div>
         </div>
       )}

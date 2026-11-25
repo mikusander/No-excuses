@@ -16,10 +16,22 @@ const handleVisibilityChange = async () => {
 
 const acquireWakeLock = async () => {
   if (typeof window === 'undefined' || !('wakeLock' in navigator)) return;
+  if (wakeLockSentinel && !wakeLockSentinel.released) return;
   try {
-    wakeLockSentinel = await navigator.wakeLock.request('screen');
-    wakeLockSentinel.addEventListener('release', () => {
-      wakeLockSentinel = null;
+    const sentinel = await navigator.wakeLock.request('screen');
+    if (!isRequested || (wakeLockSentinel && !wakeLockSentinel.released)) {
+      try {
+        await sentinel.release();
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    wakeLockSentinel = sentinel;
+    sentinel.addEventListener('release', () => {
+      if (wakeLockSentinel === sentinel) {
+        wakeLockSentinel = null;
+      }
     });
   } catch (error) {
     // Può fallire per policy di risparmio energetico o batteria quasi scarica
