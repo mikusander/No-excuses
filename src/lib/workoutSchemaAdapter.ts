@@ -24,7 +24,9 @@
  *  - stripStorageMeta        : rimuove il suffisso @@@meta: dal nome esercizio
  *  - parseJsonIfAny          : tenta il parse JSON del nome esercizio (per payload legacy)
  *
- * Funzione principale esportata: `parseDbExerciseRows(rows)`
+ * Funzioni principali esportate:
+ *  - `parseDbExerciseRows(rows)` : converte righe piatte `esecuzioni` del DB in `UiExercise[]`
+ *  - `toSnapshotExercises(raw)`  : deserializza e normalizza JSON snapshot (`exercises_snapshot`) in `UiExercise[]`
  */
 export type UiExerciseType = 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
 
@@ -456,4 +458,179 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
   });
 
   return output.sort((a, b) => a.order_index - b.order_index);
+};
+
+const toNullableRecordNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return null;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const toPositiveSnapshotWeight = (value: unknown): number | null => {
+  const dec = toSafeDecimal(value, null);
+  return dec != null && dec > 0 ? dec : null;
+};
+
+const normalizeSnapshotExerciseType = (rawType: unknown): UiExerciseType => {
+  const typeRaw = String(rawType || 'reps').toLowerCase().trim();
+  if (
+    typeRaw === 'isometry' ||
+    typeRaw === 'cardio' ||
+    typeRaw === 'superset' ||
+    typeRaw === 'circuit' ||
+    typeRaw === 'emom' ||
+    typeRaw === 'pyramid'
+  ) {
+    return typeRaw;
+  }
+  return 'reps';
+};
+
+export const toSnapshotExercises = (raw: unknown): UiExercise[] => {
+  let parsedRaw = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    try {
+      parsedRaw = JSON.parse(trimmed);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(parsedRaw)) return [];
+
+  return parsedRaw
+    .filter(
+      (entry): entry is Record<string, unknown> =>
+        Boolean(entry && typeof entry === 'object' && !Array.isArray(entry))
+    )
+    .map((item, idx) => {
+      const type = normalizeSnapshotExerciseType(item.type);
+
+      const groupCategoryRaw = String(item.group_category || '').toLowerCase().trim();
+      const group_category: 'superset' | 'circuit' | undefined =
+        groupCategoryRaw === 'circuit' || type === 'circuit'
+          ? 'circuit'
+          : groupCategoryRaw === 'superset' || type === 'superset'
+            ? 'superset'
+            : undefined;
+
+      const trackingModeRaw = String(item.tracking_mode || '').toLowerCase().trim();
+      const tracking_mode: 'reps_load' | 'stopwatch' | undefined =
+        trackingModeRaw === 'stopwatch'
+          ? 'stopwatch'
+          : trackingModeRaw === 'reps_load'
+            ? 'reps_load'
+            : undefined;
+
+      const subExercises = Array.isArray(item.subExercises)
+        ? item.subExercises
+            .filter(
+              (sub): sub is Record<string, unknown> =>
+                Boolean(sub && typeof sub === 'object' && !Array.isArray(sub))
+            )
+            .map((sub) => {
+              const subTypeRaw = String(sub.type || 'reps').toLowerCase().trim();
+              const subType: UiSubExercise['type'] =
+                subTypeRaw === 'cardio'
+                  ? 'cardio'
+                  : subTypeRaw === 'isometry'
+                    ? 'isometry'
+                    : 'reps';
+
+              const normalizedSub: UiSubExercise = {
+                name: String(sub.name || ''),
+                type: subType,
+                reps: Math.max(0, toSafeInt(sub.reps, 0)),
+                duration_seconds: Math.max(0, toSafeInt(sub.duration_seconds, 0)),
+                weight_kg: toPositiveSnapshotWeight(sub.weight_kg ?? sub.peso_kg ?? sub.weight),
+                instruction_note: toOptionalNote(sub.instruction_note),
+              };
+              if (sub.id !== undefined && sub.id !== null && String(sub.id).trim() !== '') {
+                normalizedSub.id = String(sub.id);
+              }
+              return normalizedSub;
+            })
+        : undefined;
+
+      const pyramidSteps = Array.isArray(item.pyramid_steps)
+        ? item.pyramid_steps
+            .filter(
+              (step): step is Record<string, unknown> =>
+                Boolean(step && typeof step === 'object' && !Array.isArray(step))
+            )
+            .map((step) => ({
+              reps: Math.max(0, toSafeInt(step.reps, 0)),
+              rest_seconds: Math.max(0, toSafeInt(step.rest_seconds, 0)),
+              weight_kg: toPositiveSnapshotWeight(step.weight_kg ?? step.peso_kg ?? step.weight),
+              instruction_note: toOptionalNote(step.instruction_note),
+            } satisfies UiPyramidStep))
+        : undefined;
+
+      const rawRecords = Array.isArray(item.completed_sets_records)
+        ? item.completed_sets_records
+        : Array.isArray(item.completed_sets_reps)
+          ? item.completed_sets_reps
+          : null;
+      const completed_sets_records = rawRecords ? rawRecords.map(toNullableRecordNumber) : undefined;
+
+      const lapDurations = Array.isArray(item.lap_durations_seconds)
+        ? item.lap_durations_seconds.map((v) => Math.max(0, toSafeInt(v, 0)))
+        : undefined;
+
+      const rawTotalCircuitDuration = toNullableRecordNumber(item.total_circuit_duration_seconds);
+      const total_circuit_duration_seconds =
+        rawTotalCircuitDuration !== null
+          ? Math.max(0, Math.trunc(rawTotalCircuitDuration))
+          : undefined;
+
+      const rawEmomRounds = toNullableRecordNumber(item.emom_rounds);
+      const emom_rounds =
+        rawEmomRounds !== null && rawEmomRounds > 0
+          ? Math.max(1, Math.trunc(rawEmomRounds))
+          : type === 'emom'
+            ? Math.max(1, toSafeInt(item.sets, 1))
+            : undefined;
+
+      const rawEmomRoundDuration = toNullableRecordNumber(item.emom_round_duration);
+      const emom_round_duration =
+        rawEmomRoundDuration !== null && rawEmomRoundDuration > 0
+          ? Math.max(1, Math.trunc(rawEmomRoundDuration))
+          : type === 'emom'
+            ? Math.max(1, toSafeInt(item.duration_seconds, 60))
+            : undefined;
+
+      const autoCountRaw = item.auto_count_type;
+      const auto_count_type: 'pushups' | 'pullups' | null =
+        autoCountRaw === 'pushups' || autoCountRaw === 'pullups' ? autoCountRaw : null;
+
+      return {
+        id: String(item.id || `snapshot-${idx}`),
+        type,
+        name: String(item.name || `Esercizio ${idx + 1}`),
+        sets: Math.max(1, toSafeInt(item.sets, 1)),
+        reps: Math.max(0, toSafeInt(item.reps, 0)),
+        duration_seconds: Math.max(0, toSafeInt(item.duration_seconds, 0)),
+        rest_seconds: Math.max(0, toSafeInt(item.rest_seconds, 0)),
+        transition_rest_seconds: Math.max(0, toSafeInt(item.transition_rest_seconds, 0)),
+        weight_kg: toPositiveSnapshotWeight(item.weight_kg ?? item.peso_kg ?? item.weight),
+        order_index: Math.max(0, toSafeInt(item.order_index, idx)),
+        group_category,
+        tracking_mode,
+        lap_durations_seconds: lapDurations,
+        total_circuit_duration_seconds,
+        emom_rounds,
+        emom_round_duration,
+        pyramid_steps: pyramidSteps,
+        subExercises,
+        instruction_note: toOptionalNote(item.instruction_note),
+        auto_count_type,
+        completed_sets_records,
+        completed_sets_reps: completed_sets_records,
+      } satisfies UiExercise;
+    })
+    .sort((a, b) => a.order_index - b.order_index);
 };

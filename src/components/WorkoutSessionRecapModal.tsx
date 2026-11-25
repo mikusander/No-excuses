@@ -12,9 +12,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Clock, Dumbbell, ArrowRight, FileText, CheckCircle2, Pencil, Loader2 } from 'lucide-react';
 import { hapticLight, hapticMedium } from '../utils/haptics';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { updateQueuedWorkoutNotes } from '../lib/workoutSyncManager';
+import { toSnapshotExercises, type UiExercise } from '../lib/workoutSchemaAdapter';
+import {
+  updateQueuedWorkoutNotes,
+  replaceRemoteWorkoutNotes,
+  enqueuePendingNoteUpdate,
+} from '../lib/workoutSyncManager';
 
 export interface RecapWorkoutSession {
   id: string | number;
@@ -104,6 +108,86 @@ const formatDuration = (totalSecs?: number | null) => {
   return `${remSec}s`;
 };
 
+const formatCompactDuration = (totalSecs: number) => {
+  const s = Math.max(0, Math.trunc(totalSecs));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m === 0) return `${rem}s`;
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+};
+
+const formatRecapExerciseLines = (
+  ex: UiExercise
+): { primary: string; secondary?: string } => {
+  const subs = ex.subExercises || [];
+  if (ex.type === 'superset') {
+    const names = subs.map((s) => s.name).filter(Boolean).join(' + ');
+    return {
+      primary: `${ex.sets} round • ${subs.length} esercizi`,
+      secondary: names || undefined,
+    };
+  }
+  if (ex.type === 'circuit') {
+    const names = subs.map((s) => s.name).filter(Boolean).join(' + ');
+    const totalLabel =
+      ex.total_circuit_duration_seconds && ex.total_circuit_duration_seconds > 0
+        ? ` • ${formatCompactDuration(ex.total_circuit_duration_seconds)}`
+        : '';
+    return {
+      primary: `${ex.sets} giri • ${subs.length} esercizi${totalLabel}`,
+      secondary: names || undefined,
+    };
+  }
+  if (ex.type === 'emom') {
+    const roundsCount = ex.emom_rounds || 1;
+    const roundsLabel = ex.sets > 1 ? `${ex.sets}×${roundsCount} round` : `${roundsCount} round`;
+    const roundDur = ex.emom_round_duration || ex.duration_seconds || 60;
+    const names = subs.map((s) => s.name).filter(Boolean).join(' + ');
+    return {
+      primary: `${roundsLabel} • ${roundDur}s/round${subs.length > 0 ? ` • ${subs.length} es.` : ''}`,
+      secondary: names || undefined,
+    };
+  }
+  if (ex.type === 'pyramid') {
+    const steps = ex.pyramid_steps || [];
+    const repsPreview = steps.map((s) => (s.reps === 0 ? 'MAX' : String(s.reps))).join('-');
+    const maxW = steps.reduce((acc, s) => Math.max(acc, Number(s.weight_kg || 0)), 0);
+    return {
+      primary: `Piramide (${steps.length} step${repsPreview ? `: ${repsPreview}` : ''})`,
+      secondary: maxW > 0 ? `Carico fino a ${maxW} kg` : 'Corpo libero',
+    };
+  }
+
+  const recorded = (ex.completed_sets_records || []).filter(
+    (v): v is number => v != null && Number.isFinite(v) && v > 0
+  );
+
+  if (ex.type === 'isometry' || ex.type === 'cardio') {
+    const durLabel =
+      recorded.length > 0
+        ? recorded.map((v) => `${v}s`).join(', ')
+        : ex.duration_seconds === 0
+          ? 'MAX'
+          : formatCompactDuration(ex.duration_seconds);
+    const weightPart =
+      ex.type === 'isometry' && ex.weight_kg && ex.weight_kg > 0 ? ` • ${ex.weight_kg} kg` : '';
+    return {
+      primary: `${ex.sets} serie • ${durLabel}${weightPart}`,
+    };
+  }
+
+  const repsLabel =
+    recorded.length > 0
+      ? `${recorded.join(', ')} rip`
+      : ex.reps === 0
+        ? 'MAX'
+        : `${ex.reps} rip`;
+  const weightLabel = ex.weight_kg && ex.weight_kg > 0 ? `${ex.weight_kg} kg` : 'Corpo libero';
+  return {
+    primary: `${ex.sets} serie • ${repsLabel} • ${weightLabel}`,
+  };
+};
+
 export const WorkoutSessionRecapModal: React.FC<WorkoutSessionRecapModalProps> = ({
   workout,
   isOpen,
@@ -124,8 +208,8 @@ export const WorkoutSessionRecapModal: React.FC<WorkoutSessionRecapModalProps> =
     setSaveError(null);
   }, [workout?.id, isOpen]);
 
-  const exercises = useMemo(
-    () => (Array.isArray(workout?.exercisesSnapshot) ? workout.exercisesSnapshot : []),
+  const exercises = useMemo<UiExercise[]>(
+    () => toSnapshotExercises(workout?.exercisesSnapshot),
     [workout?.exercisesSnapshot]
   );
 
@@ -223,23 +307,16 @@ export const WorkoutSessionRecapModal: React.FC<WorkoutSessionRecapModalProps> =
       const hasRemoteId = !Number.isNaN(numericId) && numericId > 0;
 
       if (hasRemoteId) {
-        const { error: deleteError } = await supabase
-          .from('note_workout')
-          .delete()
-          .eq('id_workout', numericId);
-
-        if (deleteError) throw deleteError;
-
-        if (nextNoteStrings.length > 0) {
-          const rowsToInsert = nextNoteStrings.map((text) => ({
-            id_workout: numericId,
-            testo: text,
-          }));
-          const { error: insertError } = await supabase
-            .from('note_workout')
-            .insert(rowsToInsert);
-
-          if (insertError) throw insertError;
+        const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+        if (isOnline) {
+          try {
+            await replaceRemoteWorkoutNotes(numericId, nextNoteStrings);
+          } catch (remoteErr) {
+            console.warn('[WorkoutSessionRecapModal] Errore sync immediato note, salvo in coda offline:', remoteErr);
+            enqueuePendingNoteUpdate(user.id, numericId, nextNoteStrings);
+          }
+        } else {
+          enqueuePendingNoteUpdate(user.id, numericId, nextNoteStrings);
         }
       }
 
@@ -435,19 +512,16 @@ export const WorkoutSessionRecapModal: React.FC<WorkoutSessionRecapModalProps> =
               Nessun dettaglio esercizio registrato in questa sessione.
             </div>
           ) : (
-            exercises.map((ex: any, idx: number) => {
+            exercises.map((ex: UiExercise, idx: number) => {
               const name = String(ex.name || `Esercizio ${idx + 1}`);
-              const sets = Number(ex.sets || 1);
-              const reps = ex.reps != null && ex.reps !== 0 ? `${ex.reps} reps` : (ex.duration_seconds ? `${ex.duration_seconds}s` : 'MAX reps');
-              const weight = Number(ex.weight || ex.peso_kg || 0);
-              const weightLabel = weight > 0 ? `${weight} kg` : 'Corpo libero';
+              const summary = formatRecapExerciseLines(ex);
               const exerciseNotes = getNotesForExercise(name, idx);
-              const fallbackNote = typeof ex.note_esercizio === 'string' ? ex.note_esercizio.trim() : '';
+              const fallbackNote = typeof ex.instruction_note === 'string' ? ex.instruction_note.trim() : '';
               const displayNotes = exerciseNotes.length > 0 ? exerciseNotes : fallbackNote ? [fallbackNote] : [];
 
               return (
                 <div
-                  key={idx}
+                  key={`${ex.id}:${idx}`}
                   className="p-3.5 rounded-2xl bg-white/5 border border-white/5 flex items-start gap-3 select-none"
                 >
                   <div className="w-6 h-6 rounded-lg bg-brand-orange/15 border border-brand-orange/30 text-brand-orange flex items-center justify-center text-xs font-black shrink-0">
@@ -465,8 +539,13 @@ export const WorkoutSessionRecapModal: React.FC<WorkoutSessionRecapModalProps> =
                       )}
                     </div>
                     <p className="text-xs text-brand-grey/70 mt-0.5">
-                      {sets} {sets === 1 ? 'serie' : 'serie'} • {reps} • {weightLabel}
+                      {summary.primary}
                     </p>
+                    {summary.secondary && (
+                      <p className="text-[11px] text-brand-grey/55 truncate mt-0.5">
+                        {summary.secondary}
+                      </p>
+                    )}
 
                     {/* Note dell'esercizio (se presenti) */}
                     {displayNotes.length > 0 && (

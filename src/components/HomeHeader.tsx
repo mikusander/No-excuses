@@ -8,7 +8,7 @@
  *  - Saluto contestuale (Buongiorno / Buon pomeriggio / Buonasera) con nome utente.
  *  - Data odierna in italiano con tipografia Apple SF Pro.
  */
-import React, { useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Flame } from 'lucide-react';
 import { logoBase64 } from '../assets/logoBase64';
 import { hapticLight } from '../utils/haptics';
@@ -19,23 +19,42 @@ interface HomeHeaderProps {
 }
 
 const HomeHeader: React.FC<HomeHeaderProps> = ({ userName, streakDays = 0 }) => {
-  // Saluto contestuale basato sull'orario di sistema
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return 'Buongiorno';
-    if (hour >= 12 && hour < 18) return 'Buon pomeriggio';
-    return 'Buonasera';
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const refreshTime = () => setNowTick(Date.now());
+    const intervalId = setInterval(refreshTime, 60_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshTime();
+      }
+    };
+    window.addEventListener('focus', refreshTime);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', refreshTime);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
+  const currentDate = new Date(nowTick);
+  const hour = currentDate.getHours();
+  const greeting =
+    hour >= 5 && hour < 12
+      ? 'Buongiorno'
+      : hour >= 12 && hour < 18
+        ? 'Buon pomeriggio'
+        : 'Buonasera';
+
   // Data odierna formattata in italiano (es. "MARTEDÌ 22 SETTEMBRE")
-  const formattedDate = useMemo(() => {
-    const now = new Date();
-    return now.toLocaleDateString('it-IT', {
+  const formattedDate = currentDate
+    .toLocaleDateString('it-IT', {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
-    }).toUpperCase();
-  }, []);
+    })
+    .toUpperCase();
 
   const displayName = userName?.trim() ? userName.trim() : 'Atleta';
 
@@ -82,7 +101,7 @@ const HomeHeader: React.FC<HomeHeaderProps> = ({ userName, streakDays = 0 }) => 
         <span className="text-[11px] font-semibold text-brand-grey/60 tracking-wider">
           {formattedDate}
         </span>
-        <h1 className="text-2xl font-black text-white tracking-tight leading-tight capitalize">
+        <h1 className="text-2xl font-black text-white tracking-tight leading-tight">
           {greeting}, <span className="text-brand-orange">{displayName}</span>
         </h1>
       </div>

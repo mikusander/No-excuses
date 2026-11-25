@@ -58,10 +58,19 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeader from '../components/AppHeader';
-import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import { parseDbExerciseRows, toSnapshotExercises } from '../lib/workoutSchemaAdapter';
 import type { UiExercise, UiSubExercise } from '../lib/workoutSchemaAdapter';
 import { clearAllWorkoutProgressCheckpoints } from '../lib/workoutProgressStorage';
-import { getSyncQueue, updateQueuedWorkoutNotes } from '../lib/workoutSyncManager';
+import {
+  getSyncQueue,
+  updateQueuedWorkoutNotes,
+  removeWorkoutFromQueue,
+  getPendingWorkoutDeletes,
+  enqueuePendingWorkoutDelete,
+  getPendingNoteUpdates,
+  enqueuePendingNoteUpdate,
+  replaceRemoteWorkoutNotes,
+} from '../lib/workoutSyncManager';
 
 interface WorkoutHistoryDetail {
   id: string;
@@ -165,74 +174,6 @@ const formatWorkoutDuration = (totalSecs: number | null) => {
   return `${seconds}s`;
 };
 
-const toSafeNumber = (value: unknown, fallback: number) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-};
-
-const toSnapshotExercises = (raw: unknown): UiExercise[] => {
-  if (!Array.isArray(raw)) return [];
-
-  return raw
-    .map((entry, idx) => {
-      const item = entry as Record<string, unknown>;
-      const typeRaw = String(item.type || 'reps').toLowerCase();
-      const type: UiExercise['type'] =
-        typeRaw === 'isometry' || typeRaw === 'cardio' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
-          ? (typeRaw as UiExercise['type'])
-          : 'reps';
-
-      const subExercises = Array.isArray(item.subExercises)
-        ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
-          const subTypeRaw = String(sub.type || 'reps').toLowerCase();
-          const subType: UiSubExercise['type'] =
-            subTypeRaw === 'cardio' ? 'cardio' : (subTypeRaw === 'isometry' ? 'isometry' : 'reps');
-          return {
-            name: String(sub.name || ''),
-            type: subType,
-            reps: Math.max(0, Math.trunc(toSafeNumber(sub.reps, 0))),
-            duration_seconds: Math.max(0, Math.trunc(toSafeNumber(sub.duration_seconds, 0))),
-            weight_kg: Number.isFinite(Number(sub.weight_kg)) ? Number(sub.weight_kg) : null,
-          } satisfies UiSubExercise;
-        })
-        : undefined;
-
-      const pyramidSteps = Array.isArray(item.pyramid_steps)
-        ? (item.pyramid_steps as Array<Record<string, unknown>>).map((step) => ({
-          reps: Math.max(0, Math.trunc(toSafeNumber(step.reps, 0))),
-          rest_seconds: Math.max(0, Math.trunc(toSafeNumber(step.rest_seconds, 0))),
-          weight_kg: Number.isFinite(Number(step.weight_kg)) ? Number(step.weight_kg) : null,
-        }))
-        : undefined;
-
-      const completed_sets_records = Array.isArray(item.completed_sets_records)
-        ? (item.completed_sets_records as unknown[]).map((r) => (Number.isFinite(Number(r)) ? Number(r) : null))
-        : Array.isArray(item.completed_sets_reps)
-        ? (item.completed_sets_reps as unknown[]).map((r) => (Number.isFinite(Number(r)) ? Number(r) : null))
-        : undefined;
-
-      return {
-        id: String(item.id || `snapshot-${idx}`),
-        type,
-        name: String(item.name || `Exercise ${idx + 1}`),
-        sets: Math.max(1, Math.trunc(toSafeNumber(item.sets, 1))),
-        reps: Math.max(0, Math.trunc(toSafeNumber(item.reps, 0))),
-        duration_seconds: Math.max(0, Math.trunc(toSafeNumber(item.duration_seconds, 0))),
-        rest_seconds: Math.max(0, Math.trunc(toSafeNumber(item.rest_seconds, 0))),
-        weight_kg: Number.isFinite(Number(item.weight_kg)) ? Number(item.weight_kg) : null,
-        order_index: Math.max(0, Math.trunc(toSafeNumber(item.order_index, idx))),
-        emom_rounds: item.emom_rounds == null ? undefined : Math.max(1, Math.trunc(toSafeNumber(item.emom_rounds, 1))),
-        emom_round_duration:
-          item.emom_round_duration == null ? undefined : Math.max(1, Math.trunc(toSafeNumber(item.emom_round_duration, 1))),
-        pyramid_steps: pyramidSteps,
-        subExercises,
-        completed_sets_records,
-        completed_sets_reps: completed_sets_records,
-      } satisfies UiExercise;
-    })
-    .sort((a, b) => a.order_index - b.order_index);
-};
-
 const WorkoutHistoryDetailPage: React.FC = () => {
   const { workoutRunId } = useParams<{ workoutRunId: string }>();
   const { user } = useAuth();
@@ -257,38 +198,69 @@ const WorkoutHistoryDetailPage: React.FC = () => {
   };
 
   useEffect(() => {
+    let isCancelled = false;
+
     const fetchWorkoutHistoryDetail = async () => {
       if (!user?.id || !workoutRunId) return;
 
-      // 1. Controlla prima se il workout è presente nella coda offline locale
-      if (user?.id && workoutRunId) {
-        const localQueue = getSyncQueue(user.id);
-        const matchedLocal = localQueue.find(
-          (item) => item.workout_uuid === workoutRunId || String(item.remote_workout_run_id) === String(workoutRunId)
-        );
+      const localQueue = getSyncQueue(user.id);
+      const pendingDeletes = new Set(getPendingWorkoutDeletes(user.id));
+      const pendingNoteUpdates = getPendingNoteUpdates(user.id);
+      const matchedLocal = localQueue.find(
+        (item) => item.workout_uuid === workoutRunId || String(item.remote_workout_run_id) === String(workoutRunId)
+      );
 
-        if (matchedLocal) {
-          const snapshotExercises = toSnapshotExercises(matchedLocal.exercises_snapshot);
+      const candidateRemoteId = matchedLocal?.remote_workout_run_id
+        ? Number(matchedLocal.remote_workout_run_id)
+        : Number(workoutRunId);
+      const hasValidRemoteId = !Number.isNaN(candidateRemoteId) && candidateRemoteId > 0;
+
+      if (hasValidRemoteId && pendingDeletes.has(candidateRemoteId)) {
+        if (!isCancelled) {
+          setError('Workout not found.');
+          setDetail(null);
+          setExercises([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+      const shouldUseLocalOnly =
+        Boolean(matchedLocal) && (!hasValidRemoteId || !isOnline);
+
+      // Se offline o sessione non ancora sincronizzata su Supabase, usa subito la copia locale
+      if (matchedLocal && shouldUseLocalOnly) {
+        const snapshotExercises = toSnapshotExercises(matchedLocal.exercises_snapshot);
+        const detailId = matchedLocal.remote_workout_run_id
+          ? String(matchedLocal.remote_workout_run_id)
+          : matchedLocal.workout_uuid;
+        const pendingOverride = pendingNoteUpdates[detailId];
+
+        if (!isCancelled) {
           setDetail({
-            id: matchedLocal.remote_workout_run_id ? String(matchedLocal.remote_workout_run_id) : matchedLocal.workout_uuid,
+            id: detailId,
             schedaId: matchedLocal.id_scheda != null ? String(matchedLocal.id_scheda) : null,
             canRestartFromTemplate: false,
             canRestartFromSnapshot: snapshotExercises.length > 0,
             workoutName: matchedLocal.workout_name_snapshot || 'Allenamento',
             executedAt: matchedLocal.executed_at,
             totalDurationSeconds: matchedLocal.durata_totale_secondi,
-            notes: (matchedLocal.notes || []).map((n) => n.text),
+            notes: pendingOverride
+              ? pendingOverride.notes
+              : (matchedLocal.notes || []).map((n) => n.text),
           });
           setExercises(snapshotExercises);
           setLoading(false);
-          return;
         }
+        return;
       }
 
-      const workoutRunNumericId = Number(workoutRunId);
-      if (Number.isNaN(workoutRunNumericId)) {
-        setError('Invalid workout id.');
-        setLoading(false);
+      if (!hasValidRemoteId) {
+        if (!isCancelled) {
+          setError('Invalid workout id.');
+          setLoading(false);
+        }
         return;
       }
 
@@ -323,7 +295,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         const firstRunAttempt = await supabase
           .from('workout_run')
           .select(runSelectWithDuration)
-          .eq('id_workout', workoutRunNumericId)
+          .eq('id_workout', candidateRemoteId)
           .eq('id_utente', user.id)
           .maybeSingle();
 
@@ -338,7 +310,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           const fallbackRunAttempt = await supabase
             .from('workout_run')
             .select(runSelectBase)
-            .eq('id_workout', workoutRunNumericId)
+            .eq('id_workout', candidateRemoteId)
             .eq('id_utente', user.id)
             .maybeSingle();
 
@@ -346,8 +318,27 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           runError = fallbackRunAttempt.error;
         }
 
+        if (isCancelled) return;
         if (runError) throw runError;
         if (!runData) {
+          if (matchedLocal) {
+            const snapshotExercises = toSnapshotExercises(matchedLocal.exercises_snapshot);
+            const detailId = matchedLocal.remote_workout_run_id
+              ? String(matchedLocal.remote_workout_run_id)
+              : matchedLocal.workout_uuid;
+            setDetail({
+              id: detailId,
+              schedaId: matchedLocal.id_scheda != null ? String(matchedLocal.id_scheda) : null,
+              canRestartFromTemplate: false,
+              canRestartFromSnapshot: snapshotExercises.length > 0,
+              workoutName: matchedLocal.workout_name_snapshot || 'Allenamento',
+              executedAt: matchedLocal.executed_at,
+              totalDurationSeconds: matchedLocal.durata_totale_secondi,
+              notes: (matchedLocal.notes || []).map((n) => n.text),
+            });
+            setExercises(snapshotExercises);
+            return;
+          }
           setError('Workout not found.');
           setDetail(null);
           setExercises([]);
@@ -359,9 +350,13 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         const workoutNameSnapshot = String((runData as { workout_name_snapshot?: unknown }).workout_name_snapshot || '').trim();
         const snapshotExercises = toSnapshotExercises((runData as { exercises_snapshot?: unknown }).exercises_snapshot);
         const totalDurationRaw = Number((runData as { durata_totale_secondi?: unknown }).durata_totale_secondi);
-        const totalDurationSeconds = Number.isFinite(totalDurationRaw) ? Math.max(0, Math.trunc(totalDurationRaw)) : null;
+        const totalDurationSeconds =
+          (runData as { durata_totale_secondi?: unknown }).durata_totale_secondi != null && Number.isFinite(totalDurationRaw)
+            ? Math.max(0, Math.trunc(totalDurationRaw))
+            : null;
         const canRestartFromTemplate = runData.id_scheda != null && Boolean(linkedScheda?.id_scheda);
         const canRestartFromSnapshot = snapshotExercises.length > 0;
+        const pendingOverride = pendingNoteUpdates[String(runData.id_workout)];
 
         const parsedDetail: WorkoutHistoryDetail = {
           id: String(runData.id_workout),
@@ -374,9 +369,11 @@ const WorkoutHistoryDetailPage: React.FC = () => {
             (runData.id_scheda != null ? `Workout #${runData.id_scheda}` : `Workout #${runData.id_workout}`),
           executedAt: runData.data_esecuzione,
           totalDurationSeconds,
-          notes: linkedNotes
-            .map((note: { testo?: unknown }) => String(note?.testo || '').trim())
-            .filter((note: string) => note.length > 0),
+          notes: pendingOverride
+            ? pendingOverride.notes
+            : linkedNotes
+                .map((note: { testo?: unknown }) => String(note?.testo || '').trim())
+                .filter((note: string) => note.length > 0),
         };
 
         setDetail(parsedDetail);
@@ -400,9 +397,12 @@ const WorkoutHistoryDetailPage: React.FC = () => {
               ordine,
               set_num,
               rest_secondi,
+              rest_tra_esercizi,
               tipo,
               reps,
               durata_secondi,
+              peso_kg,
+              note_esercizio,
               id_superset,
               id_piramide,
               stepindex_piramide,
@@ -416,6 +416,7 @@ const WorkoutHistoryDetailPage: React.FC = () => {
           .eq('id_scheda', Number(runData.id_scheda))
           .maybeSingle();
 
+        if (isCancelled) return;
         if (workoutError || !workoutData) {
           setExercises([]);
           return;
@@ -424,16 +425,43 @@ const WorkoutHistoryDetailPage: React.FC = () => {
         const parsedExercises = parseDbExerciseRows(workoutData?.esecuzioni || []);
         setExercises(parsedExercises);
       } catch (fetchError) {
+        if (isCancelled) return;
+        if (matchedLocal) {
+          const snapshotExercises = toSnapshotExercises(matchedLocal.exercises_snapshot);
+          const detailId = matchedLocal.remote_workout_run_id
+            ? String(matchedLocal.remote_workout_run_id)
+            : matchedLocal.workout_uuid;
+          const pendingOverride = pendingNoteUpdates[detailId];
+          setDetail({
+            id: detailId,
+            schedaId: matchedLocal.id_scheda != null ? String(matchedLocal.id_scheda) : null,
+            canRestartFromTemplate: false,
+            canRestartFromSnapshot: snapshotExercises.length > 0,
+            workoutName: matchedLocal.workout_name_snapshot || 'Allenamento',
+            executedAt: matchedLocal.executed_at,
+            totalDurationSeconds: matchedLocal.durata_totale_secondi,
+            notes: pendingOverride
+              ? pendingOverride.notes
+              : (matchedLocal.notes || []).map((n) => n.text),
+          });
+          setExercises(snapshotExercises);
+          return;
+        }
         console.error('Error fetching workout history detail:', fetchError);
         setError('Unable to load workout details.');
         setDetail(null);
         setExercises([]);
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     };
 
     void fetchWorkoutHistoryDetail();
+    return () => {
+      isCancelled = true;
+    };
   }, [user, workoutRunId]);
 
   const notesGrouped = useMemo(() => {
@@ -522,24 +550,16 @@ const WorkoutHistoryDetailPage: React.FC = () => {
     const hasRemoteId = !Number.isNaN(workoutRunNumericId) && workoutRunNumericId > 0;
 
     if (hasRemoteId) {
-      const { error: deleteNotesError } = await supabase
-        .from('note_workout')
-        .delete()
-        .eq('id_workout', workoutRunNumericId);
-
-      if (deleteNotesError) throw deleteNotesError;
-
-      if (newSourceNotes.length > 0) {
-        const rowsToInsert = newSourceNotes.map((note) => ({
-          id_workout: workoutRunNumericId,
-          testo: note,
-        }));
-
-        const { error: insertNotesError } = await supabase
-          .from('note_workout')
-          .insert(rowsToInsert);
-
-        if (insertNotesError) throw insertNotesError;
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+      if (isOnline) {
+        try {
+          await replaceRemoteWorkoutNotes(workoutRunNumericId, newSourceNotes);
+        } catch (remoteErr) {
+          console.warn('[WorkoutHistoryDetailPage] Errore sync immediato note, salvo in coda offline:', remoteErr);
+          enqueuePendingNoteUpdate(user.id, workoutRunNumericId, newSourceNotes);
+        }
+      } else {
+        enqueuePendingNoteUpdate(user.id, workoutRunNumericId, newSourceNotes);
       }
     }
 
@@ -649,26 +669,40 @@ const WorkoutHistoryDetailPage: React.FC = () => {
     if (!window.confirm('Delete this completed workout from history?')) return;
 
     const workoutRunNumericId = Number(detail.id);
-    if (Number.isNaN(workoutRunNumericId)) {
-      alert('Invalid workout id.');
-      return;
-    }
+    const hasRemoteId = !Number.isNaN(workoutRunNumericId) && workoutRunNumericId > 0;
 
     try {
       setIsDeletingHistoryEntry(true);
 
-      const { error: notesDeleteError } = await supabase
-        .from('note_workout')
-        .delete()
-        .eq('id_workout', workoutRunNumericId);
-      if (notesDeleteError) throw notesDeleteError;
+      removeWorkoutFromQueue(user.id, detail.id);
+      if (workoutRunId && workoutRunId !== detail.id) {
+        removeWorkoutFromQueue(user.id, workoutRunId);
+      }
 
-      const { error: workoutDeleteError } = await supabase
-        .from('workout_run')
-        .delete()
-        .eq('id_workout', workoutRunNumericId)
-        .eq('id_utente', user.id);
-      if (workoutDeleteError) throw workoutDeleteError;
+      if (hasRemoteId) {
+        const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+        if (!isOnline) {
+          enqueuePendingWorkoutDelete(user.id, workoutRunNumericId);
+        } else {
+          try {
+            const { error: notesDeleteError } = await supabase
+              .from('note_workout')
+              .delete()
+              .eq('id_workout', workoutRunNumericId);
+            if (notesDeleteError) throw notesDeleteError;
+
+            const { error: workoutDeleteError } = await supabase
+              .from('workout_run')
+              .delete()
+              .eq('id_workout', workoutRunNumericId)
+              .eq('id_utente', user.id);
+            if (workoutDeleteError) throw workoutDeleteError;
+          } catch (cloudErr) {
+            console.warn('[WorkoutHistoryDetailPage] Eliminazione cloud fallita, accodamento offline:', cloudErr);
+            enqueuePendingWorkoutDelete(user.id, workoutRunNumericId);
+          }
+        }
+      }
 
       navigate('/workout-history');
     } catch (deleteError) {
@@ -1017,30 +1051,46 @@ const WorkoutHistoryDetailPage: React.FC = () => {
                   )}
 
                   {exercise.type === 'circuit' && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
-                      <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                        <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Giri (Rounds)</span>
-                        <span className="text-sm text-white">{exercise.sets}</span>
-                      </div>
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-brand-grey font-bold w-full mt-2">
+                        <div className="bg-white/5 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
+                          <span className="opacity-50 text-[9px] uppercase tracking-wider mb-1">Giri (Rounds)</span>
+                          <span className="text-sm text-white">{exercise.sets}</span>
+                        </div>
 
-                      <div className="bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
-                        <span className="text-brand-orange/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
-                          <Clock size={9} className="mr-1" />
-                          Rest Giro
-                        </span>
-                        <span className="text-sm text-brand-orange">{formatSecs(exercise.rest_seconds)}</span>
-                      </div>
-
-                      {exercise.total_circuit_duration_seconds != null && exercise.total_circuit_duration_seconds > 0 && (
-                        <div className="bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center col-span-2 sm:col-span-1">
+                        <div className="bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center">
                           <span className="text-brand-orange/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
-                            <Timer size={9} className="mr-1" />
-                            Tempo Totale
+                            <Clock size={9} className="mr-1" />
+                            Rest Giro
                           </span>
-                          <span className="text-sm text-brand-orange font-black">{formatSecs(exercise.total_circuit_duration_seconds)}</span>
+                          <span className="text-sm text-brand-orange">{formatSecs(exercise.rest_seconds)}</span>
+                        </div>
+
+                        {exercise.total_circuit_duration_seconds != null && exercise.total_circuit_duration_seconds > 0 && (
+                          <div className="bg-brand-orange/10 border border-brand-orange/20 py-2 px-3 rounded-lg text-center flex flex-col justify-center col-span-2 sm:col-span-1">
+                            <span className="text-brand-orange/80 text-[9px] uppercase tracking-wider mb-1 flex justify-center items-center">
+                              <Timer size={9} className="mr-1" />
+                              Tempo Totale
+                            </span>
+                            <span className="text-sm text-brand-orange font-black">{formatSecs(exercise.total_circuit_duration_seconds)}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {Array.isArray(exercise.lap_durations_seconds) && exercise.lap_durations_seconds.some((d) => d > 0) && (
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">
+                          {exercise.lap_durations_seconds.map((lapSec, lapIdx) => (
+                            <span
+                              key={lapIdx}
+                              className="inline-flex items-center gap-1 text-[11px] font-mono font-bold bg-black/40 border border-white/10 px-2.5 py-1 rounded-lg text-white"
+                            >
+                              <span className="text-zinc-400 text-[10px] font-sans">Giro {lapIdx + 1}:</span>
+                              <span className="text-brand-orange">{formatSecs(lapSec)}</span>
+                            </span>
+                          ))}
                         </div>
                       )}
-                    </div>
+                    </>
                   )}
 
                   {exercise.type === 'emom' && (

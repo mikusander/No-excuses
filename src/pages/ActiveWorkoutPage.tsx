@@ -105,7 +105,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Play, Pause, SkipForward, ArrowRight, ArrowLeft as ArrowPrev, Timer, Clock, CheckCircle2, Check, Mic, MicOff, FileText, X, Info, Video, Layers, Flame, Pencil, Zap, Dumbbell, List } from 'lucide-react';
-import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import { parseDbExerciseRows, toSnapshotExercises } from '../lib/workoutSchemaAdapter';
 import { warmupSpeechSynthesis, speak } from '../utils/voice';
 import { WorkoutOverviewModal } from '../components/active-workout/WorkoutOverviewModal';
 import { ActiveWorkoutModals } from '../components/active-workout/ActiveWorkoutModals';
@@ -263,17 +263,6 @@ interface PersistedWorkoutProgressPayload {
 
 const WORKOUT_PROGRESS_THROTTLE_MS = 1000;
 
-const toSafeSnapshotNumber = (value: unknown, fallback: number) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-};
-
-const toOptionalWeight = (value: unknown): number | null => {
-  if (value === null || value === undefined || String(value).trim() === '') return null;
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
-};
-
 const formatExerciseNoteWithMeta = (exercise: Exercise): string | null => {
   const cleanNote = String(exercise.instruction_note || '').trim();
   const metaObj: Record<string, unknown> = {};
@@ -288,76 +277,6 @@ const formatExerciseNoteWithMeta = (exercise: Exercise): string | null => {
   }
   const metaSuffix = `@@@meta:${JSON.stringify(metaObj)}`;
   return cleanNote ? `${cleanNote} ${metaSuffix}` : metaSuffix;
-};
-
-const toSnapshotExercises = (raw: unknown): Exercise[] => {
-  if (!Array.isArray(raw)) return [];
-
-  return raw
-    .map((entry, idx) => {
-      const item = entry as Record<string, unknown>;
-      const typeRaw = String(item.type || 'reps').toLowerCase();
-      const type: Exercise['type'] =
-        typeRaw === 'isometry' || typeRaw === 'cardio' || typeRaw === 'superset' || typeRaw === 'circuit' || typeRaw === 'emom' || typeRaw === 'pyramid'
-          ? (typeRaw as Exercise['type'])
-          : 'reps';
-
-      const subExercises = Array.isArray(item.subExercises)
-        ? (item.subExercises as Array<Record<string, unknown>>).map((sub) => {
-          const subTypeRaw = String(sub.type || 'reps').toLowerCase();
-          const subType: 'reps' | 'isometry' | 'cardio' =
-            subTypeRaw === 'cardio' ? 'cardio' : (subTypeRaw === 'isometry' ? 'isometry' : 'reps');
-          return {
-            name: String(sub.name || ''),
-            type: subType,
-            reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.reps, 0))),
-            duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(sub.duration_seconds, 0))),
-            weight_kg: toOptionalWeight(sub.weight_kg),
-            instruction_note: String(sub.instruction_note || '').trim() || null,
-          };
-        })
-        : undefined;
-
-      const pyramidSteps = Array.isArray(item.pyramid_steps)
-        ? (item.pyramid_steps as Array<Record<string, unknown>>).map((step) => ({
-          reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(step.reps, 0))),
-          rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(step.rest_seconds, 0))),
-          weight_kg: toOptionalWeight(step.weight_kg),
-        }))
-        : undefined;
-
-      return {
-        id: String(item.id || `snapshot-${idx}`),
-        type,
-        name: String(item.name || `Exercise ${idx + 1}`),
-        instruction_note: String(item.instruction_note || '').trim() || null,
-        auto_count_type: (item as any).auto_count_type || null,
-        sets: Math.max(1, Math.trunc(toSafeSnapshotNumber(item.sets, 1))),
-        reps: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.reps, 0))),
-        duration_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.duration_seconds, 0))),
-        rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.rest_seconds, 0))),
-        transition_rest_seconds: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.transition_rest_seconds, 0))),
-        weight_kg: toOptionalWeight(item.weight_kg),
-        lap_durations_seconds: Array.isArray(item.lap_durations_seconds)
-          ? (item.lap_durations_seconds as unknown[]).map(v => Math.max(0, Math.trunc(toSafeSnapshotNumber(v, 0))))
-          : undefined,
-        total_circuit_duration_seconds: item.total_circuit_duration_seconds == null
-          ? undefined
-          : Math.max(0, Math.trunc(toSafeSnapshotNumber(item.total_circuit_duration_seconds, 0))),
-        order_index: Math.max(0, Math.trunc(toSafeSnapshotNumber(item.order_index, idx))),
-        emom_rounds:
-          item.emom_rounds != null && toSafeSnapshotNumber(item.emom_rounds, 0) > 0
-            ? Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_rounds, 1)))
-            : (type === 'emom' && item.sets ? Math.max(1, Math.trunc(toSafeSnapshotNumber(item.sets, 1))) : undefined),
-        emom_round_duration:
-          item.emom_round_duration == null
-            ? (type === 'emom' ? 60 : undefined)
-            : Math.max(1, Math.trunc(toSafeSnapshotNumber(item.emom_round_duration, 1))),
-        pyramid_steps: pyramidSteps,
-        subExercises,
-      } satisfies Exercise;
-    })
-    .sort((a, b) => a.order_index - b.order_index);
 };
 
 const formatTime = (secs: number) => {

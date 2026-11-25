@@ -8,7 +8,7 @@
  *
  * Cliccando sulla card si apre la vista modale del calendario mensile completo.
  */
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Calendar } from 'lucide-react';
 import { hapticLight } from '../utils/haptics';
 
@@ -32,11 +32,34 @@ const WeeklyConsistencyBar: React.FC<WeeklyConsistencyBarProps> = ({
   activeDates = [],
   onOpenCalendar,
 }) => {
+  const [todayKey, setTodayKey] = useState<string>(() => toLocalDateString(new Date()));
+
+  useEffect(() => {
+    const syncToday = () => {
+      const next = toLocalDateString(new Date());
+      setTodayKey((prev) => (prev === next ? prev : next));
+    };
+    const intervalId = setInterval(syncToday, 60_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncToday();
+      }
+    };
+    window.addEventListener('focus', syncToday);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', syncToday);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
   const activeSet = useMemo(() => new Set(activeDates), [activeDates]);
 
   // Calcola i 7 giorni della settimana corrente (da lunedì a domenica) in orario locale
   const weekDays = useMemo(() => {
-    const today = new Date();
+    const [y, m, dNum] = todayKey.split('-').map(Number);
+    const today = y && m && dNum ? new Date(y, m - 1, dNum) : new Date();
     const currentDayOfWeek = today.getDay(); // 0 = Domenica, 1 = Lunedì, ...
     // Distanza da Lunedì (Lunedì = 0, Domenica = 6)
     const diffToMonday = (currentDayOfWeek + 6) % 7;
@@ -45,13 +68,11 @@ const WeeklyConsistencyBar: React.FC<WeeklyConsistencyBarProps> = ({
     monday.setDate(today.getDate() - diffToMonday);
     monday.setHours(0, 0, 0, 0);
 
-    const todayIso = toLocalDateString(today);
-
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
       const iso = toLocalDateString(d);
-      const isToday = iso === todayIso;
+      const isToday = iso === todayKey;
       const isPast = d < today && !isToday;
       const hasWorkout = activeSet.has(iso);
 
@@ -64,7 +85,7 @@ const WeeklyConsistencyBar: React.FC<WeeklyConsistencyBarProps> = ({
         hasWorkout,
       };
     });
-  }, [activeSet]);
+  }, [activeSet, todayKey]);
 
   const completedCount = useMemo(() => {
     return weekDays.filter((d) => d.hasWorkout).length;
@@ -80,7 +101,12 @@ const WeeklyConsistencyBar: React.FC<WeeklyConsistencyBarProps> = ({
       onClick={handleClick}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleClick()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
       className="w-full bg-[#1C1C1E]/90 hover:bg-[#1C1C1E] backdrop-blur-xl border border-white/10 hover:border-brand-orange/40 rounded-3xl p-4 shadow-lg flex flex-col gap-3 cursor-pointer transition-all active:scale-[0.99] select-none group"
     >
       <div className="flex items-center justify-between px-1">

@@ -257,7 +257,7 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
       setCustomStartDate(formatIsoDate(start));
       setCustomEndDate(formatIsoDate(end));
     } else if (preset === 'last_14') {
-      const start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+      const start = new Date(now.getTime() - 13 * 24 * 60 * 60 * 1000);
       setCustomStartDate(formatIsoDate(start));
       setCustomEndDate(formatIsoDate(now));
     } else if (preset === 'all_time' && workouts && workouts.length > 0) {
@@ -273,43 +273,7 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
-  const handleCopySummary = async () => {
-    try {
-      const text = exportReportSummaryText(report);
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-      setCopiedNotification(true);
-      setTimeout(() => setCopiedNotification(false), 2500);
-    } catch (err) {
-      console.error('Failed to copy text:', err);
-    }
-  };
-
-  const toggleDossierExpanded = (canonicalId: string) => {
-    setExpandedDossiers((prev) => ({
-      ...prev,
-      [canonicalId]: !prev[canonicalId],
-    }));
-  };
-
-  const toggleExerciseSessionExpanded = (canonicalId: string) => {
-    setExpandedExerciseSessions((prev) => ({
-      ...prev,
-      [canonicalId]: !prev[canonicalId],
-    }));
-  };
-
-  // Filtro e ordinamento esercizi micro
+  // Filtro e ordinamento esercizi micro (eseguiti prima di qualsiasi early return per Rules of Hooks)
   const sortedFilteredExercises = useMemo(() => {
     const list = (report?.exercises || []).filter((ex) => {
       if (!ex) return false;
@@ -347,20 +311,58 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
   }, [report?.exercises, exerciseSearchQuery, selectedMuscleFilter, exerciseSortMode]);
 
   // Filtro dossier note
-  const filteredDossiers = (report?.notesDossiers || []).filter((dossier) => {
-    if (!dossier) return false;
-    const exName = String(dossier.exerciseName || '');
-    const searchLower = exerciseSearchQuery.toLowerCase();
-    const matchesSearch =
-      exerciseSearchQuery === '' ||
-      exName.toLowerCase().includes(searchLower) ||
-      (dossier.chronologicalNotes || []).some((n) =>
-        String(n?.text || '').toLowerCase().includes(searchLower)
-      );
-    const matchesGroup =
-      selectedMuscleFilter === 'all' || dossier.muscleGroup === selectedMuscleFilter;
-    return matchesSearch && matchesGroup;
-  });
+  const filteredDossiers = useMemo(() => {
+    return (report?.notesDossiers || []).filter((dossier) => {
+      if (!dossier) return false;
+      const exName = String(dossier.exerciseName || '');
+      const searchLower = exerciseSearchQuery.toLowerCase();
+      const matchesSearch =
+        exerciseSearchQuery === '' ||
+        exName.toLowerCase().includes(searchLower) ||
+        (dossier.chronologicalNotes || []).some((n) =>
+          String(n?.text || '').toLowerCase().includes(searchLower)
+        );
+      const matchesGroup =
+        selectedMuscleFilter === 'all' || dossier.muscleGroup === selectedMuscleFilter;
+      return matchesSearch && matchesGroup;
+    });
+  }, [report?.notesDossiers, exerciseSearchQuery, selectedMuscleFilter]);
+
+  if (!isOpen) return null;
+
+  const handleCopySummary = async () => {
+    try {
+      const text = exportReportSummaryText(report);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedNotification(true);
+      setTimeout(() => setCopiedNotification(false), 2500);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
+
+  const toggleDossierExpanded = (canonicalId: string) => {
+    setExpandedDossiers((prev) => ({
+      ...prev,
+      [canonicalId]: !prev[canonicalId],
+    }));
+  };
+
+  const toggleExerciseSessionExpanded = (canonicalId: string) => {
+    setExpandedExerciseSessions((prev) => ({
+      ...prev,
+      [canonicalId]: !prev[canonicalId],
+    }));
+  };
 
   return (
     <div
@@ -692,7 +694,7 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                     >
                       Tutti
                     </button>
-                    {['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome'].map((group) => (
+                    {['Petto', 'Dorso', 'Gambe', 'Spalle', 'Braccia', 'Addome', 'Altro'].map((group) => (
                       <button
                         key={group}
                         onClick={() => setSelectedMuscleFilter(group)}
@@ -758,6 +760,13 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                   {sortedFilteredExercises.map((ex) => {
                     const theme = getMuscleColorTheme(ex.muscleGroup);
                     const isSessionsExpanded = Boolean(expandedExerciseSessions[ex.canonicalId]);
+                    const isCardio = Boolean(ex.isCardio);
+                    const primaryUnit = isCardio || ex.isIsometric ? 's' : ex.totalVolumeKg > 0 ? 'kg' : 'rip';
+                    const chartPoints =
+                      primaryUnit === 'kg'
+                        ? (ex.historyPoints || []).filter((pt) => pt.metricLabel === 'kg' && pt.metricValue > 0)
+                        : ex.historyPoints || [];
+                    const effectiveChartPoints = chartPoints.length > 0 ? chartPoints : ex.historyPoints || [];
 
                     return (
                       <div
@@ -773,7 +782,11 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                               {ex.muscleGroup}
                             </span>
 
-                            {ex.isIsometric ? (
+                            {isCardio ? (
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border bg-rose-500/15 text-rose-300 border-rose-500/30 mt-0.5 shrink-0">
+                                Cardio
+                              </span>
+                            ) : ex.isIsometric ? (
                               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border bg-cyan-500/15 text-cyan-300 border-cyan-500/30 mt-0.5 shrink-0">
                                 Skill / Isometria
                               </span>
@@ -788,7 +801,9 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                                 {ex.displayName}
                               </h3>
                               <p className="text-[11px] text-brand-grey/60 mt-0.5">
-                                Svolto in {ex.sessionsCount} {ex.sessionsCount === 1 ? 'sessione' : 'sessioni'} • {ex.totalHardSets} serie allenanti (Hard Sets)
+                                {isCardio
+                                  ? `Svolto in ${ex.sessionsCount} ${ex.sessionsCount === 1 ? 'sessione' : 'sessioni'} • ${ex.totalSets} ${ex.totalSets === 1 ? 'intervallo' : 'intervalli'}`
+                                  : `Svolto in ${ex.sessionsCount} ${ex.sessionsCount === 1 ? 'sessione' : 'sessioni'} • ${ex.totalHardSets} serie allenanti (Hard Sets)`}
                               </p>
                             </div>
                           </div>
@@ -808,10 +823,19 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                           {/* Volume nel periodo */}
                           <div className="bg-black/40 rounded-xl p-3 border border-white/5 flex flex-col justify-between">
                             <span className="text-[10px] uppercase font-bold text-brand-grey/60 block">
-                              Volume nel Periodo
+                              {isCardio ? 'Tempo nel Periodo' : 'Volume nel Periodo'}
                             </span>
                             <div className="mt-1">
-                              {ex.isIsometric ? (
+                              {isCardio ? (
+                                <>
+                                  <span className="text-base sm:text-lg font-black text-rose-300 font-mono">
+                                    {ex.formattedTUT}
+                                  </span>
+                                  <span className="text-[10px] text-brand-grey/60 block mt-0.5">
+                                    Tempo cardio totale
+                                  </span>
+                                </>
+                              ) : ex.isIsometric ? (
                                 <>
                                   <span className="text-base sm:text-lg font-black text-cyan-300 font-mono">
                                     {ex.totalDurationSeconds}s TUT
@@ -886,10 +910,11 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                         {/* 3. Trend Temporale (Curva di Progressione SVG a Zero Dipendenze) */}
                         <div className="pt-1">
                           <ExerciseTrendChart
-                            historyPoints={ex.historyPoints}
+                            historyPoints={effectiveChartPoints}
                             isIsometric={ex.isIsometric}
-                            metricLabel={ex.isIsometric ? 's' : ex.totalVolumeKg > 0 ? 'kg' : 'rip'}
-                            accentColor={ex.isIsometric ? '#06b6d4' : ex.totalVolumeKg > 0 ? '#f97316' : '#10b981'}
+                            isCardio={isCardio}
+                            metricLabel={primaryUnit}
+                            accentColor={isCardio ? '#f43f5e' : ex.isIsometric ? '#06b6d4' : ex.totalVolumeKg > 0 ? '#f97316' : '#10b981'}
                           />
                         </div>
 
@@ -925,12 +950,14 @@ const PeriodicReportModalInner: React.FC<PeriodicReportModalProps> = ({
                                   </div>
                                   <div className="flex items-center gap-2 font-mono">
                                     <span className="text-brand-grey/70 text-[11px]">
-                                      {pt.sets} {pt.sets === 1 ? 'serie' : 'serie'}
+                                      {pt.sets} serie
                                     </span>
                                     <span className="font-bold text-white bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
-                                      {ex.isIsometric
-                                        ? `${pt.metricValue}s TUT`
-                                        : `${pt.reps} rip${pt.weightKg > 0 ? ` @ ${pt.weightKg}kg` : ''}`}
+                                      {isCardio
+                                        ? `${pt.durationSeconds}s`
+                                        : ex.isIsometric
+                                          ? `${pt.durationSeconds}s TUT`
+                                          : `${pt.reps} rip${pt.weightKg > 0 ? ` @ ${pt.weightKg}kg` : ''}`}
                                     </span>
                                   </div>
                                 </div>

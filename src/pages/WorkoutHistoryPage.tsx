@@ -34,7 +34,7 @@
  * Ogni voce naviga a `/workout-history/:workoutRunId` (WorkoutHistoryDetailPage)
  * per visualizzare il dettaglio completo della sessione.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
@@ -54,15 +54,16 @@ import BottomNavigation from '../components/BottomNavigation';
 import PeriodicReportModal from '../components/PeriodicReportModal';
 import AppHeader from '../components/AppHeader';
 import { hapticLight, hapticHeavy } from '../utils/haptics';
-import {
-  type RawWorkoutSession,
-  toSnapshotExercises,
-} from '../utils/periodicReportEngine';
+import type { RawWorkoutSession } from '../utils/periodicReportEngine';
+import { toSnapshotExercises } from '../lib/workoutSchemaAdapter';
 import {
   getSyncQueue,
   subscribeToSyncQueue,
   processSyncQueue,
   removeWorkoutFromQueue,
+  getPendingWorkoutDeletes,
+  enqueuePendingWorkoutDelete,
+  getPendingNoteUpdates,
   type SyncStatus,
 } from '../lib/workoutSyncManager';
 
@@ -83,80 +84,108 @@ const WorkoutHistoryPage: React.FC = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<string | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+
+  const isMountedRef = useRef(true);
+  const fetchSeqRef = useRef(0);
 
   useEffect(() => {
-    if (!user) return;
-    void fetchHistory();
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    void fetchHistory(false);
 
     const unsubscribe = subscribeToSyncQueue(() => {
-      void fetchHistory();
+      void fetchHistory(true);
     });
 
     return () => {
       unsubscribe();
     };
-  }, [user]);
+  }, [user?.id]);
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (silent = false) => {
+    if (!user?.id) return;
+    const seq = ++fetchSeqRef.current;
+
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
 
-      // 1. Recupera la coda di sincronizzazione locale (offline-first)
-      const localQueue = user?.id ? getSyncQueue(user.id) : [];
+      // 1. Recupera coda di sincronizzazione, eliminazioni offline e note modificate offline
+      const localQueue = getSyncQueue(user.id);
+      const pendingDeletes = new Set(getPendingWorkoutDeletes(user.id));
+      const pendingNoteUpdates = getPendingNoteUpdates(user.id);
       const pendingItems = localQueue.filter((item) => item.sync_status !== 'synced');
-      setPendingSyncCount(pendingItems.length);
+      if (isMountedRef.current && seq === fetchSeqRef.current) {
+        setPendingSyncCount(pendingItems.length);
+      }
 
       // 2. Lettura dal database remoto Supabase (gestita in modo resiliente se offline)
       let rows: any[] = [];
-      try {
-        const runSelectWithDuration = `
-          id_workout,
-          id_scheda,
-          workout_name_snapshot,
-          exercises_snapshot,
-          data_esecuzione,
-          durata_totale_secondi,
-          schede ( id_scheda, nome ),
-          note_workout ( testo, created_at )
-        `;
+      let cloudFetchSucceeded = false;
 
-        const runSelectBase = `
-          id_workout,
-          id_scheda,
-          workout_name_snapshot,
-          exercises_snapshot,
-          data_esecuzione,
-          schede ( id_scheda, nome ),
-          note_workout ( testo, created_at )
-        `;
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        try {
+          const runSelectWithDuration = `
+            id_workout,
+            id_scheda,
+            workout_name_snapshot,
+            exercises_snapshot,
+            data_esecuzione,
+            durata_totale_secondi,
+            schede ( id_scheda, nome ),
+            note_workout ( testo, created_at )
+          `;
 
-        let runData: any = null;
-        let runError: any = null;
+          const runSelectBase = `
+            id_workout,
+            id_scheda,
+            workout_name_snapshot,
+            exercises_snapshot,
+            data_esecuzione,
+            schede ( id_scheda, nome ),
+            note_workout ( testo, created_at )
+          `;
 
-        const firstAttempt = await supabase
-          .from('workout_run')
-          .select(runSelectWithDuration)
-          .order('data_esecuzione', { ascending: false });
+          let runData: any = null;
+          let runError: any = null;
 
-        runData = firstAttempt.data;
-        runError = firstAttempt.error;
-
-        if (runError && /durata_totale_secondi/i.test(String(runError.message || ''))) {
-          const fallbackAttempt = await supabase
+          const firstAttempt = await supabase
             .from('workout_run')
-            .select(runSelectBase)
+            .select(runSelectWithDuration)
+            .eq('id_utente', user.id)
             .order('data_esecuzione', { ascending: false });
-          runData = fallbackAttempt.data;
-          runError = fallbackAttempt.error;
-        }
 
-        if (!runError && Array.isArray(runData)) {
-          rows = runData;
+          runData = firstAttempt.data;
+          runError = firstAttempt.error;
+
+          if (runError && /durata_totale_secondi/i.test(String(runError.message || ''))) {
+            const fallbackAttempt = await supabase
+              .from('workout_run')
+              .select(runSelectBase)
+              .eq('id_utente', user.id)
+              .order('data_esecuzione', { ascending: false });
+            runData = fallbackAttempt.data;
+            runError = fallbackAttempt.error;
+          }
+
+          if (!runError && Array.isArray(runData)) {
+            rows = runData.filter((r) => !pendingDeletes.has(Number(r?.id_workout)));
+            cloudFetchSucceeded = true;
+          }
+        } catch (cloudErr) {
+          console.warn('[WorkoutHistoryPage] Lettura cloud non disponibile (offline):', cloudErr);
         }
-      } catch (cloudErr) {
-        // Nessun alert di errore o blocco UI in caso di assenza di rete
-        console.warn('[WorkoutHistoryPage] Lettura cloud non disponibile (offline):', cloudErr);
       }
+
+      if (!isMountedRef.current || seq !== fetchSeqRef.current) return;
 
       // Mappiamo gli id e gli UUID già sincronizzati per evitare duplicazioni
       const syncedUuids = new Set<string>();
@@ -166,11 +195,14 @@ const WorkoutHistoryPage: React.FC = () => {
         if (row.id_workout) {
           syncedRemoteIds.add(Number(row.id_workout));
         }
-        // Ispeziona se l'UUID è presente nello snapshot
-        if (Array.isArray(row.exercises_snapshot) && row.exercises_snapshot.length > 0) {
-          const firstEx = row.exercises_snapshot[0];
-          if (firstEx && firstEx._session_meta && firstEx._session_meta.workout_uuid) {
-            syncedUuids.add(String(firstEx._session_meta.workout_uuid));
+        if (Array.isArray(row.exercises_snapshot)) {
+          for (const snapEx of row.exercises_snapshot) {
+            if (snapEx?.workout_uuid) {
+              syncedUuids.add(String(snapEx.workout_uuid));
+            }
+            if (snapEx?._session_meta?.workout_uuid) {
+              syncedUuids.add(String(snapEx._session_meta.workout_uuid));
+            }
           }
         }
       }
@@ -179,13 +211,19 @@ const WorkoutHistoryPage: React.FC = () => {
       const combinedItems: WorkoutHistoryItem[] = [];
       const combinedRawSessions: RawWorkoutSession[] = [];
 
-      // Aggiungi le sessioni in coda offline (pending o non ancora riscontrate nel cloud)
+      // Aggiungi le sessioni in coda offline non ancora presenti sul cloud
       for (const queued of localQueue) {
+        if (queued.remote_workout_run_id && pendingDeletes.has(Number(queued.remote_workout_run_id))) {
+          continue;
+        }
         const isAlreadyInCloud =
-          (queued.remote_workout_run_id && syncedRemoteIds.has(queued.remote_workout_run_id)) ||
+          (queued.remote_workout_run_id != null && syncedRemoteIds.has(Number(queued.remote_workout_run_id))) ||
           syncedUuids.has(queued.workout_uuid);
 
-        if (!isAlreadyInCloud) {
+        // Se il fetch cloud è riuscito, escludi gli elementi marcati synced assenti dal cloud (evita resurrezioni)
+        const shouldIncludeLocal = !isAlreadyInCloud && (!cloudFetchSucceeded || queued.sync_status !== 'synced');
+
+        if (shouldIncludeLocal) {
           combinedItems.push({
             id: queued.workout_uuid,
             schedaId: queued.id_scheda != null ? String(queued.id_scheda) : null,
@@ -225,13 +263,16 @@ const WorkoutHistoryPage: React.FC = () => {
         });
 
         const exercises = toSnapshotExercises(row.exercises_snapshot);
+        const pendingOverride = pendingNoteUpdates[String(row.id_workout)];
         const linkedNotes = Array.isArray(row.note_workout) ? row.note_workout : [];
-        const notes = linkedNotes
-          .filter((n: any) => Boolean(n && typeof n === 'object'))
-          .map((n: any) => ({
-            text: String(n.testo || ''),
-            createdAt: n.created_at ? String(n.created_at) : undefined,
-          }));
+        const notes = pendingOverride
+          ? pendingOverride.notes.map((text) => ({ text }))
+          : linkedNotes
+              .filter((n: any) => Boolean(n && typeof n === 'object'))
+              .map((n: any) => ({
+                text: String(n.testo || ''),
+                createdAt: n.created_at ? String(n.created_at) : undefined,
+              }));
 
         combinedRawSessions.push({
           id: String(row.id_workout),
@@ -256,12 +297,16 @@ const WorkoutHistoryPage: React.FC = () => {
         return timeB - timeA;
       });
 
-      setHistoryItems(combinedItems);
-      setReportWorkouts(combinedRawSessions);
+      if (isMountedRef.current && seq === fetchSeqRef.current) {
+        setHistoryItems(combinedItems);
+        setReportWorkouts(combinedRawSessions);
+      }
     } catch (error) {
       console.error('Error fetching workout history:', error);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current && seq === fetchSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -284,25 +329,33 @@ const WorkoutHistoryPage: React.FC = () => {
     try {
       setDeletingWorkoutId(workoutRunId);
 
-      // 1. Rimuovi dalla coda locale se presente
+      // 1. Rimuovi dalla coda locale (per UUID o remote_workout_run_id)
       removeWorkoutFromQueue(user.id, workoutRunId);
 
-      // 2. Se è un id numerico remoto, rimuovi da Supabase
+      // 2. Se è un id numerico remoto, rimuovi da Supabase (o accoda la cancellazione se offline)
       const workoutRunNumericId = Number(workoutRunId);
-      if (!Number.isNaN(workoutRunNumericId)) {
-        try {
-          await supabase
-            .from('note_workout')
-            .delete()
-            .eq('id_workout', workoutRunNumericId);
+      if (!Number.isNaN(workoutRunNumericId) && workoutRunNumericId > 0) {
+        const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+        if (!isOnline) {
+          enqueuePendingWorkoutDelete(user.id, workoutRunNumericId);
+        } else {
+          try {
+            const { error: noteDelErr } = await supabase
+              .from('note_workout')
+              .delete()
+              .eq('id_workout', workoutRunNumericId);
+            if (noteDelErr) throw noteDelErr;
 
-          await supabase
-            .from('workout_run')
-            .delete()
-            .eq('id_workout', workoutRunNumericId)
-            .eq('id_utente', user.id);
-        } catch (cloudErr) {
-          console.warn('Errore cancellazione cloud:', cloudErr);
+            const { error: runDelErr } = await supabase
+              .from('workout_run')
+              .delete()
+              .eq('id_workout', workoutRunNumericId)
+              .eq('id_utente', user.id);
+            if (runDelErr) throw runDelErr;
+          } catch (cloudErr) {
+            console.warn('[WorkoutHistoryPage] Eliminazione cloud fallita, accodamento offline:', cloudErr);
+            enqueuePendingWorkoutDelete(user.id, workoutRunNumericId);
+          }
         }
       }
 
@@ -313,6 +366,20 @@ const WorkoutHistoryPage: React.FC = () => {
       alert('Impossibile eliminare la sessione di allenamento.');
     } finally {
       setDeletingWorkoutId(null);
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (!user?.id || isManualSyncing) return;
+    void hapticLight();
+    setIsManualSyncing(true);
+    try {
+      await processSyncQueue(user.id, true);
+      await fetchHistory(true);
+    } finally {
+      if (isMountedRef.current) {
+        setIsManualSyncing(false);
+      }
     }
   };
 
@@ -375,13 +442,13 @@ const WorkoutHistoryPage: React.FC = () => {
             </div>
             <button
               onClick={() => {
-                void hapticLight();
-                if (user?.id) void processSyncQueue(user.id);
+                void handleManualSync();
               }}
-              className="shrink-0 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-extrabold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+              disabled={isManualSyncing}
+              className="shrink-0 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-extrabold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <RefreshCw size={13} />
-              <span>Sincronizza ora</span>
+              <RefreshCw size={13} className={isManualSyncing ? 'animate-spin' : ''} />
+              <span>{isManualSyncing ? 'Sincronizzazione...' : 'Sincronizza ora'}</span>
             </button>
           </div>
         )}

@@ -987,32 +987,93 @@ export const CANONICAL_EXERCISES: CanonicalExercise[] = [
 ];
 
 // Matrice euristica di parole chiave per dedurre il gruppo muscolare per movimenti non catalogati
-const MUSCLE_HEURISTICS: Array<{ group: MuscleGroup; keywords: string[] }> = [
+const MUSCLE_HEURISTICS: Array<{
+  group: MuscleGroup;
+  wholeWords: string[];
+  stems: string[];
+}> = [
   {
     group: 'Petto',
-    keywords: ['petto', 'chest', 'panca', 'croci', 'pushup', 'push up', 'piegamenti', 'declinat', 'inclinat', 'pector'],
+    wholeWords: ['petto', 'chest', 'panca', 'croci', 'pushup', 'push up'],
+    stems: ['piegamenti', 'declinat', 'inclinat', 'pector'],
   },
   {
     group: 'Dorso',
-    keywords: ['dorso', 'back', 'lat', 'pulley', 'remator', 'row', 'trazion', 'pull up', 'chin up', 'deadlift', 'stacc', 'lombari', 'hyperext', 'muscle', 'musckle', 'musle', 'front lever', 'back lever', 'australian'],
+    wholeWords: [
+      'dorso',
+      'back',
+      'lat',
+      'pulley',
+      'row',
+      'pull up',
+      'chin up',
+      'deadlift',
+      'lombari',
+      'muscle',
+      'musckle',
+      'musle',
+      'front lever',
+      'back lever',
+      'australian',
+    ],
+    stems: ['remator', 'trazion', 'stacc', 'hyperext'],
   },
   {
     group: 'Gambe',
-    keywords: ['gamb', 'leg', 'squat', 'pressa', 'affond', 'polpacc', 'calf', 'femoral', 'quadricep', 'glute', 'thrust', 'cosci', 'adductor', 'abductor', 'accosciat', 'pistol'],
+    wholeWords: ['leg', 'squat', 'pressa', 'calf', 'glute', 'thrust', 'adductor', 'abductor', 'pistol'],
+    stems: ['gamb', 'affond', 'polpacc', 'femoral', 'quadricep', 'cosci', 'accosciat'],
   },
   {
     group: 'Spalle',
-    keywords: ['spall', 'shoulder', 'deltoid', 'militar', 'lento', 'alzat', 'face pull', 'shrug', 'trapez', 'planche', 'hspu', 'handstand', 'vertical'],
+    wholeWords: ['shoulder', 'deltoid', 'lento', 'face pull', 'shrug', 'planche', 'hspu', 'handstand'],
+    stems: ['spall', 'militar', 'alzat', 'trapez', 'vertical'],
   },
   {
     group: 'Braccia',
-    keywords: ['bicipit', 'bicep', 'tricipit', 'tricep', 'curl', 'french', 'pushdown', 'dip', 'bracc', 'skull crush', 'kickback'],
+    wholeWords: ['bicep', 'tricep', 'curl', 'french', 'pushdown', 'dip', 'dips', 'skull crush', 'kickback'],
+    stems: ['bicipit', 'tricipit', 'bracc'],
   },
   {
     group: 'Addome',
-    keywords: ['addom', 'core', 'abs', 'crunch', 'plank', 'leg raise', 'situp', 'sit up', 'twist', 'roller', 'wheel', 'dragon', 'l sit', 'lsit', 'v sit', 'vsit', 'bandiera', 'flag'],
+    wholeWords: [
+      'core',
+      'abs',
+      'crunch',
+      'plank',
+      'leg raise',
+      'situp',
+      'sit up',
+      'twist',
+      'roller',
+      'wheel',
+      'dragon',
+      'l sit',
+      'lsit',
+      'v sit',
+      'vsit',
+      'bandiera',
+      'flag',
+    ],
+    stems: ['addom'],
   },
 ];
+
+// Alias generici che devono corrispondere solo su nome esatto (Step 1) e mai come sottostringa di altri movimenti (es. "Dip Lento")
+const EXACT_ONLY_SUBSTRING_BLOCKLIST = new Set(['lento']);
+
+const escapeRegExp = (str: string): string => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const matchesWholeWordPhrase = (cleanedText: string, phrase: string): boolean => {
+  if (!cleanedText || !phrase) return false;
+  const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(phrase)}(?:\\s|$)`);
+  return pattern.test(cleanedText);
+};
+
+const matchesWordStartStem = (cleanedText: string, stem: string): boolean => {
+  if (!cleanedText || !stem) return false;
+  const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(stem)}`);
+  return pattern.test(cleanedText);
+};
 
 const capitalize = (str: unknown): string => {
   if (str == null) return '';
@@ -1028,8 +1089,11 @@ const capitalize = (str: unknown): string => {
  * Deduce il gruppo muscolare a partire dalle parole chiave contenute nel nome pulito.
  */
 export const inferMuscleGroupFromKeywords = (cleanedName: string): MuscleGroup => {
-  for (const { group, keywords } of MUSCLE_HEURISTICS) {
-    if (keywords.some((kw) => cleanedName.includes(kw))) {
+  for (const { group, wholeWords, stems } of MUSCLE_HEURISTICS) {
+    if (
+      wholeWords.some((kw) => matchesWholeWordPhrase(cleanedName, kw)) ||
+      stems.some((stem) => matchesWordStartStem(cleanedName, stem))
+    ) {
       return group;
     }
   }
@@ -1042,7 +1106,7 @@ export const inferMuscleGroupFromKeywords = (cleanedName: string): MuscleGroup =
  * l'entità canonica o una classificazione euristica coerente.
  * Supporta:
  * 1. Matching esatto alias
- * 2. Contenimento di frase
+ * 2. Contenimento di frase con confini di parola e priorità al movimento principale
  * 3. Sovrapposizione di token
  * 4. Fuzzy Matching con Distanza di Levenshtein (tolleranza refusi ortografici)
  * 5. Euristica delle parole chiave
@@ -1077,19 +1141,25 @@ export const matchExercise = (
     }
   }
 
-  // 2. Ricerca per contenimento completo di frase (sottostringa o superstringa)
-  // Es. "panca inclinata manubri 30 gradi" contiene l'alias "panca inclinata manubri"
+  // 2. Ricerca per frase con confini di parola (evita falsi positivi come 'lat' in 'unilaterale' o 'lento' in 'dip lento')
+  // Privilegia l'alias che compare all'inizio del nome (movimento primario rispetto ai modificatori come "panca inclinata/declinata")
   let bestMatch: CanonicalExercise | null = null;
-  let longestAliasLength = 0;
+  let bestScore = 0;
   let bestMatchedAlias = '';
 
   for (const canonical of CANONICAL_EXERCISES) {
     for (const alias of canonical.aliases) {
       const cleanAlias = cleanExerciseName(alias);
-      if (cleanAlias.length >= 3 && cleaned.includes(cleanAlias)) {
-        if (cleanAlias.length > longestAliasLength) {
+      if (
+        cleanAlias.length >= 3 &&
+        !EXACT_ONLY_SUBSTRING_BLOCKLIST.has(cleanAlias) &&
+        matchesWholeWordPhrase(cleaned, cleanAlias)
+      ) {
+        const startsWithAlias = cleaned === cleanAlias || cleaned.startsWith(`${cleanAlias} `);
+        const score = cleanAlias.length + (startsWithAlias ? 10 : 0);
+        if (score > bestScore) {
           bestMatch = canonical;
-          longestAliasLength = cleanAlias.length;
+          bestScore = score;
           bestMatchedAlias = alias;
         }
       }

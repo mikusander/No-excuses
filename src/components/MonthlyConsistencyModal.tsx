@@ -2,7 +2,7 @@
  * MonthlyConsistencyModal.tsx — Vista modale fluttuante con calendario mensile completo,
  * colorazione dei giorni allenati, selezione del giorno e accesso ai riepiloghi.
  */
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   X,
   ChevronLeft,
@@ -14,6 +14,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { hapticLight, hapticMedium } from '../utils/haptics';
+import { toSnapshotExercises } from '../lib/workoutSchemaAdapter';
 import WorkoutSessionRecapModal, { type RecapWorkoutSession } from './WorkoutSessionRecapModal';
 
 export interface MonthlyWorkoutRun {
@@ -23,7 +24,7 @@ export interface MonthlyWorkoutRun {
   exercises_snapshot?: any;
   data_esecuzione: string;
   durata_totale_secondi?: number | null;
-  schede?: { id_scheda?: number | string; nome?: string } | null;
+  schede?: { id_scheda?: number | string; nome?: string } | Array<{ id_scheda?: number | string; nome?: string }> | null;
   note_workout?: Array<{ testo?: string; created_at?: string }> | null;
 }
 
@@ -57,6 +58,14 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [selectedDateIso, setSelectedDateIso] = useState<string>(() => toLocalDateKey(new Date()));
   const [activeRecapSession, setActiveRecapSession] = useState<RecapWorkoutSession | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      const now = new Date();
+      setCurrentDate(now);
+      setSelectedDateIso(toLocalDateKey(now));
+    }
+  }, [isOpen]);
 
   // Mappa di tutte le sessioni raggruppate per data locale 'YYYY-MM-DD'
   const runsByDate = useMemo(() => {
@@ -130,7 +139,7 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
     }
 
     return days;
-  }, [year, month, runsByDate]);
+  }, [year, month, runsByDate, isOpen]);
 
   // Allenamenti del mese corrente (conteggio)
   const monthWorkoutsCount = useMemo(() => {
@@ -179,9 +188,10 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
 
   const handleOpenRecap = (run: MonthlyWorkoutRun) => {
     void hapticMedium();
+    const linkedScheda = Array.isArray(run.schede) ? run.schede[0] : run.schede;
     const workoutName =
       run.workout_name_snapshot ||
-      run.schede?.nome ||
+      linkedScheda?.nome ||
       (run.id_scheda ? `Workout #${run.id_scheda}` : `Workout #${run.id_workout}`);
 
     const notesList = (run.note_workout || []).map((n) => ({
@@ -194,7 +204,7 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
       workoutName,
       executedAt: run.data_esecuzione,
       totalDurationSeconds: run.durata_totale_secondi,
-      exercisesSnapshot: run.exercises_snapshot || [],
+      exercisesSnapshot: toSnapshotExercises(run.exercises_snapshot),
       notes: notesList,
       schedaId: run.id_scheda,
     });
@@ -359,9 +369,10 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
             ) : (
               <div className="space-y-2">
                 {selectedDayRuns.map((run) => {
+                  const linkedScheda = Array.isArray(run.schede) ? run.schede[0] : run.schede;
                   const name =
                     run.workout_name_snapshot ||
-                    run.schede?.nome ||
+                    linkedScheda?.nome ||
                     (run.id_scheda ? `Workout #${run.id_scheda}` : `Workout #${run.id_workout}`);
 
                   const timeStr = new Date(run.data_esecuzione).toLocaleTimeString('it-IT', {
@@ -370,18 +381,25 @@ export const MonthlyConsistencyModal: React.FC<MonthlyConsistencyModalProps> = (
                   });
 
                   const durationSecs = run.durata_totale_secondi;
-                  const durationLabel = durationSecs
-                    ? `${Math.floor(durationSecs / 60)} min`
-                    : 'Completato';
+                  const durationLabel =
+                    durationSecs != null && durationSecs > 0
+                      ? durationSecs < 60
+                        ? `${Math.trunc(durationSecs)}s`
+                        : `${Math.floor(durationSecs / 60)} min`
+                      : 'Completato';
 
-                  const exercisesCount = Array.isArray(run.exercises_snapshot)
-                    ? run.exercises_snapshot.length
-                    : 0;
+                  const exercisesCount = toSnapshotExercises(run.exercises_snapshot).length;
 
                   return (
                     <div
                       key={run.id_workout}
                       onClick={() => handleOpenRecap(run)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleOpenRecap(run);
+                        }
+                      }}
                       role="button"
                       tabIndex={0}
                       className="p-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-brand-orange/40 transition-all flex items-center justify-between gap-3 cursor-pointer group active:scale-[0.985]"

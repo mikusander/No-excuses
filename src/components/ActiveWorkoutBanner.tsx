@@ -60,14 +60,35 @@ export const ActiveWorkoutBanner: React.FC = () => {
       return;
     }
 
+    let timer: ReturnType<typeof setInterval> | null = null;
+
     const updateCountdown = () => {
       const remaining = Math.max(0, Math.ceil((checkpoint.restEndsAtMs! - Date.now()) / 1000));
       setRestSecondsRemaining(remaining);
+      if (remaining === 0 && timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        updateCountdown();
+      }
     };
 
     updateCountdown();
-    const timer = setInterval(updateCountdown, 500);
-    return () => clearInterval(timer);
+    if (checkpoint.restEndsAtMs > Date.now()) {
+      timer = setInterval(updateCountdown, 500);
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      if (timer !== null) {
+        clearInterval(timer);
+      }
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [checkpoint?.isResting, checkpoint?.restEndsAtMs]);
 
   // Mostra il banner ESCLUSIVAMENTE nella Home Page ('/')
@@ -118,9 +139,13 @@ export const ActiveWorkoutBanner: React.FC = () => {
     : 'In pausa in background';
 
   if (checkpoint.isResting) {
-    const nextTarget = checkpoint.pendingExerciseAdvance
+    const nextSetNum = (checkpoint.currentSetIdx ?? 0) + 2;
+    const isEndOfSets =
+      checkpoint.pendingExerciseAdvance ||
+      (checkpoint.totalSets != null && nextSetNum > checkpoint.totalSets);
+    const nextTarget = isEndOfSets
       ? 'Prossimo esercizio'
-      : `Set ${(checkpoint.currentSetIdx ?? 0) + 2}${checkpoint.totalSets ? `/${checkpoint.totalSets}` : ''}`;
+      : `Set ${nextSetNum}${checkpoint.totalSets ? `/${checkpoint.totalSets}` : ''}`;
 
     if (restSecondsRemaining != null && restSecondsRemaining > 0) {
       exerciseDetail = `Recupero in corso (${formatCountdown(restSecondsRemaining)}) • Prossimo: ${nextTarget}`;
@@ -140,7 +165,12 @@ export const ActiveWorkoutBanner: React.FC = () => {
           onClick={handleResume}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && handleResume()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleResume();
+            }
+          }}
           className="w-full bg-[#1C1C1E]/95 backdrop-blur-2xl border border-brand-orange/40 shadow-xl shadow-brand-orange/15 rounded-2xl px-3.5 py-3 flex items-center justify-between gap-3 cursor-pointer select-none transition-all active:scale-[0.985] group hover:border-brand-orange/60"
         >
           {/* Icona pulsante fiamma arancione */}
@@ -165,7 +195,10 @@ export const ActiveWorkoutBanner: React.FC = () => {
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={handleResume}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleResume();
+              }}
               className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-brand-orange hover:bg-brand-lightOrange text-white text-xs font-semibold shadow-md active:opacity-90 transition-all cursor-pointer"
             >
               <Play size={13} className="fill-current" />

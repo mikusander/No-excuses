@@ -8,12 +8,13 @@
  *  - Indicatore di partenza, valore di picco e delta rispetto alla sessione iniziale
  */
 
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import type { ExerciseHistoryPoint } from '../utils/periodicReportEngine';
 
 interface ExerciseTrendChartProps {
   historyPoints: ExerciseHistoryPoint[];
   isIsometric?: boolean;
+  isCardio?: boolean;
   metricLabel?: string;
   accentColor?: string;
 }
@@ -21,10 +22,21 @@ interface ExerciseTrendChartProps {
 export const ExerciseTrendChart: React.FC<ExerciseTrendChartProps> = ({
   historyPoints,
   isIsometric = false,
+  isCardio = false,
   metricLabel,
   accentColor = '#ff7700',
 }) => {
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
+  const rawSvgId = useId();
+  const safeSvgId = rawSvgId.replace(/[^a-zA-Z0-9_-]/g, '');
+  const gradientId = `trend-grad-${safeSvgId}`;
+  const glowId = `trend-glow-${safeSvgId}`;
+
+  const formatMetricText = (pt: ExerciseHistoryPoint) => {
+    if (isCardio) return `${pt.metricValue}s`;
+    if (isIsometric) return `${pt.metricValue}s TUT`;
+    return `${pt.metricValue} ${metricLabel || pt.metricLabel}`;
+  };
 
   if (!historyPoints || historyPoints.length === 0) {
     return (
@@ -37,12 +49,12 @@ export const ExerciseTrendChart: React.FC<ExerciseTrendChartProps> = ({
   // Se c'è solo un punto, mostriamo una pillola di baseline iniziale
   if (historyPoints.length === 1) {
     const pt = historyPoints[0];
-    const valStr = isIsometric ? `${pt.metricValue}s TUT` : `${pt.metricValue} ${metricLabel || pt.metricLabel}`;
+    const valStr = formatMetricText(pt);
     return (
       <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-black/30 border border-white/5 text-xs">
         <span className="text-brand-grey/70">1ª Sessione registrata ({pt.formattedDate}):</span>
         <span className="font-mono font-bold text-white bg-white/5 px-2 py-0.5 rounded-lg border border-white/10">
-          {valStr} ({pt.sets} {pt.sets === 1 ? 'serie' : 'serie'})
+          {valStr} ({pt.sets} serie)
         </span>
       </div>
     );
@@ -61,12 +73,12 @@ export const ExerciseTrendChart: React.FC<ExerciseTrendChartProps> = ({
   const values = historyPoints.map((p) => p.metricValue);
   const minVal = Math.min(...values);
   const maxVal = Math.max(...values);
-  const valRange = maxVal === minVal ? 1 : maxVal - minVal;
+  const valRange = maxVal - minVal;
 
-  // Calcolo delle coordinate (x, y) per ciascun punto
+  // Calcolo delle coordinate (x, y) per ciascun punto (centra verticalmente le serie piatte)
   const coordinates = historyPoints.map((pt, idx) => {
     const x = paddingX + (idx / (historyPoints.length - 1)) * innerWidth;
-    const normalizedY = (pt.metricValue - minVal) / valRange;
+    const normalizedY = valRange === 0 ? 0.5 : (pt.metricValue - minVal) / valRange;
     // Invertito perché l'asse Y dello schermo va dall'alto verso il basso
     const y = paddingTop + (1 - normalizedY) * innerHeight;
     return { x, y, pt };
@@ -132,12 +144,12 @@ export const ExerciseTrendChart: React.FC<ExerciseTrendChartProps> = ({
           preserveAspectRatio="none"
         >
           <defs>
-            <linearGradient id={`gradient-${accentColor.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={accentColor} stopOpacity="0.35" />
               <stop offset="85%" stopColor={accentColor} stopOpacity="0.02" />
               <stop offset="100%" stopColor={accentColor} stopOpacity="0.0" />
             </linearGradient>
-            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+            <filter id={glowId} x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor={accentColor} floodOpacity="0.5" />
             </filter>
           </defs>
@@ -161,7 +173,7 @@ export const ExerciseTrendChart: React.FC<ExerciseTrendChartProps> = ({
           />
 
           {/* Area sfumata */}
-          <path d={areaPath} fill={`url(#gradient-${accentColor.replace('#', '')})`} />
+          <path d={areaPath} fill={`url(#${gradientId})`} />
 
           {/* Linea principale di progressione */}
           <path
@@ -171,7 +183,7 @@ export const ExerciseTrendChart: React.FC<ExerciseTrendChartProps> = ({
             strokeWidth="2.75"
             strokeLinecap="round"
             strokeLinejoin="round"
-            filter="url(#glow)"
+            filter={`url(#${glowId})`}
           />
 
           {/* Punti dati interattivi */}
@@ -206,21 +218,19 @@ export const ExerciseTrendChart: React.FC<ExerciseTrendChartProps> = ({
           })}
         </svg>
 
-        {/* Tooltip dinamico su punto attivo */}
+        {/* Tooltip dinamico su punto attivo (clamped ai bordi per evitare clipping) */}
         {activeCoord && (
           <div
             className="absolute top-1 transform -translate-x-1/2 bg-black/90 border border-white/20 rounded-xl px-2.5 py-1 text-[11px] shadow-2xl pointer-events-none z-10 flex flex-col items-center gap-0.5 whitespace-nowrap animate-in fade-in duration-100"
             style={{
-              left: `${(activeCoord.x / width) * 100}%`,
+              left: `${Math.min(82, Math.max(18, (activeCoord.x / width) * 100))}%`,
             }}
           >
             <span className="text-[10px] text-brand-grey/80">
               {activeCoord.pt.formattedDate} • {activeCoord.pt.workoutName}
             </span>
             <span className="font-mono font-black text-white">
-              {isIsometric
-                ? `${activeCoord.pt.metricValue}s TUT`
-                : `${activeCoord.pt.metricValue} ${metricLabel || activeCoord.pt.metricLabel}`}
+              {formatMetricText(activeCoord.pt)}
               <span className="text-[10px] text-brand-grey/70 font-normal ml-1">
                 ({activeCoord.pt.sets} set)
               </span>
