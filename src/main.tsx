@@ -15,21 +15,24 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './context/AuthContext.tsx'
+import { Capacitor } from '@capacitor/core'
 import { registerSW } from 'virtual:pwa-register'
 
-// Registra il Service Worker (gestito da vite-plugin-pwa)
+// Registra il Service Worker solo su Web/PWA (mai dentro Capacitor nativo)
 // immediate: false → non forza il reload, l'aggiornamento avviene al prossimo caricamento
-registerSW({
-  immediate: false,
-  onRegisteredSW(_swUrl, registration) {
-    if (registration) {
-      console.debug('[PWA] Service Worker registrato con successo');
-    }
-  },
-  onOfflineReady() {
-    console.debug('[PWA] App pronta per l\'uso offline');
-  },
-})
+if (!Capacitor.isNativePlatform()) {
+  registerSW({
+    immediate: false,
+    onRegisteredSW(_swUrl, registration) {
+      if (registration) {
+        console.debug('[PWA] Service Worker registrato con successo')
+      }
+    },
+    onOfflineReady() {
+      console.debug('[PWA] App pronta per l\'uso offline')
+    },
+  })
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

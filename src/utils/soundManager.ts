@@ -25,11 +25,15 @@ class SoundManager {
   private ctx: AudioContext | null = null;
   private isUnlocked = false;
   private keepAliveNode: OscillatorNode | null = null;
+  private keepAliveGainNode: GainNode | null = null;
+  private keepAliveActive = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
       const handleUserGesture = () => {
-        this.unlock();
+        if (this.keepAliveActive && this.isAudioEnabled()) {
+          void this.unlock();
+        }
       };
       window.addEventListener('pointerdown', handleUserGesture, { passive: true });
       window.addEventListener('touchstart', handleUserGesture, { passive: true });
@@ -37,13 +41,28 @@ class SoundManager {
       window.addEventListener('keydown', handleUserGesture, { passive: true });
 
       const resumeOnWake = () => {
-        if (this.ctx && (this.ctx.state === 'suspended' || (this.ctx.state as any) === 'interrupted')) {
+        if (
+          this.keepAliveActive &&
+          this.isAudioEnabled() &&
+          this.ctx &&
+          (this.ctx.state === 'suspended' || (this.ctx.state as any) === 'interrupted')
+        ) {
           this.ctx.resume().catch(() => {});
         }
       };
       document.addEventListener('visibilitychange', resumeOnWake);
       window.addEventListener('pageshow', resumeOnWake);
       window.addEventListener('focus', resumeOnWake);
+
+      window.addEventListener('audio-mode-changed', (e: Event) => {
+        const mode = (e as CustomEvent<string>).detail;
+        if (mode === 'disabled') {
+          this.stopKeepAlive();
+          if (this.ctx && this.ctx.state === 'running') {
+            void this.ctx.suspend().catch(() => {});
+          }
+        }
+      });
     }
   }
 
@@ -109,19 +128,69 @@ class SoundManager {
 
       osc.onended = () => {
         this.keepAliveNode = null;
+        this.keepAliveGainNode = null;
       };
 
       this.keepAliveNode = osc;
+      this.keepAliveGainNode = gain;
     } catch (err) {
       console.debug('startKeepAlive error:', err);
     }
   }
 
+  private stopKeepAlive() {
+    if (this.keepAliveNode) {
+      try {
+        this.keepAliveNode.onended = null;
+        this.keepAliveNode.stop();
+      } catch {
+        // ignore
+      }
+      try {
+        this.keepAliveNode.disconnect();
+      } catch {
+        // ignore
+      }
+      this.keepAliveNode = null;
+    }
+    if (this.keepAliveGainNode) {
+      try {
+        this.keepAliveGainNode.disconnect();
+      } catch {
+        // ignore
+      }
+      this.keepAliveGainNode = null;
+    }
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator && (navigator as any).audioSession) {
+      try {
+        (navigator as any).audioSession.type = 'ambient';
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  public startWorkoutSession() {
+    this.keepAliveActive = true;
+    if (this.isAudioEnabled()) {
+      void this.unlock();
+    }
+  }
+
+  public stopWorkoutSession() {
+    this.keepAliveActive = false;
+    this.stopKeepAlive();
+    if (this.ctx && this.ctx.state === 'running') {
+      void this.ctx.suspend().catch(() => {});
+    }
+  }
+
   /**
-   * Sblocca l'AudioContext su iOS Safari e attiva il keep-alive permanente.
+   * Sblocca l'AudioContext su iOS Safari e attiva il keep-alive solo durante la sessione attiva.
    * Viene richiamato al primo tocco o tap dell'utente.
    */
   public async unlock(): Promise<boolean> {
+    if (!this.isAudioEnabled()) return false;
     try {
       const ctx = this.getContext();
       if (!ctx) return false;
@@ -132,7 +201,9 @@ class SoundManager {
         await ctx.resume();
       }
 
-      this.startKeepAlive(ctx);
+      if (this.keepAliveActive) {
+        this.startKeepAlive(ctx);
+      }
 
       if (!this.isUnlocked) {
         // Riproduci 1 micro-sample per svegliare il driver audio di iOS
@@ -176,7 +247,9 @@ class SoundManager {
         await ctx.resume();
       }
 
-      this.startKeepAlive(ctx);
+      if (this.keepAliveActive) {
+        this.startKeepAlive(ctx);
+      }
 
       const now = ctx.currentTime + 0.02;
       const osc = ctx.createOscillator();
@@ -204,10 +277,9 @@ class SoundManager {
   /**
    * Pre-avvisi conto alla rovescia (-3s, -2s, -1s): Frequenza ~440 Hz, durata 100ms.
    */
-  public playCountdownBeep(secondsRemaining?: number) {
+  public playCountdownBeep(_secondsRemaining?: number) {
     if (!this.isAudioEnabled()) return;
-    const freq = secondsRemaining === 1 ? 440 : 440;
-    void this.playBeep(freq, 0.12, 0.85);
+    void this.playBeep(440, 0.12, 0.85);
   }
 
   /**
@@ -228,7 +300,9 @@ class SoundManager {
       if (!ctx) return;
       this.configureSession();
       if (ctx.state !== 'running') await ctx.resume();
-      this.startKeepAlive(ctx);
+      if (this.keepAliveActive) {
+        this.startKeepAlive(ctx);
+      }
 
       const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
       const noteDur = 0.16;

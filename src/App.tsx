@@ -90,16 +90,18 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const OrientationWatcher = () => {
   const location = useLocation();
   const isLandscape = useIsLandscape();
-  const isWorkoutRoute = location.pathname.startsWith('/active-workout');
+  const isLandscapeAllowedRoute =
+    location.pathname.startsWith('/active-workout') || location.pathname === '/reps-count';
 
   useEffect(() => {
-    if (!isWorkoutRoute) {
+    if (!isLandscapeAllowedRoute) {
       lockAppToPortrait();
     }
-  }, [location.pathname, isWorkoutRoute]);
+  }, [location.pathname, isLandscapeAllowedRoute]);
 
-  // Se l'utente è fuori dal workout su dispositivo mobile orientato orizzontalmente (altezza < 520px)
-  const isMobileLandscapeOutsideWorkout = !isWorkoutRoute && isLandscape && typeof window !== 'undefined' && window.innerHeight < 520;
+  // Se l'utente è fuori dalle schermate autorizzate su dispositivo mobile orientato orizzontalmente (altezza < 520px)
+  const isMobileLandscapeOutsideWorkout =
+    !isLandscapeAllowedRoute && isLandscape && typeof window !== 'undefined' && window.innerHeight < 520;
 
   if (isMobileLandscapeOutsideWorkout) {
     return (
@@ -215,6 +217,7 @@ function App() {
             <SettingsPage />
           </ProtectedRoute>
         } />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </Suspense>
       </Router>

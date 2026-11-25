@@ -15,6 +15,7 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, NotificationType } from '@capacitor/haptics';
+import { areTimerEndSoundsEnabled } from './audioSettings';
 
 export const TIMER_NOTIFICATION_ID = 1001;
 export const REST_NOTIFICATION_ID = TIMER_NOTIFICATION_ID;
@@ -76,6 +77,12 @@ let lastScheduledAtMs = 0;
 let lastNotificationDeliveredAtMs = 0;
 let lastDeliveredRestTargetEndsAtMs = 0;
 let isSchedulingInProgress = false;
+let scheduleVersion = 0;
+let pendingSchedulePayload: {
+  endsAtMs: number;
+  nextExerciseName: string;
+  nextSetInfo?: string;
+} | null = null;
 
 /**
  * Verifica lo stato corrente dei permessi a livello iOS senza mostrare prompt all'utente.
@@ -164,6 +171,8 @@ export interface RestNotificationPayload {
  */
 export const cancelTimerNotification = async (): Promise<void> => {
   if (!isNativeApp()) return;
+  scheduleVersion += 1;
+  pendingSchedulePayload = null;
   lastScheduledEndsAtMs = 0;
   try {
     await LocalNotifications.cancel({ notifications: [{ id: TIMER_NOTIFICATION_ID }] });
@@ -205,13 +214,19 @@ export const scheduleBackgroundRestNotification = async ({
     return;
   }
 
-  // 1. Deduplicazione rigorosa: se per questo stesso target endsAtMs abbiamo già programmato
-  // la notifica negli ultimi 2.5 secondi, non ri-programmare (evita doppie notifiche per re-render rapidi)
-  if (isSchedulingInProgress || (lastScheduledEndsAtMs === endsAtMs && Math.abs(now - lastScheduledAtMs) < 2500)) {
+  // 1. Se c'è già una schedulazione in corso, accoda l'ultima richiesta al posto di scartarla;
+  // altrimenti deduplica eventuali re-render identici entro 2.5 secondi.
+  if (isSchedulingInProgress) {
+    pendingSchedulePayload = { endsAtMs, nextExerciseName, nextSetInfo };
+    return;
+  }
+
+  if (lastScheduledEndsAtMs === endsAtMs && Math.abs(now - lastScheduledAtMs) < 2500) {
     return;
   }
 
   isSchedulingInProgress = true;
+  const currentVersion = ++scheduleVersion;
   lastScheduledEndsAtMs = endsAtMs;
   lastScheduledAtMs = now;
 
@@ -222,10 +237,14 @@ export const scheduleBackgroundRestNotification = async ({
       return;
     }
 
+    if (currentVersion !== scheduleVersion) return;
+
     // Cancella preventivamente solo l'allarme pendente precedente senza toccare lo stato di deduplicazione
     try {
       await LocalNotifications.cancel({ notifications: [{ id: TIMER_NOTIFICATION_ID }] });
     } catch {}
+
+    if (currentVersion !== scheduleVersion) return;
 
     const title = '⏱️ Recupero Terminato!';
     const body = nextSetInfo
@@ -247,7 +266,7 @@ export const scheduleBackgroundRestNotification = async ({
             at: scheduledDate,
             allowWhileIdle: true,
           },
-          sound: typeof window !== 'undefined' && localStorage.getItem('voice_assistance_enabled') === 'false' ? undefined : 'beep.wav',
+          sound: areTimerEndSoundsEnabled() ? 'beep.wav' : undefined,
           extra: {
             endsAtMs,
             nextExerciseName,
@@ -262,6 +281,11 @@ export const scheduleBackgroundRestNotification = async ({
     console.warn('[Capacitor] Errore schedulazione allarme timer nativo:', nativeErr);
   } finally {
     isSchedulingInProgress = false;
+    const nextPayload = pendingSchedulePayload;
+    pendingSchedulePayload = null;
+    if (nextPayload) {
+      void scheduleBackgroundRestNotification(nextPayload);
+    }
   }
 };
 
@@ -323,7 +347,7 @@ export const sendRestFinishedNotification = async ({
           channelId: TIMER_CHANNEL_ID,
           title,
           body,
-          sound: typeof window !== 'undefined' && localStorage.getItem('voice_assistance_enabled') === 'false' ? undefined : 'beep.wav',
+          sound: areTimerEndSoundsEnabled() ? 'beep.wav' : undefined,
           extra: {
             endsAtMs: endsAtMs || now,
             nextExerciseName,
@@ -345,14 +369,20 @@ export const addNotificationActionListener = (
 ): (() => void) => {
   if (!isNativeApp()) return () => {};
 
+  let isCleanedUp = false;
   let handle: { remove: () => void } | null = null;
   LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
     onAction(action.notification.id);
   }).then((h) => {
+    if (isCleanedUp) {
+      h.remove();
+      return;
+    }
     handle = h;
   }).catch(() => {});
 
   return () => {
+    isCleanedUp = true;
     handle?.remove();
   };
 };

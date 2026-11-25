@@ -31,6 +31,39 @@ interface AuthContextType {
   setIsPasswordRecovery: (val: boolean) => void;
 }
 
+const OFFLINE_AUTH_USER_KEY = 'no_excuses_cached_auth_user_v1';
+
+const readCachedOfflineUser = (): User | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(OFFLINE_AUTH_USER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as User | null;
+    if (!parsed || typeof parsed.id !== 'string' || !parsed.id) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedOfflineUser = (user: User): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(OFFLINE_AUTH_USER_KEY, JSON.stringify(user));
+  } catch {
+    // ignore storage errors
+  }
+};
+
+const clearCachedOfflineUser = (): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(OFFLINE_AUTH_USER_KEY);
+  } catch {
+    // ignore storage errors
+  }
+};
+
 /** Valori di default (usati prima che AuthProvider si monti o se usato fuori dal provider) */
 const AuthContext = createContext<AuthContextType>({
   session: null,
@@ -64,24 +97,80 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
+    let isMounted = true;
+    const isOffline = () => typeof navigator !== 'undefined' && !navigator.onLine;
+
     // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-      if (session?.user?.id) {
-        void syncFoldersWithCloud(session.user.id);
-      }
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session }, error }) => {
+        if (!isMounted) return;
+
+        if (session?.user) {
+          setSession(session);
+          setUser(session.user);
+          writeCachedOfflineUser(session.user);
+          setLoading(false);
+          if (!isOffline()) {
+            void syncFoldersWithCloud(session.user.id);
+          }
+          return;
+        }
+
+        if (error || isOffline()) {
+          const cachedUser = readCachedOfflineUser();
+          if (cachedUser) {
+            setSession(null);
+            setUser(cachedUser);
+            setLoading(false);
+            return;
+          }
+        }
+
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.debug('[Auth] Error retrieving session:', err);
+        if (!isMounted) return;
+        const cachedUser = readCachedOfflineUser();
+        setSession(null);
+        setUser(cachedUser);
+        setLoading(false);
+      });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-      if (session?.user?.id) {
-        void syncFoldersWithCloud(session.user.id);
+      if (!isMounted) return;
+
+      if (event === 'SIGNED_OUT') {
+        clearCachedOfflineUser();
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+        return;
       }
+
+      if (session?.user) {
+        setSession(session);
+        setUser(session.user);
+        writeCachedOfflineUser(session.user);
+        setLoading(false);
+        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && !isOffline()) {
+          void syncFoldersWithCloud(session.user.id);
+        }
+      } else if (isOffline()) {
+        const cachedUser = readCachedOfflineUser();
+        setSession(null);
+        setUser(cachedUser);
+        setLoading(false);
+      } else {
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+      }
+
       // Attivato quando l'utente clicca il link "Reset Password" dalla mail
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
@@ -89,12 +178,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     // Annulla la sottoscrizione quando il provider viene smontato
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
-    if (supabaseConfigError) return;
-    await supabase.auth.signOut();
+    clearCachedOfflineUser();
+    if (supabaseConfigError) {
+      setSession(null);
+      setUser(null);
+      return;
+    }
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      setSession(null);
+      setUser(null);
+    }
   };
 
   return (

@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: isDev
     ? {
-        url: process.env.CAPACITOR_DEV_SERVER_URL || 'http://192.168.1.146:5173',
+        url: process.env.CAPACITOR_DEV_SERVER_URL || 'http://localhost:5173',
         cleartext: true,
         errorPath: 'error.html',
         allowNavigation: ['*'],
@@ -16,7 +16,6 @@ const config: CapacitorConfig = {
     : undefined,
   plugins: {
     LocalNotifications: {
-      smallIcon: 'ic_stat_icon_config_sample',
       iconColor: '#FF5E00',
       sound: 'beep.wav',
       presentationOptions: [],

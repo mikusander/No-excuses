@@ -38,7 +38,7 @@
  * `buildProfileUsernameCandidate` tenta fino a 6 varianti con suffisso numerico
  * casuale per evitare conflitti di unicità senza richiedere input all'utente.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, User, Edit2, X, Check, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellOff, Volume2, Volume1, VolumeX, Play } from 'lucide-react';
 import BottomNavigation from '../components/BottomNavigation';
@@ -89,29 +89,42 @@ const SettingsPage: React.FC = () => {
   const [correctionRules, setCorrectionRules] = useState<UserCorrectionRule[]>([]);
   const [showRulesList, setShowRulesList] = useState(false);
 
+  const hasLoadedProfileRef = useRef(false);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+        successTimerRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     // 1. Carica preferenza notifiche da localStorage
-    const localEnabled = areNotificationsEnabled();
-    setNotificationsEnabledState(localEnabled);
+    let effectiveEnabled = areNotificationsEnabled();
+    setNotificationsEnabledState(effectiveEnabled);
 
     // 2. Se l'utente ha metadati sincronizzati su Supabase, sincronizza
     if (user?.user_metadata?.native_notifications_enabled !== undefined) {
       const metaEnabled = Boolean(user.user_metadata.native_notifications_enabled);
-      if (metaEnabled !== localEnabled) {
+      if (metaEnabled !== effectiveEnabled) {
+        effectiveEnabled = metaEnabled;
         setNotificationsEnabledState(metaEnabled);
         setNotificationsEnabled(metaEnabled);
       }
     }
 
     // 3. Su app nativa iOS, verifica se i permessi a livello di OS sono stati revocati
-    if (isNativeApp() && localEnabled) {
+    if (isNativeApp() && effectiveEnabled) {
       void checkNativeNotificationPermissionStatus().then((status) => {
         if (status === 'denied') {
           setNotificationNote('Le notifiche sono disattivate nelle impostazioni di iOS.');
         }
       });
     }
-  }, [user]);
+  }, [user?.id, user?.user_metadata?.native_notifications_enabled]);
 
   const handleToggleNotifications = async () => {
     void hapticLight();
@@ -130,13 +143,17 @@ const SettingsPage: React.FC = () => {
     }
 
     // Salva nei metadati utente Supabase per sincronizzazione cross-device
-    if (user) {
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+    if (user && isOnline) {
       try {
-        await supabase.auth.updateUser({
+        const { error: authUpdateErr } = await supabase.auth.updateUser({
           data: {
             native_notifications_enabled: next,
           },
         });
+        if (authUpdateErr) {
+          console.debug('[Settings] Errore sync metadati notifiche:', authUpdateErr);
+        }
       } catch (err) {
         console.debug('[Settings] Errore sync metadati notifiche:', err);
       } finally {
@@ -240,55 +257,62 @@ const SettingsPage: React.FC = () => {
     if (voiceSaving) return;
 
     void hapticMedium();
-    const previous = audioMode;
 
     setVoiceSyncError(null);
     setAudioModeState(nextMode);
     setAudioMode(nextMode);
+
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+    if (!user || !isOnline) {
+      return;
+    }
+
     setVoiceSaving(true);
 
     try {
       const isVoiceOn = nextMode === 'full';
       await ensureProfileExists(isVoiceOn);
 
-      if (user) {
-        // 1. Sincronizzazione metadati utente Supabase (cross-device)
-        await supabase.auth.updateUser({
-          data: {
-            audio_mode: nextMode,
-          },
-        });
+      // 1. Sincronizzazione metadati utente Supabase (cross-device)
+      const { error: authUpdateError } = await supabase.auth.updateUser({
+        data: {
+          audio_mode: nextMode,
+        },
+      });
+      if (authUpdateError) throw authUpdateError;
 
-        // 2. Tabella profili (retrocompatibilità col booleano voice_assistant)
-        const { error: updateError } = await supabase
-          .from('profili')
-          .update({
-            voice_assistant: isVoiceOn,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id_utente', user.id);
+      // 2. Tabella profili (retrocompatibilità col booleano voice_assistant)
+      const { error: updateError } = await supabase
+        .from('profili')
+        .update({
+          voice_assistant: isVoiceOn,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id_utente', user.id);
 
-        if (updateError) throw updateError;
-      }
+      if (updateError) throw updateError;
     } catch (toggleError) {
       console.error('Error syncing audio mode preference:', toggleError);
-      setAudioModeState(previous);
-      setAudioMode(previous);
-      setVoiceSyncError('Impossibile sincronizzare la preferenza sul cloud. Riprova.');
+      setVoiceSyncError('Preferenza salvata sul dispositivo. Sincronizzazione cloud non riuscita.');
     } finally {
       setVoiceSaving(false);
     }
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
+    let isCancelled = false;
     const fetchProfile = async () => {
-      setProfileLoading(true);
+      if (!hasLoadedProfileRef.current) {
+        setProfileLoading(true);
+      }
       const { data, error } = await supabase
         .from('profili')
         .select('username, voice_assistant')
         .eq('id_utente', user.id)
         .maybeSingle();
+
+      if (isCancelled) return;
 
       if (!error && data?.username) {
         setUserName(data.username);
@@ -309,20 +333,25 @@ const SettingsPage: React.FC = () => {
         setAudioMode(fallbackMode);
       }
 
+      hasLoadedProfileRef.current = true;
       setProfileLoading(false);
     };
-    fetchProfile();
-  }, [user]);
+    void fetchProfile();
+    return () => {
+      isCancelled = true;
+    };
+  }, [user?.id]);
 
   const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || newName === userName) {
+    const trimmedName = newName.trim();
+    if (!trimmedName || trimmedName === userName) {
       setIsEditing(false);
       return;
     }
-    
+
     // basic validation
-    if (newName.length < 3) {
+    if (trimmedName.length < 3) {
       setError('Username must be at least 3 characters.');
       return;
     }
@@ -337,7 +366,7 @@ const SettingsPage: React.FC = () => {
         .from('profili')
         .upsert({
           id_utente: user!.id,
-          username: newName.trim(),
+          username: trimmedName,
           mail: user?.email || `${user!.id}@local.invalid`,
           updated_at: new Date().toISOString()
         });
@@ -349,10 +378,16 @@ const SettingsPage: React.FC = () => {
         throw upsertError;
       }
       
-      setUserName(newName.trim());
+      setUserName(trimmedName);
       setSuccess(true);
       setIsEditing(false);
-      setTimeout(() => setSuccess(false), 3000);
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+      }
+      successTimerRef.current = setTimeout(() => {
+        setSuccess(false);
+        successTimerRef.current = null;
+      }, 3000);
     } catch (err: any) {
       setError(err.message || 'Error saving username.');
     } finally {
@@ -604,7 +639,9 @@ const SettingsPage: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-brand-grey/60 text-xs mt-0.5">
-                    Sveglia hardware e avvisi di fine recupero a schermo bloccato sull'app per iPhone
+                    {isNativeApp()
+                      ? "Sveglia hardware e avvisi di fine recupero a schermo bloccato sull'app per iPhone"
+                      : "Preferenza salvata per l'app nativa iPhone (gli allarmi a schermo bloccato sono attivi solo su iOS nativo)"}
                   </p>
                 </div>
               </div>

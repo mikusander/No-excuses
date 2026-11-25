@@ -27,3 +27,4 @@ start.sh
 stop.sh
 scripts/
 dati di debug/
+.cert/

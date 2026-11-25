@@ -85,8 +85,6 @@ interface BottomNavigationProps {
 let globalLastActiveIndex = -1;
 
 const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
-  if (hidden) return null;
-
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -139,7 +137,7 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
   const lastScrollYRef = useRef(0);
 
   useEffect(() => {
-    if (!isIosNative) return;
+    if (!isIosNative || hidden) return;
 
     const handleScroll = () => {
       const currentY = window.scrollY || document.documentElement.scrollTop || 0;
@@ -161,7 +159,7 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [isIosNative]);
+  }, [isIosNative, hidden]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 2. GESTURE: DRAG IMMEDIATO DELLA BOLLA & LONG-PRESS (Solo App Nativa iOS)
@@ -176,8 +174,22 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
   const touchStartXRef = useRef(0);
   const wasDraggingRecentlyRef = useRef(false);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recentDragResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragHoverIndexRef = useRef<number | null>(null);
   dragHoverIndexRef.current = dragHoverIndex;
+
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+      if (recentDragResetTimerRef.current) {
+        clearTimeout(recentDragResetTimerRef.current);
+        recentDragResetTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const updateDragPosition = useCallback((clientX: number) => {
     if (!trackRef.current) return;
@@ -290,8 +302,12 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
 
       // Previene il click sintetico successivo al rilascio del dito
       wasDraggingRecentlyRef.current = true;
-      setTimeout(() => {
+      if (recentDragResetTimerRef.current) {
+        clearTimeout(recentDragResetTimerRef.current);
+      }
+      recentDragResetTimerRef.current = setTimeout(() => {
         wasDraggingRecentlyRef.current = false;
+        recentDragResetTimerRef.current = null;
       }, 100);
 
       const targetIdx = dragHoverIndexRef.current;
@@ -350,6 +366,8 @@ const BottomNavigation = ({ hidden = false }: BottomNavigationProps) => {
         ? 'scale-[0.86] opacity-80 translate-y-2'
         : 'scale-100 opacity-100 translate-y-0'
     : 'scale-100 opacity-100';
+
+  if (hidden) return null;
 
   return (
     <nav

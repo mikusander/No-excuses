@@ -69,11 +69,19 @@
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
+		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>No Excuses Dev si connette al computer locale per il caricamento del codice in tempo reale.</string>
+	<string>No Excuses può accedere alla rete locale in modalità sviluppo per il live reload dell'applicazione.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>No Excuses usa la fotocamera per contare automaticamente le ripetizioni degli esercizi tramite riconoscimento della postura.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>No Excuses usa il microfono per i comandi vocali durante l'allenamento e la dettatura rapida delle schede.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>No Excuses usa il riconoscimento vocale per interpretare i comandi vocali durante il workout e la dettatura degli esercizi.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>No Excuses usa i sensori di movimento per rilevare e contare automaticamente le ripetizioni durante gli allenamenti.</string>
 </dict>
 </plist>

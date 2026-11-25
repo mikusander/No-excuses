@@ -1,13 +1,25 @@
 /// <reference lib="webworker" />
 
-import { precacheAndRoute } from 'workbox-precaching';
+import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
+import { NavigationRoute, registerRoute } from 'workbox-routing';
 
 declare const self: ServiceWorkerGlobalScope;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PRECACHING: vite-plugin-pwa inietta qui la lista degli asset da precacheare
 // ─────────────────────────────────────────────────────────────────────────────
+cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
+
+try {
+  const navigationHandler = createHandlerBoundToURL('/index.html');
+  const navigationRoute = new NavigationRoute(navigationHandler, {
+    denylist: [/^\/api\//],
+  });
+  registerRoute(navigationRoute);
+} catch (err) {
+  console.debug('[SW] NavigationRoute setup skipped:', err);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RATE-LIMITER E GESTIONE PUSH SENZA BLOCCHI STORAGE
@@ -76,17 +88,14 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(title, options as any));
 });
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
-
 self.addEventListener('message', (event) => {
   const data = event.data;
   if (!data || typeof data !== 'object') return;
+
+  if (data.type === 'SKIP_WAITING') {
+    void self.skipWaiting();
+    return;
+  }
 
   if (data.type === 'SCHEDULE_REST_NOTIFICATION') {
     clearLocalRestTimer();
