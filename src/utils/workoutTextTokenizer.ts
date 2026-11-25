@@ -87,10 +87,17 @@ export function normalizeItalianVoiceText(rawText: string): string {
     .replace(/\bmassimo\s+ripetizioni\b/gi, 'max')
     .replace(/\bmassimale\b/gi, 'max');
 
-  // 2. Sostituzione numeri in parole singole con cifre
+  // 2. Sostituzione numeri in parole singole con cifre (restringendo "un"/"una" alle unità fitness)
+  const ITALIAN_FITNESS_UNITS_PATTERN =
+    '(?:minut[oi]|min|second[oi]|sec|serie|set|sets|round|rounds|gir[oi]|kg|chil[oi]|kili|kilo|ripetizion[ei]|rip|colp[oi])';
   for (const [word, num] of Object.entries(ITALIAN_NUMBER_WORDS)) {
-    const regex = new RegExp(`\\b${word}\\b`, 'gi');
-    text = text.replace(regex, String(num));
+    if (word === 'un' || word === 'una') {
+      const unitRegex = new RegExp(`\\b${word}\\b(?=\\s+${ITALIAN_FITNESS_UNITS_PATTERN}\\b)`, 'gi');
+      text = text.replace(unitRegex, '1');
+    } else {
+      const regex = new RegExp(`\\b${word}\\b`, 'gi');
+      text = text.replace(regex, String(num));
+    }
   }
 
   // 3. Normalizzazione tempi di recupero e pause
@@ -129,7 +136,7 @@ export function normalizeItalianVoiceText(rawText: string): string {
   text = text.replace(/\b(?:facciamo|mettiamo|inserisci|ora|adesso)\s+(superset|circuito|emom|piramide)\b/gi, '$1');
 
   // 7. Normalizzazione header EMOM e Circuito parlati:
-  text = text.replace(/\bemom\s+(\d+)\s*(?:round|giri|r|x)?\s*(?:da|di)?\s*(\d+s|\d+m)\b/gi, 'emom $1 round $2:');
+  text = text.replace(/\bemom\s+(\d+)\s*(?:round|giri|r|x)?\s*(?:da|di)?\s*(\d+s|\d+m)\b/gi, 'emom $1 round da $2:');
   text = text.replace(/\bemom\s+(\d+)\s*(?:round|giri|r|x)?(?!\s*round|\s*\d+s|\s*:)\b/gi, 'emom $1 round:');
   text = text.replace(/\bcircuito\s+(\d+)\s*(?:giri|round|x)\s+(\d+s|\d+m)\b/gi, 'circuito $1 giri $2:');
   text = text.replace(/\bcircuito\s+(\d+)\s*(?:giri|round|x)?(?!\s*giri|\s*\d+s|\s*:)\b/gi, 'circuito $1 giri:');
@@ -146,9 +153,15 @@ export function normalizeItalianVoiceText(rawText: string): string {
     return match;
   });
 
-  // 9. Normalizzazione congiunzioni interne per circuiti ed EMOM:
+  // 9. Normalizzazione congiunzioni interne per circuiti, EMOM e superset (A e B e C -> A + B + C):
   if (/\b(?:circuito|circuit|emom|superset)\b/i.test(text)) {
-    text = text.replace(/(\d+(?:x\d+|s)?\s+[a-z\s]+?)\s+e\s+(\d+)/gi, '$1 + $2');
+    let prevText = '';
+    let guard = 0;
+    while (prevText !== text && guard < 10) {
+      prevText = text;
+      guard += 1;
+      text = text.replace(/(\d+(?:x\d+|s|m)?\s+[a-zàèéìòù'\s]+?)\s+e\s+(\d+)/gi, '$1 + $2');
+    }
   }
 
   // Rimuove filler iniziali parlati
@@ -217,8 +230,31 @@ export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90, user
     .filter(l => l.length > 0);
 
   const cleanLines: string[] = [];
-  let currentCompoundGroup: { type: 'superset' | 'circuit'; header: string; items: string[] } | null = null;
-  let currentSupersetPairGroup: { code: string; lines: string[] } | null = null;
+  let currentCompoundGroup: { type: 'superset' | 'circuit'; header: string; items: string[]; restToken?: string } | null = null;
+  let currentSupersetPairGroup: { code: string; lines: string[]; restToken?: string } | null = null;
+
+  const flushSupersetPairGroup = () => {
+    if (!currentSupersetPairGroup) return;
+    if (currentSupersetPairGroup.lines.length >= 2) {
+      const restSuffix = currentSupersetPairGroup.restToken ? ` recupero ${currentSupersetPairGroup.restToken}` : '';
+      cleanLines.push(`superset: ${currentSupersetPairGroup.lines.join(' + ')}${restSuffix}`);
+    } else if (currentSupersetPairGroup.lines.length === 1) {
+      const restSuffix = currentSupersetPairGroup.restToken ? ` recupero ${currentSupersetPairGroup.restToken}` : '';
+      cleanLines.push(`${currentSupersetPairGroup.lines[0]}${restSuffix}`);
+    }
+    currentSupersetPairGroup = null;
+  };
+
+  const flushCompoundGroup = () => {
+    if (!currentCompoundGroup) return;
+    const restSuffix = currentCompoundGroup.restToken ? ` recupero ${currentCompoundGroup.restToken}` : '';
+    if (currentCompoundGroup.items.length > 0) {
+      cleanLines.push(`${currentCompoundGroup.header} ${currentCompoundGroup.items.join(' + ')}${restSuffix}`);
+    } else {
+      cleanLines.push(`${currentCompoundGroup.header}${restSuffix}`);
+    }
+    currentCompoundGroup = null;
+  };
 
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
@@ -232,7 +268,11 @@ export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90, user
     const standaloneRestMatch = line.match(OCR_STANDALONE_REST_REGEX);
     if (standaloneRestMatch) {
       const restToken = standaloneRestMatch[1];
-      if (cleanLines.length > 0) {
+      if (currentSupersetPairGroup) {
+        currentSupersetPairGroup.restToken = restToken;
+      } else if (currentCompoundGroup) {
+        currentCompoundGroup.restToken = restToken;
+      } else if (cleanLines.length > 0) {
         cleanLines[cleanLines.length - 1] = `${cleanLines[cleanLines.length - 1]} ${restToken}`;
       }
       continue;
@@ -251,21 +291,12 @@ export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90, user
         currentSupersetPairGroup.lines.push(exerciseContent);
         continue;
       } else {
-        if (currentSupersetPairGroup && currentSupersetPairGroup.lines.length >= 2) {
-          cleanLines.push(`superset: ${currentSupersetPairGroup.lines.join(' + ')}`);
-        } else if (currentSupersetPairGroup) {
-          cleanLines.push(...currentSupersetPairGroup.lines);
-        }
+        flushSupersetPairGroup();
         currentSupersetPairGroup = { code: groupCode, lines: [exerciseContent] };
         continue;
       }
     } else if (currentSupersetPairGroup) {
-      if (currentSupersetPairGroup.lines.length >= 2) {
-        cleanLines.push(`superset: ${currentSupersetPairGroup.lines.join(' + ')}`);
-      } else {
-        cleanLines.push(...currentSupersetPairGroup.lines);
-      }
-      currentSupersetPairGroup = null;
+      flushSupersetPairGroup();
     }
 
     // Gestione righe bullet o elenco sotto un circuito o superset
@@ -275,17 +306,11 @@ export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90, user
       currentCompoundGroup.items.push(bulletContent);
       continue;
     } else if (currentCompoundGroup) {
-      // Se non è più un bullet, chiudiamo il gruppo compound
-      if (currentCompoundGroup.items.length > 0) {
-        cleanLines.push(`${currentCompoundGroup.header} ${currentCompoundGroup.items.join(' + ')}`);
-      } else {
-        cleanLines.push(currentCompoundGroup.header);
-      }
-      currentCompoundGroup = null;
+      flushCompoundGroup();
     }
 
     // Controllo se questa riga apre un compound group (es. "Circuito 3 rounds:" o "Superset 4x:")
-    const compoundHeaderMatch = line.match(/^(?:\d+[\.\)\-\:\s]+\s*)?((?:circuito|circuit|superset)\b[^:]*[:\-]?)$/i);
+    const compoundHeaderMatch = line.match(/^(?:\d+\s*[\.\)]\s+)?((?:circuito|circuit|superset)\b[^:]*[:\-]?)$/i);
     if (compoundHeaderMatch && i + 1 < rawLines.length && /^[-•*]/.test(rawLines[i + 1])) {
       const isCirc = /circuit/i.test(compoundHeaderMatch[1]);
       currentCompoundGroup = {
@@ -311,8 +336,8 @@ export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90, user
       }
     }
 
-    // Rimuove numeri ordinali a inizio riga (es. "1. Squat", "2) Stacco", "3 - Panca")
-    formattedLine = formattedLine.replace(/^\d+[\.\)\-\:\s]+\s*/, '');
+    // Rimuove numeri ordinali espliciti a inizio riga (es. "1. Squat", "2) Stacco") senza intaccare sequenze "12-10-8-6"
+    formattedLine = formattedLine.replace(/^\d+\s*[\.\)]\s+/, '');
 
     // Se la riga è un bullet generico isolato
     if (/^[-•*]\s*/.test(formattedLine)) {
@@ -325,21 +350,8 @@ export function parseOcrWorkoutLines(rawOcrText: string, fallbackRest = 90, user
   }
 
   // Chiusura eventuali gruppi pendenti in fondo
-  if (currentCompoundGroup) {
-    if (currentCompoundGroup.items.length > 0) {
-      cleanLines.push(`${currentCompoundGroup.header} ${currentCompoundGroup.items.join(' + ')}`);
-    } else {
-      cleanLines.push(currentCompoundGroup.header);
-    }
-  }
-
-  if (currentSupersetPairGroup) {
-    if (currentSupersetPairGroup.lines.length >= 2) {
-      cleanLines.push(`superset: ${currentSupersetPairGroup.lines.join(' + ')}`);
-    } else {
-      cleanLines.push(...currentSupersetPairGroup.lines);
-    }
-  }
+  flushCompoundGroup();
+  flushSupersetPairGroup();
 
   const results: ParsedWorkoutItem[] = [];
 

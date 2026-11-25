@@ -42,6 +42,7 @@ export interface UiPyramidStep {
   reps: number;
   rest_seconds: number;
   weight_kg?: number | null;
+  instruction_note?: string | null;
 }
 
 export interface UiExercise {
@@ -70,11 +71,17 @@ export interface UiExercise {
 }
 
 const toSafeInt = (value: unknown, fallback: number) => {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return fallback;
+  }
   const n = Number(value);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 };
 
 const toSafeDecimal = (value: unknown, fallback: number | null) => {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return fallback;
+  }
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : fallback;
 };
@@ -84,19 +91,39 @@ const toOptionalNote = (value: unknown) => {
   return note.length > 0 ? note : null;
 };
 
-const extractNoteMeta = (rawNote: unknown): { note: string | null; meta: any } => {
-  const str = String(rawNote || '').trim();
+export const extractNoteMeta = (
+  rawNote: unknown
+): { note: string | null; meta: Record<string, any> | null } => {
+  const str = String(rawNote ?? '').trim();
   const metaIdx = str.indexOf('@@@meta:');
   if (metaIdx === -1) {
-    return { note: str.length > 0 ? str : null, meta: {} };
+    return { note: str.length > 0 ? str : null, meta: null };
   }
   const notePart = str.substring(0, metaIdx).trim();
   const metaStr = str.substring(metaIdx + 8).trim();
-  let meta = {};
+  let meta: Record<string, any> | null = null;
   try {
-    meta = JSON.parse(metaStr);
-  } catch {}
+    const parsed = JSON.parse(metaStr);
+    if (parsed && typeof parsed === 'object') {
+      meta = parsed as Record<string, any>;
+    }
+  } catch {
+    meta = null;
+  }
   return { note: notePart.length > 0 ? notePart : null, meta };
+};
+
+export const encodeNoteWithMeta = (
+  note?: string | null,
+  meta?: Record<string, unknown> | null
+): string | null => {
+  const cleanNote = String(note ?? '').replace(/\s*@@@meta:[\s\S]*$/, '').trim();
+  const cleanMetaEntries = Object.entries(meta ?? {}).filter(([, value]) => value !== undefined);
+  if (cleanMetaEntries.length === 0) {
+    return cleanNote.length > 0 ? cleanNote : null;
+  }
+  const metaSuffix = `@@@meta:${JSON.stringify(Object.fromEntries(cleanMetaEntries))}`;
+  return cleanNote.length > 0 ? `${cleanNote} ${metaSuffix}` : metaSuffix;
 };
 
 const stripStorageMeta = (name: string) => name.replace(/@@@meta:.*$/, '').trim();
@@ -113,7 +140,16 @@ const parseJsonIfAny = (raw: string) => {
 
 export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
   const ordered = [...(rows || [])].sort((a, b) => toSafeInt(a.ordine, 1) - toSafeInt(b.ordine, 1));
-  const grouped = new Map<string, { ex: UiExercise; order: number; subs: Array<{ idx: number; item: UiSubExercise }>; steps: Array<{ idx: number; item: UiPyramidStep }> }>();
+  const grouped = new Map<
+    string,
+    {
+      ex: UiExercise;
+      order: number;
+      zeroRest?: boolean;
+      subs: Array<{ idx: number; item: UiSubExercise }>;
+      steps: Array<{ idx: number; item: UiPyramidStep }>;
+    }
+  >();
   const output: UiExercise[] = [];
 
   ordered.forEach((row, idx) => {
@@ -140,6 +176,14 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         noteMeta.meta?.groupCategory === 'circuit' ||
         String(supersetRecord?.tipo_gruppo || row?.tipo_gruppo || '').toLowerCase() === 'circuit' ||
         (jsonPayload && (jsonPayload.group_category === 'circuit' || jsonPayload.type === 'circuit'));
+      const metaBlockName =
+        typeof noteMeta.meta?.blockName === 'string' && noteMeta.meta.blockName.trim()
+          ? noteMeta.meta.blockName.trim()
+          : '';
+      const metaParentNote =
+        typeof noteMeta.meta?.parentNote === 'string' && noteMeta.meta.parentNote.trim()
+          ? noteMeta.meta.parentNote.trim()
+          : '';
 
       if (!grouped.has(key)) {
         const blockType: UiExerciseType = isCircuitFromMeta ? 'circuit' : 'superset';
@@ -149,7 +193,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             type: blockType,
             group_category: isCircuitFromMeta ? 'circuit' : 'superset',
             tracking_mode: isCircuitFromMeta ? 'stopwatch' : 'reps_load',
-            name: isCircuitFromMeta ? 'Circuito' : 'Superset',
+            name: metaBlockName || (isCircuitFromMeta ? 'Circuito' : 'Superset'),
             sets: supersetSets,
             reps: 0,
             duration_seconds: 0,
@@ -158,9 +202,10 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             subExercises: [],
-            instruction_note: noteMeta.note,
+            instruction_note: metaParentNote || null,
           },
           order: orderIndex,
+          zeroRest: noteMeta.meta?.zeroRest === true,
           subs: [],
           steps: [],
         });
@@ -168,6 +213,15 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       const g = grouped.get(key)!;
       if (supersetRecord?.round_totali) {
         g.ex.sets = Math.max(g.ex.sets || 1, toSafeInt(supersetRecord.round_totali, 1));
+      }
+      if (noteMeta.meta?.zeroRest === true) {
+        g.zeroRest = true;
+      }
+      if (metaBlockName) {
+        g.ex.name = metaBlockName;
+      }
+      if (metaParentNote) {
+        g.ex.instruction_note = metaParentNote;
       }
       if (isCircuitFromMeta) {
         g.ex.type = 'circuit';
@@ -180,9 +234,6 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       g.ex.transition_rest_seconds = Math.max(0, Math.max(g.ex.transition_rest_seconds || 0, transitionRestSeconds));
       if (restSeconds > 0) {
         g.ex.rest_seconds = Math.max(g.ex.rest_seconds || 0, restSeconds);
-      }
-      if (isCircuitFromMeta && (!g.ex.rest_seconds || g.ex.rest_seconds <= 0)) {
-        g.ex.rest_seconds = 60;
       }
 
       if (Array.isArray(jsonPayload)) {
@@ -201,16 +252,13 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         if (jsonPayload.lap_durations_seconds) g.ex.lap_durations_seconds = jsonPayload.lap_durations_seconds;
         if (jsonPayload.total_circuit_duration_seconds) g.ex.total_circuit_duration_seconds = jsonPayload.total_circuit_duration_seconds;
       } else {
-        if (!g.ex.instruction_note) {
-          g.ex.instruction_note = noteMeta.note;
-        }
         g.subs.push({
           idx,
           item: {
             name: dictName,
             type: rowType,
-            reps: Math.max(0, toSafeInt(row.reps, 0)),
-            duration_seconds: Math.max(0, toSafeInt(row.durata_secondi, 0)),
+            reps: rowType === 'reps' ? Math.max(0, toSafeInt(row.reps, 0)) : 0,
+            duration_seconds: rowType !== 'reps' ? Math.max(0, toSafeInt(row.durata_secondi, 0)) : 0,
             weight_kg: toSafeDecimal(row.peso_kg, null),
             instruction_note: noteMeta.note,
           },
@@ -224,13 +272,21 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       const emomRecord = Array.isArray(row.emom) ? row.emom[0] : row.emom;
       const totalRounds = Math.max(1, toSafeInt(emomRecord?.round_totali, sets));
       const roundDuration = Math.max(1, toSafeInt(emomRecord?.durata_round_secondi, 60));
+      const metaBlockName =
+        typeof noteMeta.meta?.blockName === 'string' && noteMeta.meta.blockName.trim()
+          ? noteMeta.meta.blockName.trim()
+          : '';
+      const metaParentNote =
+        typeof noteMeta.meta?.parentNote === 'string' && noteMeta.meta.parentNote.trim()
+          ? noteMeta.meta.parentNote.trim()
+          : '';
 
       if (!grouped.has(key)) {
         grouped.set(key, {
           ex: {
             id: String(row.id_emom),
             type: 'emom',
-            name: 'EMOM Circuit',
+            name: metaBlockName || 'EMOM Circuit',
             sets,
             reps: 0,
             duration_seconds: roundDuration,
@@ -241,7 +297,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             emom_rounds: totalRounds,
             emom_round_duration: roundDuration,
             subExercises: [],
-            instruction_note: toOptionalNote(row.note_esercizio),
+            instruction_note: metaParentNote || null,
           },
           order: orderIndex,
           subs: [],
@@ -255,6 +311,12 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       if (emomRecord?.durata_round_secondi) {
         g.ex.emom_round_duration = Math.max(g.ex.emom_round_duration || 60, toSafeInt(emomRecord.durata_round_secondi, 60));
         g.ex.duration_seconds = g.ex.emom_round_duration;
+      }
+      if (metaBlockName) {
+        g.ex.name = metaBlockName;
+      }
+      if (metaParentNote) {
+        g.ex.instruction_note = metaParentNote;
       }
       g.order = Math.min(g.order, orderIndex);
       g.ex.order_index = g.order;
@@ -277,18 +339,15 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         g.ex.duration_seconds = g.ex.emom_round_duration;
         g.ex.instruction_note = toOptionalNote((jsonPayload as { instruction_note?: unknown }).instruction_note) || g.ex.instruction_note;
       } else {
-        if (!g.ex.instruction_note) {
-          g.ex.instruction_note = toOptionalNote(row.note_esercizio);
-        }
         g.subs.push({
           idx: Math.max(0, toSafeInt(row.stepindex_emom, idx + 1)),
           item: {
             name: dictName,
             type: rowType,
-            reps: Math.max(0, toSafeInt(row.reps, 0)),
-            duration_seconds: Math.max(0, toSafeInt(row.durata_secondi, 0)),
+            reps: rowType === 'reps' ? Math.max(0, toSafeInt(row.reps, 0)) : 0,
+            duration_seconds: rowType !== 'reps' ? Math.max(0, toSafeInt(row.durata_secondi, 0)) : 0,
             weight_kg: toSafeDecimal(row.peso_kg, null),
-            instruction_note: toOptionalNote(row.note_esercizio),
+            instruction_note: noteMeta.note,
           },
         });
       }
@@ -297,6 +356,10 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
 
     if (row.id_piramide) {
       const key = `pyramid:${row.id_piramide}`;
+      const metaParentNote =
+        typeof noteMeta.meta?.parentNote === 'string' && noteMeta.meta.parentNote.trim()
+          ? noteMeta.meta.parentNote.trim()
+          : '';
       if (!grouped.has(key)) {
         grouped.set(key, {
           ex: {
@@ -311,7 +374,7 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
             weight_kg: toSafeDecimal(row.peso_kg, null),
             order_index: orderIndex,
             pyramid_steps: [],
-            instruction_note: toOptionalNote(row.note_esercizio),
+            instruction_note: metaParentNote || null,
           },
           order: orderIndex,
           subs: [],
@@ -322,13 +385,24 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       g.order = Math.min(g.order, orderIndex);
       g.ex.order_index = g.order;
       g.ex.transition_rest_seconds = Math.max(0, Math.max(g.ex.transition_rest_seconds || 0, transitionRestSeconds));
+      if (metaParentNote) {
+        g.ex.instruction_note = metaParentNote;
+      }
 
       if (jsonPayload?.steps && Array.isArray(jsonPayload.steps)) {
         const payloadWeight = toSafeDecimal((jsonPayload as { weight_kg?: unknown }).weight_kg, null);
-        g.ex.pyramid_steps = (jsonPayload.steps as Array<{ reps?: unknown; rest_seconds?: unknown; weight_kg?: unknown }>).map((step) => ({
+        g.ex.pyramid_steps = (
+          jsonPayload.steps as Array<{
+            reps?: unknown;
+            rest_seconds?: unknown;
+            weight_kg?: unknown;
+            instruction_note?: unknown;
+          }>
+        ).map((step) => ({
           reps: Math.max(0, toSafeInt(step.reps, 0)),
           rest_seconds: Math.max(0, toSafeInt(step.rest_seconds, 0)),
           weight_kg: toSafeDecimal(step.weight_kg, payloadWeight),
+          instruction_note: toOptionalNote(step.instruction_note),
         }));
         g.ex.name = jsonPayload.name || g.ex.name;
         g.ex.weight_kg = payloadWeight;
@@ -338,15 +412,13 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
         if (g.ex.weight_kg == null) {
           g.ex.weight_kg = toSafeDecimal(row.peso_kg, null);
         }
-        if (!g.ex.instruction_note) {
-          g.ex.instruction_note = toOptionalNote(row.note_esercizio);
-        }
         g.steps.push({
           idx: Math.max(0, toSafeInt(row.stepindex_piramide, g.steps.length + 1)),
           item: {
             reps: Math.max(0, toSafeInt(row.reps, 0)),
             rest_seconds: Math.max(0, toSafeInt(row.rest_secondi, 0)),
             weight_kg: toSafeDecimal(row.peso_kg, null),
+            instruction_note: noteMeta.note,
           },
         });
       }
@@ -359,8 +431,8 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
       type: rowType,
       name: dictName,
       sets,
-      reps: Math.max(0, toSafeInt(row.reps, 0)),
-      duration_seconds: Math.max(0, toSafeInt(row.durata_secondi, 0)),
+      reps: rowType === 'reps' ? Math.max(0, toSafeInt(row.reps, 0)) : 0,
+      duration_seconds: rowType !== 'reps' ? Math.max(0, toSafeInt(row.durata_secondi, 0)) : 0,
       rest_seconds: restSeconds,
       transition_rest_seconds: transitionRestSeconds,
       weight_kg: toSafeDecimal(row.peso_kg, null),
@@ -371,6 +443,9 @@ export const parseDbExerciseRows = (rows: any[]): UiExercise[] => {
   });
 
   grouped.forEach((g) => {
+    if (g.ex.type === 'circuit' && !g.zeroRest && (!g.ex.rest_seconds || g.ex.rest_seconds <= 0)) {
+      g.ex.rest_seconds = 60;
+    }
     if ((!g.ex.subExercises || g.ex.subExercises.length === 0) && g.subs.length > 0) {
       g.ex.subExercises = g.subs.sort((a, b) => a.idx - b.idx).map((s) => s.item);
     }

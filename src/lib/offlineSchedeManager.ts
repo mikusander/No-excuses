@@ -96,11 +96,14 @@ export const saveSchedeToOfflineCache = (
       const existing = existingMap.get(strId);
 
       let exercises = item.exercises;
-      const raw_esecuzioni = item.esecuzioni ?? existing?.raw_esecuzioni ?? [];
+      const hasExplicitEsecuzioni = Array.isArray(item.esecuzioni);
+      const raw_esecuzioni = hasExplicitEsecuzioni
+        ? item.esecuzioni!
+        : (existing?.raw_esecuzioni ?? []);
 
       if (!exercises || exercises.length === 0) {
-        if (raw_esecuzioni.length > 0) {
-          exercises = parseDbExerciseRows(raw_esecuzioni);
+        if (hasExplicitEsecuzioni) {
+          exercises = raw_esecuzioni.length > 0 ? parseDbExerciseRows(raw_esecuzioni) : [];
         } else if (existing?.exercises && existing.exercises.length > 0) {
           exercises = existing.exercises;
         } else {
@@ -148,12 +151,20 @@ export const updateSingleSchedaInOfflineCache = (
     const strId = String(scheda.id_scheda);
     const numId = Number(scheda.id_scheda);
     const now = Date.now();
+    const idx = list.findIndex((s) => s.id === strId || s.id_scheda === numId);
+    const existing = idx >= 0 ? list[idx] : undefined;
 
-    const raw_esecuzioni = scheda.raw_esecuzioni ?? scheda.esecuzioni ?? [];
+    const hasExplicitRaw = Array.isArray(scheda.raw_esecuzioni) || Array.isArray(scheda.esecuzioni);
+    const raw_esecuzioni = hasExplicitRaw
+      ? (scheda.raw_esecuzioni ?? scheda.esecuzioni ?? [])
+      : (existing?.raw_esecuzioni ?? existing?.esecuzioni ?? []);
+
     let exercises = scheda.exercises;
     if (!exercises || exercises.length === 0) {
-      if (raw_esecuzioni.length > 0) {
-        exercises = parseDbExerciseRows(raw_esecuzioni);
+      if (hasExplicitRaw) {
+        exercises = raw_esecuzioni.length > 0 ? parseDbExerciseRows(raw_esecuzioni) : [];
+      } else if (existing?.exercises && existing.exercises.length > 0) {
+        exercises = existing.exercises;
       } else {
         exercises = [];
       }
@@ -163,14 +174,17 @@ export const updateSingleSchedaInOfflineCache = (
       id: strId,
       id_scheda: numId,
       nome: scheda.nome,
-      data_creazione: scheda.data_creazione || scheda.created_at || new Date().toISOString(),
+      data_creazione:
+        scheda.data_creazione ||
+        scheda.created_at ||
+        existing?.data_creazione ||
+        new Date().toISOString(),
       raw_esecuzioni,
       esecuzioni: raw_esecuzioni,
       exercises: exercises as UiExercise[],
       updated_at_ms: now,
     };
 
-    const idx = list.findIndex((s) => s.id === strId || s.id_scheda === numId);
     if (idx >= 0) {
       list[idx] = { ...list[idx], ...updatedItem };
     } else {
@@ -243,6 +257,7 @@ export const syncOfflineSchedeWithCloud = async (userId: string): Promise<Cached
     const { data, error } = await supabase
       .from('schede')
       .select(SCHEDA_FULL_SELECT_QUERY)
+      .eq('id_utente', userId)
       .order('data_creazione', { ascending: false });
 
     if (error) throw error;

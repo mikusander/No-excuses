@@ -78,7 +78,7 @@ import BottomNavigation from '../components/BottomNavigation';
 import { hapticSelection, hapticMedium, hapticSuccess } from '../utils/haptics';
 import { generateUUID } from '../utils/uuid';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import { parseDbExerciseRows, extractNoteMeta, encodeNoteWithMeta } from '../lib/workoutSchemaAdapter';
 import { saveExercisesToDb, type SaveExercise } from '../lib/workoutSaveHelper';
 import {
   getFolders,
@@ -87,6 +87,8 @@ import {
   deleteFolder,
   getFolderAssignments,
   assignSchedaToFolder,
+  getFolderForScheda,
+  cleanupDeletedSchedaFromFolders,
   moveSchedeToFolder,
   sortSchedeByFolderOrder,
   setSchedeOrderInFolder,
@@ -98,6 +100,7 @@ import {
 import {
   getOfflineSchede,
   saveSchedeToOfflineCache,
+  updateSingleSchedaInOfflineCache,
   removeSchedaFromOfflineCache,
   SCHEDA_FULL_SELECT_QUERY,
 } from '../lib/offlineSchedeManager';
@@ -111,7 +114,7 @@ interface Exercise {
   id: string;
   type: 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
-  instruction_note?: string;
+  instruction_note?: string | null;
   auto_count_type?: 'pushups' | 'pullups' | null;
   sets: number;
   reps: number;
@@ -122,14 +125,19 @@ interface Exercise {
   order_index: number;
   emom_rounds?: number;
   emom_round_duration?: number;
-  pyramid_steps?: { reps: number; rest_seconds: number; weight_kg?: number | null }[];
+  pyramid_steps?: {
+    reps: number;
+    rest_seconds: number;
+    weight_kg?: number | null;
+    instruction_note?: string | null;
+  }[];
   subExercises?: {
     name: string;
     type: 'reps' | 'isometry' | 'cardio';
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
-    instruction_note?: string;
+    instruction_note?: string | null;
   }[];
 }
 
@@ -491,10 +499,11 @@ const GymCardPage: React.FC = () => {
     }
 
     try {
-      const { data, error } = await supabase
+      const baseQuery = supabase
         .from('schede')
-        .select(SCHEDA_FULL_SELECT_QUERY)
-        .order('data_creazione', { ascending: false });
+        .select(SCHEDA_FULL_SELECT_QUERY);
+      const filteredQuery = user?.id ? baseQuery.eq('id_utente', user.id) : baseQuery;
+      const { data, error } = await filteredQuery.order('data_creazione', { ascending: false });
 
       if (error) throw error;
       const parsedWorkouts = (data || []).map((w: any) => ({
@@ -528,7 +537,8 @@ const GymCardPage: React.FC = () => {
     if (!user || duplicatingWorkoutId) return;
     try {
       setDuplicatingWorkoutId(workout.id);
-      
+      const sourceFolderId = getFolderForScheda(workout.id, user.id);
+
       const copyName = `${workout.name} (Copy)`;
       const { data: newScheda, error: schedaError } = await supabase
         .from('schede')
@@ -550,9 +560,9 @@ const GymCardPage: React.FC = () => {
           instruction_note: ex.instruction_note,
           auto_count_type: ex.auto_count_type,
           sets: ex.sets || 1,
-          reps: ex.reps || 0,
-          duration_seconds: ex.duration_seconds || 0,
-          rest_seconds: ex.rest_seconds || 0,
+          reps: ex.reps ?? 0,
+          duration_seconds: ex.duration_seconds ?? 0,
+          rest_seconds: ex.rest_seconds ?? 0,
           transition_rest_seconds: ex.transition_rest_seconds,
           weight_kg: ex.weight_kg,
           emom_rounds: ex.emom_rounds,
@@ -562,6 +572,10 @@ const GymCardPage: React.FC = () => {
         }));
 
         await saveExercisesToDb(newScheda.id_scheda, exercisesToSave);
+      }
+
+      if (sourceFolderId) {
+        assignSchedaToFolder(newScheda.id_scheda, sourceFolderId, user.id);
       }
 
       await fetchWorkouts();
@@ -580,6 +594,7 @@ const GymCardPage: React.FC = () => {
       if (error) throw error;
       setWorkouts((prev) => prev.filter((w) => w.id !== id));
       setSelectedWorkout((prev) => (prev?.id === id ? null : prev));
+      cleanupDeletedSchedaFromFolders(id, user?.id);
       if (user?.id) {
         removeSchedaFromOfflineCache(user.id, id);
       }
@@ -639,23 +654,23 @@ const GymCardPage: React.FC = () => {
       type: targetExercise.type,
       name: targetExercise.name,
       sets: String(targetExercise.sets || 1),
-      reps: String(targetExercise.reps || 1),
-      duration_seconds: String(targetExercise.duration_seconds || 1),
-      rest_seconds: String(targetExercise.rest_seconds || 0),
-      transition_rest_seconds: String(targetExercise.transition_rest_seconds || 0),
+      reps: String(targetExercise.reps ?? 0),
+      duration_seconds: String(targetExercise.duration_seconds ?? 0),
+      rest_seconds: String(targetExercise.rest_seconds ?? 0),
+      transition_rest_seconds: String(targetExercise.transition_rest_seconds ?? 0),
       weight_kg: formatWeightDraft(targetExercise.weight_kg),
       emom_rounds: String(targetExercise.emom_rounds || 1),
       emom_round_duration: String(targetExercise.emom_round_duration || targetExercise.duration_seconds || 60),
       subExercises: (targetExercise.subExercises || []).map((sub) => ({
         name: sub.name,
         type: sub.type,
-        reps: String(sub.reps || 1),
-        duration_seconds: String(sub.duration_seconds || 1),
+        reps: String(sub.reps ?? 0),
+        duration_seconds: String(sub.duration_seconds ?? 0),
         weight_kg: formatWeightDraft(sub.weight_kg),
       })),
       pyramid_steps: (targetExercise.pyramid_steps || []).map((step) => ({
-        reps: String(step.reps || 1),
-        rest_seconds: String(step.rest_seconds || 0),
+        reps: String(step.reps ?? 0),
+        rest_seconds: String(step.rest_seconds ?? 0),
         weight_kg: formatWeightDraft(step.weight_kg),
       })),
     });
@@ -711,9 +726,18 @@ const GymCardPage: React.FC = () => {
         const nextSets = parseStrictInt(draft.sets, 'Sets');
         const nextRest = parseStrictInt(draft.rest_seconds, 'Rest', true);
         const nextWeight = parseOptionalWeight(draft.weight_kg);
-        const isDuration = draft.type === 'isometry' || draft.type === 'cardio';
-        const nextReps = isDuration ? currentExercise.reps : parseStrictInt(draft.reps, 'Reps');
-        const nextDuration = isDuration ? parseStrictInt(draft.duration_seconds, 'Duration') : currentExercise.duration_seconds;
+        const isCardio = draft.type === 'cardio';
+        const isDuration = draft.type === 'isometry' || isCardio;
+        const nextReps = isDuration ? currentExercise.reps : parseStrictInt(draft.reps, 'Reps', true);
+        const nextDuration = isDuration ? parseStrictInt(draft.duration_seconds, 'Duration', true) : currentExercise.duration_seconds;
+
+        const singleMeta: Record<string, unknown> = {};
+        if (currentExercise.auto_count_type) {
+          singleMeta.autoCountType = currentExercise.auto_count_type;
+        }
+        if (isCardio) {
+          singleMeta.exerciseType = 'cardio';
+        }
 
         const { error } = await supabase
           .from('esecuzioni')
@@ -722,8 +746,10 @@ const GymCardPage: React.FC = () => {
             rest_secondi: nextRest > 0 ? nextRest : null,
             rest_tra_esercizi: nextTransitionRest > 0 ? nextTransitionRest : null,
             peso_kg: nextWeight,
+            tipo: isDuration ? 'ISOMETRIA' : 'REPS',
             reps: isDuration ? null : nextReps,
             durata_secondi: isDuration ? nextDuration : null,
+            note_esercizio: encodeNoteWithMeta(currentExercise.instruction_note, singleMeta),
           })
           .eq('id_scheda', schedaId)
           .eq('id_esecuzione', Number(draft.id));
@@ -743,12 +769,16 @@ const GymCardPage: React.FC = () => {
         const nextRounds = parseStrictInt(draft.sets, 'Rounds');
         const nextRest = parseStrictInt(draft.rest_seconds, 'Rest', true);
 
-        const normalizedSubs = draft.subExercises.map((sub) => ({
-          ...sub,
-          reps: sub.type === 'reps' ? parseStrictInt(sub.reps, `${sub.name || 'Superset'} reps`) : sub.reps,
-          duration_seconds: sub.type === 'isometry' ? parseStrictInt(sub.duration_seconds, `${sub.name || 'Superset'} duration`) : sub.duration_seconds,
-          weight_kg: parseOptionalWeight(sub.weight_kg),
-        }));
+        const normalizedSubs = draft.subExercises.map((sub, idx) => {
+          const isDuration = sub.type === 'isometry' || sub.type === 'cardio';
+          return {
+            ...sub,
+            instruction_note: currentExercise.subExercises?.[idx]?.instruction_note ?? null,
+            reps: sub.type === 'reps' ? parseStrictInt(sub.reps, `${sub.name || 'Superset'} reps`, true) : sub.reps,
+            duration_seconds: isDuration ? parseStrictInt(sub.duration_seconds, `${sub.name || 'Superset'} duration`, true) : sub.duration_seconds,
+            weight_kg: parseOptionalWeight(sub.weight_kg),
+          };
+        });
 
         const { error: supersetError } = await supabase
           .from('superset')
@@ -769,7 +799,7 @@ const GymCardPage: React.FC = () => {
 
         const { data: rows, error: rowsError } = await supabase
           .from('esecuzioni')
-          .select('id_esecuzione, ordine')
+          .select('id_esecuzione, ordine, note_esercizio')
           .eq('id_scheda', schedaId)
           .eq('id_superset', Number(draft.id))
           .order('ordine', { ascending: true });
@@ -780,12 +810,33 @@ const GymCardPage: React.FC = () => {
           const row = orderedRows[idx];
           const sub = normalizedSubs[idx];
           if (!row) continue;
+          const isCardio = sub.type === 'cardio';
+          const isDuration = sub.type === 'isometry' || isCardio;
+          const noteMeta = extractNoteMeta(row.note_esercizio);
+          const nextMeta: Record<string, unknown> = { ...(noteMeta.meta || {}) };
+          if (isCardio) {
+            nextMeta.exerciseType = 'cardio';
+          } else {
+            delete nextMeta.exerciseType;
+          }
+          if (idx === 0 && draft.type === 'circuit') {
+            nextMeta.groupCategory = 'circuit';
+            nextMeta.trackingMode = 'stopwatch';
+            if (nextRest === 0) {
+              nextMeta.zeroRest = true;
+            } else {
+              delete nextMeta.zeroRest;
+            }
+          }
+
           const { error: rowUpdateError } = await supabase
             .from('esecuzioni')
             .update({
-              reps: sub.type === 'reps' ? Number(sub.reps) : null,
-              durata_secondi: sub.type === 'isometry' ? Number(sub.duration_seconds) : null,
+              tipo: isDuration ? 'ISOMETRIA' : 'REPS',
+              reps: isDuration ? null : Number(sub.reps),
+              durata_secondi: isDuration ? Number(sub.duration_seconds) : null,
               peso_kg: sub.weight_kg,
+              note_esercizio: encodeNoteWithMeta(noteMeta.note, nextMeta),
             })
             .eq('id_scheda', schedaId)
             .eq('id_esecuzione', Number(row.id_esecuzione));
@@ -801,8 +852,9 @@ const GymCardPage: React.FC = () => {
             name: sub.name,
             type: sub.type,
             reps: sub.type === 'reps' ? Number(sub.reps) : 0,
-            duration_seconds: sub.type === 'isometry' ? Number(sub.duration_seconds) : 0,
+            duration_seconds: sub.type === 'isometry' || sub.type === 'cardio' ? Number(sub.duration_seconds) : 0,
             weight_kg: sub.weight_kg,
+            instruction_note: sub.instruction_note,
           })),
         };
       } else if (draft.type === 'emom') {
@@ -811,12 +863,16 @@ const GymCardPage: React.FC = () => {
         const nextRoundDuration = parseStrictInt(draft.emom_round_duration, 'Round duration');
         const nextRest = parseStrictInt(draft.rest_seconds, 'Rest', true);
 
-        const normalizedSubs = draft.subExercises.map((sub) => ({
-          ...sub,
-          reps: sub.type === 'reps' ? parseStrictInt(sub.reps, `${sub.name || 'EMOM'} reps`) : sub.reps,
-          duration_seconds: sub.type === 'isometry' ? parseStrictInt(sub.duration_seconds, `${sub.name || 'EMOM'} duration`) : sub.duration_seconds,
-          weight_kg: parseOptionalWeight(sub.weight_kg),
-        }));
+        const normalizedSubs = draft.subExercises.map((sub, idx) => {
+          const isDuration = sub.type === 'isometry' || sub.type === 'cardio';
+          return {
+            ...sub,
+            instruction_note: currentExercise.subExercises?.[idx]?.instruction_note ?? null,
+            reps: sub.type === 'reps' ? parseStrictInt(sub.reps, `${sub.name || 'EMOM'} reps`, true) : sub.reps,
+            duration_seconds: isDuration ? parseStrictInt(sub.duration_seconds, `${sub.name || 'EMOM'} duration`, true) : sub.duration_seconds,
+            weight_kg: parseOptionalWeight(sub.weight_kg),
+          };
+        });
 
         const { error: emomError } = await supabase
           .from('emom')
@@ -840,9 +896,10 @@ const GymCardPage: React.FC = () => {
 
         const { data: rows, error: rowsError } = await supabase
           .from('esecuzioni')
-          .select('id_esecuzione, ordine')
+          .select('id_esecuzione, ordine, stepindex_emom, note_esercizio')
           .eq('id_scheda', schedaId)
           .eq('id_emom', Number(draft.id))
+          .order('stepindex_emom', { ascending: true })
           .order('ordine', { ascending: true });
         if (rowsError) throw rowsError;
 
@@ -851,12 +908,24 @@ const GymCardPage: React.FC = () => {
           const row = orderedRows[idx];
           const sub = normalizedSubs[idx];
           if (!row) continue;
+          const isCardio = sub.type === 'cardio';
+          const isDuration = sub.type === 'isometry' || isCardio;
+          const noteMeta = extractNoteMeta(row.note_esercizio);
+          const nextMeta: Record<string, unknown> = { ...(noteMeta.meta || {}) };
+          if (isCardio) {
+            nextMeta.exerciseType = 'cardio';
+          } else {
+            delete nextMeta.exerciseType;
+          }
+
           const { error: rowUpdateError } = await supabase
             .from('esecuzioni')
             .update({
-              reps: sub.type === 'reps' ? Number(sub.reps) : null,
-              durata_secondi: sub.type === 'isometry' ? Number(sub.duration_seconds) : null,
+              tipo: isDuration ? 'ISOMETRIA' : 'REPS',
+              reps: isDuration ? null : Number(sub.reps),
+              durata_secondi: isDuration ? Number(sub.duration_seconds) : null,
               peso_kg: sub.weight_kg,
+              note_esercizio: encodeNoteWithMeta(noteMeta.note, nextMeta),
             })
             .eq('id_scheda', schedaId)
             .eq('id_esecuzione', Number(row.id_esecuzione));
@@ -875,15 +944,17 @@ const GymCardPage: React.FC = () => {
             name: sub.name,
             type: sub.type,
             reps: sub.type === 'reps' ? Number(sub.reps) : 0,
-            duration_seconds: sub.type === 'isometry' ? Number(sub.duration_seconds) : 0,
+            duration_seconds: sub.type === 'isometry' || sub.type === 'cardio' ? Number(sub.duration_seconds) : 0,
             weight_kg: sub.weight_kg,
+            instruction_note: sub.instruction_note,
           })),
         };
       } else if (draft.type === 'pyramid') {
         const normalizedSteps = draft.pyramid_steps.map((step, stepIndex) => ({
-          reps: parseStrictInt(step.reps, `Step ${stepIndex + 1} reps`),
+          reps: parseStrictInt(step.reps, `Step ${stepIndex + 1} reps`, true),
           rest_seconds: parseStrictInt(step.rest_seconds, `Step ${stepIndex + 1} rest`, true),
           weight_kg: parseOptionalWeight(step.weight_kg),
+          instruction_note: currentExercise.pyramid_steps?.[stepIndex]?.instruction_note ?? null,
         }));
 
         for (let stepIndex = 0; stepIndex < normalizedSteps.length; stepIndex += 1) {
@@ -918,6 +989,36 @@ const GymCardPage: React.FC = () => {
       }
 
       updateExerciseInLocalState(selectedWorkout.id, editingExerciseIndex, updatedExercise);
+
+      if (user?.id) {
+        const nextExercises = [...selectedWorkout.exercises];
+        nextExercises[editingExerciseIndex] = updatedExercise;
+        try {
+          const { data: freshScheda } = await supabase
+            .from('schede')
+            .select(SCHEDA_FULL_SELECT_QUERY)
+            .eq('id_scheda', schedaId)
+            .maybeSingle();
+          if (freshScheda) {
+            updateSingleSchedaInOfflineCache(user.id, freshScheda);
+          } else {
+            updateSingleSchedaInOfflineCache(user.id, {
+              id_scheda: schedaId,
+              nome: selectedWorkout.name,
+              data_creazione: selectedWorkout.created_at,
+              exercises: nextExercises,
+            });
+          }
+        } catch {
+          updateSingleSchedaInOfflineCache(user.id, {
+            id_scheda: schedaId,
+            nome: selectedWorkout.name,
+            data_creazione: selectedWorkout.created_at,
+            exercises: nextExercises,
+          });
+        }
+      }
+
       closeExerciseQuickEdit();
     } catch (error: any) {
       console.error('Error saving quick exercise edit:', error);
@@ -931,7 +1032,7 @@ const GymCardPage: React.FC = () => {
     setExerciseQuickEditDraft((prev) => (prev ? { ...prev, [field]: value } : prev));
   };
 
-  const updateQuickEditExerciseType = (type: 'reps' | 'isometry') => {
+  const updateQuickEditExerciseType = (type: 'reps' | 'isometry' | 'cardio') => {
     setExerciseQuickEditDraft((prev) => {
       if (!prev) return prev;
       return { ...prev, type };
@@ -952,7 +1053,7 @@ const GymCardPage: React.FC = () => {
     });
   };
 
-  const updateQuickEditSubType = (subIndex: number, type: 'reps' | 'isometry') => {
+  const updateQuickEditSubType = (subIndex: number, type: 'reps' | 'isometry' | 'cardio') => {
     setExerciseQuickEditDraft((prev) => {
       if (!prev) return prev;
       const nextSubs = [...prev.subExercises];
@@ -2040,22 +2141,26 @@ const GymCardPage: React.FC = () => {
             <div className="p-5 overflow-y-auto max-h-[calc(88vh-154px)] space-y-4">
               {(exerciseQuickEditDraft.type === 'reps' || exerciseQuickEditDraft.type === 'isometry' || exerciseQuickEditDraft.type === 'cardio') && (
                 <>
-                  {(exerciseQuickEditDraft.type === 'reps' || exerciseQuickEditDraft.type === 'isometry') && (
-                    <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
-                      <button
-                        onClick={() => updateQuickEditExerciseType('reps')}
-                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors cursor-pointer ${exerciseQuickEditDraft.type === 'reps' ? 'bg-brand-orange text-black font-black' : 'text-brand-grey hover:text-white'}`}
-                      >
-                        REPS
-                      </button>
-                      <button
-                        onClick={() => updateQuickEditExerciseType('isometry')}
-                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors cursor-pointer ${exerciseQuickEditDraft.type === 'isometry' ? 'bg-brand-orange text-black font-black' : 'text-brand-grey hover:text-white'}`}
-                      >
-                        ISOMETRIA
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex space-x-2 bg-black/40 p-1.5 rounded-xl">
+                    <button
+                      onClick={() => updateQuickEditExerciseType('reps')}
+                      className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors cursor-pointer ${exerciseQuickEditDraft.type === 'reps' ? 'bg-brand-orange text-black font-black' : 'text-brand-grey hover:text-white'}`}
+                    >
+                      REPS
+                    </button>
+                    <button
+                      onClick={() => updateQuickEditExerciseType('isometry')}
+                      className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors cursor-pointer ${exerciseQuickEditDraft.type === 'isometry' ? 'bg-brand-orange text-black font-black' : 'text-brand-grey hover:text-white'}`}
+                    >
+                      ISOMETRIA
+                    </button>
+                    <button
+                      onClick={() => updateQuickEditExerciseType('cardio')}
+                      className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors cursor-pointer ${exerciseQuickEditDraft.type === 'cardio' ? 'bg-rose-500 text-white font-black' : 'text-brand-grey hover:text-white'}`}
+                    >
+                      CARDIO
+                    </button>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm text-brand-grey">Serie
@@ -2097,20 +2202,20 @@ const GymCardPage: React.FC = () => {
                   </div>
 
                   {exerciseQuickEditDraft.type === 'reps' ? (
-                    <label className="text-sm text-brand-grey">Ripetizioni
+                    <label className="text-sm text-brand-grey">Ripetizioni (0 = MAX)
                       <input
                         type="number" inputMode="numeric"
-                        min={1}
+                        min={0}
                         value={exerciseQuickEditDraft.reps}
                         onChange={(e) => updateQuickEditField('reps', e.target.value)}
                         className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none font-bold"
                       />
                     </label>
                   ) : (
-                    <label className="text-sm text-brand-grey">Durata (sec)
+                    <label className="text-sm text-brand-grey">Durata sec (0 = MAX)
                       <input
                         type="number" inputMode="numeric"
-                        min={1}
+                        min={0}
                         value={exerciseQuickEditDraft.duration_seconds}
                         onChange={(e) => updateQuickEditField('duration_seconds', e.target.value)}
                         className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none font-bold"
@@ -2189,22 +2294,28 @@ const GymCardPage: React.FC = () => {
                           >
                             ISOMETRIA
                           </button>
+                          <button
+                            onClick={() => updateQuickEditSubType(subIdx, 'cardio')}
+                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'cardio' ? 'bg-rose-500 text-white' : 'text-brand-grey hover:text-white'}`}
+                          >
+                            CARDIO
+                          </button>
                         </div>
                         {sub.type === 'reps' ? (
-                          <label className="text-sm text-brand-grey">Ripetizioni
+                          <label className="text-sm text-brand-grey">Ripetizioni (0 = MAX)
                             <input
                               type="number" inputMode="numeric"
-                              min={1}
+                              min={0}
                               value={sub.reps}
                               onChange={(e) => updateQuickEditSubField(subIdx, 'reps', e.target.value)}
                               className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
                             />
                           </label>
                         ) : (
-                          <label className="text-sm text-brand-grey">Durata (sec)
+                          <label className="text-sm text-brand-grey">Durata sec (0 = MAX)
                             <input
                               type="number" inputMode="numeric"
-                              min={1}
+                              min={0}
                               value={sub.duration_seconds}
                               onChange={(e) => updateQuickEditSubField(subIdx, 'duration_seconds', e.target.value)}
                               className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
@@ -2329,22 +2440,28 @@ const GymCardPage: React.FC = () => {
                           >
                             ISOMETRIA
                           </button>
+                          <button
+                            onClick={() => updateQuickEditSubType(subIdx, 'cardio')}
+                            className={`flex-1 py-1 text-xs font-bold rounded-lg transition-colors ${sub.type === 'cardio' ? 'bg-rose-500 text-white' : 'text-brand-grey hover:text-white'}`}
+                          >
+                            CARDIO
+                          </button>
                         </div>
                         {sub.type === 'reps' ? (
-                          <label className="text-sm text-brand-grey">Ripetizioni
+                          <label className="text-sm text-brand-grey">Ripetizioni (0 = MAX)
                             <input
                               type="number" inputMode="numeric"
-                              min={1}
+                              min={0}
                               value={sub.reps}
                               onChange={(e) => updateQuickEditSubField(subIdx, 'reps', e.target.value)}
                               className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
                             />
                           </label>
                         ) : (
-                          <label className="text-sm text-brand-grey">Durata (sec)
+                          <label className="text-sm text-brand-grey">Durata sec (0 = MAX)
                             <input
                               type="number" inputMode="numeric"
-                              min={1}
+                              min={0}
                               value={sub.duration_seconds}
                               onChange={(e) => updateQuickEditSubField(subIdx, 'duration_seconds', e.target.value)}
                               className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"
@@ -2374,10 +2491,10 @@ const GymCardPage: React.FC = () => {
                       <p className="text-xs font-bold uppercase tracking-wider text-brand-grey/70">Step {stepIdx + 1}</p>
 
                       <div className="grid grid-cols-2 gap-3">
-                        <label className="text-sm text-brand-grey">Ripetizioni
+                        <label className="text-sm text-brand-grey">Ripetizioni (0 = MAX)
                           <input
                             type="number" inputMode="numeric"
-                            min={1}
+                            min={0}
                             value={step.reps}
                             onChange={(e) => updateQuickEditPyramidStepField(stepIdx, 'reps', e.target.value)}
                             className="mt-1 w-full bg-black/40 border border-brand-grey/20 rounded-xl px-3 py-2 text-white focus:border-brand-orange outline-none"

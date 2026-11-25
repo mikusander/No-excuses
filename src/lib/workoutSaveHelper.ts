@@ -23,6 +23,7 @@
  *  con schemi DB che non hanno colonne dedicate per questi metadati.
  */
 import { supabase } from './supabase';
+import { encodeNoteWithMeta } from './workoutSchemaAdapter';
 
 /**
  * Rappresentazione di un esercizio da salvare nel database.
@@ -32,7 +33,7 @@ export interface SaveExercise {
   id: string;
   type: 'reps' | 'isometry' | 'cardio' | 'superset' | 'circuit' | 'emom' | 'pyramid';
   name: string;
-  instruction_note?: string;
+  instruction_note?: string | null;
   /** Tipo di esercizio per il conteggio automatico (MediaPipe/accelerometro) */
   auto_count_type?: 'pushups' | 'pullups' | null;
   sets: number;
@@ -44,20 +45,21 @@ export interface SaveExercise {
   weight_kg?: number | null;
   emom_rounds?: number;
   emom_round_duration?: number;
-  /** Sub-esercizi per superset ed EMOM */
+  /** Sub-esercizi per superset, circuiti ed EMOM */
   subExercises?: {
     name: string;
     type: 'reps' | 'isometry' | 'cardio';
     reps: number;
     duration_seconds: number;
     weight_kg?: number | null;
-    instruction_note?: string;
+    instruction_note?: string | null;
   }[];
-  /** Step della piramide (ogni step ha reps/rest/peso propri) */
+  /** Step della piramide (ogni step ha reps/rest/peso/nota propri) */
   pyramid_steps?: {
     reps: number;
     rest_seconds: number;
     weight_kg?: number | null;
+    instruction_note?: string | null;
   }[];
 }
 
@@ -140,61 +142,118 @@ const ensureExerciseDictionaryId = async (name: string) => {
  * @param exercises - Lista degli esercizi nella loro struttura UI normalizzata
  */
 export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercise[]): Promise<void> => {
-  // Delete old exercises
-  const { error: deleteError } = await supabase
+  const defaultBlockNames = new Set(['superset', 'circuito', 'circuit', 'emom', 'emom circuit']);
+  const toNonNegInt = (value: unknown, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : fallback;
+  };
+  const toPositiveInt = (value: unknown, fallback = 1) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 1 ? Math.trunc(n) : fallback;
+  };
+
+  // Pre-sanificazione nomi prima di toccare il DB per evitare violazioni su ck_esercizi_nome_not_blank
+  const sanitizedExercises: SaveExercise[] = exercises.map((ex, idx) => {
+    const cleanName = normalizeExerciseName(String(ex.name || ''));
+    const fallbackExName =
+      ex.type === 'circuit'
+        ? 'Circuito'
+        : ex.type === 'superset'
+          ? 'Superset'
+          : ex.type === 'emom'
+            ? 'EMOM Circuit'
+            : `Esercizio ${idx + 1}`;
+    return {
+      ...ex,
+      name: cleanName || fallbackExName,
+      subExercises: ex.subExercises?.map((sub, subIdx) => ({
+        ...sub,
+        name: normalizeExerciseName(String(sub.name || '')) || (ex.type === 'circuit' ? `Stazione ${subIdx + 1}` : `Esercizio ${subIdx + 1}`),
+      })),
+    };
+  });
+
+  // Raccoglie eventuali container esistenti prima della sostituzione per pulizia orfani best-effort
+  const { data: existingExecRows } = await supabase
     .from('esecuzioni')
-    .delete()
+    .select('id_superset, id_emom, id_piramide')
     .eq('id_scheda', schedaId);
-  if (deleteError) throw deleteError;
 
+  const oldSupersetIds = new Set<number>();
+  const oldEmomIds = new Set<number>();
+  const oldPiramideIds = new Set<number>();
+  for (const row of existingExecRows || []) {
+    if (row.id_superset != null) oldSupersetIds.add(Number(row.id_superset));
+    if (row.id_emom != null) oldEmomIds.add(Number(row.id_emom));
+    if (row.id_piramide != null) oldPiramideIds.add(Number(row.id_piramide));
+  }
+
+  // Costruisce tutte le righe e i nuovi container PRIMA di cancellare le vecchie esecuzioni
   const rowsToInsert: any[] = [];
-  let orderCounter = 1; // Contatore ordinamento sequenziale per tutta la scheda
+  let orderCounter = 1;
 
-  for (let idx = 0; idx < exercises.length; idx += 1) {
-    const ex = exercises[idx];
-
-    // Il riposo di transizione viene salvato solo se non è l'ultimo esercizio
+  for (let idx = 0; idx < sanitizedExercises.length; idx += 1) {
+    const ex = sanitizedExercises[idx];
     const transitionRestToPersist =
-      idx < exercises.length - 1 && (ex.transition_rest_seconds || 0) > 0
-        ? Math.max(0, Math.trunc(ex.transition_rest_seconds || 0))
+      idx < sanitizedExercises.length - 1 && (ex.transition_rest_seconds || 0) > 0
+        ? toNonNegInt(ex.transition_rest_seconds, 0)
         : null;
+    const trimmedParentNote = String(ex.instruction_note || '').trim();
+    const customBlockName =
+      ex.name.trim() && !defaultBlockNames.has(ex.name.trim().toLowerCase()) ? ex.name.trim() : undefined;
 
     // ── SUPERSET & CIRCUITO (Gruppi Esercizi) ──────────────────────────────
     if (ex.type === 'superset' || ex.type === 'circuit') {
       const isCircuit = ex.type === 'circuit';
-      // Crea il record superset/gruppo con il numero di round
+      const safeRounds = toPositiveInt(ex.sets, 1);
+      const restSeconds = toNonNegInt(ex.rest_seconds, 0);
+
       const { data, error: supersetError } = await supabase
         .from('superset')
-        .insert([{ round_totali: Math.max(1, ex.sets) }])
+        .insert([{ round_totali: safeRounds }])
         .select('id_superset')
         .single();
       if (supersetError) throw supersetError;
 
-      // Inserisce ogni sub-esercizio del gruppo come riga separata in esecuzioni
-      for (let subIdx = 0; subIdx < (ex.subExercises || []).length; subIdx += 1) {
-        const sub = ex.subExercises![subIdx];
+      const subs = ex.subExercises || [];
+      for (let subIdx = 0; subIdx < subs.length; subIdx += 1) {
+        const sub = subs[subIdx];
         const idEsercizio = await ensureExerciseDictionaryId(sub.name);
-        const isIso = sub.type === 'isometry';
+        const isCardio = sub.type === 'cardio';
+        const isDuration = sub.type === 'isometry' || isCardio;
 
-        let subNote = String(sub.instruction_note || '').trim();
-        // Sul primo sub-esercizio memorizziamo il metadata del gruppo se è un circuito
-        if (subIdx === 0 && isCircuit) {
-          const metaPayload = { groupCategory: 'circuit', trackingMode: 'stopwatch' };
-          subNote = subNote ? `${subNote} @@@meta:${JSON.stringify(metaPayload)}` : `@@@meta:${JSON.stringify(metaPayload)}`;
+        const subMeta: Record<string, unknown> = {};
+        if (isCardio) {
+          subMeta.exerciseType = 'cardio';
+        }
+        if (subIdx === 0) {
+          if (isCircuit) {
+            subMeta.groupCategory = 'circuit';
+            subMeta.trackingMode = 'stopwatch';
+            if (restSeconds === 0) {
+              subMeta.zeroRest = true;
+            }
+          }
+          if (customBlockName) {
+            subMeta.blockName = customBlockName;
+          }
+          if (trimmedParentNote) {
+            subMeta.parentNote = trimmedParentNote;
+          }
         }
 
         rowsToInsert.push({
           id_scheda: schedaId,
           id_esercizio: idEsercizio,
           ordine: orderCounter,
-          set_num: Math.max(1, ex.sets || 1),
-          rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+          set_num: safeRounds,
+          rest_secondi: restSeconds > 0 ? restSeconds : null,
           rest_tra_esercizi: transitionRestToPersist,
           peso_kg: toDbWeight(sub.weight_kg),
-          note_esercizio: subNote || null,
-          tipo: isIso ? 'ISOMETRIA' : 'REPS',
-          reps: isIso ? null : Math.max(0, sub.reps ?? 0),
-          durata_secondi: isIso ? Math.max(0, sub.duration_seconds ?? 0) : null,
+          note_esercizio: encodeNoteWithMeta(sub.instruction_note, subMeta),
+          tipo: isDuration ? 'ISOMETRIA' : 'REPS',
+          reps: isDuration ? null : toNonNegInt(sub.reps, 0),
+          durata_secondi: isDuration ? toNonNegInt(sub.duration_seconds, 0) : null,
           id_superset: data.id_superset,
           id_piramide: null,
           stepindex_piramide: null,
@@ -205,42 +264,59 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
         orderCounter += 1;
       }
 
-      continue; // Salta il blocco default sotto
+      continue;
     }
 
     // ── EMOM (Every Minute On the Minute) ───────────────────────────────────
     if (ex.type === 'emom') {
-      // Crea il record EMOM con round totali e durata per round
+      const safeEmomRounds = toPositiveInt(ex.emom_rounds ?? ex.sets, 1);
+      const safeEmomDuration = toPositiveInt(ex.emom_round_duration, 60);
+      const restSeconds = toNonNegInt(ex.rest_seconds, 0);
+
       const { data, error: emomError } = await supabase
         .from('emom')
-        .insert([{ round_totali: Math.max(1, ex.emom_rounds || 1), durata_round_secondi: Math.max(1, ex.emom_round_duration || 60) }])
+        .insert([{ round_totali: safeEmomRounds, durata_round_secondi: safeEmomDuration }])
         .select('id_emom')
         .single();
       if (emomError) throw emomError;
 
-      // Inserisce ogni movimento dell'EMOM come riga separata
-      for (let subIdx = 0; subIdx < (ex.subExercises || []).length; subIdx += 1) {
-        const sub = ex.subExercises![subIdx];
+      const subs = ex.subExercises || [];
+      for (let subIdx = 0; subIdx < subs.length; subIdx += 1) {
+        const sub = subs[subIdx];
         const idEsercizio = await ensureExerciseDictionaryId(sub.name);
-        const isIso = sub.type === 'isometry';
+        const isCardio = sub.type === 'cardio';
+        const isDuration = sub.type === 'isometry' || isCardio;
+
+        const subMeta: Record<string, unknown> = {};
+        if (isCardio) {
+          subMeta.exerciseType = 'cardio';
+        }
+        if (subIdx === 0) {
+          if (customBlockName) {
+            subMeta.blockName = customBlockName;
+          }
+          if (trimmedParentNote) {
+            subMeta.parentNote = trimmedParentNote;
+          }
+        }
 
         rowsToInsert.push({
           id_scheda: schedaId,
           id_esercizio: idEsercizio,
           ordine: orderCounter,
-          set_num: Math.max(1, ex.sets || 1),
-          rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+          set_num: safeEmomRounds,
+          rest_secondi: restSeconds > 0 ? restSeconds : null,
           rest_tra_esercizi: transitionRestToPersist,
           peso_kg: toDbWeight(sub.weight_kg),
-          note_esercizio: String(sub.instruction_note || '').trim() || null,
-          tipo: isIso ? 'ISOMETRIA' : 'REPS',
-          reps: isIso ? null : Math.max(0, sub.reps ?? 0),
-          durata_secondi: isIso ? Math.max(0, sub.duration_seconds ?? 0) : null,
+          note_esercizio: encodeNoteWithMeta(sub.instruction_note, subMeta),
+          tipo: isDuration ? 'ISOMETRIA' : 'REPS',
+          reps: isDuration ? null : toNonNegInt(sub.reps, 0),
+          durata_secondi: isDuration ? toNonNegInt(sub.duration_seconds, 0) : null,
           id_superset: null,
           id_piramide: null,
           stepindex_piramide: null,
           id_emom: data.id_emom,
-          stepindex_emom: subIdx + 1, // Indice 1-based dello step EMOM
+          stepindex_emom: subIdx + 1,
         });
 
         orderCounter += 1;
@@ -251,7 +327,6 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
 
     // ── PIRAMIDE ─────────────────────────────────────────────────────────────
     if (ex.type === 'pyramid') {
-      // Crea il record piramide (solo id, i dati sono negli step)
       const { data, error: piramideError } = await supabase
         .from('piramide')
         .insert([{}])
@@ -259,26 +334,31 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
         .single();
       if (piramideError) throw piramideError;
 
-      // Ogni step della piramide è una riga con reps/rest/peso propri
-      for (let stepIdx = 0; stepIdx < (ex.pyramid_steps || []).length; stepIdx += 1) {
-        const step = ex.pyramid_steps![stepIdx];
-        const idEsercizio = await ensureExerciseDictionaryId(ex.name);
+      const idEsercizio = await ensureExerciseDictionaryId(ex.name);
+      const steps = ex.pyramid_steps || [];
+      for (let stepIdx = 0; stepIdx < steps.length; stepIdx += 1) {
+        const step = steps[stepIdx];
+        const stepRest = toNonNegInt(step.rest_seconds, 0);
+        const stepMeta: Record<string, unknown> = {};
+        if (stepIdx === 0 && trimmedParentNote) {
+          stepMeta.parentNote = trimmedParentNote;
+        }
 
         rowsToInsert.push({
           id_scheda: schedaId,
           id_esercizio: idEsercizio,
           ordine: orderCounter,
-          set_num: 1, // Ogni step della piramide è un singolo set
-          rest_secondi: step.rest_seconds > 0 ? step.rest_seconds : null,
+          set_num: 1,
+          rest_secondi: stepRest > 0 ? stepRest : null,
           rest_tra_esercizi: transitionRestToPersist,
           peso_kg: toDbWeight(step.weight_kg),
-          note_esercizio: String(ex.instruction_note || '').trim() || null,
+          note_esercizio: encodeNoteWithMeta(step.instruction_note, stepMeta),
           tipo: 'REPS',
-          reps: Math.max(0, step.reps ?? 0),
+          reps: toNonNegInt(step.reps, 0),
           durata_secondi: null,
           id_superset: null,
           id_piramide: data.id_piramide,
-          stepindex_piramide: stepIdx + 1, // Indice 1-based dello step piramide
+          stepindex_piramide: stepIdx + 1,
           id_emom: null,
           stepindex_emom: null,
         });
@@ -294,9 +374,8 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
     const isCardio = ex.type === 'cardio';
     const isIsometry = ex.type === 'isometry';
     const isDurationBased = isIsometry || isCardio;
+    const restSeconds = toNonNegInt(ex.rest_seconds, 0);
 
-    // Serializza i metadati auto_count_type e cardio nel campo note come suffisso @@@meta:
-    let noteToSave = String(ex.instruction_note || '').trim();
     const metaObj: Record<string, unknown> = {};
     if (ex.auto_count_type) {
       metaObj.autoCountType = ex.auto_count_type;
@@ -304,22 +383,19 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
     if (isCardio) {
       metaObj.exerciseType = 'cardio';
     }
-    if (Object.keys(metaObj).length > 0) {
-      noteToSave += (noteToSave ? ' ' : '') + `@@@meta:${JSON.stringify(metaObj)}`;
-    }
 
     rowsToInsert.push({
       id_scheda: schedaId,
       id_esercizio: idEsercizio,
       ordine: orderCounter,
-      set_num: Math.max(1, ex.sets || 1),
-      rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
+      set_num: toPositiveInt(ex.sets, 1),
+      rest_secondi: restSeconds > 0 ? restSeconds : null,
       rest_tra_esercizi: transitionRestToPersist,
       peso_kg: toDbWeight(ex.weight_kg),
-      note_esercizio: noteToSave || null,
+      note_esercizio: encodeNoteWithMeta(ex.instruction_note, metaObj),
       tipo: isDurationBased ? 'ISOMETRIA' : 'REPS',
-      reps: isDurationBased ? null : Math.max(0, ex.reps ?? 0),
-      durata_secondi: isDurationBased ? Math.max(0, ex.duration_seconds ?? 0) : null,
+      reps: isDurationBased ? null : toNonNegInt(ex.reps, 0),
+      durata_secondi: isDurationBased ? toNonNegInt(ex.duration_seconds, 0) : null,
       id_superset: null,
       id_piramide: null,
       stepindex_piramide: null,
@@ -330,10 +406,32 @@ export const saveExercisesToDb = async (schedaId: number, exercises: SaveExercis
     orderCounter += 1;
   }
 
-  // Bulk insert di tutte le righe costruite
-  const { error: exercisesError } = await supabase
+  // Elimina le vecchie esecuzioni solo dopo aver preparato tutto il nuovo payload
+  const { error: deleteError } = await supabase
     .from('esecuzioni')
-    .insert(rowsToInsert);
+    .delete()
+    .eq('id_scheda', schedaId);
+  if (deleteError) throw deleteError;
 
-  if (exercisesError) throw exercisesError;
+  if (rowsToInsert.length > 0) {
+    const { error: exercisesError } = await supabase
+      .from('esecuzioni')
+      .insert(rowsToInsert);
+    if (exercisesError) throw exercisesError;
+  }
+
+  // Cleanup best-effort dei container orfani precedenti
+  try {
+    if (oldSupersetIds.size > 0) {
+      await supabase.from('superset').delete().in('id_superset', Array.from(oldSupersetIds));
+    }
+    if (oldEmomIds.size > 0) {
+      await supabase.from('emom').delete().in('id_emom', Array.from(oldEmomIds));
+    }
+    if (oldPiramideIds.size > 0) {
+      await supabase.from('piramide').delete().in('id_piramide', Array.from(oldPiramideIds));
+    }
+  } catch {
+    // Cleanup best-effort: eventuali policy RLS sui container non invalidano il salvataggio
+  }
 };

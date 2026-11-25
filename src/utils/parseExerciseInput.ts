@@ -41,6 +41,7 @@ export interface ParsedWorkoutItem {
   rest_seconds: number;
   weight_kg?: number | null;
   isMaxReps?: boolean;
+  isMaxDuration?: boolean;
   emom_rounds?: number;
   emom_round_duration?: number;
   subExercises?: ParsedSubExercise[];
@@ -581,7 +582,7 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90, userId?:
 
   // Determina se l'input contiene sintassi o parametri di allenamento riconoscibili o se è una regola appresa
   const hasNumbers = /\d/.test(trimmed);
-  const hasControlSyntax = /(?:x|\*|\/|\+|min|sec|round|serie|set|kg|chili|kili|pausa|rest|recup|rec|emom|piramid|pyramid|isometr|circuit|superset)/i.test(trimmed);
+  const hasControlSyntax = /(?:\d\s*[x*×\/]|\+|\b(?:min|sec|round|rounds|giri|giro|serie|sets?|kg|chili|kili|kilo|pausa|rest|recup(?:ero)?|emom|piramid\w*|pyramid\w*|isometr\w*|circuit\w*|superset\w*|max|cedimento)\b)/i.test(trimmed);
   const isSpecialModality = config.modality !== 'reps';
 
   if (!hasNumbers && !hasControlSyntax && !isSpecialModality && !config.learnedRule) {
@@ -623,7 +624,7 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90, userId?:
       type: 'pyramid',
       name: config.name,
       sets: 1,
-      reps: config.pyramidSteps?.[0]?.reps || 10,
+      reps: config.pyramidSteps?.[0]?.reps ?? 10,
       duration_seconds: 0,
       rest_seconds: 0,
       weight_kg: config.weightKg ?? null,
@@ -671,14 +672,20 @@ export function parseExerciseInput(rawInput: string, fallbackRest = 90, userId?:
   }
 
   if (config.modality === 'isometry' || config.modality === 'cardio') {
+    const resolvedDuration =
+      config.durationSeconds !== undefined
+        ? config.durationSeconds
+        : (config.modality === 'cardio' ? 60 : 30);
     return {
       matched: true,
       type: config.modality,
       name: config.name,
       sets: config.setsOrRounds,
       reps: 0,
-      duration_seconds: config.durationSeconds || (config.modality === 'cardio' ? 60 : 30),
+      duration_seconds: resolvedDuration,
       rest_seconds: config.restSeconds,
+      weight_kg: config.weightKg ?? null,
+      isMaxDuration: resolvedDuration === 0,
       rawInput: trimmed,
       confidence: 'high',
       learnedRule: config.learnedRule,

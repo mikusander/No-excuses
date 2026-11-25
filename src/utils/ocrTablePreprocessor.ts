@@ -81,8 +81,6 @@ export async function preprocessTableImage(file: File | Blob): Promise<string> {
     const img = new Image();
 
     img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-
       const MAX_DIMENSION = 2200;
       let width = img.naturalWidth || img.width;
       let height = img.naturalHeight || img.height;
@@ -103,22 +101,41 @@ export async function preprocessTableImage(file: File | Blob): Promise<string> {
       const ctx = canvas.getContext('2d');
 
       if (!ctx) {
-        // Fallback su Data URL originale
-        resolve(objectUrl);
+        URL.revokeObjectURL(objectUrl);
+        // Fallback su Data URL tramite FileReader anziché blob URL revocato
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve(typeof reader.result === 'string' ? reader.result : '');
+        };
+        reader.onerror = () => {
+          reject(new Error("Impossibile elaborare l'immagine della tabella."));
+        };
+        reader.readAsDataURL(file);
         return;
       }
 
       ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(objectUrl);
 
       try {
         const imageData = ctx.getImageData(0, 0, width, height);
         const data = imageData.data;
         const totalPixels = width * height;
 
-        // 1. Canale scala di grigi
+        // 1. Canale scala di grigi + rilevazione screenshot in Dark Mode
         const gray = new Uint8Array(totalPixels);
+        let luminanceSum = 0;
         for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-          gray[j] = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+          const g = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+          gray[j] = g;
+          luminanceSum += g;
+        }
+
+        const meanLuminance = totalPixels > 0 ? luminanceSum / totalPixels : 255;
+        if (meanLuminance < 128) {
+          for (let j = 0; j < totalPixels; j++) {
+            gray[j] = 255 - gray[j];
+          }
         }
 
         // 2. Calcolo soglia ottima con algoritmo di Otsu

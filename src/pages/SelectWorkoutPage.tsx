@@ -150,13 +150,11 @@ const SelectWorkoutPage: React.FC = () => {
   useEffect(() => {
     const unsub = subscribeToOfflineSchede(() => {
       const cached = getOfflineSchede(user?.id);
-      if (cached.length > 0) {
-        setWorkouts(cached.map((w) => ({
-          id: String(w.id_scheda),
-          name: w.nome,
-          created_at: w.data_creazione,
-        })));
-      }
+      setWorkouts(cached.map((w) => ({
+        id: String(w.id_scheda),
+        name: w.nome,
+        created_at: w.data_creazione,
+      })));
     });
     return unsub;
   }, [user?.id]);
@@ -182,14 +180,12 @@ const SelectWorkoutPage: React.FC = () => {
     try {
       if (user?.id) {
         const synced = await syncOfflineSchedeWithCloud(user.id);
-        if (synced && synced.length > 0) {
-          setWorkouts(synced.map((w) => ({
-            id: String(w.id_scheda),
-            name: w.nome,
-            created_at: w.data_creazione,
-          })));
-          return;
-        }
+        setWorkouts((synced || []).map((w) => ({
+          id: String(w.id_scheda),
+          name: w.nome,
+          created_at: w.data_creazione,
+        })));
+        return;
       }
 
       const { data, error } = await supabase
@@ -207,13 +203,11 @@ const SelectWorkoutPage: React.FC = () => {
     } catch (error) {
       console.warn('[SelectWorkoutPage] Errore caricamento schede dal cloud (fallback su cache locale):', error);
       const fallbackCached = getOfflineSchede(user?.id);
-      if (fallbackCached.length > 0) {
-        setWorkouts(fallbackCached.map((w) => ({
-          id: String(w.id_scheda),
-          name: w.nome,
-          created_at: w.data_creazione,
-        })));
-      }
+      setWorkouts(fallbackCached.map((w) => ({
+        id: String(w.id_scheda),
+        name: w.nome,
+        created_at: w.data_creazione,
+      })));
     } finally {
       setLoading(false);
     }

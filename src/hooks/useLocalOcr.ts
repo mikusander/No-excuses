@@ -28,10 +28,14 @@ export function useLocalOcr(): UseLocalOcrReturn {
   const [reconstructedLines, setReconstructedLines] = useState<string[]>([]);
 
   const workerRef = useRef<Awaited<ReturnType<typeof createWorker>> | null>(null);
+  const workerPromiseRef = useRef<Promise<Awaited<ReturnType<typeof createWorker>>> | null>(null);
+  const runIdRef = useRef(0);
 
-  // Termina il worker all'unmount per liberare la memoria WebAssembly
+  // Termina il worker e invalida eventuali run pendenti all'unmount per liberare la memoria WebAssembly
   useEffect(() => {
     return () => {
+      runIdRef.current += 1;
+      workerPromiseRef.current = null;
       if (workerRef.current) {
         void workerRef.current.terminate();
         workerRef.current = null;
@@ -40,6 +44,7 @@ export function useLocalOcr(): UseLocalOcrReturn {
   }, []);
 
   const resetOcr = useCallback(() => {
+    runIdRef.current += 1;
     setStatus('idle');
     setProgress(0);
     setStatusText('');
@@ -49,6 +54,8 @@ export function useLocalOcr(): UseLocalOcrReturn {
   }, []);
 
   const recognizeImage = useCallback(async (file: File): Promise<string> => {
+    const currentRunId = ++runIdRef.current;
+
     setError(null);
     setRecognizedText('');
     setReconstructedLines([]);
@@ -59,35 +66,48 @@ export function useLocalOcr(): UseLocalOcrReturn {
     try {
       // 1. Preprocessing su Canvas off-screen con binarizzazione Otsu
       const preprocessedDataUrl = await preprocessTableImage(file);
+      if (currentRunId !== runIdRef.current) return '';
 
       setStatus('recognizing');
       setProgress(25);
       setStatusText('Inizializzazione motore OCR Wasm...');
 
-      // 2. Inizializza worker Tesseract (lingua italiana e inglese)
+      // 2. Inizializza worker Tesseract con mutex condiviso per evitare worker duplicati
       if (!workerRef.current) {
-        const worker = await createWorker(['ita', 'eng'], 1, {
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              const currentProgress = Math.round(25 + m.progress * 65);
-              setProgress(Math.min(90, currentProgress));
-              setStatusText(`Riconoscimento caratteri e coordinate... ${Math.round(m.progress * 100)}%`);
-            } else if (m.status === 'loading tesseract core') {
-              setStatusText('Caricamento WebAssembly OCR...');
-            } else if (m.status === 'loading language traineddata') {
-              setStatusText('Caricamento modello lingua...');
-            }
-          },
-        });
+        if (!workerPromiseRef.current) {
+          const activeCreationRunId = currentRunId;
+          workerPromiseRef.current = (async () => {
+            const worker = await createWorker(['ita', 'eng'], 1, {
+              logger: (m) => {
+                if (runIdRef.current !== activeCreationRunId) return;
+                if (m.status === 'recognizing text') {
+                  const currentProgress = Math.round(25 + m.progress * 65);
+                  setProgress(Math.min(90, currentProgress));
+                  setStatusText(`Riconoscimento caratteri e coordinate... ${Math.round(m.progress * 100)}%`);
+                } else if (m.status === 'loading tesseract core') {
+                  setStatusText('Caricamento WebAssembly OCR...');
+                } else if (m.status === 'loading language traineddata') {
+                  setStatusText('Caricamento modello lingua...');
+                }
+              },
+            });
 
-        // Configurazione ottimale per blocchi di testo tabellare
-        await worker.setParameters({
-          tessedit_pageseg_mode: '11' as any, // Tesseract.PSM.SPARSE_TEXT
-          preserve_interword_spaces: '1',
-        });
+            // Configurazione ottimale per blocchi di testo tabellare
+            await worker.setParameters({
+              tessedit_pageseg_mode: '11' as any, // Tesseract.PSM.SPARSE_TEXT
+              preserve_interword_spaces: '1',
+            });
 
-        workerRef.current = worker;
+            workerRef.current = worker;
+            return worker;
+          })().finally(() => {
+            workerPromiseRef.current = null;
+          });
+        }
+        await workerPromiseRef.current;
       }
+
+      if (currentRunId !== runIdRef.current || !workerRef.current) return '';
 
       setStatusText('Analisi geometrica e Bounding Boxes delle celle...');
       setProgress(92);
@@ -97,6 +117,7 @@ export function useLocalOcr(): UseLocalOcrReturn {
         {},
         { blocks: true }
       );
+      if (currentRunId !== runIdRef.current) return '';
 
       // 3. Estrazione di tutti i token parola con le rispettive coordinate geometriche (Bounding Box)
       const extractedWords: WordBoundingBox[] = [];
@@ -141,6 +162,8 @@ export function useLocalOcr(): UseLocalOcrReturn {
           .filter(l => l.length > 0);
       }
 
+      if (currentRunId !== runIdRef.current) return '';
+
       setProgress(100);
       setStatus('done');
       setStatusText('Layout tabellare ricostruito con successo!');
@@ -149,6 +172,7 @@ export function useLocalOcr(): UseLocalOcrReturn {
 
       return finalText;
     } catch (err: unknown) {
+      if (currentRunId !== runIdRef.current) return '';
       console.error('Errore durante elaborazione OCR locale tabellare:', err);
       const msg = err instanceof Error ? err.message : 'Errore durante la scansione OCR.';
       setError(msg);

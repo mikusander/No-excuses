@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
   Camera,
@@ -29,6 +29,10 @@ interface WorkoutQuickImportModalProps {
   onImportExercises: (exercises: ExerciseDraft[], mode: 'append' | 'replace') => void;
 }
 
+interface ReviewParsedItem extends ParsedWorkoutItem {
+  _uid: string;
+}
+
 export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = ({
   isOpen,
   onClose,
@@ -37,15 +41,44 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'ocr' | 'voice'>('ocr');
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
-  const [parsedItems, setParsedItems] = useState<ParsedWorkoutItem[]>([]);
+  const [parsedItems, setParsedItems] = useState<ReviewParsedItem[]>([]);
   const [selectedImageName, setSelectedImageName] = useState<string | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [showRawText, setShowRawText] = useState(false);
   const [rawEditableText, setRawEditableText] = useState('');
 
-  const originalParsedMapRef = useRef<Map<number, ParsedWorkoutItem>>(new Map());
+  const originalParsedMapRef = useRef<Map<string, ParsedWorkoutItem>>(new Map());
+  const imagePreviewUrlRef = useRef<string | null>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const replaceImagePreviewUrl = useCallback((nextUrl: string | null) => {
+    if (imagePreviewUrlRef.current && imagePreviewUrlRef.current !== nextUrl) {
+      URL.revokeObjectURL(imagePreviewUrlRef.current);
+    }
+    imagePreviewUrlRef.current = nextUrl;
+    setImagePreviewUrl(nextUrl);
+  }, []);
+
+  const setReviewItemsFromParsed = useCallback((items: ParsedWorkoutItem[]) => {
+    const withUids: ReviewParsedItem[] = items.map((it) => ({
+      ...it,
+      _uid: generateUUID(),
+    }));
+    originalParsedMapRef.current = new Map(
+      withUids.map((it) => [it._uid, { ...it }])
+    );
+    setParsedItems(withUids);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrlRef.current) {
+        URL.revokeObjectURL(imagePreviewUrlRef.current);
+        imagePreviewUrlRef.current = null;
+      }
+    };
+  }, []);
 
   // Hook OCR Locale
   const {
@@ -75,32 +108,31 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
       resetOcr();
       resetTranscript();
       setParsedItems([]);
+      originalParsedMapRef.current.clear();
       setSelectedImageName(null);
-      setImagePreviewUrl(null);
+      replaceImagePreviewUrl(null);
       setShowRawText(false);
       setRawEditableText('');
     }
-  }, [isOpen, resetOcr, resetTranscript]);
+  }, [isOpen, resetOcr, resetTranscript, replaceImagePreviewUrl]);
 
   // Quando l'OCR restituisce del testo, analizzalo automaticamente
   useEffect(() => {
     if (recognizedText) {
       setRawEditableText(recognizedText);
       const items = parseOcrWorkoutLines(recognizedText, 90, user?.id);
-      setParsedItems(items);
-      originalParsedMapRef.current = new Map(items.map((it, idx) => [idx, { ...it }]));
+      setReviewItemsFromParsed(items);
     }
-  }, [recognizedText, user?.id]);
+  }, [recognizedText, user?.id, setReviewItemsFromParsed]);
 
   // Quando la dettatura vocale accumula testo, aggiorna il parser
   useEffect(() => {
     if (fullTranscript && activeTab === 'voice') {
       const items = parseSpokenWorkout(fullTranscript, 90, user?.id);
-      setParsedItems(items);
-      originalParsedMapRef.current = new Map(items.map((it, idx) => [idx, { ...it }]));
+      setReviewItemsFromParsed(items);
       setRawEditableText(fullTranscript);
     }
-  }, [fullTranscript, activeTab, user?.id]);
+  }, [fullTranscript, activeTab, user?.id, setReviewItemsFromParsed]);
 
   if (!isOpen) return null;
 
@@ -110,7 +142,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
     if (!file) return;
 
     setSelectedImageName(file.name);
-    setImagePreviewUrl(URL.createObjectURL(file));
+    replaceImagePreviewUrl(URL.createObjectURL(file));
 
     try {
       await recognizeImage(file);
@@ -125,30 +157,43 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
     setRawEditableText(text);
     if (activeTab === 'ocr') {
       const items = parseOcrWorkoutLines(text, 90, user?.id);
-      setParsedItems(items);
-      originalParsedMapRef.current = new Map(items.map((it, idx) => [idx, { ...it }]));
+      setReviewItemsFromParsed(items);
     } else {
       const items = parseSpokenWorkout(text, 90, user?.id);
-      setParsedItems(items);
-      originalParsedMapRef.current = new Map(items.map((it, idx) => [idx, { ...it }]));
+      setReviewItemsFromParsed(items);
     }
   };
 
   // Modifiche manuali alla tabella di revisione
-  const updateParsedItem = (index: number, field: keyof ParsedWorkoutItem, value: unknown) => {
-    setParsedItems(prev => {
-      const next = [...prev];
-      next[index] = { ...next[index], [field]: value };
-      return next;
-    });
+  const updateParsedItem = (uid: string, field: keyof ParsedWorkoutItem, value: unknown) => {
+    setParsedItems(prev =>
+      prev.map((item) => {
+        if (item._uid !== uid) return item;
+        const updated: ReviewParsedItem = { ...item, [field]: value };
+        if (item.type === 'emom' && (field === 'sets' || field === 'emom_rounds')) {
+          const syncedRounds = Math.max(1, Number(value) || 1);
+          updated.sets = syncedRounds;
+          updated.emom_rounds = syncedRounds;
+        }
+        return updated;
+      })
+    );
   };
 
-  const removeParsedItem = (index: number) => {
-    setParsedItems(prev => prev.filter((_, i) => i !== index));
+  const updateParsedItemPatch = (uid: string, patch: Partial<ParsedWorkoutItem>) => {
+    setParsedItems(prev =>
+      prev.map((item) => (item._uid === uid ? { ...item, ...patch } : item))
+    );
+  };
+
+  const removeParsedItem = (uid: string) => {
+    setParsedItems(prev => prev.filter((item) => item._uid !== uid));
   };
 
   const addManualItem = () => {
-    const newItem: ParsedWorkoutItem = {
+    const uid = generateUUID();
+    const newItem: ReviewParsedItem = {
+      _uid: uid,
       matched: true,
       type: 'reps',
       name: 'Nuovo Esercizio',
@@ -156,6 +201,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
       reps: 10,
       duration_seconds: 0,
       rest_seconds: 90,
+      weight_kg: null,
       rawInput: '',
     };
     setParsedItems(prev => [...prev, newItem]);
@@ -164,19 +210,21 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
   // Conversione definitiva in ExerciseDraft[] per l'inserimento
   const handleConfirmImport = () => {
     // Apprendimento continuo: memorizza eventuali modifiche e correzioni manuali dell'utente
-    parsedItems.forEach((item, index) => {
+    parsedItems.forEach((item) => {
       const raw = item.rawInput ? item.rawInput.trim() : '';
       if (raw.length < 2) return;
 
-      const original = originalParsedMapRef.current.get(index);
+      const isDuration = item.type === 'isometry' || item.type === 'cardio';
+      const original = originalParsedMapRef.current.get(item._uid);
       recordCorrection(
         raw,
         {
           name: item.name,
           modality: item.type,
           setsOrRounds: item.sets || (item.type === 'circuit' || item.type === 'emom' ? item.emom_rounds || 3 : 3),
-          repsTarget: item.type === 'isometry' ? undefined : (item.isMaxReps ? 'max' : String(item.reps || 10)),
-          durationSeconds: item.type === 'isometry' ? (item.duration_seconds || 30) : undefined,
+          repsTarget: isDuration ? undefined : (item.isMaxReps || item.reps === 0 ? 'max' : String(item.reps ?? 10)),
+          durationSeconds: isDuration ? (item.duration_seconds ?? (item.type === 'cardio' ? 60 : 30)) : undefined,
+          intervalSeconds: item.type === 'emom' ? (item.emom_round_duration ?? 60) : undefined,
           restSeconds: item.rest_seconds ?? 90,
           weightKg: item.weight_kg ?? null,
           subExercises: item.subExercises?.map(s => ({
@@ -197,6 +245,8 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
           type: original.type,
           sets: original.sets,
           reps: original.reps,
+          duration_seconds: original.duration_seconds,
+          emom_round_duration: original.emom_round_duration,
           weight_kg: original.weight_kg,
           rest_seconds: original.rest_seconds,
         } : null,
@@ -208,16 +258,17 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
       const id = generateUUID();
 
       if (item.type === 'emom') {
+        const rounds = item.emom_rounds ?? item.sets ?? 10;
         return {
           id,
           type: 'emom',
           name: item.name,
-          sets: item.sets || 10,
+          sets: Math.max(1, rounds),
           reps: 0,
           duration_seconds: 0,
-          rest_seconds: item.rest_seconds || 90,
-          emom_rounds: item.emom_rounds || item.sets || 10,
-          emom_round_duration: item.emom_round_duration || 60,
+          rest_seconds: item.rest_seconds ?? 90,
+          emom_rounds: Math.max(1, rounds),
+          emom_round_duration: item.emom_round_duration ?? 60,
           subExercises: (item.subExercises || []).map(s => ({
             name: s.name,
             type: s.type,
@@ -237,7 +288,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
           sets: item.sets || 3,
           reps: 0,
           duration_seconds: 0,
-          rest_seconds: item.rest_seconds || 90,
+          rest_seconds: item.rest_seconds ?? 90,
           subExercises: (item.subExercises || []).map(s => ({
             name: s.name,
             type: s.type,
@@ -257,7 +308,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
           sets: item.sets || 3,
           reps: 0,
           duration_seconds: 0,
-          rest_seconds: item.rest_seconds || 90,
+          rest_seconds: item.rest_seconds ?? 90,
           subExercises: (item.subExercises || []).map(s => ({
             name: s.name,
             type: s.type,
@@ -275,9 +326,10 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
           type: 'pyramid',
           name: item.name,
           sets: 1,
-          reps: item.reps || 10,
+          reps: item.reps ?? 10,
           duration_seconds: 0,
           rest_seconds: 0,
+          weight_kg: item.weight_kg ?? null,
           pyramid_steps: (item.pyramid_steps || []).map(step => ({
             reps: step.reps,
             rest_seconds: step.rest_seconds,
@@ -286,31 +338,31 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
         };
       }
 
-      if (item.type === 'isometry') {
+      if (item.type === 'isometry' || item.type === 'cardio') {
         return {
           id,
-          type: 'isometry',
+          type: item.type,
           name: item.name,
           sets: item.sets || 3,
           reps: 0,
-          duration_seconds: item.duration_seconds || 30,
-          rest_seconds: item.rest_seconds || 90,
+          duration_seconds: item.duration_seconds ?? (item.type === 'cardio' ? 60 : 30),
+          rest_seconds: item.rest_seconds ?? 90,
           transition_rest_seconds: 0,
-          weight_kg: null,
+          weight_kg: item.weight_kg ?? null,
         };
       }
 
-      // Default reps
+      // Default reps (preservando 0 / MAX e weight_kg)
       return {
         id,
         type: 'reps',
         name: item.name,
         sets: item.sets || 3,
-        reps: item.reps || 10,
+        reps: item.isMaxReps ? 0 : (item.reps ?? 10),
         duration_seconds: 0,
-        rest_seconds: item.rest_seconds || 90,
+        rest_seconds: item.rest_seconds ?? 90,
         transition_rest_seconds: 0,
-        weight_kg: null,
+        weight_kg: item.weight_kg ?? null,
       };
     });
 
@@ -474,8 +526,9 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                       type="button"
                       onClick={() => {
                         setSelectedImageName(null);
-                        setImagePreviewUrl(null);
+                        replaceImagePreviewUrl(null);
                         setParsedItems([]);
+                        originalParsedMapRef.current.clear();
                         resetOcr();
                       }}
                       className="p-2 text-brand-grey/60 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
@@ -646,9 +699,11 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
               </div>
             ) : (
               <div className="space-y-3">
-                {parsedItems.map((item, index) => (
+                {parsedItems.map((item, index) => {
+                  const isDurationType = item.type === 'isometry' || item.type === 'cardio';
+                  return (
                   <div
-                    key={index}
+                    key={item._uid}
                     className="p-3.5 bg-black/40 border border-white/10 rounded-2xl space-y-2.5 hover:border-brand-orange/40 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -659,7 +714,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                         <input
                           type="text"
                           value={item.name}
-                          onChange={(e) => updateParsedItem(index, 'name', e.target.value)}
+                          onChange={(e) => updateParsedItem(item._uid, 'name', e.target.value)}
                           placeholder="Nome esercizio"
                           className="flex-1 bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm font-bold text-white focus:border-brand-orange outline-none"
                         />
@@ -677,7 +732,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                       </span>
                       <button
                         type="button"
-                        onClick={() => removeParsedItem(index)}
+                        onClick={() => removeParsedItem(item._uid)}
                         className="text-brand-grey/50 hover:text-red-500 p-1 transition-colors"
                         title="Rimuovi esercizio"
                       >
@@ -697,7 +752,11 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                               key={sIdx}
                               className="px-2 py-0.5 rounded bg-black/40 text-brand-grey/90 text-[11px] border border-white/5"
                             >
-                              {sub.name} ({sub.type === 'isometry' ? `${sub.duration_seconds}s` : `${sub.reps} reps`})
+                              {sub.name} (
+                              {sub.type === 'isometry' || sub.type === 'cardio'
+                                ? (sub.duration_seconds === 0 ? 'MAX' : `${sub.duration_seconds}s`)
+                                : (sub.reps === 0 ? 'MAX' : `${sub.reps} reps`)}
+                              {sub.weight_kg ? ` • ${sub.weight_kg}kg` : ''})
                             </span>
                           ))}
                         </div>
@@ -715,7 +774,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                               key={sIdx}
                               className="px-2 py-0.5 rounded bg-black/40 text-brand-grey/90 text-[11px] border border-white/5"
                             >
-                              Step {sIdx + 1}: {step.reps} reps ({step.rest_seconds}s)
+                              Step {sIdx + 1}: {step.reps === 0 ? 'MAX' : `${step.reps} reps`} ({step.rest_seconds}s)
                             </span>
                           ))}
                         </div>
@@ -723,7 +782,7 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                     )}
 
                     {/* Campi Numerici Modificabili */}
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <div className="flex flex-col">
                         <label className="text-[9px] uppercase font-bold text-brand-grey/60 mb-0.5">
                           {item.type === 'circuit' || item.type === 'emom' ? 'Round' : 'Serie'}
@@ -731,29 +790,67 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                         <input
                           type="number"
                           min="1"
-                          value={item.sets || 3}
-                          onChange={(e) => updateParsedItem(index, 'sets', parseInt(e.target.value, 10) || 1)}
+                          value={item.type === 'emom' ? (item.emom_rounds ?? item.sets ?? 10) : (item.sets ?? 3)}
+                          onChange={(e) => {
+                            const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                            updateParsedItem(item._uid, 'sets', val);
+                          }}
                           className="bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-center text-xs font-bold text-white focus:border-brand-orange outline-none"
                         />
                       </div>
 
                       <div className="flex flex-col">
                         <label className="text-[9px] uppercase font-bold text-brand-grey/60 mb-0.5">
-                          {item.type === 'isometry' ? 'Durata (s)' : 'Ripetizioni'}
+                          {isDurationType ? 'Durata (s)' : 'Ripetizioni'}
                         </label>
                         <input
                           type="number"
                           min="0"
-                          value={item.type === 'isometry' ? (item.duration_seconds || 30) : (item.reps || 10)}
+                          placeholder={isDurationType || item.isMaxReps || item.reps === 0 ? 'MAX' : '10'}
+                          value={isDurationType ? (item.duration_seconds ?? (item.type === 'cardio' ? 60 : 30)) : (item.isMaxReps ? 0 : (item.reps ?? 10))}
                           onChange={(e) => {
-                            const val = parseInt(e.target.value, 10) || 0;
-                            if (item.type === 'isometry') {
-                              updateParsedItem(index, 'duration_seconds', val);
+                            const raw = e.target.value.trim();
+                            const val = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                            if (isDurationType) {
+                              updateParsedItemPatch(item._uid, {
+                                duration_seconds: val,
+                                isMaxDuration: val === 0,
+                              });
                             } else {
-                              updateParsedItem(index, 'reps', val);
+                              updateParsedItemPatch(item._uid, {
+                                reps: val,
+                                isMaxReps: val === 0,
+                              });
                             }
                           }}
                           className="bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-center text-xs font-bold text-white focus:border-brand-orange outline-none"
+                        />
+                      </div>
+
+                      <div className="flex flex-col">
+                        <label className="text-[9px] uppercase font-bold text-brand-grey/60 mb-0.5">
+                          Carico (kg)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          placeholder="bw"
+                          value={item.weight_kg ?? ''}
+                          onChange={(e) => {
+                            const raw = e.target.value.trim();
+                            if (!raw) {
+                              updateParsedItem(item._uid, 'weight_kg', null);
+                              return;
+                            }
+                            const val = parseFloat(raw.replace(',', '.'));
+                            updateParsedItem(
+                              item._uid,
+                              'weight_kg',
+                              Number.isFinite(val) && val > 0 ? Math.round(val * 100) / 100 : null
+                            );
+                          }}
+                          className="bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-center text-xs font-bold text-white focus:border-brand-orange outline-none placeholder:text-brand-grey/40"
                         />
                       </div>
 
@@ -767,13 +864,18 @@ export const WorkoutQuickImportModal: React.FC<WorkoutQuickImportModalProps> = (
                           min="0"
                           step="15"
                           value={item.rest_seconds ?? 90}
-                          onChange={(e) => updateParsedItem(index, 'rest_seconds', parseInt(e.target.value, 10) || 0)}
+                          onChange={(e) => {
+                            const raw = e.target.value.trim();
+                            const val = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                            updateParsedItem(item._uid, 'rest_seconds', val);
+                          }}
                           className="bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-center text-xs font-bold text-brand-orange focus:border-brand-orange outline-none"
                         />
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

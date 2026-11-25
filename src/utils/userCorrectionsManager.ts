@@ -16,6 +16,7 @@ export interface UserCorrectionRule {
     repsTarget?: string;          // Ripetizioni target corrette
     weightKg?: number | null;     // Carico in kg
     durationSeconds?: number;     // Durata isometria o cardio
+    intervalSeconds?: number;     // Intervallo round EMOM
     restSeconds: number;          // Tempo di recupero
     subExercises?: Array<{
       name: string;
@@ -108,16 +109,9 @@ export function findMatchingCorrection(input: string, userId?: string): UserCorr
   const rules = loadCorrectionRules(userId);
   if (rules.length === 0) return null;
 
-  // 1. Match esatto sulla firma normalizzata
+  // Match esatto sulla firma normalizzata
   const exact = rules.find(r => r.rawInputSignature === sig);
   if (exact) return exact;
-
-  // 2. Match parziale se la firma salvata è sufficientemente lunga ed è contenuta
-  for (const rule of rules) {
-    if (rule.rawInputSignature.length >= 5 && sig === rule.rawInputSignature) {
-      return rule;
-    }
-  }
 
   return null;
 }
@@ -134,6 +128,8 @@ export function recordCorrection(
     type?: string;
     sets?: number;
     reps?: number;
+    duration_seconds?: number;
+    emom_round_duration?: number;
     weight_kg?: number | null;
     rest_seconds?: number;
   } | null,
@@ -149,12 +145,30 @@ export function recordCorrection(
     const isNameSame = normalizeSignature(originalParsed.name || '') === normalizeSignature(corrected.name);
     const isTypeSame = !originalParsed.type || originalParsed.type === corrected.modality;
     const isSetsSame = originalParsed.sets === undefined || originalParsed.sets === corrected.setsOrRounds;
-    const isRepsSame = originalParsed.reps === undefined || String(originalParsed.reps) === String(corrected.repsTarget || '');
+
+    let isRepsSame = true;
+    if (corrected.modality === 'reps' && originalParsed.reps !== undefined) {
+      const origNorm = originalParsed.reps === 0 ? 'max' : String(originalParsed.reps);
+      const corrRaw = String(corrected.repsTarget ?? '').trim().toLowerCase();
+      const corrNorm = corrRaw === '0' || corrRaw === 'cedimento' ? 'max' : corrRaw;
+      isRepsSame = origNorm === corrNorm;
+    }
+
+    const isDurationSame =
+      (corrected.modality !== 'isometry' && corrected.modality !== 'cardio') ||
+      originalParsed.duration_seconds === undefined ||
+      originalParsed.duration_seconds === corrected.durationSeconds;
+
+    const isIntervalSame =
+      corrected.modality !== 'emom' ||
+      originalParsed.emom_round_duration === undefined ||
+      originalParsed.emom_round_duration === corrected.intervalSeconds;
+
     const isWeightSame = (originalParsed.weight_kg ?? null) === (corrected.weightKg ?? null);
     const isRestSame = originalParsed.rest_seconds === undefined || originalParsed.rest_seconds === corrected.restSeconds;
 
     // Se tutti i parametri coincidono già, non serve creare una regola di sovrascrittura
-    if (isNameSame && isTypeSame && isSetsSame && isRepsSame && isWeightSame && isRestSame) {
+    if (isNameSame && isTypeSame && isSetsSame && isRepsSame && isDurationSame && isIntervalSame && isWeightSame && isRestSame) {
       return null;
     }
   }

@@ -97,6 +97,7 @@ import {
 } from 'lucide-react';
 import AppHeader from '../components/AppHeader';
 import { parseDbExerciseRows } from '../lib/workoutSchemaAdapter';
+import { saveExercisesToDb } from '../lib/workoutSaveHelper';
 import WorkoutQuickImportModal from '../components/WorkoutQuickImportModal';
 import { useUserExerciseHistory, type UserExerciseHistoryItem } from '../hooks/useUserExerciseHistory';
 import { parseExerciseInput, type ParsedWorkoutItem } from '../utils/parseExerciseInput';
@@ -109,7 +110,11 @@ import {
 } from '../utils/folderManager';
 import { generateUUID } from '../utils/uuid';
 import { hapticLight, hapticMedium, hapticSuccess } from '../utils/haptics';
-import { getOfflineSchedaById, updateSingleSchedaInOfflineCache, syncOfflineSchedeWithCloud } from '../lib/offlineSchedeManager';
+import {
+  getOfflineSchedaById,
+  updateSingleSchedaInOfflineCache,
+  SCHEDA_FULL_SELECT_QUERY,
+} from '../lib/offlineSchedeManager';
 
 interface ExerciseDraft {
   id: string;
@@ -147,6 +152,7 @@ interface PersistedNewWorkoutDraftPayload {
   workoutName: string;
   exercises: ExerciseDraft[];
   numberDrafts: Record<string, string>;
+  selectedFolderId?: string | null;
 }
 
 const NEW_WORKOUT_DRAFT_STORAGE_PREFIX = 'new_workout_draft_v1';
@@ -193,7 +199,7 @@ const normalizeSubExerciseDraft = (raw: unknown): NonNullable<ExerciseDraft['sub
 const normalizePyramidStepDraft = (raw: unknown) => {
   const step = (raw || {}) as Record<string, unknown>;
   return {
-    reps: toSafeInteger(step.reps, 10, 1),
+    reps: toSafeInteger(step.reps, 10, 0),
     rest_seconds: toSafeInteger(step.rest_seconds, 60, 0),
     weight_kg: toSafeWeight(step.weight_kg),
     instruction_note: String(step.instruction_note || ''),
@@ -345,10 +351,12 @@ const NewTrainPage: React.FC = () => {
     workoutName: string;
     exercises: ExerciseDraft[];
     numberDrafts: Record<string, string>;
+    selectedFolderId: string | null;
   }>({
     workoutName: '',
     exercises: [],
     numberDrafts: {},
+    selectedFolderId: null,
   });
   const persistCreateDraftRef = React.useRef<(() => void) | null>(null);
 
@@ -400,6 +408,7 @@ const NewTrainPage: React.FC = () => {
       workoutName: snapshot.workoutName,
       exercises: snapshot.exercises,
       numberDrafts: snapshot.numberDrafts,
+      selectedFolderId: snapshot.selectedFolderId,
     };
 
     try {
@@ -416,8 +425,9 @@ const NewTrainPage: React.FC = () => {
       workoutName,
       exercises,
       numberDrafts,
+      selectedFolderId,
     };
-  }, [workoutName, exercises, numberDrafts]);
+  }, [workoutName, exercises, numberDrafts, selectedFolderId]);
 
   React.useEffect(() => {
     hasCreateDraftHydratedRef.current = false;
@@ -479,6 +489,17 @@ const NewTrainPage: React.FC = () => {
       setWorkoutName(restoredWorkoutName);
       setExercises(restoredExercises);
       setNumberDrafts(restoredNumberDrafts);
+      const queryFolderId = new URLSearchParams(location.search).get('folderId');
+      if (!queryFolderId && parsed.selectedFolderId !== undefined) {
+        if (parsed.selectedFolderId === null) {
+          setSelectedFolderId(null);
+        } else {
+          const validFolders = getFolders(user.id);
+          if (validFolders.some((f) => f.id === parsed.selectedFolderId)) {
+            setSelectedFolderId(parsed.selectedFolderId);
+          }
+        }
+      }
       setEditingTransitionForExerciseId(null);
       setFocusedExerciseId(null);
       setDidAutoFocusExercise(false);
@@ -519,7 +540,7 @@ const NewTrainPage: React.FC = () => {
         createDraftPersistTimeoutRef.current = null;
       }
     };
-  }, [isCreateMode, user?.id, workoutName, exercises, numberDrafts]);
+  }, [isCreateMode, user?.id, workoutName, exercises, numberDrafts, selectedFolderId]);
 
   React.useEffect(() => {
     const flushDraft = () => {
@@ -635,6 +656,35 @@ const NewTrainPage: React.FC = () => {
     try {
       setLoading(true);
 
+      const mapHydratedExercises = (sourceList: any[]): ExerciseDraft[] =>
+        sourceList.map((ex: any) => ({
+          ...ex,
+          id: generateUUID(),
+          instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
+          transition_rest_seconds: Number.isFinite(Number(ex.transition_rest_seconds))
+            ? Math.max(0, Math.trunc(Number(ex.transition_rest_seconds)))
+            : 0,
+          subExercises: Array.isArray(ex.subExercises)
+            ? ex.subExercises.map((sub: any) => ({
+                ...sub,
+                type: sub.type === 'cardio' ? 'cardio' : sub.type === 'isometry' ? 'isometry' : 'reps',
+                instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
+              }))
+            : ex.subExercises,
+        }));
+
+      const hydrateFromCached = (cached: ReturnType<typeof getOfflineSchedaById>): ExerciseDraft[] => {
+        if (!cached) return [];
+        const rawRows =
+          Array.isArray(cached.esecuzioni) && cached.esecuzioni.length > 0
+            ? cached.esecuzioni
+            : Array.isArray(cached.raw_esecuzioni) && cached.raw_esecuzioni.length > 0
+              ? cached.raw_esecuzioni
+              : null;
+        const parsedRows = rawRows ? parseDbExerciseRows(rawRows) : (cached.exercises || []);
+        return mapHydratedExercises(parsedRows);
+      };
+
       // Se offline, carica direttamente dalla cache locale delle schede
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         const cached = getOfflineSchedaById(user?.id, Number(workoutId));
@@ -642,52 +692,14 @@ const NewTrainPage: React.FC = () => {
           setWorkoutName(cached.nome);
           const currentFolder = getFolderForScheda(workoutId, user?.id);
           setSelectedFolderId(currentFolder);
-          const parsed = parseDbExerciseRows(cached.esecuzioni || []).map((ex: any) => ({
-            ...ex,
-            id: generateUUID(),
-            instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
-            transition_rest_seconds: Number.isFinite(Number(ex.transition_rest_seconds))
-              ? Math.max(0, Math.trunc(Number(ex.transition_rest_seconds)))
-              : 0,
-            subExercises: Array.isArray(ex.subExercises)
-              ? ex.subExercises.map((sub: any) => ({
-                ...sub,
-                type: sub.type === 'isometry' ? 'isometry' : 'reps',
-                instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
-              }))
-              : ex.subExercises,
-          }));
-          setExercises(parsed as ExerciseDraft[]);
+          setExercises(hydrateFromCached(cached));
           return;
         }
       }
 
       const { data, error } = await supabase
         .from('schede')
-        .select(`
-          id_scheda,
-          nome,
-          esecuzioni (
-            id_esecuzione,
-            ordine,
-            set_num,
-            rest_secondi,
-            rest_tra_esercizi,
-            peso_kg,
-            note_esercizio,
-            tipo,
-            reps,
-            durata_secondi,
-            id_superset,
-            id_piramide,
-            stepindex_piramide,
-            id_emom,
-            stepindex_emom,
-            superset ( round_totali ),
-            emom ( round_totali, durata_round_secondi ),
-            esercizi ( nome )
-          )
-        `)
+        .select(SCHEDA_FULL_SELECT_QUERY)
         .eq('id_scheda', Number(workoutId))
         .single();
 
@@ -700,22 +712,7 @@ const NewTrainPage: React.FC = () => {
         setWorkoutName(data.nome);
         const currentFolder = getFolderForScheda(workoutId, user?.id);
         setSelectedFolderId(currentFolder);
-        const parsed = parseDbExerciseRows(data.esecuzioni || []).map((ex: any) => ({
-          ...ex,
-          id: generateUUID(),
-          instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
-          transition_rest_seconds: Number.isFinite(Number(ex.transition_rest_seconds))
-            ? Math.max(0, Math.trunc(Number(ex.transition_rest_seconds)))
-            : 0,
-          subExercises: Array.isArray(ex.subExercises)
-            ? ex.subExercises.map((sub: any) => ({
-              ...sub,
-              type: sub.type === 'isometry' ? 'isometry' : 'reps',
-              instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
-            }))
-            : ex.subExercises,
-        }));
-        setExercises(parsed as ExerciseDraft[]);
+        setExercises(mapHydratedExercises(parseDbExerciseRows(data.esecuzioni || [])));
       }
     } catch (err: any) {
       console.error(err);
@@ -725,7 +722,14 @@ const NewTrainPage: React.FC = () => {
         setWorkoutName(cached.nome);
         const currentFolder = getFolderForScheda(workoutId, user?.id);
         setSelectedFolderId(currentFolder);
-        const parsed = parseDbExerciseRows(cached.esecuzioni || []).map((ex: any) => ({
+        const rawRows =
+          Array.isArray(cached.esecuzioni) && cached.esecuzioni.length > 0
+            ? cached.esecuzioni
+            : Array.isArray(cached.raw_esecuzioni) && cached.raw_esecuzioni.length > 0
+              ? cached.raw_esecuzioni
+              : null;
+        const parsedRows = rawRows ? parseDbExerciseRows(rawRows) : (cached.exercises || []);
+        const parsed = parsedRows.map((ex: any) => ({
           ...ex,
           id: generateUUID(),
           instruction_note: typeof ex.instruction_note === 'string' ? ex.instruction_note : '',
@@ -734,10 +738,10 @@ const NewTrainPage: React.FC = () => {
             : 0,
           subExercises: Array.isArray(ex.subExercises)
             ? ex.subExercises.map((sub: any) => ({
-              ...sub,
-              type: sub.type === 'isometry' ? 'isometry' : 'reps',
-              instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
-            }))
+                ...sub,
+                type: sub.type === 'cardio' ? 'cardio' : sub.type === 'isometry' ? 'isometry' : 'reps',
+                instruction_note: typeof sub.instruction_note === 'string' ? sub.instruction_note : '',
+              }))
             : ex.subExercises,
         }));
         setExercises(parsed as ExerciseDraft[]);
@@ -799,6 +803,16 @@ const NewTrainPage: React.FC = () => {
   const handleApplyParsedToExercise = (id: string, parsed: ParsedWorkoutItem) => {
     if (!parsed.matched) return;
 
+    const mapParsedSubs = (subs?: ParsedWorkoutItem['subExercises']) =>
+      (subs || []).map(s => ({
+        name: s.name,
+        type: (s.type === 'cardio' ? 'cardio' : s.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry' | 'cardio',
+        reps: s.reps,
+        duration_seconds: s.duration_seconds,
+        weight_kg: s.weight_kg ?? null,
+        instruction_note: '',
+      }));
+
     setExercises(prev =>
       prev.map(ex => {
         if (ex.id !== id) return ex;
@@ -812,14 +826,7 @@ const NewTrainPage: React.FC = () => {
             emom_rounds: parsed.emom_rounds || parsed.sets,
             emom_round_duration: parsed.emom_round_duration || 60,
             rest_seconds: parsed.rest_seconds,
-            subExercises: (parsed.subExercises || []).map(s => ({
-              name: s.name,
-              type: s.type === 'isometry' ? 'isometry' : 'reps',
-              reps: s.reps,
-              duration_seconds: s.duration_seconds,
-              weight_kg: s.weight_kg ?? null,
-              instruction_note: '',
-            })),
+            subExercises: mapParsedSubs(parsed.subExercises),
           };
         }
 
@@ -830,14 +837,7 @@ const NewTrainPage: React.FC = () => {
             name: parsed.name,
             sets: parsed.sets,
             rest_seconds: parsed.rest_seconds,
-            subExercises: (parsed.subExercises || []).map(s => ({
-              name: s.name,
-              type: s.type === 'isometry' ? 'isometry' : 'reps',
-              reps: s.reps,
-              duration_seconds: s.duration_seconds,
-              weight_kg: s.weight_kg ?? null,
-              instruction_note: '',
-            })),
+            subExercises: mapParsedSubs(parsed.subExercises),
           };
         }
 
@@ -848,14 +848,7 @@ const NewTrainPage: React.FC = () => {
             name: parsed.name,
             sets: parsed.sets,
             rest_seconds: parsed.rest_seconds,
-            subExercises: (parsed.subExercises || []).map(s => ({
-              name: s.name,
-              type: s.type === 'isometry' ? 'isometry' : 'reps',
-              reps: s.reps,
-              duration_seconds: s.duration_seconds,
-              weight_kg: s.weight_kg ?? null,
-              instruction_note: '',
-            })),
+            subExercises: mapParsedSubs(parsed.subExercises),
           };
         }
 
@@ -866,6 +859,7 @@ const NewTrainPage: React.FC = () => {
             name: parsed.name,
             sets: 1,
             rest_seconds: 0,
+            subExercises: undefined,
             pyramid_steps: (parsed.pyramid_steps || []).map(s => ({
               reps: s.reps,
               rest_seconds: s.rest_seconds,
@@ -875,15 +869,16 @@ const NewTrainPage: React.FC = () => {
           };
         }
 
-        if (parsed.type === 'isometry') {
+        if (parsed.type === 'isometry' || parsed.type === 'cardio') {
           return {
             ...ex,
-            type: 'isometry',
+            type: parsed.type,
             name: parsed.name,
             sets: parsed.sets,
             reps: 0,
             duration_seconds: parsed.duration_seconds,
             rest_seconds: parsed.rest_seconds,
+            weight_kg: parsed.weight_kg !== undefined ? parsed.weight_kg : ex.weight_kg,
           };
         }
 
@@ -912,6 +907,32 @@ const NewTrainPage: React.FC = () => {
   };
 
   /**
+   * Applica il parser smart al campo nome dell'esercizio singolo o piramidale al blur.
+   */
+  const applySmartParseOnName = (exId: string, rawName: string, currentRest: number) => {
+    const trimmed = rawName.trim();
+    if (!trimmed) return;
+    const parsed = parseExerciseInput(trimmed, currentRest || 60);
+    if (!parsed.matched) return;
+    handleApplyParsedToExercise(exId, parsed);
+    setExerciseNotices(prev => ({
+      ...prev,
+      [exId]: parsed.type === 'pyramid'
+        ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => (s.reps === 0 ? 'Max' : s.reps)).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
+        : parsed.type === 'reps'
+          ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
+          : `✨ Trasformato in ${parsed.type.toUpperCase()}`,
+    }));
+    setTimeout(() => {
+      setExerciseNotices(prev => {
+        const n = { ...prev };
+        delete n[exId];
+        return n;
+      });
+    }, 3500);
+  };
+
+  /**
    * TECNICA 1: Autofill da Storico Utente
    */
   const handleApplyHistoryItemToExercise = (id: string, item: UserExerciseHistoryItem) => {
@@ -926,6 +947,7 @@ const NewTrainPage: React.FC = () => {
             type: 'pyramid',
             sets: 1,
             rest_seconds: 0,
+            subExercises: undefined,
             pyramid_steps: item.pyramid_steps.map(s => ({
               reps: s.reps,
               rest_seconds: s.rest_seconds,
@@ -935,13 +957,17 @@ const NewTrainPage: React.FC = () => {
           };
         }
 
+        const resolvedType = item.type || (ex.type === 'pyramid' ? 'reps' : ex.type) || 'reps';
         return {
           ...ex,
           name: item.name,
-          type: item.type || (ex.type === 'pyramid' ? 'reps' : ex.type) || 'reps',
+          type: resolvedType,
           sets: item.sets || ex.sets || 3,
-          reps: item.reps || ex.reps || 10,
-          duration_seconds: item.duration_seconds || ex.duration_seconds || 30,
+          reps: resolvedType === 'reps' ? (item.reps !== undefined ? item.reps : ex.reps ?? 10) : 0,
+          duration_seconds:
+            resolvedType === 'isometry' || resolvedType === 'cardio'
+              ? (item.duration_seconds !== undefined ? item.duration_seconds : ex.duration_seconds ?? 30)
+              : 0,
           rest_seconds: item.rest_seconds ?? ex.rest_seconds ?? 60,
           weight_kg: item.weight_kg ?? null,
           pyramid_steps: ex.type === 'pyramid' && item.type !== 'pyramid' ? undefined : ex.pyramid_steps,
@@ -1076,29 +1102,37 @@ const NewTrainPage: React.FC = () => {
     }
   };
 
+  const mapSubExerciseType = (t?: string): 'reps' | 'isometry' | 'cardio' =>
+    t === 'cardio' ? 'cardio' : t === 'isometry' ? 'isometry' : 'reps';
+
   const convertToSuperset = (id: string) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === id) {
+        const subType = mapSubExerciseType(ex.type);
         const existingSubs = ex.subExercises && ex.subExercises.length > 0
           ? ex.subExercises.map(sub => ({
               ...sub,
-              type: (sub.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry',
+              type: mapSubExerciseType(sub.type),
             }))
           : [
               {
                 name: ex.name,
-                type: (ex.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry',
-                reps: Number.isFinite(ex.reps) && ex.reps > 0 ? ex.reps : 10,
-                duration_seconds: Number.isFinite(ex.duration_seconds) && ex.duration_seconds > 0 ? ex.duration_seconds : 30,
+                type: subType,
+                reps: Number.isFinite(ex.reps) && ex.reps >= 0 ? ex.reps : 10,
+                duration_seconds:
+                  subType === 'isometry' || subType === 'cardio'
+                    ? (Number.isFinite(ex.duration_seconds) && ex.duration_seconds >= 0 ? ex.duration_seconds : 30)
+                    : 0,
                 weight_kg: ex.weight_kg ?? null,
                 instruction_note: ex.instruction_note || '',
               },
-              { name: '', type: 'reps' as const, reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
+              { name: '', type: 'reps' as const, reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' },
             ];
 
         return {
           ...ex,
           type: 'superset',
+          pyramid_steps: undefined,
           subExercises: existingSubs,
         };
       }
@@ -1107,29 +1141,34 @@ const NewTrainPage: React.FC = () => {
   };
 
   const convertToCircuit = (id: string) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === id) {
+        const subType = mapSubExerciseType(ex.type);
         const existingSubs = ex.subExercises && ex.subExercises.length > 0
           ? ex.subExercises.map(sub => ({
               ...sub,
-              type: (sub.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry',
+              type: mapSubExerciseType(sub.type),
             }))
           : [
               {
                 name: ex.name,
-                type: (ex.type === 'isometry' ? 'isometry' : 'reps') as 'reps' | 'isometry',
-                reps: Number.isFinite(ex.reps) && ex.reps > 0 ? ex.reps : 10,
-                duration_seconds: Number.isFinite(ex.duration_seconds) && ex.duration_seconds > 0 ? ex.duration_seconds : 30,
+                type: subType,
+                reps: Number.isFinite(ex.reps) && ex.reps >= 0 ? ex.reps : 10,
+                duration_seconds:
+                  subType === 'isometry' || subType === 'cardio'
+                    ? (Number.isFinite(ex.duration_seconds) && ex.duration_seconds >= 0 ? ex.duration_seconds : 30)
+                    : 0,
                 weight_kg: ex.weight_kg ?? null,
                 instruction_note: ex.instruction_note || '',
               },
-              { name: '', type: 'reps' as const, reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }
+              { name: '', type: 'reps' as const, reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' },
             ];
 
         return {
           ...ex,
           type: 'circuit',
           rest_seconds: Math.max(60, ex.rest_seconds || 120),
+          pyramid_steps: undefined,
           subExercises: existingSubs,
         };
       }
@@ -1138,19 +1177,20 @@ const NewTrainPage: React.FC = () => {
   };
 
   const convertToPyramid = (id: string) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === id) {
-        const baseReps = Number.isFinite(ex.reps) && ex.reps > 0 ? ex.reps : PYRAMID_DEFAULT_REPS;
-        const baseRest = Number.isFinite(ex.rest_seconds) && ex.rest_seconds > 0 ? ex.rest_seconds : PYRAMID_DEFAULT_REST_SECONDS;
+        const baseReps = Number.isFinite(ex.reps) && ex.reps >= 0 ? ex.reps : PYRAMID_DEFAULT_REPS;
+        const baseRest = Number.isFinite(ex.rest_seconds) && ex.rest_seconds >= 0 ? ex.rest_seconds : PYRAMID_DEFAULT_REST_SECONDS;
 
         return {
           ...ex,
           type: 'pyramid',
           sets: 1,
           rest_seconds: 0,
+          subExercises: undefined,
           pyramid_steps: [
-            { reps: baseReps, rest_seconds: baseRest, weight_kg: ex.weight_kg ?? null },
-            { reps: baseReps + PYRAMID_DEFAULT_REPS_INCREMENT, rest_seconds: baseRest, weight_kg: ex.weight_kg ?? null },
+            { reps: baseReps, rest_seconds: baseRest, weight_kg: ex.weight_kg ?? null, instruction_note: '' },
+            { reps: baseReps + PYRAMID_DEFAULT_REPS_INCREMENT, rest_seconds: baseRest, weight_kg: ex.weight_kg ?? null, instruction_note: '' },
           ],
         };
       }
@@ -1159,24 +1199,36 @@ const NewTrainPage: React.FC = () => {
   };
 
   const convertToEmom = (id: string) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === id) {
+        const subType = mapSubExerciseType(ex.type);
+        const existingSubs = ex.subExercises && ex.subExercises.length > 0
+          ? ex.subExercises.map(sub => ({
+              ...sub,
+              type: mapSubExerciseType(sub.type),
+            }))
+          : [
+              {
+                name: ex.name,
+                type: subType,
+                reps: ex.type === 'reps' ? (Number.isFinite(ex.reps) && ex.reps >= 0 ? ex.reps : 10) : 0,
+                duration_seconds:
+                  subType === 'isometry' || subType === 'cardio'
+                    ? (Number.isFinite(ex.duration_seconds) && ex.duration_seconds >= 0 ? ex.duration_seconds : 30)
+                    : 0,
+                weight_kg: ex.weight_kg ?? null,
+                instruction_note: ex.instruction_note || '',
+              },
+            ];
+
         return {
           ...ex,
           type: 'emom',
           sets: Math.max(1, ex.sets || 1),
           emom_rounds: Math.max(1, ex.emom_rounds || 10),
           emom_round_duration: Math.max(1, ex.emom_round_duration || 60),
-          subExercises: [
-            {
-              name: ex.name,
-              type: 'reps',
-              reps: ex.type === 'reps' ? Math.max(1, ex.reps) : 1,
-              duration_seconds: 0,
-              weight_kg: ex.weight_kg ?? null,
-              instruction_note: ex.instruction_note || '',
-            },
-          ],
+          pyramid_steps: undefined,
+          subExercises: existingSubs,
         };
       }
       return ex;
@@ -1184,30 +1236,30 @@ const NewTrainPage: React.FC = () => {
   };
 
   const duplicateExercise = (index: number) => {
-    const source = exercises[index];
-    if (!source) return;
-
-    const cloned: ExerciseDraft = {
-      ...source,
-      id: generateUUID(),
-      subExercises: source.subExercises
-        ? source.subExercises.map((sub) => ({ ...sub }))
-        : undefined,
-      pyramid_steps: source.pyramid_steps
-        ? source.pyramid_steps.map((step) => ({ ...step }))
-        : undefined,
-    };
-
-    const newExercises = [...exercises];
-    newExercises.splice(index + 1, 0, cloned);
-    setExercises(newExercises);
+    setExercises(prev => {
+      const source = prev[index];
+      if (!source) return prev;
+      const cloned: ExerciseDraft = {
+        ...source,
+        id: generateUUID(),
+        subExercises: source.subExercises
+          ? source.subExercises.map((sub) => ({ ...sub }))
+          : undefined,
+        pyramid_steps: source.pyramid_steps
+          ? source.pyramid_steps.map((step) => ({ ...step }))
+          : undefined,
+      };
+      const next = [...prev];
+      next.splice(index + 1, 0, cloned);
+      return next;
+    });
   };
 
   const removeExercise = (id: string) => {
     if (editingTransitionForExerciseId === id) {
       setEditingTransitionForExerciseId(null);
     }
-    setExercises(exercises.filter(ex => ex.id !== id));
+    setExercises(prev => prev.filter(ex => ex.id !== id));
   };
 
   const handleImportExercises = (imported: ExerciseDraft[], mode: 'append' | 'replace') => {
@@ -1220,18 +1272,17 @@ const NewTrainPage: React.FC = () => {
   };
 
   const moveExercise = (index: number, direction: 'up' | 'down') => {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === exercises.length - 1) return;
-
     void hapticLight();
-    const newExercises = [...exercises];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-
-    const temp = newExercises[index];
-    newExercises[index] = newExercises[targetIndex];
-    newExercises[targetIndex] = temp;
-
-    setExercises(newExercises);
+    setExercises(prev => {
+      if (direction === 'up' && index <= 0) return prev;
+      if (direction === 'down' && index >= prev.length - 1) return prev;
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[targetIndex];
+      next[targetIndex] = temp;
+      return next;
+    });
   };
 
   const stopAutoScroll = useCallback(() => {
@@ -1311,7 +1362,7 @@ const NewTrainPage: React.FC = () => {
     const heights: number[] = [];
     const centers: number[] = [];
 
-    itemWrapperRefs.current.forEach((el) => {
+    itemWrapperRefs.current.slice(0, exercises.length).forEach((el) => {
       if (el) {
         const rect = el.getBoundingClientRect();
         const top = rect.top + startScrollY;
@@ -1384,6 +1435,10 @@ const NewTrainPage: React.FC = () => {
   }, [exercises.length, startAutoScroll, stopAutoScroll, updateDragCalculations]);
 
   useEffect(() => {
+    itemWrapperRefs.current.length = exercises.length;
+  }, [exercises.length]);
+
+  useEffect(() => {
     return () => {
       stopAutoScroll();
     };
@@ -1403,13 +1458,13 @@ const NewTrainPage: React.FC = () => {
   }, [draggedIndex]);
 
   const updateExercise = (id: string, field: keyof ExerciseDraft, value: any) => {
-    setExercises(exercises.map(ex =>
+    setExercises(prev => prev.map(ex =>
       ex.id === id ? { ...ex, [field]: value } : ex
     ));
   };
 
   const updateSubExercise = (supersetId: string, subIndex: number, field: string, value: any) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === supersetId && ex.subExercises) {
         const newSubs = [...ex.subExercises];
         newSubs[subIndex] = { ...newSubs[subIndex], [field]: value };
@@ -1420,7 +1475,7 @@ const NewTrainPage: React.FC = () => {
   };
 
   const updatePyramidStep = (pyramidId: string, stepIndex: number, field: 'reps' | 'rest_seconds', value: number) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === pyramidId && ex.pyramid_steps) {
         const nextSteps = [...ex.pyramid_steps];
         nextSteps[stepIndex] = { ...nextSteps[stepIndex], [field]: value };
@@ -1431,13 +1486,15 @@ const NewTrainPage: React.FC = () => {
   };
 
   const addPyramidStep = (pyramidId: string) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === pyramidId) {
         const lastStep = ex.pyramid_steps?.[ex.pyramid_steps.length - 1];
-        const safeLastReps = Number.isFinite(lastStep?.reps) && (lastStep?.reps || 0) > 0 ? (lastStep?.reps || 0) : PYRAMID_DEFAULT_REPS;
+        const safeLastReps = Number.isFinite(lastStep?.reps) && (lastStep?.reps ?? 0) > 0
+          ? (lastStep?.reps ?? PYRAMID_DEFAULT_REPS)
+          : PYRAMID_DEFAULT_REPS;
         const nextReps = safeLastReps + PYRAMID_DEFAULT_REPS_INCREMENT;
-        const nextRest = Number.isFinite(lastStep?.rest_seconds) && (lastStep?.rest_seconds || 0) >= 0
-          ? (lastStep?.rest_seconds || 0)
+        const nextRest = Number.isFinite(lastStep?.rest_seconds) && (lastStep?.rest_seconds ?? 0) >= 0
+          ? (lastStep?.rest_seconds ?? 0)
           : PYRAMID_DEFAULT_REST_SECONDS;
         const nextWeight = typeof lastStep?.weight_kg === 'number' && Number.isFinite(lastStep.weight_kg) && lastStep.weight_kg > 0
           ? lastStep.weight_kg
@@ -1445,7 +1502,10 @@ const NewTrainPage: React.FC = () => {
 
         return {
           ...ex,
-          pyramid_steps: [...(ex.pyramid_steps || []), { reps: nextReps, rest_seconds: nextRest, weight_kg: nextWeight }]
+          pyramid_steps: [
+            ...(ex.pyramid_steps || []),
+            { reps: nextReps, rest_seconds: nextRest, weight_kg: nextWeight, instruction_note: '' },
+          ],
         };
       }
       return ex;
@@ -1453,7 +1513,7 @@ const NewTrainPage: React.FC = () => {
   };
 
   const removePyramidStep = (pyramidId: string, stepIndex: number) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === pyramidId && ex.pyramid_steps) {
         const remaining = ex.pyramid_steps.filter((_, idx) => idx !== stepIndex);
 
@@ -1463,7 +1523,7 @@ const NewTrainPage: React.FC = () => {
           return {
             ...ex,
             type: 'reps',
-            reps: Number.isFinite(only.reps) && only.reps > 0 ? only.reps : 10,
+            reps: Number.isFinite(only.reps) && only.reps >= 0 ? only.reps : 10,
             rest_seconds: Number.isFinite(only.rest_seconds) && only.rest_seconds >= 0 ? only.rest_seconds : ex.rest_seconds,
             weight_kg: only.weight_kg ?? null,
             pyramid_steps: undefined,
@@ -1539,11 +1599,6 @@ const NewTrainPage: React.FC = () => {
     return Math.round(parsed * 100) / 100;
   };
 
-  const toDbWeight = (value?: number | null) => {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
-    return Math.round(value * 100) / 100;
-  };
-
   const commitExerciseNumber = (
     id: string,
     field: keyof ExerciseDraft,
@@ -1562,6 +1617,9 @@ const NewTrainPage: React.FC = () => {
       : defaultValue;
 
     if (raw === '') {
+      if (min === 0) {
+        updateExercise(id, field, 0);
+      }
       clearDraftValue(key);
       return;
     }
@@ -1593,6 +1651,9 @@ const NewTrainPage: React.FC = () => {
       : defaultValue;
 
     if (raw === '') {
+      if (min === 0) {
+        updateSubExercise(supersetId, subIndex, field, 0);
+      }
       clearDraftValue(key);
       return;
     }
@@ -1624,6 +1685,9 @@ const NewTrainPage: React.FC = () => {
       : defaultValue;
 
     if (raw === '') {
+      if (min === 0) {
+        updatePyramidStep(pyramidId, stepIndex, field, 0);
+      }
       clearDraftValue(key);
       return;
     }
@@ -1680,8 +1744,9 @@ const NewTrainPage: React.FC = () => {
   ) => {
     if (!hasDraftValue(key)) return;
 
-    const raw = numberDrafts[key] ?? '';
-    if (!raw.trim()) {
+    const raw = (numberDrafts[key] ?? '').trim();
+    if (!raw || raw.toLowerCase() === 'bw' || raw === '0' || raw === '0,0' || raw === '0.0') {
+      updateExercise(id, 'weight_kg', null);
       clearDraftValue(key);
       return;
     }
@@ -1700,8 +1765,9 @@ const NewTrainPage: React.FC = () => {
   ) => {
     if (!hasDraftValue(key)) return;
 
-    const raw = numberDrafts[key] ?? '';
-    if (!raw.trim()) {
+    const raw = (numberDrafts[key] ?? '').trim();
+    if (!raw || raw.toLowerCase() === 'bw' || raw === '0' || raw === '0,0' || raw === '0.0') {
+      updateSubExercise(containerId, subIndex, 'weight_kg', null);
       clearDraftValue(key);
       return;
     }
@@ -1922,7 +1988,7 @@ const NewTrainPage: React.FC = () => {
   };
 
   const addSubExercise = (supersetId: string) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === supersetId && ex.subExercises) {
         return { ...ex, subExercises: [...ex.subExercises, { name: '', type: 'reps', reps: 10, duration_seconds: 0, weight_kg: null, instruction_note: '' }] };
       }
@@ -1931,19 +1997,20 @@ const NewTrainPage: React.FC = () => {
   };
 
   const removeSubExercise = (supersetId: string, subIndex: number) => {
-    setExercises(exercises.map(ex => {
+    setExercises(prev => prev.map(ex => {
       if (ex.id === supersetId && ex.subExercises) {
         const remaining = ex.subExercises.filter((_, idx) => idx !== subIndex);
 
         if ((ex.type === 'superset' || ex.type === 'circuit') && remaining.length === 1) {
           const only = remaining[0];
+          const isOnlyDuration = only.type === 'isometry' || only.type === 'cardio';
           return {
             ...ex,
             type: only.type,
             name: only.name,
             instruction_note: only.instruction_note || '',
             reps: only.type === 'reps' ? only.reps : ex.reps,
-            duration_seconds: only.type === 'isometry' ? only.duration_seconds : ex.duration_seconds,
+            duration_seconds: isOnlyDuration ? only.duration_seconds : ex.duration_seconds,
             weight_kg: only.weight_kg ?? null,
             subExercises: undefined,
           };
@@ -1955,43 +2022,7 @@ const NewTrainPage: React.FC = () => {
     }));
   };
 
-  // Esercizi state builder helper functions
-
-  const normalizeExerciseName = (name: string) => name.replace(/@@@meta:.*$/, '').trim();
-
-  const ensureExerciseDictionaryId = async (name: string) => {
-    const normalized = normalizeExerciseName(name);
-    const { data: existing, error: existingError } = await supabase
-      .from('esercizi')
-      .select('id_esercizio')
-      .eq('nome', normalized)
-      .order('id_esercizio', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingError) throw existingError;
-    if (existing?.id_esercizio) return existing.id_esercizio;
-
-    const { data: inserted, error: insertError } = await supabase
-      .from('esercizi')
-      .insert([{ nome: normalized }])
-      .select('id_esercizio')
-      .single();
-
-    if (!insertError && inserted?.id_esercizio) return inserted.id_esercizio;
-
-    // Handle concurrent inserts by re-reading the first matching row.
-    const { data: afterRace, error: raceReadError } = await supabase
-      .from('esercizi')
-      .select('id_esercizio')
-      .eq('nome', normalized)
-      .order('id_esercizio', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (raceReadError || !afterRace?.id_esercizio) throw insertError || raceReadError;
-    return afterRace.id_esercizio;
-  };
+  // Profile initialization helper before workout creation
 
   const getProfileMailValue = () => {
     const normalizedEmail = String(user?.email || '').trim().toLowerCase();
@@ -2097,8 +2128,8 @@ const NewTrainPage: React.FC = () => {
           setError('Pyramid must contain at least 1 step'); return;
         }
         for (const step of ex.pyramid_steps) {
-          if (!Number.isFinite(step.reps) || step.reps <= 0) {
-            setError('Each pyramid step must have reps > 0'); return;
+          if (!Number.isFinite(step.reps) || step.reps < 0) {
+            setError('Each pyramid step must have reps >= 0'); return;
           }
         }
       } else {
@@ -2121,13 +2152,6 @@ const NewTrainPage: React.FC = () => {
           .update({ nome: workoutName })
           .eq('id_scheda', Number(id));
         if (updateError) throw updateError;
-
-        const { error: deleteError } = await supabase
-          .from('esecuzioni')
-          .delete()
-          .eq('id_scheda', Number(id));
-        if (deleteError) throw deleteError;
-
       } else {
         await ensureUserProfileExists();
 
@@ -2141,199 +2165,39 @@ const NewTrainPage: React.FC = () => {
         workoutIdToUse = String(workoutData.id_scheda);
       }
 
-      const rowsToInsert: any[] = [];
-      let orderCounter = 1;
-
-      for (let idx = 0; idx < exercises.length; idx += 1) {
-        const ex = exercises[idx];
-        const transitionRestToPersist =
-          idx < exercises.length - 1 && (ex.transition_rest_seconds || 0) > 0
-            ? Math.max(0, Math.trunc(ex.transition_rest_seconds || 0))
-            : null;
-
-        if (ex.type === 'superset' || ex.type === 'circuit') {
-          const isCircuit = ex.type === 'circuit';
-          const { data, error: supersetError } = await supabase
-            .from('superset')
-            .insert([{ round_totali: Math.max(1, ex.sets) }])
-            .select('id_superset')
-            .single();
-          if (supersetError) throw supersetError;
-
-          for (let subIdx = 0; subIdx < (ex.subExercises || []).length; subIdx += 1) {
-            const sub = ex.subExercises![subIdx];
-            const idEsercizio = await ensureExerciseDictionaryId(sub.name);
-            const isIso = sub.type === 'isometry';
-
-            let subNote = String(sub.instruction_note || '').trim();
-            if (subIdx === 0 && isCircuit) {
-              const metaPayload = { groupCategory: 'circuit', trackingMode: 'stopwatch' };
-              subNote = subNote ? `${subNote} @@@meta:${JSON.stringify(metaPayload)}` : `@@@meta:${JSON.stringify(metaPayload)}`;
-            }
-
-            rowsToInsert.push({
-              id_scheda: Number(workoutIdToUse),
-              id_esercizio: idEsercizio,
-              ordine: orderCounter,
-              set_num: Math.max(1, ex.sets || 1),
-              rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
-              rest_tra_esercizi: transitionRestToPersist,
-              peso_kg: toDbWeight(sub.weight_kg),
-              note_esercizio: subNote || null,
-              tipo: isIso ? 'ISOMETRIA' : 'REPS',
-              reps: isIso ? null : Math.max(0, sub.reps ?? 0),
-              durata_secondi: isIso ? Math.max(0, sub.duration_seconds ?? 0) : null,
-              id_superset: data.id_superset,
-              id_piramide: null,
-              stepindex_piramide: null,
-              id_emom: null,
-              stepindex_emom: null,
-            });
-
-            orderCounter += 1;
-          }
-
-          continue;
-        }
-
-        if (ex.type === 'emom') {
-          const { data, error: emomError } = await supabase
-            .from('emom')
-            .insert([{ round_totali: Math.max(1, ex.emom_rounds || 1), durata_round_secondi: Math.max(1, ex.emom_round_duration || 60) }])
-            .select('id_emom')
-            .single();
-          if (emomError) throw emomError;
-
-          for (let subIdx = 0; subIdx < (ex.subExercises || []).length; subIdx += 1) {
-            const sub = ex.subExercises![subIdx];
-            const idEsercizio = await ensureExerciseDictionaryId(sub.name);
-            const isIso = sub.type === 'isometry';
-
-            rowsToInsert.push({
-              id_scheda: Number(workoutIdToUse),
-              id_esercizio: idEsercizio,
-              ordine: orderCounter,
-              set_num: Math.max(1, ex.sets || 1),
-              rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
-              rest_tra_esercizi: transitionRestToPersist,
-              peso_kg: toDbWeight(sub.weight_kg),
-              note_esercizio: String(sub.instruction_note || '').trim() || null,
-              tipo: isIso ? 'ISOMETRIA' : 'REPS',
-              reps: isIso ? null : Math.max(0, sub.reps ?? 0),
-              durata_secondi: isIso ? Math.max(0, sub.duration_seconds ?? 0) : null,
-              id_superset: null,
-              id_piramide: null,
-              stepindex_piramide: null,
-              id_emom: data.id_emom,
-              stepindex_emom: subIdx + 1,
-            });
-
-            orderCounter += 1;
-          }
-
-          continue;
-        }
-
-        if (ex.type === 'pyramid') {
-          const { data, error: piramideError } = await supabase
-            .from('piramide')
-            .insert([{}])
-            .select('id_piramide')
-            .single();
-          if (piramideError) throw piramideError;
-
-          for (let stepIdx = 0; stepIdx < (ex.pyramid_steps || []).length; stepIdx += 1) {
-            const step = ex.pyramid_steps![stepIdx];
-            const idEsercizio = await ensureExerciseDictionaryId(ex.name);
-
-            const stepNote = String(step.instruction_note || '').trim();
-            const exNote = String(ex.instruction_note || '').trim();
-            const combinedNote = stepNote && exNote ? `${exNote} - ${stepNote}` : (stepNote || exNote);
-
-            rowsToInsert.push({
-              id_scheda: Number(workoutIdToUse),
-              id_esercizio: idEsercizio,
-              ordine: orderCounter,
-              set_num: 1,
-              rest_secondi: step.rest_seconds > 0 ? step.rest_seconds : null,
-              rest_tra_esercizi: transitionRestToPersist,
-              peso_kg: toDbWeight(step.weight_kg),
-              note_esercizio: combinedNote || null,
-              tipo: 'REPS',
-              reps: Math.max(0, step.reps ?? 0),
-              durata_secondi: null,
-              id_superset: null,
-              id_piramide: data.id_piramide,
-              stepindex_piramide: stepIdx + 1,
-              id_emom: null,
-              stepindex_emom: null,
-            });
-
-            orderCounter += 1;
-          }
-
-          continue;
-        }
-
-        const idEsercizio = await ensureExerciseDictionaryId(ex.name);
-        const isCardio = ex.type === 'cardio';
-        const isIsometry = ex.type === 'isometry';
-        const isDurationBased = isIsometry || isCardio;
-
-        let noteToSave = String(ex.instruction_note || '').trim();
-        const metaObj: Record<string, unknown> = {};
-        if (ex.auto_count_type) {
-          metaObj.autoCountType = ex.auto_count_type;
-        }
-        if (isCardio) {
-          metaObj.exerciseType = 'cardio';
-        }
-        if (Object.keys(metaObj).length > 0) {
-          noteToSave += (noteToSave ? ' ' : '') + `@@@meta:${JSON.stringify(metaObj)}`;
-        }
-
-        rowsToInsert.push({
-          id_scheda: Number(workoutIdToUse),
-          id_esercizio: idEsercizio,
-          ordine: orderCounter,
-          set_num: Math.max(1, ex.sets || 1),
-          rest_secondi: ex.rest_seconds > 0 ? ex.rest_seconds : null,
-          rest_tra_esercizi: transitionRestToPersist,
-          peso_kg: toDbWeight(ex.weight_kg),
-          note_esercizio: noteToSave || null,
-          tipo: isDurationBased ? 'ISOMETRIA' : 'REPS',
-          reps: isDurationBased ? null : Math.max(0, ex.reps ?? 0),
-          durata_secondi: isDurationBased ? Math.max(0, ex.duration_seconds ?? 0) : null,
-          id_superset: null,
-          id_piramide: null,
-          stepindex_piramide: null,
-          id_emom: null,
-          stepindex_emom: null,
-        });
-
-        orderCounter += 1;
+      const numericWorkoutId = Number(workoutIdToUse);
+      if (!Number.isFinite(numericWorkoutId)) {
+        throw new Error('Invalid workout id');
       }
 
-      const { error: exercisesError } = await supabase
-        .from('esecuzioni')
-        .insert(rowsToInsert);
-
-      if (exercisesError) throw exercisesError;
+      await saveExercisesToDb(numericWorkoutId, exercises);
 
       if (workoutIdToUse) {
         assignSchedaToFolder(workoutIdToUse, selectedFolderId, user?.id);
         if (user?.id) {
-          updateSingleSchedaInOfflineCache(user.id, {
-            id_scheda: Number(workoutIdToUse),
-            nome: workoutName,
-            data_creazione: new Date().toISOString(),
-            esecuzioni: rowsToInsert.map((row, rIdx) => ({
-              ...row,
-              id_esecuzione: rIdx + 1,
-              esercizi: { nome: exercises[rIdx]?.name || '' },
-            })),
-          });
-          void syncOfflineSchedeWithCloud(user.id).catch(() => {});
+          let updatedCacheFromCloud = false;
+          try {
+            const { data: freshScheda } = await supabase
+              .from('schede')
+              .select(SCHEDA_FULL_SELECT_QUERY)
+              .eq('id_scheda', numericWorkoutId)
+              .maybeSingle();
+            if (freshScheda) {
+              updateSingleSchedaInOfflineCache(user.id, freshScheda);
+              updatedCacheFromCloud = true;
+            }
+          } catch {
+            // Fallback su aggiornamento locale diretto
+          }
+
+          if (!updatedCacheFromCloud) {
+            updateSingleSchedaInOfflineCache(user.id, {
+              id_scheda: numericWorkoutId,
+              nome: workoutName,
+              data_creazione: new Date().toISOString(),
+              exercises: exercises.map((ex, idx) => ({ ...ex, order_index: idx })),
+            });
+          }
         }
       }
 
@@ -2800,7 +2664,14 @@ const NewTrainPage: React.FC = () => {
                         </div>
                         <div className="text-right">
                           <span className="text-xs font-mono font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-xl block">
-                            {(ex.emom_rounds || 10) * Math.ceil((ex.emom_round_duration || 60) / 60)} min totali
+                            {(() => {
+                              const totalSec = Math.max(1, ex.emom_rounds || 10) * Math.max(1, ex.emom_round_duration || 60);
+                              const mins = Math.floor(totalSec / 60);
+                              const secs = totalSec % 60;
+                              if (secs === 0) return `${mins} min totali`;
+                              if (mins > 0) return `${mins}m ${secs}s totali`;
+                              return `${secs}s totali`;
+                            })()}
                           </span>
                         </div>
                       </div>
@@ -2838,9 +2709,10 @@ const NewTrainPage: React.FC = () => {
                                 min="1"
                                 value={getDraftOrValue(`${ex.id}:emom_rounds`, ex.emom_rounds || 1)}
                                 onChange={(e) => setDraftValue(`${ex.id}:emom_rounds`, e.target.value)}
-                                onBlur={() => {
+                                onBlur={(e) => {
+                                  const rawVal = (e.currentTarget.value ?? '').trim();
                                   commitExerciseNumber(ex.id, 'emom_rounds', `${ex.id}:emom_rounds`, 1, 1);
-                                  const parsed = parseInt((numberDrafts[`${ex.id}:emom_rounds`] ?? '').trim(), 10);
+                                  const parsed = parseInt(rawVal, 10);
                                   if (Number.isFinite(parsed) && parsed >= 1) {
                                     updateExercise(ex.id, 'sets', parsed);
                                   }
@@ -2954,78 +2826,160 @@ const NewTrainPage: React.FC = () => {
                           Esercizi nel round
                         </span>
 
-                        {ex.subExercises?.map((sub, sIdx) => (
-                          <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2 relative">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 flex-1">
-                                <span className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-400 text-[10px] font-black flex items-center justify-center shrink-0">
-                                  {sIdx + 1}
-                                </span>
-                                <input
-                                  type="text"
-                                  placeholder={`Nome esercizio ${sIdx + 1}`}
-                                  value={sub.name}
-                                  onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
-                                  className="w-full bg-transparent text-white text-sm font-semibold focus:outline-none placeholder:text-zinc-600"
-                                />
+                        {ex.subExercises?.map((sub, sIdx) => {
+                          const isSubDuration = sub.type === 'isometry' || sub.type === 'cardio';
+
+                          return (
+                            <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2 relative">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-1">
+                                  <span className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-400 text-[10px] font-black flex items-center justify-center shrink-0">
+                                    {sIdx + 1}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    placeholder={`Nome esercizio ${sIdx + 1}`}
+                                    value={sub.name}
+                                    onChange={(e) => updateSubExercise(ex.id, sIdx, 'name', e.target.value)}
+                                    className="w-full bg-transparent text-white text-sm font-semibold focus:outline-none placeholder:text-zinc-600"
+                                  />
+                                </div>
+                                {ex.subExercises && ex.subExercises.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeSubExercise(ex.id, sIdx)}
+                                    className="text-zinc-500 hover:text-red-400 p-1 transition-colors"
+                                    title="Rimuovi"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
                               </div>
-                              {ex.subExercises && ex.subExercises.length > 1 && (
+
+                              {/* Selettore tipo sub-esercizio EMOM */}
+                              <div className="w-full bg-black/60 rounded-xl p-1 border border-white/10 grid grid-cols-3 gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => removeSubExercise(ex.id, sIdx)}
-                                  className="text-zinc-500 hover:text-red-400 p-1 transition-colors"
-                                  title="Rimuovi"
+                                  onClick={() => {
+                                    void hapticLight();
+                                    updateSubExercise(ex.id, sIdx, 'type', 'reps');
+                                  }}
+                                  className={`w-full py-1 text-[11px] font-black rounded-lg transition-all text-center ${sub.type === 'reps'
+                                    ? 'bg-amber-500 text-black shadow-md'
+                                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                    }`}
                                 >
-                                  <Trash2 size={14} />
+                                  REPS
                                 </button>
-                              )}
-                            </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void hapticLight();
+                                    updateSubExercise(ex.id, sIdx, 'type', 'isometry');
+                                  }}
+                                  className={`w-full py-1 text-[11px] font-black rounded-lg transition-all text-center ${sub.type === 'isometry'
+                                    ? 'bg-amber-500 text-black shadow-md'
+                                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                  ISOMETRIA
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void hapticLight();
+                                    updateSubExercise(ex.id, sIdx, 'type', 'cardio');
+                                  }}
+                                  className={`w-full py-1 text-[11px] font-black rounded-lg transition-all text-center ${sub.type === 'cardio'
+                                    ? 'bg-rose-500 text-white shadow-md'
+                                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                  CARDIO
+                                </button>
+                              </div>
 
-                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
-                              <div>
-                                <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
-                                  Target Reps / Sec
-                                </label>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  value={getDraftOrValue(`${ex.id}:sub:${sIdx}:${sub.type}`, sub.type === 'reps' ? sub.reps : sub.duration_seconds, true)}
-                                  onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:${sub.type}`, e.target.value)}
-                                  onBlur={() => commitSubExerciseNumber(ex.id, sIdx, sub.type === 'reps' ? 'reps' : 'duration_seconds', `${ex.id}:sub:${sIdx}:${sub.type}`, 0, 0)}
-                                  onFocus={onNumberFocus}
-                                  className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-amber-400 outline-none"
-                                  placeholder={sub.type === 'reps' ? 'MAX REPS' : 'MAX TIME'}
-                                />
+                              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+                                <div>
+                                  <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
+                                    {!isSubDuration ? 'Target Reps' : 'Durata'}
+                                  </label>
+                                  {!isSubDuration ? (
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={getDraftOrValue(`${ex.id}:sub:${sIdx}:reps`, sub.reps, true)}
+                                      onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:reps`, e.target.value)}
+                                      onBlur={() => commitSubExerciseNumber(ex.id, sIdx, 'reps', `${ex.id}:sub:${sIdx}:reps`, 0, 0)}
+                                      onFocus={onNumberFocus}
+                                      className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-amber-400 outline-none"
+                                      placeholder="MAX REPS"
+                                    />
+                                  ) : (
+                                    <div className="flex items-center h-[34px] gap-1">
+                                      <div className="relative flex-1 h-full bg-black/30 border border-white/10 rounded-lg flex items-center">
+                                        <input
+                                          type="number"
+                                          inputMode="numeric"
+                                          min="0"
+                                          value={getDraftOrValue(`${ex.id}:sub:${sIdx}:duration:min`, Math.floor((sub.duration_seconds || 0) / 60))}
+                                          onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:duration:min`, e.target.value)}
+                                          onBlur={() => commitSubDurationPart(ex.id, sIdx, 'min', `${ex.id}:sub:${sIdx}:duration:min`, sub.duration_seconds || 0)}
+                                          onFocus={onNumberFocus}
+                                          placeholder="0"
+                                          className="w-full text-center font-bold text-amber-400 bg-transparent focus:outline-none text-sm"
+                                        />
+                                        <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">M</span>
+                                      </div>
+                                      <span className="text-zinc-500 font-bold">:</span>
+                                      <div className="relative flex-1 h-full bg-black/30 border border-white/10 rounded-lg flex items-center">
+                                        <input
+                                          type="number"
+                                          inputMode="numeric"
+                                          min="0"
+                                          max="59"
+                                          value={getDraftOrValue(`${ex.id}:sub:${sIdx}:duration:sec`, (sub.duration_seconds || 0) % 60)}
+                                          onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:duration:sec`, e.target.value)}
+                                          onBlur={() => commitSubDurationPart(ex.id, sIdx, 'sec', `${ex.id}:sub:${sIdx}:duration:sec`, sub.duration_seconds || 0)}
+                                          onFocus={onNumberFocus}
+                                          placeholder="0"
+                                          className="w-full text-center font-bold text-amber-400 bg-transparent focus:outline-none text-sm"
+                                        />
+                                        <span className="text-[8px] text-zinc-500 font-bold pr-1.5 pointer-events-none">S</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
+                                    Carico (kg)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                                    onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
+                                    onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
+                                    onFocus={onNumberFocus}
+                                    placeholder="Corpo libero"
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-amber-400 outline-none placeholder:text-zinc-600 placeholder:text-xs"
+                                  />
+                                </div>
                               </div>
 
                               <div>
-                                <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block mb-1">
-                                  Carico (kg)
-                                </label>
                                 <input
                                   type="text"
-                                  inputMode="decimal"
-                                  value={getWeightDraftOrValue(`${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                                  onChange={(e) => setDraftValue(`${ex.id}:sub:${sIdx}:weight`, e.target.value)}
-                                  onBlur={() => commitSubExerciseWeight(ex.id, sIdx, `${ex.id}:sub:${sIdx}:weight`, sub.weight_kg)}
-                                  onFocus={onNumberFocus}
-                                  placeholder="Corpo libero"
-                                  className="w-full bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:border-amber-400 outline-none placeholder:text-zinc-600 placeholder:text-xs"
+                                  value={sub.instruction_note || ''}
+                                  onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
+                                  placeholder="Note esecuzione (opzionale)..."
+                                  className="w-full bg-black/20 border border-white/5 rounded-lg px-2.5 py-1 text-xs text-zinc-300 focus:border-amber-400 outline-none placeholder:text-zinc-600 transition-colors"
                                 />
                               </div>
                             </div>
-
-                            <div>
-                              <input
-                                type="text"
-                                value={sub.instruction_note || ''}
-                                onChange={(e) => updateSubExercise(ex.id, sIdx, 'instruction_note', e.target.value)}
-                                placeholder="Note esecuzione (opzionale)..."
-                                className="w-full bg-black/20 border border-white/5 rounded-lg px-2.5 py-1 text-xs text-zinc-300 focus:border-amber-400 outline-none placeholder:text-zinc-600 transition-colors"
-                              />
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
 
                         <button
                           type="button"
@@ -3054,7 +3008,7 @@ const NewTrainPage: React.FC = () => {
 
                       <div className="space-y-2.5">
                         {ex.subExercises?.map((sub, sIdx) => {
-                          const isIso = sub.type === 'isometry';
+                          const isDuration = sub.type === 'isometry' || sub.type === 'cardio';
 
                           return (
                             <div key={sIdx} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2.5 relative">
@@ -3087,15 +3041,15 @@ const NewTrainPage: React.FC = () => {
                                 )}
                               </div>
 
-                              {/* Modalità Esercizio: Reps vs Isometria (Full Width) sotto il nome */}
-                              <div className="w-full bg-black/60 rounded-xl p-1 border border-white/10 grid grid-cols-2 gap-1">
+                              {/* Modalità Esercizio: Reps vs Isometria vs Cardio */}
+                              <div className="w-full bg-black/60 rounded-xl p-1 border border-white/10 grid grid-cols-3 gap-1">
                                 <button
                                   type="button"
                                   onClick={() => {
                                     void hapticLight();
                                     updateSubExercise(ex.id, sIdx, 'type', 'reps');
                                   }}
-                                  className={`w-full py-1.5 text-xs font-black rounded-lg transition-all text-center ${!isIso
+                                  className={`w-full py-1.5 text-xs font-black rounded-lg transition-all text-center ${sub.type === 'reps'
                                     ? 'bg-brand-orange text-black shadow-md'
                                     : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                     }`}
@@ -3108,19 +3062,32 @@ const NewTrainPage: React.FC = () => {
                                     void hapticLight();
                                     updateSubExercise(ex.id, sIdx, 'type', 'isometry');
                                   }}
-                                  className={`w-full py-1.5 text-xs font-black rounded-lg transition-all text-center ${isIso
+                                  className={`w-full py-1.5 text-xs font-black rounded-lg transition-all text-center ${sub.type === 'isometry'
                                     ? 'bg-brand-orange text-black shadow-md'
                                     : 'text-zinc-400 hover:text-white hover:bg-white/5'
                                     }`}
                                 >
                                   ISOMETRIA
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void hapticLight();
+                                    updateSubExercise(ex.id, sIdx, 'type', 'cardio');
+                                  }}
+                                  className={`w-full py-1.5 text-xs font-black rounded-lg transition-all text-center ${sub.type === 'cardio'
+                                    ? 'bg-rose-500 text-white shadow-md'
+                                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                  CARDIO
+                                </button>
                               </div>
 
                               <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
                                 <div>
                                   <label className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                                    {!isIso ? (
+                                    {!isDuration ? (
                                       'Reps Target'
                                     ) : (
                                       <>
@@ -3128,7 +3095,7 @@ const NewTrainPage: React.FC = () => {
                                       </>
                                     )}
                                   </label>
-                                  {!isIso ? (
+                                  {!isDuration ? (
                                     <input
                                       type="text"
                                       inputMode="numeric"
@@ -3258,58 +3225,17 @@ const NewTrainPage: React.FC = () => {
                                 setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
                               }
                             }}
-                            onBlur={() => {
+                            onBlur={(e) => {
                               setTimeout(() => {
                                 setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
                               }, 200);
-                              if (ex.name.trim()) {
-                                const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
-                                if (parsed.matched) {
-                                  handleApplyParsedToExercise(ex.id, parsed);
-                                  setExerciseNotices(prev => ({
-                                    ...prev,
-                                    [ex.id]: parsed.type === 'pyramid'
-                                      ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
-                                      : parsed.type === 'reps'
-                                        ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
-                                        : `✨ Trasformato in ${parsed.type.toUpperCase()}`
-                                  }));
-                                  setTimeout(() => {
-                                    setExerciseNotices(prev => {
-                                      const n = { ...prev };
-                                      delete n[ex.id];
-                                      return n;
-                                    });
-                                  }, 3500);
-                                }
-                              }
+                              applySmartParseOnName(ex.id, e.currentTarget.value, ex.rest_seconds);
                             }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
-                                if (ex.name.trim()) {
-                                  const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
-                                  if (parsed.matched) {
-                                    handleApplyParsedToExercise(ex.id, parsed);
-                                    setExerciseNotices(prev => ({
-                                      ...prev,
-                                      [ex.id]: parsed.type === 'pyramid'
-                                        ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
-                                        : parsed.type === 'reps'
-                                          ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
-                                          : `✨ Trasformato in ${parsed.type.toUpperCase()}`
-                                    }));
-                                    setTimeout(() => {
-                                      setExerciseNotices(prev => {
-                                        const n = { ...prev };
-                                        delete n[ex.id];
-                                        return n;
-                                      });
-                                    }, 3500);
-                                  }
-                                }
                                 setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
-                                (e.target as HTMLElement).blur();
+                                (e.currentTarget as HTMLInputElement).blur();
                               }
                             }}
                             className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-medium text-sm focus:border-purple-400 focus:outline-none transition-colors pr-10"
@@ -3405,15 +3331,14 @@ const NewTrainPage: React.FC = () => {
 
                               <div className="col-span-3">
                                 <input
-                                  type="number"
+                                  type="text"
                                   inputMode="numeric"
-                                  min="1"
-                                  value={getDraftOrValue(`${ex.id}:step:${sIdx}:reps`, step.reps)}
+                                  value={getDraftOrValue(`${ex.id}:step:${sIdx}:reps`, step.reps, true)}
                                   onChange={(e) => setDraftValue(`${ex.id}:step:${sIdx}:reps`, e.target.value)}
-                                  onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'reps', `${ex.id}:step:${sIdx}:reps`, 10, 1)}
+                                  onBlur={() => commitPyramidStepNumber(ex.id, sIdx, 'reps', `${ex.id}:step:${sIdx}:reps`, 0, 0)}
                                   onFocus={onNumberFocus}
-                                  placeholder="10"
-                                  className="w-full bg-black/50 border border-white/10 rounded-lg py-1.5 text-white text-center text-xs font-bold focus:border-purple-400 outline-none"
+                                  placeholder="MAX"
+                                  className="w-full bg-black/50 border border-white/10 rounded-lg py-1.5 text-white text-center text-xs font-bold focus:border-purple-400 outline-none placeholder:text-brand-orange/70 placeholder:text-[10px]"
                                 />
                               </div>
 
@@ -3465,7 +3390,7 @@ const NewTrainPage: React.FC = () => {
                               value={step.instruction_note || ''}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                setExercises(exercises.map(item => {
+                                setExercises(prev => prev.map(item => {
                                   if (item.id === ex.id && item.pyramid_steps) {
                                     const nextSteps = [...item.pyramid_steps];
                                     nextSteps[sIdx] = { ...nextSteps[sIdx], instruction_note: val };
@@ -3518,58 +3443,17 @@ const NewTrainPage: React.FC = () => {
                                 setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
                               }
                             }}
-                            onBlur={() => {
+                            onBlur={(e) => {
                               setTimeout(() => {
                                 setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
                               }, 200);
-                              if (ex.name.trim()) {
-                                const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
-                                if (parsed.matched) {
-                                  handleApplyParsedToExercise(ex.id, parsed);
-                                  setExerciseNotices(prev => ({
-                                    ...prev,
-                                    [ex.id]: parsed.type === 'pyramid'
-                                      ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
-                                      : parsed.type === 'reps'
-                                        ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
-                                        : `✨ Trasformato in ${parsed.type.toUpperCase()}`
-                                  }));
-                                  setTimeout(() => {
-                                    setExerciseNotices(prev => {
-                                      const n = { ...prev };
-                                      delete n[ex.id];
-                                      return n;
-                                    });
-                                  }, 3500);
-                                }
-                              }
+                              applySmartParseOnName(ex.id, e.currentTarget.value, ex.rest_seconds);
                             }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
-                                if (ex.name.trim()) {
-                                  const parsed = parseExerciseInput(ex.name, ex.rest_seconds || 60);
-                                  if (parsed.matched) {
-                                    handleApplyParsedToExercise(ex.id, parsed);
-                                    setExerciseNotices(prev => ({
-                                      ...prev,
-                                      [ex.id]: parsed.type === 'pyramid'
-                                        ? `✨ Piramide: ${parsed.pyramid_steps?.map(s => s.reps).join('-')} • ${parsed.pyramid_steps?.[0]?.rest_seconds ?? 60}s recupero`
-                                        : parsed.type === 'reps'
-                                          ? `✨ Riconosciuto: ${parsed.sets}x${parsed.isMaxReps ? 'Max' : parsed.reps}${parsed.weight_kg ? ` • ${parsed.weight_kg}kg` : ''} • ${parsed.rest_seconds}s`
-                                          : `✨ Trasformato in ${parsed.type.toUpperCase()}`
-                                    }));
-                                    setTimeout(() => {
-                                      setExerciseNotices(prev => {
-                                        const n = { ...prev };
-                                        delete n[ex.id];
-                                        return n;
-                                      });
-                                    }, 3500);
-                                  }
-                                }
                                 setExerciseSuggestions(prev => ({ ...prev, [ex.id]: [] }));
-                                (e.target as HTMLElement).blur();
+                                (e.currentTarget as HTMLInputElement).blur();
                               }
                             }}
                             className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-medium text-sm focus:border-brand-orange focus:outline-none transition-colors pr-10"

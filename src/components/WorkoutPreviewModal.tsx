@@ -52,7 +52,12 @@ export interface PreviewExercise {
   order_index: number;
   emom_rounds?: number;
   emom_round_duration?: number;
-  pyramid_steps?: { reps: number; rest_seconds: number; weight_kg?: number | null }[];
+  pyramid_steps?: {
+    reps: number;
+    rest_seconds: number;
+    weight_kg?: number | null;
+    instruction_note?: string | null;
+  }[];
   subExercises?: {
     name: string;
     type: 'reps' | 'isometry' | 'cardio';
@@ -695,14 +700,22 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
             (a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime()
           )[0];
 
-          // 2. Recupera l'ultimo workout_run registrato nel DB (senza !inner per identificare l'effettiva ultima sessione)
-          const { data: runsData } = await supabase
-            .from('workout_run')
-            .select('id_workout, data_esecuzione, note_workout ( testo, created_at )')
-            .eq('id_utente', user.id)
-            .eq('id_scheda', numId)
-            .order('data_esecuzione', { ascending: false })
-            .limit(1);
+          // 2. Recupera l'ultimo workout_run registrato nel DB solo se online (così offline mostra comunque localCandidates)
+          let runsData: any[] | null = null;
+          if (typeof navigator === 'undefined' || navigator.onLine) {
+            try {
+              const { data: fetchedRuns } = await supabase
+                .from('workout_run')
+                .select('id_workout, data_esecuzione, note_workout ( testo, created_at )')
+                .eq('id_utente', user.id)
+                .eq('id_scheda', numId)
+                .order('data_esecuzione', { ascending: false })
+                .limit(1);
+              runsData = fetchedRuns;
+            } catch (runErr) {
+              console.warn('[WorkoutPreviewModal] Impossibile recuperare note remote (fallback offline):', runErr);
+            }
+          }
 
           if (isCancelled) return;
 
@@ -787,6 +800,36 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
     setEditableExercises((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const cycleSingleExerciseType = (index: number) => {
+    void hapticLight();
+    setEditableExercises((prev) => {
+      const next = [...prev];
+      const current = next[index];
+      if (!current) return prev;
+      const nextType: PreviewExercise['type'] =
+        current.type === 'reps'
+          ? 'isometry'
+          : current.type === 'isometry'
+            ? 'cardio'
+            : 'reps';
+
+      if (nextType === 'reps') {
+        next[index] = {
+          ...current,
+          type: 'reps',
+          reps: current.reps > 0 ? current.reps : 10,
+        };
+      } else {
+        next[index] = {
+          ...current,
+          type: nextType,
+          duration_seconds: current.duration_seconds > 0 ? current.duration_seconds : 30,
+        };
+      }
       return next;
     });
   };
@@ -996,14 +1039,47 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
     return exercises.map((ex, idx) => ({
       ...ex,
       name: ex.name.trim() || `Esercizio ${idx + 1}`,
+      subExercises: ex.subExercises?.map((sub, sIdx) => ({
+        ...sub,
+        name: sub.name.trim() || (ex.type === 'circuit' ? `Stazione ${sIdx + 1}` : `Esercizio ${sIdx + 1}`),
+      })),
       order_index: idx,
     })) as SaveExercise[];
+  };
+
+  const refreshCachedSchedaAfterSave = async (schedaId: number, sanitized: SaveExercise[]) => {
+    if (!user?.id) return;
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      try {
+        const { data: freshScheda } = await supabase
+          .from('schede')
+          .select(SCHEDA_FULL_SELECT_QUERY)
+          .eq('id_scheda', schedaId)
+          .maybeSingle();
+        if (freshScheda) {
+          updateSingleSchedaInOfflineCache(user.id, freshScheda);
+          return;
+        }
+      } catch {
+        // Fallback su update diretto in cache
+      }
+    }
+    updateSingleSchedaInOfflineCache(user.id, {
+      id_scheda: schedaId,
+      nome: currentWorkoutName,
+      exercises: sanitized,
+    });
   };
 
   const handleSaveOnly = async () => {
     if (!workoutPreview || isSavingOnly || isSavingAndStarting) return;
     const schedaId = Number(workoutPreview.id);
     if (!Number.isFinite(schedaId)) return;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setPreviewError('Sei offline: riconnettiti per salvare le modifiche nel cloud, oppure tocca Avvia per usarle subito in cache locale.');
+      return;
+    }
 
     try {
       setIsSavingOnly(true);
@@ -1012,6 +1088,7 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
 
       const sanitized = sanitizeExercisesBeforeSave(editableExercises);
       await saveExercisesToDb(schedaId, sanitized);
+      await refreshCachedSchedaAfterSave(schedaId, sanitized);
       initialExercisesJsonRef.current = JSON.stringify(sanitized);
       setEditableExercises(sanitized as PreviewExercise[]);
       setSaveSuccessMessage('Modifiche salvate con successo!');
@@ -1042,14 +1119,18 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
       const hasChanged = JSON.stringify(editableExercises) !== initialExercisesJsonRef.current;
       if (hasChanged) {
         const sanitized = sanitizeExercisesBeforeSave(editableExercises);
-        if (typeof navigator !== 'undefined' && navigator.onLine) {
+        let cloudSaved = false;
+        if (typeof navigator === 'undefined' || navigator.onLine) {
           try {
             await saveExercisesToDb(schedaId, sanitized);
+            cloudSaved = true;
           } catch (cloudErr) {
             console.warn('[WorkoutPreviewModal] Salvataggio cloud non riuscito, salvato in cache locale:', cloudErr);
           }
         }
-        if (user?.id) {
+        if (cloudSaved) {
+          await refreshCachedSchedaAfterSave(schedaId, sanitized);
+        } else if (user?.id) {
           updateSingleSchedaInOfflineCache(user.id, {
             id_scheda: schedaId,
             nome: currentWorkoutName,
@@ -1313,9 +1394,9 @@ const WorkoutPreviewModal: React.FC<WorkoutPreviewModalProps> = ({
                             {ex.type !== 'circuit' && ex.type !== 'superset' && ex.type !== 'emom' && ex.type !== 'pyramid' && (
                               <button
                                 type="button"
-                                onClick={() => updateExerciseField(i, 'type', ex.type === 'isometry' ? 'reps' : 'isometry')}
+                                onClick={() => cycleSingleExerciseType(i)}
                                 className="flex items-center text-[10px] font-bold px-2 py-0.5 rounded bg-brand-darkGrey hover:bg-white/10 text-white shadow-inner cursor-pointer transition-colors border border-white/10"
-                                title="Tocca per alternare tra Ripetizioni e Isometria"
+                                title="Tocca per cambiare tra Ripetizioni, Isometria e Cardio"
                               >
                                 {ex.type === 'cardio' ? (
                                   <Activity size={11} className="mr-1 text-rose-400" />

@@ -139,9 +139,19 @@ const MODALITY_KEYWORDS: Record<Exclude<WorkoutModality, 'reps'>, string[]> = {
     'isometry', 'isometric', 'isometrics', 'isometic', 'tenuta isometrica'
   ],
   cardio: [
-    'cardio', 'corsa', 'running', 'cyclette', 'tapis roulant', 'treadmill', 'corda', 'jump rope', 'vogatore', 'rower', 'ellittica'
+    'cardio', 'corsa', 'running', 'cyclette', 'tapis roulant', 'treadmill',
+    'salto corda', 'salto alla corda', 'salti corda', 'salti con la corda',
+    'jump rope', 'vogatore', 'rower', 'ellittica'
   ]
 };
+
+const CARDIO_EXERCISE_TITLE_KEYWORDS = new Set([
+  'corsa', 'running', 'cyclette', 'tapis roulant', 'treadmill',
+  'salto corda', 'salto alla corda', 'salti corda', 'salti con la corda',
+  'jump rope', 'vogatore', 'rower', 'ellittica',
+]);
+
+const escapeRegExp = (str: string): string => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PARSER TEMPO (SECONDI / MINUTI)
@@ -247,6 +257,7 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
       repsTarget: learnedRule.correctedResult.repsTarget,
       weightKg: learnedRule.correctedResult.weightKg ?? null,
       durationSeconds: learnedRule.correctedResult.durationSeconds,
+      intervalSeconds: learnedRule.correctedResult.intervalSeconds,
       restSeconds: learnedRule.correctedResult.restSeconds ?? fallbackRest,
       subExercises: learnedRule.correctedResult.subExercises,
       pyramidSteps: learnedRule.correctedResult.pyramidSteps,
@@ -261,17 +272,9 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
   let detectedModality: WorkoutModality = 'reps';
   let modalityMatchToken: string | null = null;
 
-  // 1.1 Controlla sequenza numerica piramidale (es. 12-10-8-6 o 15/12/10/8)
-  const isDate = /\b(?:\d{1,2}[/-]\d{1,2}[/-](?:19|20)\d{2}|(?:19|20)\d{2}[/-]\d{1,2}[/-]\d{1,2})\b/.test(workingText);
-  const pyramidSeqMatch = !isDate ? workingText.match(/(\d+(?:[-/]\d+){1,})/i) : null;
-  const hasPyramidSeq = Boolean(
-    pyramidSeqMatch &&
-    pyramidSeqMatch[1].split(/[-/]/).length >= 2 &&
-    pyramidSeqMatch[1].split(/[-/]/).every(n => parseInt(n, 10) > 0 && parseInt(n, 10) <= 60)
-  );
-
-  // 1.2 Cerca parole chiave delle modalità nel testo con tolleranza fuzzy
+  // 1.1 Cerca parole chiave delle modalità nel testo con tolleranza fuzzy
   const words = workingText.split(/[\s,;:\-–—+()]+/).filter(w => w.length > 0);
+  const hasExplicitPyramidKeyword = words.some(w => Boolean(fuzzyMatchWord(w, MODALITY_KEYWORDS.pyramid)));
 
   for (const word of words) {
     // Check Pyramid
@@ -307,17 +310,46 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
     // Check Cardio
     if (fuzzyMatchWord(word, MODALITY_KEYWORDS.cardio)) {
       detectedModality = 'cardio';
-      modalityMatchToken = word;
+      // Se la keyword è un titolo cardio specifico (es. "corsa", "cyclette"), non rimuoverla dal nome
+      if (!CARDIO_EXERCISE_TITLE_KEYWORDS.has(word.toLowerCase())) {
+        modalityMatchToken = word;
+      }
       break;
     }
   }
 
-  // Se è presente una sequenza piramidale esplicita (es. 12-10-8-6), è piramide anche senza parola chiave
+  // Controlla anche match cardio multi-parola (es. "tapis roulant", "jump rope", "salto corda")
+  if (detectedModality === 'reps') {
+    const lowerWorking = workingText.toLowerCase();
+    for (const kw of MODALITY_KEYWORDS.cardio) {
+      if (kw.includes(' ') && lowerWorking.includes(kw)) {
+        detectedModality = 'cardio';
+        break;
+      }
+    }
+  }
+
+  // 1.2 Controlla sequenza numerica piramidale escludendo i rep-range NxM-P (es. 4x8-10)
+  const isDate = /\b(?:\d{1,2}[/-]\d{1,2}[/-](?:19|20)\d{2}|(?:19|20)\d{2}[/-]\d{1,2}[/-]\d{1,2})\b/.test(workingText);
+  const pyramidSeqRegex = /(?:^|[^\dx*×])(\d+(?:[-/]\d+){1,})(?=\s|$|[^\d-])/i;
+  const pyramidSeqMatch = !isDate ? workingText.match(pyramidSeqRegex) : null;
+  const pyramidParts = pyramidSeqMatch ? pyramidSeqMatch[1].split(/[-/]/) : [];
+  const minRequiredPyramidSteps = hasExplicitPyramidKeyword ? 2 : 3;
+  const hasPyramidSeq = Boolean(
+    pyramidSeqMatch &&
+    pyramidParts.length >= minRequiredPyramidSteps &&
+    pyramidParts.every(n => {
+      const v = parseInt(n, 10);
+      return v > 0 && v <= 60;
+    })
+  );
+
+  // Se è presente una sequenza piramidale esplicita (3+ step, o 2+ con keyword), è piramide anche senza parola chiave
   if (hasPyramidSeq && (detectedModality === 'reps' || detectedModality === 'pyramid')) {
     detectedModality = 'pyramid';
   }
 
-  // Se è presente sets x secondi (es. 3x30s o 4x45sec) e non è piramide/emom/circuito, è isometria
+  // Se è presente sets x secondi (es. 3x30s o 4x45sec) e non è piramide/emom/circuito/cardio, è isometria
   const hasIsoPattern = /\b(\d+)\s*(?:[x*X×])\s*(\d+)\s*(?:s|sec|"|'')\b/i.test(workingText);
   if (hasIsoPattern && detectedModality === 'reps') {
     detectedModality = 'isometry';
@@ -328,23 +360,24 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
     detectedModality = 'superset';
   }
 
-  // Rimuovi il token della modalità trovato dal testo
+  // Rimuovi il token della modalità trovato dal testo (escapato per sicurezza su punteggiatura OCR)
   if (modalityMatchToken) {
-    workingText = workingText.replace(new RegExp(`\\b${modalityMatchToken}\\b`, 'i'), ' ');
+    const escapedToken = escapeRegExp(modalityMatchToken);
+    workingText = workingText.replace(new RegExp(`(?:^|\\s|\\b)${escapedToken}(?=\\s|$|\\b)`, 'i'), ' ');
   }
 
-  // Rimuovi anche eventuali sinonimi o residui della modalità dal testo
+  // Rimuovi anche eventuali sinonimi o residui di modalità generiche dal testo (preservando nomi cardio specifici)
   const allModalitySynonyms = [
     ...MODALITY_KEYWORDS.pyramid,
     ...MODALITY_KEYWORDS.emom,
     ...MODALITY_KEYWORDS.circuit,
     ...MODALITY_KEYWORDS.superset,
     ...MODALITY_KEYWORDS.isometry,
-    ...MODALITY_KEYWORDS.cardio,
+    'cardio',
   ];
   for (const syn of allModalitySynonyms) {
     if (syn.length >= 3) {
-      workingText = workingText.replace(new RegExp(`\\b${syn}\\b`, 'gi'), ' ');
+      workingText = workingText.replace(new RegExp(`\\b${escapeRegExp(syn)}\\b`, 'gi'), ' ');
     }
   }
 
@@ -352,6 +385,7 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
 
   let weightKg: number | null = null;
   let restSeconds: number = fallbackRest;
+  let hasExplicitRest = false;
   let setsOrRounds: number = detectedModality === 'circuit' ? 3 : detectedModality === 'emom' ? 10 : 3;
   let repsTarget: string | undefined = undefined;
   let durationSeconds: number | undefined = undefined;
@@ -359,7 +393,6 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
   let pyramidSteps: { reps: number; restSeconds: number; weightKg?: number | null }[] | undefined = undefined;
 
   // 2.1 ESTRAZIONE PESO / CHILI (weightKg)
-  // Esempi: "80kg", "80 kg", "75.5kg", "peso 60", "con 100 chili", "50 kili"
   const weightRegex1 = /(?:(?:con|\+|peso|carico|sovraccarico)\s*(?:di|da|:)?\s*)?(\d+(?:[.,]\d+)?)\s*(?:kg|chili|chilo|kili|kilo)\b/i;
   const weightMatch1 = workingText.match(weightRegex1);
   if (weightMatch1) {
@@ -369,7 +402,6 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
       workingText = workingText.replace(weightMatch1[0], ' ');
     }
   } else {
-    // Esempio: "peso 80", "carico 75"
     const weightRegex2 = /\b(?:peso|carico)\s*(?:di|da|:)?\s*(\d+(?:[.,]\d+)?)\b/i;
     const weightMatch2 = workingText.match(weightRegex2);
     if (weightMatch2) {
@@ -381,30 +413,24 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
     }
   }
 
-  // 2.2 ESTRAZIONE RECUPERO / REST (restSeconds)
-  // Esempi: "90s rest", "recupero 2m", "pausa 60s", "recupreo 90s", "rec 90s", "60s" in coda
+  // 2.2a ESTRAZIONE RECUPERO ESPLICITO (prima di durata/intervallo)
   const restRegex1 = /(?:(?:con|e)\s+)?(?:recupero|rest|pausa|pause|recup|rec|reucpero|recupreo)\s*(?:di|da|:)?\s*(\d+\s*(?:s|sec|"|m|min|'|secondi|minuti)?)\b/i;
   const restMatch1 = workingText.match(restRegex1);
   if (restMatch1 && restMatch1[1]) {
     restSeconds = parseRestTimeString(restMatch1[1], fallbackRest);
+    hasExplicitRest = true;
     workingText = workingText.replace(restMatch1[0], ' ');
   } else {
     const restRegex2 = /(?:(?:con|e)\s+)?(\d+\s*(?:s|sec|"|m|min|'|secondi|minuti))\s*(?:di|da)?\s*(?:recupero|rest|pausa|pause|recup|rec|reucpero|recupreo)\b/i;
     const restMatch2 = workingText.match(restRegex2);
     if (restMatch2 && restMatch2[1]) {
       restSeconds = parseRestTimeString(restMatch2[1], fallbackRest);
+      hasExplicitRest = true;
       workingText = workingText.replace(restMatch2[0], ' ');
-    } else {
-      // Controllo tempo in coda alla stringa (es. "... 90s" o "... 2m")
-      const trailingRestMatch = workingText.match(/\s+(\d+\s*(?:s|sec|"|m|min|'))\s*$/i);
-      if (trailingRestMatch && trailingRestMatch[1]) {
-        restSeconds = parseRestTimeString(trailingRestMatch[1], fallbackRest);
-        workingText = workingText.slice(0, workingText.length - trailingRestMatch[0].length);
-      }
     }
   }
 
-  // 2.3 ESTRAZIONE INTERVALLO / CADENZA (EMOM / Tabata)
+  // 2.3 ESTRAZIONE INTERVALLO / CADENZA (EMOM / Tabata) prima del trailing rest
   if (detectedModality === 'emom') {
     const intervalMatch = workingText.match(/\b(?:round\s+da|cadenza\s*(?:di)?|ogni|intervallo)\s*(\d+\s*(?:s|sec|"|m|min|')?)\b/i);
     if (intervalMatch && intervalMatch[1]) {
@@ -415,7 +441,8 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
 
   // 2.4 ESTRAZIONE SEQUENZA PIRAMIDALE (Pyramid)
   if (detectedModality === 'pyramid') {
-    const seqMatch = workingText.match(/(\d+(?:[-/]\d+){1,})/i);
+    const seqRegex = /(?:^|[^\dx*×])(\d+(?:[-/]\d+){1,})/i;
+    const seqMatch = workingText.match(seqRegex);
     if (seqMatch) {
       const repsArray = seqMatch[1]
         .split(/[-/]/)
@@ -425,33 +452,32 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
       if (repsArray.length >= 2) {
         setsOrRounds = repsArray.length;
         repsTarget = repsArray.join('-');
+        // Note: eventuale trailingRest viene riapplicato sotto se estratto in 2.2b
         pyramidSteps = repsArray.map(r => ({
           reps: r,
           restSeconds,
           weightKg: weightKg ?? null,
         }));
-        workingText = workingText.replace(seqMatch[0], ' ');
+        workingText = workingText.replace(seqMatch[1], ' ');
       }
     }
   }
 
-  // 2.5a ESTRAZIONE SERIE x DURATA ISOMETRIA (es. 3x30s, 4x45sec)
-  const isoSetsMatch2 = workingText.match(/\b(\d+)\s*(?:[x*X×])\s*(\d+)\s*(?:s|sec|"|'')\b/i);
+  // 2.5a ESTRAZIONE SERIE x DURATA ISOMETRIA (es. 3x30s, 4x45sec, 3x2m)
+  const isoSetsMatch2 = workingText.match(/\b(\d+)\s*(?:[x*X×])\s*(\d+\s*(?:s|sec|"|''|min|m))\b/i);
   if (isoSetsMatch2) {
     setsOrRounds = parseInt(isoSetsMatch2[1], 10) || 3;
-    durationSeconds = parseInt(isoSetsMatch2[2], 10) || 30;
+    durationSeconds = parseRestTimeString(isoSetsMatch2[2], 30);
     workingText = workingText.replace(isoSetsMatch2[0], ' ');
   }
 
   // 2.5b ESTRAZIONE SERIE / ROUNDS (setsOrRounds)
-  // Pattern: "4 round", "4 rounds", "4roound", "4 giri", "4 serie", "4 sets", "4r"
   const roundsRegex1 = /\b(\d+)\s*(?:round|rounds|roound|rund|giri|giro|serie|sets?|set|sett|r)\b/i;
   const roundsMatch1 = workingText.match(roundsRegex1);
   if (roundsMatch1) {
     setsOrRounds = parseInt(roundsMatch1[1], 10) || setsOrRounds;
     workingText = workingText.replace(roundsMatch1[0], ' ');
   } else {
-    // Pattern invertito: "round 4", "serie 4", "giri 3"
     const roundsRegex2 = /\b(?:round|rounds|roound|rund|giri|giro|serie|sets?|set|sett)\s*(?:di|da|num|n°)?\s*(\d+)\b/i;
     const roundsMatch2 = workingText.match(roundsRegex2);
     if (roundsMatch2) {
@@ -484,14 +510,12 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
 
   // 2.7 ESTRAZIONE RIPETIZIONI SPECIFICHE (repsTarget)
   if (!repsTarget) {
-    // Pattern: "8 reps", "da 10 reps", "10-12 ripetizioni", "max reps", "cedimento"
     const repsRegex1 = /(?:\b(?:da|di|per)\s+)?(\d+(?:-\d+)?|max|cedimento)\s*(?:reps?|ripetizioni|ripetizione|rip)\b/i;
     const repsMatch1 = workingText.match(repsRegex1);
     if (repsMatch1) {
       repsTarget = repsMatch1[1].toLowerCase();
       workingText = workingText.replace(repsMatch1[0], ' ');
     } else {
-      // Pattern: "reps: 10", "ripetizioni da 12"
       const repsRegex2 = /\b(?:reps?|ripetizioni|ripetizione|rip)\s*(?:di|da|:)?\s*(\d+(?:-\d+)?|max|cedimento)\b/i;
       const repsMatch2 = workingText.match(repsRegex2);
       if (repsMatch2) {
@@ -501,13 +525,27 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
     }
   }
 
-  // 2.8 ESTRAZIONE DURATA ISOMETRIA / CARDIO (durationSeconds)
+  // 2.8 ESTRAZIONE DURATA ISOMETRIA / CARDIO (prima del fallback trailing rest!)
   if (detectedModality === 'isometry' || detectedModality === 'cardio') {
+    if (repsTarget === 'max' || repsTarget === 'cedimento') {
+      durationSeconds = 0;
+      repsTarget = undefined;
+    }
+
     if (durationSeconds === undefined) {
-      const isoDurationMatch = workingText.match(/\b(\d+)\s*(?:s|sec|"|'')\b/i);
-      if (isoDurationMatch) {
-        durationSeconds = parseInt(isoDurationMatch[1], 10) || (detectedModality === 'cardio' ? 60 : 30);
-        workingText = workingText.replace(isoDurationMatch[0], ' ');
+      const comboDurationMatch = workingText.match(/\b(\d+\s*(?:m|min|')\s*\d+\s*(?:s|sec|"|'')?)\b/i);
+      const singleDurationMatch = workingText.match(/\b(\d+(?:[.,]\d+)?\s*(?:s|sec|"|''|m|min|'|minuti|minuto|secondi|secondo))\b/i);
+      const maxDurationMatch = workingText.match(/\b(max|cedimento)\b/i);
+
+      if (comboDurationMatch) {
+        durationSeconds = parseRestTimeString(comboDurationMatch[1], detectedModality === 'cardio' ? 60 : 30);
+        workingText = workingText.replace(comboDurationMatch[0], ' ');
+      } else if (singleDurationMatch) {
+        durationSeconds = parseRestTimeString(singleDurationMatch[1], detectedModality === 'cardio' ? 60 : 30);
+        workingText = workingText.replace(singleDurationMatch[0], ' ');
+      } else if (maxDurationMatch) {
+        durationSeconds = 0;
+        workingText = workingText.replace(maxDurationMatch[0], ' ');
       } else {
         durationSeconds = detectedModality === 'cardio' ? 60 : 30;
       }
@@ -520,6 +558,18 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
     if (emomMinsMatch) {
       setsOrRounds = parseInt(emomMinsMatch[1], 10) || setsOrRounds;
       workingText = workingText.replace(emomMinsMatch[0], ' ');
+    }
+  }
+
+  // 2.2b Fallback: tempo di recupero in coda alla stringa (solo se non già consumato come durata/intervallo)
+  if (!hasExplicitRest) {
+    const trailingRestMatch = workingText.match(/\s+(\d+\s*(?:s|sec|"|m|min|'))\s*$/i);
+    if (trailingRestMatch && trailingRestMatch[1]) {
+      restSeconds = parseRestTimeString(trailingRestMatch[1], fallbackRest);
+      workingText = workingText.slice(0, workingText.length - trailingRestMatch[0].length);
+      if (pyramidSteps && pyramidSteps.length > 0) {
+        pyramidSteps = pyramidSteps.map(step => ({ ...step, restSeconds }));
+      }
     }
   }
 
@@ -581,21 +631,42 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
   let subExercises: ParsedExerciseConfig['subExercises'] = undefined;
 
   if (detectedModality === 'superset' || detectedModality === 'circuit' || rawInput.includes('+')) {
-    const rawSegments = rawInput
-      .replace(new RegExp(`\\b(?:circuito|circuit|superset|ss)\\b`, 'gi'), '')
-      .split(/\s*\+\s*|\s*,\s*/)
+    // Isola il corpo dopo ":" se c'è un'intestazione EMOM / Circuito / Superset prima dei due punti
+    let compoundBody = rawInput;
+    const colonHeaderMatch = compoundBody.match(/^([^+:]+?):\s*(.+)$/);
+    if (
+      colonHeaderMatch &&
+      /\b(?:circuito|circuit|superset|ss|emom)\b/i.test(colonHeaderMatch[1])
+    ) {
+      compoundBody = colonHeaderMatch[2];
+    } else {
+      compoundBody = compoundBody
+        .replace(/^\s*(?:emom|circuito|circuit|superset|ss)\b(?:\s+\d+\s*(?:round|rounds|giri|giro|r|x|'|m|min)?(?:\s+(?:da|di)\s+\d+\s*(?:s|sec|m|min)?)?)?\s*[:\-]?\s*/i, '');
+    }
+
+    const rawSegments = compoundBody
+      .replace(/\b(?:circuito|circuit|superset|ss)\b/gi, '')
+      .split(/\s*\+\s*|\s*,(?!\d)\s*/)
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
     if (rawSegments.length > 1) {
       subExercises = rawSegments.map(seg => {
         const subParsed = parseWorkoutInput(seg, restSeconds);
-        const isIso = subParsed.modality === 'isometry' || Boolean(subParsed.durationSeconds);
+        const isCardioSub = subParsed.modality === 'cardio';
+        const isDurationSub = isCardioSub || subParsed.modality === 'isometry' || subParsed.durationSeconds !== undefined;
+        const isMaxSubReps = subParsed.repsTarget === 'max' || subParsed.repsTarget === 'cedimento';
+        const resolvedReps = isDurationSub
+          ? 0
+          : isMaxSubReps
+            ? 0
+            : (parseInt(subParsed.repsTarget || '10', 10) || 10);
+
         return {
           name: subParsed.name || 'Esercizio',
-          type: (isIso ? 'isometry' : 'reps') as 'reps' | 'isometry',
-          reps: isIso ? 0 : parseInt(subParsed.repsTarget || '10', 10) || 10,
-          duration_seconds: isIso ? (subParsed.durationSeconds || 30) : 0,
+          type: (isCardioSub ? 'cardio' : isDurationSub ? 'isometry' : 'reps') as 'reps' | 'isometry' | 'cardio',
+          reps: resolvedReps,
+          duration_seconds: isDurationSub ? (subParsed.durationSeconds ?? 30) : 0,
           weight_kg: subParsed.weightKg ?? null,
         };
       });
@@ -603,13 +674,15 @@ export function parseWorkoutInput(input: string, fallbackRest = 60, userId?: str
   }
 
   if (detectedModality === 'emom' && (!subExercises || subExercises.length <= 1)) {
-    const isIso = cleanName.toLowerCase().includes('plank') || Boolean(durationSeconds);
+    const isCardioSub = cleanName.toLowerCase().includes('corsa') || cleanName.toLowerCase().includes('vogatore') || cleanName.toLowerCase().includes('cyclette');
+    const isDurationSub = isCardioSub || cleanName.toLowerCase().includes('plank') || durationSeconds !== undefined;
+    const isMaxSubReps = repsTarget === 'max' || repsTarget === 'cedimento';
     subExercises = [
       {
         name: cleanName,
-        type: (isIso ? 'isometry' : 'reps') as 'reps' | 'isometry',
-        reps: isIso ? 0 : parseInt(repsTarget || '10', 10) || 10,
-        duration_seconds: isIso ? (durationSeconds || 30) : 0,
+        type: (isCardioSub ? 'cardio' : isDurationSub ? 'isometry' : 'reps') as 'reps' | 'isometry' | 'cardio',
+        reps: isDurationSub ? 0 : (isMaxSubReps ? 0 : (parseInt(repsTarget || '10', 10) || 10)),
+        duration_seconds: isDurationSub ? (durationSeconds ?? 30) : 0,
         weight_kg: weightKg ?? null,
       }
     ];
